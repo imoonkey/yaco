@@ -11,11 +11,14 @@
  *   - `POST /ack   { scope, project, key? }` — ack a project up to server-now, or a
  *     session/task key up to its latest generation ts.
  *   - `POST /clear { project }` — set the project's monotonic clear watermark to now.
+ *   - `POST /dismiss { project, kind, key, generation }` — generation-exact ACT
+ *     tombstone. Requires an exact `needsYou` match (409 on a stale click); never
+ *     writes a watermark, so the `/ack` clamp invariant is untouched.
  */
 
 import { Hono } from 'hono'
 import { currentAttentionSnapshot, notifyAttentionWatermarkChange } from '../lib/attention-runtime'
-import { mergeUnreadWatermarks } from '../lib/ui-state'
+import { addDismissedActGeneration, mergeUnreadWatermarks } from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
 import { fail } from '../lib/response'
 import type { AttentionItem, AttentionSnapshot } from '../lib/attention-projection'
@@ -193,6 +196,76 @@ app.post('/clear', async (c) => {
   }
 
   await mergeUnreadWatermarks({ recentClearedAt: { [project]: Date.now() } })
+  notifyAttentionWatermarkChange()
+  broadcastChange('ui-state:changed')
+  return c.body(null, 204)
+})
+
+/** The subject key a `/dismiss` targets: the session name for sessions, the task
+ *  id for tasks. The projected `subject.kind` already encodes the type→kind map
+ *  (`session_blocked`/`session_crashed` ⇒ session, `task_blocked` ⇒ task). */
+function needsYouKey(it: AttentionItem): string {
+  return it.subject.kind === 'session' ? it.subject.sessionName : it.subject.taskId
+}
+
+app.post('/dismiss', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return fail(c, 400, 'invalid JSON body')
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return fail(c, 400, 'body must be an object')
+  }
+  const { project, kind, key, generation } = body as {
+    project?: unknown
+    kind?: unknown
+    key?: unknown
+    generation?: unknown
+  }
+  if (typeof project !== 'string' || !project) {
+    return fail(c, 400, 'project must be a non-empty string')
+  }
+  if (kind !== 'session' && kind !== 'task') {
+    return fail(c, 400, "kind must be 'session' | 'task'")
+  }
+  if (typeof key !== 'string' || !key) {
+    return fail(c, 400, 'key must be a non-empty string')
+  }
+  if (typeof generation !== 'string' || !generation) {
+    return fail(c, 400, 'generation must be a non-empty string')
+  }
+
+  // Re-project the live snapshot and require an EXACT `needsYou` match on
+  // project+kind+key+generation — exactly the row the user saw in the bell. The
+  // projector decides what is open; the route never trusts the client's view.
+  let snapshot: AttentionSnapshot
+  try {
+    snapshot = await currentAttentionSnapshot()
+  } catch (err) {
+    console.error('[attention] /dismiss projection failed:', err)
+    return fail(c, 500, 'failed to project attention snapshot')
+  }
+
+  const matched = snapshot.needsYou.some(
+    (it) =>
+      it.subject.project === project &&
+      it.subject.kind === kind &&
+      needsYouKey(it) === key &&
+      it.generation === generation,
+  )
+  if (!matched) {
+    // The row resolved or re-entered (new generation) between render and click —
+    // a stale click. Reject so the client refreshes; never tombstone a generation
+    // the user never saw.
+    return fail(c, 409, 'no matching needsYou item — refresh and retry')
+  }
+
+  // Generation-exact tombstone, NOT a watermark — future-dated/clock-skewed
+  // generations are handled purely by exact membership, leaving the `/ack` derived
+  // watermark clamp untouched.
+  await addDismissedActGeneration(generation)
   notifyAttentionWatermarkChange()
   broadcastChange('ui-state:changed')
   return c.body(null, 204)

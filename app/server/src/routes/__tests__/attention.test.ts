@@ -58,6 +58,24 @@ function recentRow(tsMs: number, sessionName = `s-${tsMs}`): AttentionItem {
   }
 }
 
+/** A live `session_blocked` ACT row as it sits in `needsYou`. `tsMs` may be in the
+ *  future (clock-skewed / stuck) — the dismiss route matches on generation, never
+ *  on the clock, so a future-dated row is still dismissible. */
+function blockedSessionRow(sessionName: string, generation: string, tsMs = 1000): AttentionItem {
+  return {
+    generation,
+    type: 'session_blocked',
+    tier: 'action',
+    group: 'needs-you',
+    subject: { kind: 'session', project: 'proj', sessionName },
+    title: 'Needs you',
+    message: `proj · ${sessionName}`,
+    tsMs,
+    count: 1,
+    interrupt: false,
+  }
+}
+
 describe('attention routes', () => {
   beforeEach(async () => {
     await rm(join(homeDir.value, '.yaco', 'ui-state'), { recursive: true, force: true })
@@ -361,5 +379,139 @@ describe('attention routes', () => {
     expect(raw).toHaveProperty('sessionReadAt')
     expect(raw).toHaveProperty('taskReadAt')
     expect(raw).toHaveProperty('recentClearedAt')
+  })
+
+  // ── POST /dismiss ────────────────────────────────────────────────────────────
+
+  it('POST /dismiss tombstones a FUTURE-DATED stuck ACT item on an exact generation match', async () => {
+    // A blocked session stuck in needsYou with a far-future statusEnteredAt — the
+    // /ack clamp could never express this, but a generation-exact dismiss can.
+    const future = Date.now() + 1_000_000_000
+    const gen = `session_blocked:proj::stuck:${future}`
+    snapshot.value = { ...emptySnapshot(), needsYou: [blockedSessionRow('stuck', gen, future)] }
+
+    const res = await attentionRoutes.request('/dismiss', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj', kind: 'session', key: 'stuck', generation: gen }),
+    })
+    expect(res.status).toBe(204)
+
+    // The exact generation is tombstoned, so the projector drops it from needsYou
+    // on the next recompute. No watermark is written (the /ack path is untouched).
+    const dismissed = await uiState.getDismissedActGenerations()
+    expect(dismissed.has(gen)).toBe(true)
+    const wm = await uiState.getUnreadWatermarks()
+    expect(wm.sessionReadAt['proj::stuck']).toBeUndefined()
+  })
+
+  it('POST /dismiss recomputes + pushes a fresh attention snapshot on success', async () => {
+    const spy = vi.spyOn(notify, 'broadcastChange')
+    const gen = 'session_blocked:proj::s1:1000'
+    snapshot.value = { ...emptySnapshot(), needsYou: [blockedSessionRow('s1', gen)] }
+    const res = await attentionRoutes.request('/dismiss', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj', kind: 'session', key: 's1', generation: gen }),
+    })
+    expect(res.status).toBe(204)
+    expect(notifyWatermark).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith('ui-state:changed')
+    spy.mockRestore()
+  })
+
+  it('POST /dismiss with a STALE generation is rejected 409 and writes no tombstone', async () => {
+    // The row re-entered with a NEW generation between render and click; the client
+    // still holds the old one. The current needsYou only carries the new generation.
+    const stale = 'session_blocked:proj::s1:1000'
+    const current = 'session_blocked:proj::s1:5000'
+    snapshot.value = { ...emptySnapshot(), needsYou: [blockedSessionRow('s1', current, 5000)] }
+
+    const before = await uiState.getUnreadWatermarks()
+    const res = await attentionRoutes.request('/dismiss', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj', kind: 'session', key: 's1', generation: stale }),
+    })
+    expect(res.status).toBe(409)
+
+    // Neither the stale generation the user clicked NOR the live current one is
+    // tombstoned — a stale click must not silently dismiss anything.
+    const dismissed = await uiState.getDismissedActGenerations()
+    expect(dismissed.has(stale)).toBe(false)
+    expect(dismissed.has(current)).toBe(false)
+    expect(notifyWatermark).not.toHaveBeenCalled()
+    // /dismiss NEVER writes a watermark — the invariant separating it from /ack.
+    // Even on the rejected path the four watermark maps stay exactly as before.
+    const after = await uiState.getUnreadWatermarks()
+    expect(after).toEqual(before)
+    expect(after).toEqual({ projectReadAt: {}, sessionReadAt: {}, taskReadAt: {}, recentClearedAt: {} })
+  })
+
+  it('POST /dismiss requires the kind to match the surfaced row (session vs task)', async () => {
+    // A live task_blocked row, but the client asks to dismiss it as a session — the
+    // key/generation could collide, so the kind guard must reject the mismatch.
+    const gen = 'task_blocked:proj::t1:1000'
+    const taskRow: AttentionItem = {
+      generation: gen,
+      type: 'task_blocked',
+      tier: 'action',
+      group: 'needs-you',
+      subject: { kind: 'task', project: 'proj', taskId: 't1', sessionNames: [] },
+      title: 'Was blocked: t1',
+      message: 'proj · t1',
+      tsMs: 1000,
+      count: 1,
+      interrupt: false,
+    }
+    snapshot.value = { ...emptySnapshot(), needsYou: [taskRow] }
+
+    const wrongKind = await attentionRoutes.request('/dismiss', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj', kind: 'session', key: 't1', generation: gen }),
+    })
+    expect(wrongKind.status).toBe(409)
+
+    const rightKind = await attentionRoutes.request('/dismiss', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj', kind: 'task', key: 't1', generation: gen }),
+    })
+    expect(rightKind.status).toBe(204)
+    const dismissed = await uiState.getDismissedActGenerations()
+    expect(dismissed.has(gen)).toBe(true)
+  })
+
+  it('POST /dismiss rejects a bad body (missing/empty project, kind, key, generation)', async () => {
+    snapshot.value = emptySnapshot()
+    const cases: unknown[] = [
+      { kind: 'session', key: 'k', generation: 'g' }, // no project
+      { project: '', kind: 'session', key: 'k', generation: 'g' }, // empty project
+      { project: 'p', kind: 'bogus', key: 'k', generation: 'g' }, // bad kind
+      { project: 'p', kind: '', key: 'k', generation: 'g' }, // empty kind
+      { project: 'p', kind: 'session', generation: 'g' }, // no key
+      { project: 'p', kind: 'session', key: '', generation: 'g' }, // empty key
+      { project: 'p', kind: 'session', key: 'k' }, // no generation
+      { project: 'p', kind: 'session', key: 'k', generation: '' }, // empty generation
+      'not-an-object',
+    ]
+    for (const body of cases) {
+      const res = await attentionRoutes.request('/dismiss', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      expect(res.status).toBe(400)
+    }
+    // A rejected body writes nothing — no tombstone, no watermark, no push.
+    expect((await uiState.getDismissedActGenerations()).size).toBe(0)
+    expect(await uiState.getUnreadWatermarks()).toEqual({
+      projectReadAt: {},
+      sessionReadAt: {},
+      taskReadAt: {},
+      recentClearedAt: {},
+    })
+    expect(notifyWatermark).not.toHaveBeenCalled()
   })
 })
