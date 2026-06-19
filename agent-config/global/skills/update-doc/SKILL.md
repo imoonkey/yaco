@@ -40,7 +40,6 @@ doc/
 - **README.md as nav hub.** Every project should have `doc/main/README.md` with a documentation map, reading order, and key concepts table. This is the entry point for any agent or human exploring the project.
 - **Mirror code architecture.** Organize files into subdirectories that reflect the code's domain structure (e.g., `agent/`, `infra/`, `ui/`, `backend/`, `frontend/`). Flat is fine for ≤5 files, but group by domain once it grows beyond that.
 - **Split by concerns, not just size.** Give a module its own subdirectory — a short spine `README.md` plus focused leaf docs — once it covers **≥~4 cohesive sub-topics or exceeds ~300 lines**, whichever comes first. A 200-line doc spanning five concerns still splits; a 280-line doc on one concern need not. A monolith is harder to keep current than focused leaves.
-- **Cross-reference, don't duplicate.** Use `-> See: path/to/file` pointers. If the same concept is explained in two places, one will go stale.
 
 ### doc/dev/ Guidelines
 
@@ -50,12 +49,24 @@ doc/
 
 ## Doc Quality Bar
 
-SOTA docs aren't just *in sync* with the code — they're its **minimal, well-architected compression**. Hold every `doc/main/` file to these:
+One axiom; the rest are corollaries — hold every `doc/main/` file to the axiom and the others follow.
 
-- **Top-down, progressive disclosure.** Each doc explains *one* architectural level in the simplest correct language, then points down. The parent says **what** a piece is and the seam to its neighbors; the child says **how**. A reader after the shape must never wade through leaf invariants to find it.
-- **MDL — earn every word.** A doc is a *proxy* for the code, which is the ground truth (and can itself be wrong or stale). Its only value is **compression**: a passage that doesn't compress what the code already states cheaply is *worse* than the source — cut it and `-> See:` the code instead. Spend the saved space on the **high-entropy** knowledge the code *cannot* carry — the *why*, the alternatives tried and rejected, the provenance of a tuned constant, a non-obvious invariant or landmine. One line of code can deserve a paragraph (a parameter distilled from heavy analysis; the one path that survived ten tries); ten self-evident lines may deserve none. **Depth tracks information-not-recoverable-from-code, not lines-of-code.**
-- **One owner per fact.** Every fact lives in exactly one doc; everyone else points with `-> See:`. Duplication is how docs rot — the same rule written twice will diverge. For any multi-doc area, hold a fact-ownership map (who owns what) so writers state vs. point deliberately.
-- **Structured over prose.** Prefer a mermaid diagram, table, ordered phase-list, or state machine to a paragraph whenever it carries the logic more clearly — mermaid is one tool, not the only one; reach for whatever semi-structured form maximizes logical clarity. Lead a doc with its shape (diagram/table), then add prose only for rationale.
+**Axiom — MDL (minimal description length).** A doc is a *lossy compressor* of the code (the ground truth). It earns its existence only by lowering a reader's **total** cost-to-understand = *reading the doc* + *recovering from code whatever the doc omitted*. Minimize that sum: carry **exactly the residual — information expensive to recover from code and cheap to state**, nothing else. The source moves, so a doc is valid only against current code — re-check on every change (Process step 3).
+
+**What to carry**
+
+- **Earn every word — depth tracks information, not lines.** Include a fact only if a competent reader couldn't cheaply predict it from the code *and know it's right* (high **surprisal**). Restating what the code already shows is *worse* than the code — cut it, `-> See:` the source. One line can deserve a paragraph (a constant distilled from heavy analysis; the path that survived ten tries); ten obvious lines deserve none. The residual you keep has two sources:
+  - **structural** — latent in code, recoverable only by a global read → state the conclusion (an invariant, a contract, the shape);
+  - **provenance** — not in the code at all (the *why*, the rejected alternatives, a constant's origin, a landmine) → record it.
+
+**Where it goes**
+
+- **Scope picks the artifact.** Co-locate a fact with the smallest thing that owns it, or it detaches and rots: local to one line → a **code comment**; governing a module / subsystem / system → a **doc**. (Structural facts are inherently cross-cutting → always docs.)
+- **Compress in layers → progressive disclosure.** A system is too big to compress in one shot: code → module doc → subsystem README → `architecture.md`, each layer keeping only what holds across everything below it. One pyramid, two directions:
+  - *read* top-down — start at max compression, descend only as far as you need (a reader after the shape never wades through leaf invariants);
+  - *author* bottom-up — each layer abstracts the one beneath it.
+- **One owner per fact.** A fact lives at the *highest layer that still governs everything below*, and only there — hoist a subsystem-wide rule out of its leaves, push a leaf-only detail out of the README. Everyone else `-> See:` it (a pointer costs ~0 bits); two copies are two things to keep true, and one will drift. For a multi-doc area, hold a fact-ownership map.
+- **Parent says what, child says how; structure over prose.** The higher layer carries the abstraction (a piece + its seam); the lower carries the mechanism. Lead with the shape in its densest faithful form — mermaid, table, phase-list, state machine — and reserve prose for rationale, where words are the densest encoding.
 
 ### Doc skeleton
 
@@ -93,22 +104,16 @@ If no baseline given, use the last docs/local-skill update commit or recent comm
 
 Map code changes to affected docs in `CLAUDE.md`, `doc/main/`, `doc/dev/`, and any project-local skill exposed via the project's local skill directory. Apply the **Doc Quality Bar** above to anything you write.
 
-**Principles:**
-- Match the detail level of surrounding content
-- Prefer `-> See: path/to/file` pointers over large code blocks
-- Link rather than duplicate explanations
-- Don't over-document tiny new details, unless they are really important pitfalls or non-obvious logic.
-- Local skills live in `./.claude/skills/` (`./.agents/skills/` is a symlink to it). Update the real location (`.claude/skills/`), not the symlink.
-- If behavior or workflow changed and a local skill teaches that behavior, update the skill in the same pass.
-- When a local skill has `scripts/`, keep those artifacts in sync with the `SKILL.md` instructions.
-- Update timestamps/commit hashes on touched docs
+**Operational reminders:**
+- Local skills live in `./.claude/skills/` (`./.agents/skills/` is a symlink) — edit the real location, not the symlink.
+- If behavior or workflow changed and a local skill teaches it, update the skill in the same pass, and keep its `scripts/` in sync with the `SKILL.md`.
+- Update the `Last updated` line / commit hash on touched docs.
 
 ### 3. Verify SOTA Docs
 
 - **Cross-check claims against code, not the old prose.** A doc update is the moment to re-validate: for each load-bearing claim — orderings, thresholds, function/flag names, counts — confirm it against source and fix the drift. Docs drift silently; this is where you catch it. A delegated writer must *report* drift found, never just reshuffle stale prose.
 - **Run the mechanical checks.** `scripts/check-docs.py [doc]` resolves every relative link, balances/validates mermaid fences, and (with `--stale <old-path>…`) greps for paths left behind by a rename. Fix every hit before committing.
-- Search for removed/renamed symbols in docs and local skills
-- Verify referenced files/classes/scripts still exist
+- **Catch what the script can't:** grep for renamed symbols/classes mentioned in prose (not just links), and confirm any referenced file / class / script still exists.
 - For touched local skills, verify the documented process still resolves to real commands and paths
 - If you changed a local skill's `scripts/`, run the narrowest meaningful smoke check so the script still works after the doc/process update
 
