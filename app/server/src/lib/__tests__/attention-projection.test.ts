@@ -111,7 +111,7 @@ describe('ACT — open derived from live status', () => {
     expect(snap.needsYou).toHaveLength(0)
   })
 
-  it('crash/block always breaks through regardless of owner (delegated child blocked)', () => {
+  it('delegated block with no live parent fails open and pages', () => {
     const snap = projectAttention(
       input({ sessions: [sess({ name: 'child', status: 'blocked', statusEnteredAt: 'T1', spawnedBy: 'agent' })] }),
     )

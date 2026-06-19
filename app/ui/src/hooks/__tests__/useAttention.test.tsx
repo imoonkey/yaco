@@ -247,27 +247,28 @@ describe('useAttention', () => {
     expect(notificationCtor).toHaveBeenCalledTimes(1)
   })
 
-  it('active-viewing suppresses the toast/OS AND auto-acks the session (M10, §5.5)', async () => {
+  it('active-viewing a crash (ACT) suppresses the toast/OS but does NOT auto-dismiss it — the Needs-you row stays (§"Active-viewing must not auto-dismiss ACT")', async () => {
     installNotification('granted')
     setHidden(false)
     setFocus(true)
     const calls = installFetchStub()
     // The user is attached to + focused on proj/sess — the interrupt target.
-    renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
+    const { result } = renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
     await settleInitialFeed(calls, makeSnapshot())
 
-    pushAttention(makeSnapshot({ needsYou: [crashItem({ interrupt: true })] }))
+    pushAttention(makeSnapshot({ needsYou: [crashItem({ interrupt: true })], global: { count: 1, color: 'red' } }))
 
     // No toast / OS for the actively-viewed target.
     expect(toastCustom).not.toHaveBeenCalled()
     expect(notificationCtor).not.toHaveBeenCalled()
 
-    // Auto-ack POSTed for that session's generation.
-    await waitFor(() => expect(
-      calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
-        && c.body && (c.body as { scope: string }).scope === 'session'
-        && (c.body as { key: string }).key === 'sess'),
-    ).toBe(true))
+    // Active-view auto-ack is READY-ONLY: an actively-viewed ACT (crash/blocked)
+    // row is never auto-acked or auto-dismissed — dismiss is an explicit user-owned
+    // tombstone. So no ack/dismiss POST is issued and the Needs-you row stays.
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack'))).toBe(false)
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/attention/dismiss'))).toBe(false)
+    expect(result.current.snapshot.needsYou).toHaveLength(1)
+    expect(result.current.snapshot.needsYou[0].type).toBe('session_crashed')
   })
 
   it('active-viewing suppresses a bound task_done interrupt AND auto-acks the TASK (M-medium-1)', async () => {
@@ -337,6 +338,31 @@ describe('useAttention', () => {
     expect(posts.find(c => c.url.endsWith('/attention/ack') && (c.body as { scope: string }).scope === 'task')?.body)
       .toEqual({ scope: 'task', project: 'proj', key: 't1' })
     expect(posts.find(c => c.url.endsWith('/attention/clear'))?.body).toEqual({ project: 'proj' })
+  })
+
+  it('dismissNeedsYou POSTs a generation-exact /attention/dismiss for a SESSION and a TASK row', async () => {
+    const calls = installFetchStub()
+    const { result } = renderHook(() => useAttention(null))
+    await settleInitialFeed(calls, makeSnapshot())
+
+    const sessionRow = crashItem({ generation: 'session_blocked:proj::sess:100', type: 'session_blocked' })
+    const taskRow: AttentionItem = {
+      generation: 'task_blocked:proj::t1:200',
+      type: 'task_blocked', tier: 'action', group: 'needs-you',
+      subject: { kind: 'task', project: 'proj', taskId: 't1', sessionNames: ['sess'] },
+      title: 'Task blocked: t1', message: '', tsMs: 200, count: 1, interrupt: false,
+    }
+
+    act(() => { result.current.dismissNeedsYou(sessionRow) })
+    act(() => { result.current.dismissNeedsYou(taskRow) })
+
+    const posts = calls.filter(c => c.method === 'POST' && c.url.endsWith('/attention/dismiss'))
+    // SESSION row → kind:'session', key=sessionName, carrying the EXACT generation.
+    expect(posts.find(c => (c.body as { kind: string }).kind === 'session')?.body)
+      .toEqual({ project: 'proj', kind: 'session', key: 'sess', generation: 'session_blocked:proj::sess:100' })
+    // TASK row → kind:'task', key=taskId, carrying the EXACT generation.
+    expect(posts.find(c => (c.body as { kind: string }).kind === 'task')?.body)
+      .toEqual({ project: 'proj', kind: 'task', key: 't1', generation: 'task_blocked:proj::t1:200' })
   })
 
   it('refetches the feed on visibilitychange → visible', async () => {

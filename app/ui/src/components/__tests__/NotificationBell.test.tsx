@@ -110,11 +110,20 @@ describe('NotificationBell', () => {
     expect(props.onItemClick).toHaveBeenCalledWith(item)
   })
 
-  it('clicking a Needs-you item routes but does NOT ack (it self-resolves)', () => {
+  it("clicking a Needs-you row's ✕ dismisses that generation without navigating; the row body still routes", () => {
     const item = sessionItem({ project: 'p', sessionName: 'blocky', title: 'needs approval' })
-    const props = makeProps(makeSnapshot({ needsYou: [item] }))
+    const props = makeProps(makeSnapshot({ needsYou: [item], global: { count: 1, color: 'orange' } }))
     render(<NotificationBell {...props} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+
+    // The ✕ tombstones THIS generation and stops propagation, so it must not
+    // also navigate the row it sits in.
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(props.dismissNeedsYou).toHaveBeenCalledWith(item)
+    expect(props.onItemClick).not.toHaveBeenCalled()
+
+    // The row BODY still routes — and an ACT row never acks (dismiss is the only
+    // way it leaves the badge; the condition itself self-resolves in live status).
     fireEvent.click(screen.getByText('needs approval'))
     expect(props.onItemClick).toHaveBeenCalledWith(item)
     expect(props.ackSession).not.toHaveBeenCalled()
@@ -137,36 +146,73 @@ describe('NotificationBell', () => {
     expect(props.clear).toHaveBeenCalledWith('p2')
   })
 
-  it('Mark all read acks each distinct project in Ready and NOT the Needs-you ones (F5)', () => {
+  it('Mark all read is present in a Needs-you-only snapshot (Ready empty)', () => {
+    // The capstone of the clearable-ACT axiom: the badge must be drivable to zero
+    // even when nothing is Ready, so Mark-all-read surfaces on the Needs-you section.
     const props = makeProps(makeSnapshot({
-      needsYou: [
-        // A blocked session in p3 — open ACT, no read concept; must not be acked.
-        sessionItem({ project: 'p3', sessionName: 'blocky', title: 'needs approval' }),
-      ],
-      ready: [
-        sessionItem({ project: 'p1', sessionName: 'a', group: 'ready', type: 'session_idle', tier: 'handoff', title: 'your turn a' }),
-        taskItem({ project: 'p1', taskId: 'T1', title: 'task done T1' }),
-        taskItem({ project: 'p2', taskId: 'T2', title: 'task done T2' }),
-      ],
+      needsYou: [sessionItem({ project: 'p', sessionName: 'blocky', title: 'needs approval' })],
+      global: { count: 1, color: 'orange' },
+    }))
+    render(<NotificationBell {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    expect(screen.getByText('Mark all read')).toBeTruthy()
+  })
+
+  it('Mark all read dismisses every Needs-you row by generation and acks each Ready row by subject (never ackProject)', () => {
+    const blockedSession = sessionItem({ project: 'p1', sessionName: 'blocky', title: 'needs approval' })
+    const blockedTask = taskItem({ project: 'p2', taskId: 'T9', type: 'task_blocked', tier: 'action', group: 'needs-you', title: 'task blocked' })
+    const readyIdle = sessionItem({ project: 'p1', sessionName: 'idle1', group: 'ready', type: 'session_idle', tier: 'handoff', title: 'your turn' })
+    const readyDone = taskItem({ project: 'p3', taskId: 'T1', title: 'task done' })
+    const props = makeProps(makeSnapshot({
+      needsYou: [blockedSession, blockedTask],
+      ready: [readyIdle, readyDone],
+      global: { count: 4, color: 'orange' },
     }))
     render(<NotificationBell {...props} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
     fireEvent.click(screen.getByText('Mark all read'))
-    // One ackProject per distinct Ready project (p1 deduped across its 2 items).
-    expect(props.ackProject).toHaveBeenCalledTimes(2)
-    expect(props.ackProject).toHaveBeenCalledWith('p1')
-    expect(props.ackProject).toHaveBeenCalledWith('p2')
-    // Needs-you project p3 is never acked.
-    expect(props.ackProject).not.toHaveBeenCalledWith('p3')
+
+    // Every surfaced Needs-you (ACT) row is dismissed by ITS OWN generation.
+    expect(props.dismissNeedsYou).toHaveBeenCalledTimes(2)
+    expect(props.dismissNeedsYou).toHaveBeenCalledWith(blockedSession)
+    expect(props.dismissNeedsYou).toHaveBeenCalledWith(blockedTask)
+    // Every Ready (REVIEW) row is acked by its own subject — session vs task scope.
+    expect(props.ackSession).toHaveBeenCalledWith('p1', 'idle1')
+    expect(props.ackTask).toHaveBeenCalledWith('p3', 'T1')
+    // It deliberately does NOT advance a project-level read watermark — that could
+    // pre-suppress a delegated block that escalates later (design r1 MAJOR-3).
+    expect(props.ackProject).not.toHaveBeenCalled()
   })
 
-  it('Mark all read is absent when Ready is empty', () => {
-    const props = makeProps(makeSnapshot({
-      needsYou: [sessionItem({ project: 'p', sessionName: 'blocky', title: 'needs approval' })],
-    }))
+  it('a task block and its bound blocked session render as two independent rows, each ✕ dismissing its own generation (no fold)', () => {
+    // The pair is genuinely bound — the task lists the blocked worker in
+    // sessionNames — yet the panel renders TWO rows, not one folded row.
+    const blockedTask = taskItem({
+      project: 'p', taskId: 'uxr',
+      type: 'task_blocked', tier: 'action', group: 'needs-you', title: 'task blocked',
+      generation: 'task_blocked:p::uxr:T1',
+      subject: { kind: 'task', project: 'p', taskId: 'uxr', sessionNames: ['worker'] },
+    })
+    const blockedSession = sessionItem({
+      project: 'p', sessionName: 'worker', title: 'needs approval',
+      generation: 'session_blocked:p::worker:T1',
+    })
+    const props = makeProps(makeSnapshot({ needsYou: [blockedTask, blockedSession] }))
     render(<NotificationBell {...props} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
-    expect(screen.queryByText('Mark all read')).toBeNull()
+
+    // Two distinct rows, each with its own dismiss control (no fold to one count).
+    expect(screen.getByText('task blocked')).toBeTruthy()
+    expect(screen.getByText('needs approval')).toBeTruthy()
+    const dismissButtons = screen.getAllByRole('button', { name: 'Dismiss' })
+    expect(dismissButtons).toHaveLength(2)
+
+    // Each ✕ dismisses ITS OWN generation — the task and worker clear independently.
+    fireEvent.click(dismissButtons[0])
+    expect(props.dismissNeedsYou).toHaveBeenNthCalledWith(1, expect.objectContaining({ generation: 'task_blocked:p::uxr:T1' }))
+    fireEvent.click(dismissButtons[1])
+    expect(props.dismissNeedsYou).toHaveBeenNthCalledWith(2, expect.objectContaining({ generation: 'session_blocked:p::worker:T1' }))
+    expect(props.dismissNeedsYou).toHaveBeenCalledTimes(2)
   })
 
   it('shows the empty state when the snapshot has no items', () => {    render(<NotificationBell {...makeProps(makeSnapshot())} />)
