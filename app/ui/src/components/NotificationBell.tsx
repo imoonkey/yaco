@@ -9,7 +9,7 @@ export function NotificationBell({
   onItemClick,
   ackSession,
   ackTask,
-  ackProject,
+  dismissNeedsYou,
   clear,
   requestPermission,
   size = 15,
@@ -18,7 +18,7 @@ export function NotificationBell({
   onItemClick: (item: AttentionItem) => void
   ackSession: (project: string, sessionName: string) => void
   ackTask: (project: string, taskId: string) => void
-  ackProject: (project: string) => void
+  dismissNeedsYou: (item: AttentionItem) => void
   clear: (project: string) => void
   /** Requested on the first bell interaction (user gesture), never on mount. */
   requestPermission: () => void
@@ -47,13 +47,20 @@ export function NotificationBell({
     for (const project of projects) clear(project)
   }, [snapshot.recent, clear])
 
-  // Mark all read acks every project present in Ready (advancing each project's
-  // REVIEW watermark clears that project's Ready handoffs). It must NOT touch
-  // Needs-you (open ACT has no read concept — it self-resolves from live status).
+  // Mark all read clears both actionable sections in one action: dismiss every
+  // currently-surfaced Needs-you (ACT) row by its own generation, and ack every
+  // Ready (REVIEW) row by its own subject. Acking per-subject (not per-project)
+  // deliberately does NOT advance projectReadAt — a project ack could pre-suppress
+  // a delegated block that escalates later — and does not touch recentClearedAt.
+  // The result drives the badge (needsYou + ready) to 0.
   const handleMarkAllRead = useCallback(() => {
-    const projects = new Set(snapshot.ready.map(item => item.subject.project))
-    for (const project of projects) ackProject(project)
-  }, [snapshot.ready, ackProject])
+    for (const item of snapshot.needsYou) dismissNeedsYou(item)
+    for (const item of snapshot.ready) {
+      const s = item.subject
+      if (s.kind === 'session') ackSession(s.project, s.sessionName)
+      else ackTask(s.project, s.taskId)
+    }
+  }, [snapshot.needsYou, snapshot.ready, dismissNeedsYou, ackSession, ackTask])
 
   const toggleOpen = useCallback(() => {
     // First bell interaction is the user gesture that may request OS permission.
@@ -82,6 +89,7 @@ export function NotificationBell({
           ready={snapshot.ready}
           recent={snapshot.recent}
           onClickItem={handleItemClick}
+          onDismissNeedsYou={dismissNeedsYou}
           onClear={handleClear}
           onMarkAllRead={handleMarkAllRead}
           onClose={() => setOpen(false)}

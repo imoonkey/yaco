@@ -59,6 +59,7 @@ function makeProps(snapshot: AttentionSnapshot) {
     ackSession: vi.fn(),
     ackTask: vi.fn(),
     ackProject: vi.fn(),
+    dismissNeedsYou: vi.fn(),
     clear: vi.fn(),
     requestPermission: vi.fn(),
   }

@@ -229,17 +229,36 @@ function App() {
 
   // Facet B — server-projected attention feed (bell sections, badges, interrupts).
   const attention = useAttention(activeTarget, handleNotificationClick)
-  const { snapshot, ackSession, ackTask, ackProject, clear, requestPermission } = attention
+  const { snapshot, ackSession, ackTask, clear, dismissNeedsYou, requestPermission } = attention
 
   const notificationBellProps = {
     snapshot,
     onItemClick: handleNotificationClick,
     ackSession,
     ackTask,
-    ackProject,
+    dismissNeedsYou,
     clear,
     requestPermission,
   }
+
+  // Project-list "Mark All Read" (per project, from the sidebar menu). Same contract
+  // as the bell-panel mark-all-read, scoped to one project: dismiss every surfaced
+  // Needs-you (ACT) row by its own generation and ack every surfaced Ready (REVIEW)
+  // row by its subject. Deliberately NOT `ackProject` — a project-scoped
+  // projectReadAt advance could pre-suppress a delegated block that escalates later
+  // (design r1 MAJOR-3) — and not recentClearedAt. REVIEW rows are still marked read
+  // via the per-subject acks, so nothing regresses.
+  const handleProjectMarkAllRead = useCallback((project: string) => {
+    for (const item of snapshot.needsYou) {
+      if (item.subject.project === project) dismissNeedsYou(item)
+    }
+    for (const item of snapshot.ready) {
+      const s = item.subject
+      if (s.project !== project) continue
+      if (s.kind === 'session') ackSession(s.project, s.sessionName)
+      else ackTask(s.project, s.taskId)
+    }
+  }, [snapshot.needsYou, snapshot.ready, dismissNeedsYou, ackSession, ackTask])
 
   // Owned-idle leaf "↩ your turn" set: `proj::name` for every session that has
   // an unacked owned REVIEW (a `session_idle` Ready item). The dot is never
@@ -254,20 +273,24 @@ function App() {
     return set
   }, [snapshot.ready])
 
-  // Task chips for the active project's graph: a `task_blocked` (Needs you) →
-  // blocked chip; a `task_done` (Ready/Recent) → done chip. Keyed by task id.
+  // Task chips for the active project's graph. The "blocked" chip lights ONLY from
+  // a LIVE Needs-you `task_blocked` — a dismissed or resolved one falls to Recent
+  // (muted past-tense) or is tombstoned, so reading `recent`/`ready` would wrongly
+  // keep the chip lit. The "done" chip lights from a `task_done` that reached
+  // Ready or Recent. Keyed by task id.
   const attentionTaskIds = useMemo(() => {
     const blocked = new Set<string>()
     const done = new Set<string>()
-    const add = (item: AttentionItem) => {
+    const addDone = (item: AttentionItem) => {
       const s = item.subject
-      if (s.kind !== 'task' || s.project !== activeProject) return
-      if (item.type === 'task_blocked') blocked.add(s.taskId)
-      else if (item.type === 'task_done') done.add(s.taskId)
+      if (s.kind === 'task' && s.project === activeProject && item.type === 'task_done') done.add(s.taskId)
     }
-    for (const item of snapshot.needsYou) add(item)
-    for (const item of snapshot.ready) add(item)
-    for (const item of snapshot.recent) add(item)
+    for (const item of snapshot.needsYou) {
+      const s = item.subject
+      if (s.kind === 'task' && s.project === activeProject && item.type === 'task_blocked') blocked.add(s.taskId)
+    }
+    for (const item of snapshot.ready) addDone(item)
+    for (const item of snapshot.recent) addDone(item)
     return { blocked, done }
   }, [snapshot, activeProject])
 
@@ -391,7 +414,7 @@ function App() {
             onProjectReorder={handleProjectReorder}
             onProjectRemove={handleRemoveProject}
             onAddProject={handleAddProject}
-            onMarkAllRead={ackProject}
+            onMarkAllRead={handleProjectMarkAllRead}
             ackSession={ackSession}
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}

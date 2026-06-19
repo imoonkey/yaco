@@ -39,7 +39,14 @@ function PanelCloseButton() {
   )
 }
 
-function Row({ item, muted, onClick }: { item: AttentionItem; muted: boolean; onClick: (item: AttentionItem) => void }) {
+function Row({ item, muted, onClick, onDismiss }: {
+  item: AttentionItem
+  muted: boolean
+  onClick: (item: AttentionItem) => void
+  /** When provided, render a per-row dismiss (×) that tombstones this generation
+   *  WITHOUT triggering the row's navigation (stops propagation). Needs-you only. */
+  onDismiss?: (item: AttentionItem) => void
+}) {
   const accent = tierColor(item.tier)
   const accentVar = accent ? badgeColorVar(accent) : null
   // Recent rows are muted: they keep their original tier (a seen handoff stays
@@ -60,8 +67,21 @@ function Row({ item, muted, onClick }: { item: AttentionItem; muted: boolean; on
         <span className="text-ui-md font-medium truncate flex-1" style={{ color: muted ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}>
           {item.title}
         </span>
-        <span className="text-ui-xs shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
-          {timeAgo(item.tsMs)}
+        <span className="flex items-center gap-1.5 shrink-0">
+          <span className="text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>
+            {timeAgo(item.tsMs)}
+          </span>
+          {onDismiss && (
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={(e) => { e.stopPropagation(); onDismiss(item) }}
+              className="flex items-center cursor-pointer opacity-60 hover:opacity-100"
+              style={{ color: 'var(--sol-text-faint)' }}
+            >
+              <X size={12} />
+            </button>
+          )}
         </span>
       </div>
       <div className="text-ui-sm truncate mt-0.5" style={{ color: 'var(--sol-text)' }}>
@@ -81,6 +101,7 @@ function Section({
   action,
   muted = false,
   onClickItem,
+  onDismissItem,
 }: {
   label: string
   Icon: typeof AlertTriangle
@@ -89,6 +110,7 @@ function Section({
   action?: React.ReactNode
   muted?: boolean
   onClickItem: (item: AttentionItem) => void
+  onDismissItem?: (item: AttentionItem) => void
 }) {
   if (items.length === 0) return null
   const toneVar = tone ? badgeColorVar(tone) : null
@@ -107,7 +129,7 @@ function Section({
         </span>
         {action}
       </div>
-      {items.map(item => <Row key={item.generation} item={item} muted={muted} onClick={onClickItem} />)}
+      {items.map(item => <Row key={item.generation} item={item} muted={muted} onClick={onClickItem} onDismiss={onDismissItem} />)}
     </div>
   )
 }
@@ -117,6 +139,7 @@ export function NotificationPanel({
   ready,
   recent,
   onClickItem,
+  onDismissNeedsYou,
   onClear,
   onMarkAllRead,
   onClose,
@@ -125,6 +148,7 @@ export function NotificationPanel({
   ready: AttentionItem[]
   recent: AttentionItem[]
   onClickItem: (item: AttentionItem) => void
+  onDismissNeedsYou: (item: AttentionItem) => void
   onClear: () => void
   onMarkAllRead: () => void
   onClose: () => void
@@ -137,6 +161,19 @@ export function NotificationPanel({
   }, [])
 
   const empty = needsYou.length === 0 && ready.length === 0 && recent.length === 0
+
+  // "Mark all read" clears both actionable sections (dismiss surfaced Needs-you +
+  // ack Ready). Render it once, on the TOPMOST non-empty actionable section, so it
+  // is reachable in a Needs-you-only snapshot (not just when Ready has rows).
+  const markAllReadButton = (
+    <button
+      onClick={(e) => { e.stopPropagation(); onMarkAllRead() }}
+      className="text-ui-sm cursor-pointer hover:underline"
+      style={{ color: 'var(--sol-text)' }}
+    >
+      Mark all read
+    </button>
+  )
 
   return (
     <DialogShell
@@ -160,22 +197,22 @@ export function NotificationPanel({
           </div>
         ) : (
           <>
-            <Section label="Needs you" Icon={AlertTriangle} tone="red" items={needsYou} onClickItem={onClickItem} />
+            <Section
+              label="Needs you"
+              Icon={AlertTriangle}
+              tone="red"
+              items={needsYou}
+              onClickItem={onClickItem}
+              onDismissItem={onDismissNeedsYou}
+              action={needsYou.length > 0 ? markAllReadButton : undefined}
+            />
             <Section
               label="Ready"
               Icon={CornerDownLeft}
               tone="yellow"
               items={ready}
               onClickItem={onClickItem}
-              action={ready.length > 0 ? (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onMarkAllRead() }}
-                  className="text-ui-sm cursor-pointer hover:underline"
-                  style={{ color: 'var(--sol-text)' }}
-                >
-                  Mark all read
-                </button>
-              ) : undefined}
+              action={needsYou.length === 0 && ready.length > 0 ? markAllReadButton : undefined}
             />
             <Section
               label="Recent"

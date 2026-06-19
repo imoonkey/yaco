@@ -134,6 +134,27 @@ async function postClear(project: string): Promise<void> {
   }
 }
 
+/** Generation-exact ACT dismiss. The server requires an exact `needsYou` match and
+ *  returns 409 on a stale click (the row resolved/re-entered); the caller refreshes
+ *  the snapshot either way (204 drops the row, 409 reconciles), so a 409 is not an
+ *  error to surface — it throws and the caller swallows it. */
+async function postDismiss(
+  project: string,
+  kind: 'session' | 'task',
+  key: string,
+  generation: string,
+): Promise<void> {
+  const res = await fetch('/api/attention/dismiss', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project, kind, key, generation }),
+  })
+  if (!res.ok) {
+    const resBody = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, resBody)
+  }
+}
+
 // ── Interrupt presentation ─────────────────────────────────────────────────────
 
 function itemTitle(item: AttentionItem): string {
@@ -154,6 +175,10 @@ export interface UseAttention {
   ackSession: (project: string, sessionName: string) => void
   ackTask: (project: string, taskId: string) => void
   clear: (project: string) => void
+  /** Dismiss a live ACT (Needs-you) row by its exact generation (POST
+   *  `/attention/dismiss`); refreshes the feed on completion (204 drops the row,
+   *  409 means it resolved/re-entered — reconciled quietly). */
+  dismissNeedsYou: (item: AttentionItem) => void
   /** Request OS notification permission. Call ONLY from a user gesture (the bell);
    *  NEVER on mount (M13). No-op when unsupported / already decided. */
   requestPermission: () => void
@@ -281,13 +306,19 @@ export function useAttention(
       if (seenInterrupts.current.has(item.generation)) continue
       seenInterrupts.current.add(item.generation)
       if (isActivelyViewing(item)) {
-        // Suppress + auto-ack the actively-viewed target's generation so it does
-        // not linger unacked in Ready/badges. Ack the subject's own scope: a task
-        // interrupt must clear the TASK watermark, not a session one. Record the
-        // generation so the F3 engage-ack effect doesn't re-POST the same ack.
-        engagedAcks.current.add(item.generation)
-        if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
-        else ackTask(item.subject.project, item.subject.taskId)
+        // Suppress the toast for the actively-viewed target either way. Only a Ready
+        // (REVIEW) row auto-acks — viewing it IS reading it. An actively-viewed ACT
+        // row (crashed/blocked Needs-you) must NOT be auto-dismissed: dismiss is a
+        // generation tombstone the user owns, so it requires an explicit × /
+        // mark-all-read (design §"Active-viewing must not auto-dismiss ACT"). Ack the
+        // subject's own scope so a task interrupt clears the TASK watermark, not a
+        // session one; record the generation so the F3 engage-ack effect doesn't
+        // re-POST the same ack.
+        if (item.group === 'ready') {
+          engagedAcks.current.add(item.generation)
+          if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
+          else ackTask(item.subject.project, item.subject.taskId)
+        }
         continue
       }
       fresh.push(item)
@@ -339,6 +370,28 @@ export function useAttention(
   const loadMore = useCallback(() => {
     if (nextBeforeRef.current == null) return
     loadFeed(nextBeforeRef.current)
+  }, [loadFeed])
+
+  // Dismiss a live ACT (Needs-you) row by its EXACT generation. Maps the row's
+  // subject → `{ project, kind, key }` and POSTs `/attention/dismiss` with its
+  // generation. On 204 we optimistically remove the clicked row and drop the bell
+  // badge by one immediately — so "× drops the badge by one" holds even if the SSE
+  // push / feed reconcile lags — THEN loadFeed() reconciles the authoritative
+  // snapshot. On 409 the row had resolved/re-entered: skip the optimistic drop and
+  // let the refresh restore truth. Either way a 409 is reconciled silently.
+  const dismissNeedsYou = useCallback((item: AttentionItem) => {
+    const s = item.subject
+    const key = s.kind === 'session' ? s.sessionName : s.taskId
+    postDismiss(s.project, s.kind, key, item.generation)
+      .then(() => {
+        setSnapshot((prev) => {
+          const needsYou = prev.needsYou.filter((it) => it.generation !== item.generation)
+          if (needsYou.length === prev.needsYou.length) return prev
+          return { ...prev, needsYou, global: { ...prev.global, count: Math.max(0, prev.global.count - 1) } }
+        })
+      })
+      .catch(() => { /* 409 stale (resolved/re-entered) or transient — refresh is truth */ })
+      .finally(() => loadFeed())
   }, [loadFeed])
 
   // Live: the `attention` SSE push (hidden-safe). Registered once.
@@ -411,5 +464,5 @@ export function useAttention(
     Notification.requestPermission().then((p) => setPermission(p)).catch(() => { /* ignore */ })
   }, [])
 
-  return { snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, clear, requestPermission, permission }
+  return { snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, clear, dismissNeedsYou, requestPermission, permission }
 }
