@@ -373,6 +373,143 @@ describe('ACT disposition — always-page conditions', () => {
   })
 })
 
+// ── History tense — every ACT Recent row is muted past-tense (T3) ────────────
+
+describe('history tense — ACT Recent rows are tier:fyi + past-tense', () => {
+  const T = '2026-06-19T11:59:00.000Z'
+  const LATER = '2026-06-19T11:59:30.000Z'
+
+  const blockEvent = (blockReason?: string) =>
+    ev({
+      id: sessionGenerationId('session_blocked', 'proj', 's', T),
+      ts: T,
+      kind: 'session_blocked',
+      sessionId: 's',
+      payload: { sessionName: 's', ...(blockReason ? { blockReason } : {}) },
+    })
+
+  // ── Dismissed-live ACT rows: still-live condition the user dismissed → ACKED,
+  //    so it falls to Recent muted past-tense (never the live open-question copy).
+  it('dismissed-live session_blocked (question) → fyi "Had a question", never "Has a question"', () => {
+    const gen = sessionGenerationId('session_blocked', 'proj', 's', T)
+    const snap = projectAttention(
+      input({
+        events: [blockEvent('question')],
+        sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: T, spawnedBy: 'user:web' })],
+        dismissedActGen: new Set([gen]),
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.find((r) => r.generation === gen)).toMatchObject({
+      type: 'session_blocked',
+      tier: 'fyi',
+      title: 'Had a question',
+    })
+  })
+
+  it('dismissed-live session_blocked (permission) → fyi "Was blocked", never "Needs approval"', () => {
+    const gen = sessionGenerationId('session_blocked', 'proj', 's', T)
+    const snap = projectAttention(
+      input({
+        events: [blockEvent('permission')],
+        sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: T, spawnedBy: 'user:web' })],
+        dismissedActGen: new Set([gen]),
+      }),
+    )
+    const row = snap.recent.find((r) => r.generation === gen)
+    expect(row).toMatchObject({ tier: 'fyi', title: 'Was blocked' })
+    expect(row?.title).not.toBe('Needs approval')
+  })
+
+  it('dismissed-live session_crashed → fyi past-tense crash copy', () => {
+    const gen = sessionGenerationId('session_crashed', 'proj', 'w', T)
+    const snap = projectAttention(
+      input({
+        events: [ev({ id: gen, ts: T, kind: 'session_crashed', sessionId: 'w', payload: { sessionName: 'w', exitCode: 1 } })],
+        sessions: [sess({ name: 'w', status: 'crashed', statusEnteredAt: T, exitCode: 1, spawnedBy: 'user:web' })],
+        dismissedActGen: new Set([gen]),
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.find((r) => r.generation === gen)).toMatchObject({
+      type: 'session_crashed',
+      tier: 'fyi',
+      title: 'Crashed (exit 1)',
+    })
+  })
+
+  it('dismissed-live task_blocked → fyi "Was blocked: <id>", never "Task blocked: <id>"', () => {
+    const gen = taskGenerationId('task_blocked', 'proj', 'uxr', T)
+    const snap = projectAttention(
+      input({
+        events: [ev({ id: gen, ts: T, kind: 'task_blocked', taskId: 'uxr', payload: { taskId: 'uxr' } })],
+        tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: T })],
+        dismissedActGen: new Set([gen]),
+      }),
+    )
+    const row = snap.recent.find((r) => r.generation === gen)
+    expect(row).toMatchObject({ type: 'task_blocked', tier: 'fyi', title: 'Was blocked: uxr' })
+    expect(row?.title).not.toBe('Task blocked: uxr')
+  })
+
+  // ── Resolved transitions: the live condition left blocked (no durable "resumed"
+  //    edge exists), so the past block event falls to Recent past-tense.
+  it('blocked→processing (no idle edge) → past-tense in Recent, not needsYou', () => {
+    const gen = sessionGenerationId('session_blocked', 'proj', 's', T)
+    const snap = projectAttention(
+      input({
+        events: [blockEvent('permission')],
+        sessions: [sess({ name: 's', status: 'processing', statusEnteredAt: LATER, spawnedBy: 'user:web' })],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.find((r) => r.generation === gen)).toMatchObject({ tier: 'fyi', title: 'Was blocked' })
+  })
+
+  it('blocked→gone (session absent from live) → past-tense in Recent', () => {
+    const gen = sessionGenerationId('session_blocked', 'proj', 's', T)
+    const snap = projectAttention(input({ events: [blockEvent('permission')], sessions: [] }))
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.find((r) => r.generation === gen)).toMatchObject({ tier: 'fyi', title: 'Was blocked' })
+  })
+
+  for (const state of ['running', 'cancelled', 'done'] as const) {
+    it(`task blocked→${state} → past-tense "Was blocked: <id>" in Recent`, () => {
+      const gen = taskGenerationId('task_blocked', 'proj', 'uxr', T)
+      const snap = projectAttention(
+        input({
+          events: [ev({ id: gen, ts: T, kind: 'task_blocked', taskId: 'uxr', payload: { taskId: 'uxr' } })],
+          tasks: [task({ id: 'uxr', state, stateEnteredAt: LATER })],
+        }),
+      )
+      expect(snap.needsYou).toHaveLength(0)
+      expect(snap.recent.find((r) => r.generation === gen)).toMatchObject({
+        type: 'task_blocked',
+        tier: 'fyi',
+        title: 'Was blocked: uxr',
+      })
+    })
+  }
+
+  // ── A live SUPPRESSED delegated block is held out of Recent (liveOutOfRecent),
+  //    even though a durable block event exists — it must not leak into history.
+  it('a live SUPPRESSED delegated block is absent from Recent (not leaked as any tense)', () => {
+    const childGen = sessionGenerationId('session_blocked', 'proj', 'child', T)
+    const snap = projectAttention(
+      input({
+        nowMs: Date.parse(T) + 1_000, // fresh → parent owns it → SUPPRESS
+        events: [ev({ id: childGen, ts: T, kind: 'session_blocked', sessionId: 'child', payload: { sessionName: 'child' } })],
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: T, spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'parent', status: 'processing', statusEnteredAt: T, spawnedBy: 'user:web' }),
+        ],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.some((r) => r.generation === childGen)).toBe(false)
+  })
+})
+
 // ── REVIEW: owned idle, delegated FYI, unread math, supersede ────────────────
 
 describe('REVIEW — session_idle owner routing', () => {

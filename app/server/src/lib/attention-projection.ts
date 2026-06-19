@@ -141,6 +141,12 @@ export interface ProjectionInput {
 const SESSION_KINDS = new Set(['session_idle', 'session_blocked', 'session_crashed'])
 const TASK_KINDS = new Set(['task_done', 'task_blocked'])
 
+/** ACT (critical/action) types. Any ACT row that reaches Recent is — by
+ *  construction (`liveOutOfRecent` holds out every live NEEDS_YOU/SUPPRESSED
+ *  generation) — acked-while-live or resolved, so `buildHistory` mutes it to
+ *  `fyi` + past tense rather than the open-question present tense. */
+const ACT_TYPES = new Set<AttentionType>(['session_crashed', 'session_blocked', 'task_blocked'])
+
 export function sessionGenerationId(
   type: 'session_idle' | 'session_blocked' | 'session_crashed',
   project: string,
@@ -239,6 +245,16 @@ function sessionTitle(type: AttentionType, exitCode?: number, blockReason?: stri
     return 'Needs you'
   }
   return 'Your turn' // session_idle (owned)
+}
+
+/** Muted, PAST-TENSE copy for a session ACT row in Recent (design §"History
+ *  tense"). Mirrors `sessionTitle`'s signature; a blocked/crashed row only ever
+ *  reaches Recent once resolved or acked, so it reads as completed, never the
+ *  open-question present tense. */
+function sessionPastTitle(type: AttentionType, exitCode?: number, blockReason?: string): string {
+  if (type === 'session_crashed') return exitCode !== undefined ? `Crashed (exit ${exitCode})` : 'Crashed'
+  // session_blocked (the only other ACT session type that reaches Recent).
+  return blockReason === 'question' ? 'Had a question' : 'Was blocked'
 }
 
 // ── Live-condition indices ──────────────────────────────────────────────────
@@ -504,9 +520,16 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
  *  idle) lives only here. Clear hides read/resolved/FYI rows with
  *  `tsMs ≤ recentClearedAt[proj]`. `liveOutOfRecent` holds out every ACT
  *  generation that is currently NEEDS_YOU or SUPPRESSED (shown live / nowhere);
- *  an ACKED-but-still-live condition is NOT in it, so it shows once in Recent. */
+ *  an ACKED-but-still-live condition is NOT in it, so it shows once in Recent.
+ *
+ *  Every ACT-typed row (`session_blocked`/`session_crashed`/`task_blocked`) that
+ *  reaches Recent is — by construction — acked-while-live or resolved, so it
+ *  renders `tier:'fyi'` + past tense unconditionally (no liveness check needed).
+ *  `live` is threaded in for any session/task copy details the caller already
+ *  has (design §"History tense"). */
 function buildHistory(
   input: ProjectionInput,
+  live: LiveIndex,
   liveOutOfRecent: Set<string>,
   readyGenerations: Set<string>,
 ): AttentionItem[] {
@@ -539,19 +562,29 @@ function buildHistory(
     const cleared = recentClearedAt[ev.projectId]
     if (cleared !== undefined && tsMs <= cleared) continue
 
-    const tier = type === 'session_idle' && (m.owner === 'DELEGATED') ? 'fyi' : TIER_BY_TYPE[type]
+    // ACT rows in Recent are muted past-tense (`fyi`) unconditionally; non-ACT
+    // rows keep their tier (delegated idle → fyi) and present-tense copy.
+    const isAct = ACT_TYPES.has(type)
+    const tier: AttentionTier = isAct
+      ? 'fyi'
+      : type === 'session_idle' && m.owner === 'DELEGATED'
+        ? 'fyi'
+        : TIER_BY_TYPE[type]
+    const title =
+      subject.kind === 'session'
+        ? isAct
+          ? sessionPastTitle(type, m.exitCode, m.blockReason)
+          : sessionTitle(type, m.exitCode, m.blockReason)
+        : isAct
+          ? `Was blocked: ${subject.taskId}` // task_blocked
+          : `Task done: ${subject.taskId}` // task_done
     out.push({
       generation,
       type,
       tier,
       group: 'recent',
       subject,
-      title:
-        subject.kind === 'session'
-          ? sessionTitle(type, m.exitCode, m.blockReason)
-          : type === 'task_done'
-            ? `Task done: ${subject.taskId}`
-            : `Task blocked: ${subject.taskId}`,
+      title,
       message: `${ev.projectId} · ${subject.kind === 'session' ? subject.sessionName : subject.taskId}`,
       tsMs,
       count: 1,
@@ -670,7 +703,7 @@ export function projectAttention(input: ProjectionInput): AttentionSnapshot {
   const { ready } = buildReview(input, live)
   const readyGenerations = new Set(ready.map((i) => i.generation))
 
-  const recent = buildHistory(input, liveOutOfRecent, readyGenerations)
+  const recent = buildHistory(input, live, liveOutOfRecent, readyGenerations)
 
   const { badgesByProject, badgesBySession, global } = buildBadges(
     needsYou,
