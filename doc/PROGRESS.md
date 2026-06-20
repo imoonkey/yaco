@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-19: Watcher inotify-exhaustion fix (chokidar prune) + server as a service
+
+**What changed:**
+- `project-watcher.ts` per-project watcher moved from `fs.watch({recursive:true})` to **chokidar v3** with an `ignored` predicate that prunes `node_modules`, `.git/{objects,logs}` (by path segment), and gitignored trees during the walk — those dirs never get an inotify watch. Gitignore loads before the watcher; `.worktrees` + immediate children stay watched (worktrees channel); `watchProject` awaits chokidar `ready` (bounded) and guards watch/unwatch races with a per-path generation token. Added `chokidar` to `app/server` deps (root lockfile).
+- Root `npm` scripts now wrap `app/scripts/services.sh` (`dev`/`restart`/`stop`/`status`/`logs`) so server+UI run as the existing `yaco-{server,ui}` systemd/launchd services, not a tmux-hosted dev process; `dev:local` keeps the foreground path. Corrected stale `workflow-*` unit names in docs (real units are `yaco-*`).
+
+**Why:**
+- Recursive `fs.watch` over 14 projects installed an inotify watch per subdir incl. `node_modules` + gitignored churn (cproxy `logs/` alone = 138k dirs), hitting the ~1M `max_user_watches` ceiling → `ENOSPC` → wedged event loop → white screen (recurred 3×). Pruned: ~976k → ~15k watches.
+- The server had been run manually inside a tmux session sharing the default socket with agent tmux sessions, so a `tmux kill-server`/restart took down every agent. Agents inherit the spawner’s `$TMUX`; running the server as a service (no `$TMUX`) keeps agents on the default socket — terminal-accessible and decoupled.
+
+**Key files:** app/server/src/lib/project-watcher.ts, app/server/package.json, package.json, package-lock.json, doc/main/app/backend/libs.md, doc/dev/app/workflow.md
+**Verification:** app/server 653/653 tests; codex review (2 rounds) — all MAJOR/MINOR resolved; live 14-project workspace (incl. cproxy+quant) at ~15k watches, health 200, no ENOSPC; `npm run restart` via services.sh → health 200.
+**Commit:** f33d9872 (+ this docs commit)
+**Blockers:** None
+
 ## 2026-06-17: `agent history` — windowed contract, origin enrichment, token size signal
 
 **What changed:**

@@ -183,14 +183,15 @@ Low-frequency background **GC + safety** pass. Idle/blocked/crashed/task edge pr
 - Runs every 60 seconds (first run immediately). Calls `fetchAllSessionsFromCli(projects)` (`yaco agent list --all --json`) — the authoritative reconciled snapshot; the yaco agent runtime owns GC (deletes confirmed-dead state files, **never** a `crashed` tombstone), liveness, staleness, sessionId backfill, and stale-status correction.
 - Emits `refresh:sessions` if drift detected (missed watcher events).
 
-### project-watcher.ts (~180 lines)
+### project-watcher.ts (~340 lines)
 
-Recursive filesystem watcher per project directory.
+Per-project filesystem watcher (chokidar) + global session/projects watchers.
 
-**Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
+**Exports**: `startProjectWatchers()`, `stopProjectWatchers()`, `watchProject()`, `unwatchProject()`
 
-- Registers lightweight global watchers first (`${YACO_HOME:-~/.yaco}/projects.json`, `${YACO_HOME:-~/.yaco}/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
-- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `${YACO_HOME:-~/.yaco}/sessions` (yaco agent state root, resolved via `constants.AGENT_SESSIONS_DIR` → `sessionsDir()`)
+- Registers lightweight global watchers first (`${YACO_HOME:-~/.yaco}/projects.json`, `${YACO_HOME:-~/.yaco}/sessions`), then installs per-project watchers.
+- Each project is watched with **chokidar v3**, not `fs.watch({recursive:true})`. An `ignored` predicate prunes `node_modules`, `.git/{objects,logs}` (by path segment, so nested copies are caught), and every gitignored tree (build output, logs, data dumps) **during the walk** — so those dirs never get an inotify watch. This is the fix for inotify exhaustion: a recursive `fs.watch` over churny projects (e.g. cproxy’s 138k-dir `logs/`) hit the ~1M `max_user_watches` ceiling → `ENOSPC` → wedged event loop → white screen. Pruned, the same 14-project workspace drops from ~976k watches to ~15k.
+- The `.gitignore` is loaded **before** the watcher is created so the first walk already prunes; directory-only patterns (`dist/`) are matched via chokidar’s stats arg + a trailing slash. `.worktrees` and its immediate children stay watched (gitignored though they are) so the `worktrees` channel still fires. `watchProject()` awaits chokidar `ready` (bounded) so writes are observed once it resolves, and guards watch/unwatch races with a per-path generation token. The global session watcher still uses `fs.watch` on `${YACO_HOME:-~/.yaco}/sessions` (`constants.AGENT_SESSIONS_DIR` → `sessionsDir()`)
 - Routes project-local filename changes to SSE refresh channels: `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global agent session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
@@ -198,7 +199,7 @@ Recursive filesystem watcher per project directory.
 - The sessions-dir watcher **re-arms** if `AGENT_SESSIONS_DIR` does not exist at startup (the agent runtime creates it on the first session): it polls until the dir appears, then arms the real watcher and kicks one refresh + engine recompute (a late-armed dir may already hold sessions written before `fs.watch` attached). Without this the change-driven engine has a cold-start blind spot.
 - Also watches `${YACO_HOME}/projects.json` for project list changes
 - 200ms debounce on all events to batch rapid changes
-- Per-project `.gitignore` filtering: loads patterns via `gitignore.ts`, skips SSE events for ignored paths (prevents watcher churn in large projects)
+- Per-project `.gitignore` drives both OS-level watch pruning (above) and a defense-in-depth SSE filter via `gitignore.ts`. A pruned dir that a later `.gitignore` edit unignores is not retroactively watched until the next restart.
 - `.gitignore` changes trigger pattern reload + filetree refresh
 - `startProjectWatchers()` is async (primes the agent session path cache and loads gitignore patterns at startup)
 

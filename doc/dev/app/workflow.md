@@ -31,10 +31,19 @@ doc/progress/app.md # Imported app history
 ## Running
 
 ```bash
-# Both server + UI (concurrent, foreground)
+# Restart the long-running services (server + UI) and tail their logs.
+# The server runs as a systemd/launchd service, NOT inside tmux — see
+# Long-running services below for why.
 npm run dev
 
-# Or separately:
+# Service control (all wrap app/scripts/services.sh, cross-platform):
+npm run restart       # restart both services
+npm run stop          # stop both (free :3001 / :5173)
+npm run status        # status of both
+npm run logs          # tail both
+
+# Foreground (no service manager — quick local debugging):
+npm run dev:local     # server + UI concurrent in the terminal
 npm run dev:server    # Backend on :3001 (tsx watch)
 npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 
@@ -60,7 +69,7 @@ to `agent-config/global`, and updates `${YACO_HOME:-~/.yaco}/projects.json`.
 
 > ⚠️ `tsx watch` only reliably reloads on changes to the entry file (`app/server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, redeployed, behavior unchanged". When in doubt, `touch app/server/src/index.ts` to force a respawn, or check `ps -o pid,etime,cmd -p $(pgrep -f 'tsx.*src/index.ts' | tail -1)` to see how old the running child is.
 
-The backend starts runtime watchers only after `:3001` is successfully bound. If two `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing recursive project watchers; the active server keeps the `${YACO_HOME:-~/.yaco}/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
+The backend starts runtime watchers only after `:3001` is successfully bound. If two `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing the project file watchers; the active server keeps the `${YACO_HOME:-~/.yaco}/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
 
 `npm run start:app` is the intended local shape for installed/mobile use: it builds `app/ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
@@ -70,8 +79,8 @@ Both desktop (Linux) and laptop (macOS) run the dev servers as long-running OS-m
 
 | Platform | Manager | Unit/Plist location |
 |---|---|---|
-| Linux (desktop) | systemd user units | `~/.config/systemd/user/workflow-{server,ui}.service` |
-| macOS (laptop) | launchd LaunchAgents | `~/Library/LaunchAgents/com.workflow.{server,ui}.plist` |
+| Linux (desktop) | systemd user units | `~/.config/systemd/user/yaco-{server,ui}.service` |
+| macOS (laptop) | launchd LaunchAgents | `~/Library/LaunchAgents/com.yaco.{server,ui}.plist` |
 
 Both are wrapped by `app/scripts/services.sh` (auto-detects OS):
 
@@ -102,14 +111,22 @@ The dev config also wires two remote-access perf knobs (dev-only — `apply: 'se
 - **`compression` middleware** on `server.middlewares` gzips TS/TSX/CSS responses (threshold 512 B). A custom `filter` short-circuits `text/event-stream` so proxied SSE (`/api/notifications/stream`) is never buffered — keeping live UI refresh signals (filetree, sessions, tasks) flowing per-event. HMR uses WebSocket and is untouched.
 - **`server.warmup.clientFiles`** pre-transforms `main.tsx`, `App.tsx`, and `workspace/WorkspaceScreen.tsx` at server start to eliminate first-hit transform latency on cold load.
 
-When iterating in the foreground (`npm run dev`), stop the services first to free the ports:
+When iterating in the foreground, stop the services first to free the ports, then use `npm run dev:local`:
 
 ```bash
-app/scripts/services.sh stop
-npm run dev
+npm run stop       # app/scripts/services.sh stop
+npm run dev:local
 # ... when done:
-app/scripts/services.sh start
+npm run restart    # app/scripts/services.sh restart
 ```
+
+> **Run the server as a service, never inside tmux.** The server spawns agent
+> tmux sessions with `tmux new-session` (no `-L`), which inherit the spawner’s
+> `$TMUX` and land on whatever socket the server lives on. If the server itself
+> runs inside a tmux session it shares that tmux server’s fate — a `tmux
+> kill-server` (or that session dying) then takes down every agent with it. Run
+> it as a systemd/launchd service (no `$TMUX`) so agents land on the default
+> socket: terminal-accessible and decoupled from server restarts.
 
 ## Configuration
 
