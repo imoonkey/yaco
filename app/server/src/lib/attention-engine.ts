@@ -90,6 +90,17 @@ interface TaskCacheEntry {
   stateEnteredAt?: string
 }
 
+/** A pending debounced `session_blocked` edge. `latestSession` is refreshed on
+ *  every recompute while the same generation (`enteredAt`) is still blocked, so
+ *  the timer appends the FRESHEST snapshot — capturing a notice that filled AFTER
+ *  the first blocked observation (events are idempotent by generation id, so a
+ *  late notice could never be corrected by a second append). */
+interface BlockedPending {
+  enteredAt: string
+  latestSession: LiveSession
+  timer: ReturnType<typeof setTimeout>
+}
+
 function sKey(project: string, name: string): string {
   return `${project}::${name}`
 }
@@ -108,7 +119,7 @@ export class AttentionEngine {
   private recomputeInFlight = false
   private recomputeQueued = false
   private safetyTimer: ReturnType<typeof setInterval> | null = null
-  private blockedTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private blockedTimers = new Map<string, BlockedPending>()
 
   constructor(deps: Partial<AttentionEngineDeps> = {}) {
     this.deps = {
@@ -135,7 +146,7 @@ export class AttentionEngine {
 
   stop(): void {
     if (this.safetyTimer) { clearInterval(this.safetyTimer); this.safetyTimer = null }
-    for (const t of this.blockedTimers.values()) clearTimeout(t)
+    for (const p of this.blockedTimers.values()) clearTimeout(p.timer)
     this.blockedTimers.clear()
   }
 
@@ -146,7 +157,7 @@ export class AttentionEngine {
     this.knownGenerations.clear()
     this.liveEdgeGenerations.clear()
     this.booted = false
-    for (const t of this.blockedTimers.values()) clearTimeout(t)
+    for (const p of this.blockedTimers.values()) clearTimeout(p.timer)
     this.blockedTimers.clear()
   }
 
@@ -342,23 +353,49 @@ export class AttentionEngine {
 
   private scheduleBlockedEdge(s: LiveSession): void {
     const key = sKey(s.project, s.name)
-    if (this.blockedTimers.has(key)) return
     const enteredAt = s.statusEnteredAt!
-    const timer = setTimeout(() => {
+    const generation = sessionGenerationId('session_blocked', s.project, s.name, enteredAt)
+    // Already durably recorded — appended live this run OR boot-discovered. The
+    // edge exists; scheduling again would make a persistently-blocked session
+    // re-append (idempotent no-op) + rebroadcast every debounce interval forever,
+    // because the timer deletes its entry before the post-append recompute lands.
+    if (this.liveEdgeGenerations.has(generation) || this.knownGenerations.has(generation)) {
+      this.cancelBlockedEdge(key)
+      return
+    }
+    const existing = this.blockedTimers.get(key)
+    if (existing) {
+      if (existing.enteredAt === enteredAt) {
+        // Same generation still blocked — refresh the snapshot so the pending
+        // timer appends the latest (a notice may have filled since it was
+        // scheduled). Do NOT reset the timer: the debounce window is anchored to
+        // the first observation.
+        existing.latestSession = s
+        return
+      }
+      // A new generation (rapid re-block) — the old timer would no-op against the
+      // new statusEnteredAt and never schedule this one until the safety tick.
+      // Cancel it and reschedule for the new generation.
+      clearTimeout(existing.timer)
       this.blockedTimers.delete(key)
-      // Confirm the session is STILL blocked on the same generation before appending.
+    }
+    const timer = setTimeout(() => {
+      const pending = this.blockedTimers.get(key)
+      this.blockedTimers.delete(key)
+      // Confirm the session is STILL blocked on the same generation before
+      // appending, then append the FRESHEST captured snapshot.
       const cur = this.sessionCache.get(key)
-      if (cur?.status === 'blocked' && cur.statusEnteredAt === enteredAt) {
-        void this.appendSessionEdge('session_blocked', s, this.deps.now()).then(() => void this.recompute())
+      if (pending && cur?.status === 'blocked' && cur.statusEnteredAt === enteredAt) {
+        void this.appendSessionEdge('session_blocked', pending.latestSession, this.deps.now()).then(() => void this.recompute())
       }
     }, BLOCKED_DEBOUNCE_MS)
     timer.unref?.()
-    this.blockedTimers.set(key, timer)
+    this.blockedTimers.set(key, { enteredAt, latestSession: s, timer })
   }
 
   private cancelBlockedEdge(key: string): void {
-    const t = this.blockedTimers.get(key)
-    if (t) { clearTimeout(t); this.blockedTimers.delete(key) }
+    const p = this.blockedTimers.get(key)
+    if (p) { clearTimeout(p.timer); this.blockedTimers.delete(key) }
   }
 
   // ── Edge append (idempotent; marks the generation as a live edge → toast) ───
@@ -377,7 +414,7 @@ export class AttentionEngine {
       type,
       generation,
       { kind: 'session', project: s.project, sessionName: s.name },
-      { exitCode: s.exitCode, blockReason: s.blockReason, owner },
+      { exitCode: s.exitCode, blockReason: s.blockReason, owner, notice: s.notice },
       Date.parse(s.statusEnteredAt!) || nowMs,
     )
     this.liveEdgeGenerations.add(generation)
@@ -394,7 +431,7 @@ export class AttentionEngine {
       type,
       generation,
       { kind: 'task', project: t.project, taskId: t.id, sessionNames: t.agents },
-      { agents: t.agents },
+      { agents: t.agents, notice: t.notice },
       Date.parse(t.stateEnteredAt!) || nowMs,
     )
     this.liveEdgeGenerations.add(generation)
@@ -405,7 +442,7 @@ export class AttentionEngine {
     type: AttentionType,
     generation: string,
     subject: { kind: 'session'; project: string; sessionName: string } | { kind: 'task'; project: string; taskId: string; sessionNames: string[] },
-    meta: { exitCode?: number; blockReason?: string; agents?: string[]; owner?: 'OWNED' | 'DELEGATED' },
+    meta: { exitCode?: number; blockReason?: string; agents?: string[]; owner?: 'OWNED' | 'DELEGATED'; notice?: string },
     tsMs: number,
   ): Promise<void> {
     const payload: Record<string, unknown> = {}
@@ -415,6 +452,7 @@ export class AttentionEngine {
     if (meta.blockReason !== undefined) payload.blockReason = meta.blockReason
     if (meta.agents !== undefined) payload.agents = meta.agents
     if (meta.owner !== undefined) payload.owner = meta.owner
+    if (meta.notice !== undefined) payload.notice = meta.notice
 
     await this.deps.appendEvent(projectId, {
       id: generation,

@@ -13,6 +13,7 @@
 import { resolve } from 'path'
 import { readYacoProjectPaths } from '@yaco/cli/core/paths'
 import { loadTaskStore } from '@yaco/cli/core/task'
+import { clampNotice } from '@yaco/cli/core/agent'
 import { loadProjects } from './projects'
 import { readAllSessionsFromStateFiles } from './agent'
 import { getPinnedSessions, getUnreadWatermarks, getDismissedActGenerations, removeDismissedActGenerations } from './ui-state'
@@ -48,12 +49,15 @@ async function readTasks(): Promise<LiveTask[]> {
       // Carry every task; the projector decides which states become ACT/REVIEW
       // (only `blocked` → ACT, `done` → REVIEW). `ready`/`running`/`cancelled`
       // are inert there but cheap to pass through.
+      // Line-2 for a task row: its title (or id when untitled/blank), clamped.
+      const titleNotice = typeof task.title === 'string' ? clampNotice(task.title) : ''
       out.push({
         project: project.name,
         id,
         state: task.state,
         stateEnteredAt: typeof task.stateEnteredAt === 'string' ? task.stateEnteredAt : undefined,
         agents: normalizeAgents(task.agents ?? (task as { agent?: unknown }).agent),
+        notice: titleNotice || clampNotice(id),
       })
     }
   }
@@ -72,6 +76,7 @@ async function readSessions(): Promise<LiveSession[]> {
     blockReason: r.blockReason,
     spawnedBy: r.spawnedBy,
     parentSession: r.parentSession,
+    notice: r.notice,
   }))
 }
 

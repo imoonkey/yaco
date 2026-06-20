@@ -859,3 +859,102 @@ describe('openAndReviewGenerations — boot reconciliation surface', () => {
     expect(byGen.get('session_crashed:proj::c:Tc')?.meta.exitCode).toBe(2)
   })
 })
+
+// ── Line-2 notice content (notif-content T2) ────────────────────────────────
+
+describe('line-2 notice — content over location template', () => {
+  it('blocked session message = the live notice', () => {
+    const snap = projectAttention(
+      input({ sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: 'T1', blockReason: 'question', notice: 'Ship v1 or wait?' })] }),
+    )
+    expect(snap.needsYou[0].message).toBe('Ship v1 or wait?')
+  })
+
+  it('blocked session with no notice falls back to proj · name', () => {
+    const snap = projectAttention(
+      input({ sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: 'T1', blockReason: 'permission' })] }),
+    )
+    expect(snap.needsYou[0].message).toBe('proj · s')
+  })
+
+  it('crashed session ignores a stray notice — keeps the location fallback', () => {
+    const snap = projectAttention(
+      input({ sessions: [sess({ name: 'w', status: 'crashed', statusEnteredAt: 'T2', exitCode: 1, notice: 'leftover' })] }),
+    )
+    expect(snap.needsYou[0].message).toBe('proj · w')
+  })
+
+  it('task_blocked message = the live task notice (title)', () => {
+    const snap = projectAttention(
+      input({ tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: 'T1', notice: 'User research synthesis' })] }),
+    )
+    expect(snap.needsYou[0].message).toBe('User research synthesis')
+  })
+
+  it('untitled task renders its id (runtime sets notice = id, not the location template)', () => {
+    const snap = projectAttention(
+      input({ tasks: [task({ id: 'T3', state: 'blocked', stateEnteredAt: 'T1', notice: 'T3' })] }),
+    )
+    expect(snap.needsYou[0].message).toBe('T3')
+  })
+
+  it('idle REVIEW message = the event-payload notice', () => {
+    const enteredAt = 'T5'
+    const gen = sessionGenerationId('session_idle', 'proj', 's', enteredAt)
+    const snap = projectAttention(
+      input({
+        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: enteredAt, spawnedBy: 'user:web' })],
+        events: [ev({ kind: 'session_idle', id: gen, sessionId: 's', ts: '2026-06-19T11:00:00.000Z', payload: { sessionName: 's', notice: 'All set — every test passes.' } })],
+      }),
+    )
+    expect(snap.ready[0].message).toBe('All set — every test passes.')
+  })
+
+  it('task_done REVIEW message = the event-payload notice', () => {
+    const gen = taskGenerationId('task_done', 'proj', 'uxr', 'T6')
+    const snap = projectAttention(
+      input({
+        events: [ev({ kind: 'task_done', id: gen, taskId: 'uxr', ts: '2026-06-19T11:00:00.000Z', payload: { taskId: 'uxr', agents: [], notice: 'Implement the parser' } })],
+      }),
+    )
+    expect(snap.ready.find((i) => i.type === 'task_done')?.message).toBe('Implement the parser')
+  })
+
+  it('history row reads notice from the payload (past-tense ACT)', () => {
+    const snap = projectAttention(
+      input({
+        sessions: [], // session gone → the blocked condition is not live → falls to Recent
+        events: [ev({ kind: 'session_blocked', id: 'session_blocked:proj::s:T1', sessionId: 's', ts: '2026-06-10T00:00:00.000Z', payload: { sessionName: 's', blockReason: 'question', notice: 'Which migration path?' } })],
+      }),
+    )
+    const row = snap.recent.find((r) => r.generation === 'session_blocked:proj::s:T1')
+    expect(row?.title).toBe('Had a question') // past tense
+    expect(row?.message).toBe('Which migration path?')
+  })
+
+  it('crashed history row ignores the payload notice', () => {
+    const snap = projectAttention(
+      input({
+        events: [ev({ kind: 'session_crashed', id: 'session_crashed:proj::w:T1', sessionId: 'w', ts: '2026-06-10T00:00:00.000Z', payload: { sessionName: 'w', exitCode: 2, notice: 'ignore me' } })],
+      }),
+    )
+    const row = snap.recent.find((r) => r.generation === 'session_crashed:proj::w:T1')
+    expect(row?.message).toBe('proj · w')
+  })
+
+  it('openAndReviewGenerations carries notice, keyed by project::name (no cross-project leak)', () => {
+    // Two projects share the session name "s": idle in a, blocked in b. A name-only
+    // lookup would hand b's generation a's meta. The project::name index must not.
+    const gens = openAndReviewGenerations(
+      input({
+        sessions: [
+          sess({ project: 'a', name: 's', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'user:web', notice: 'A idle notice' }),
+          sess({ project: 'b', name: 's', status: 'blocked', statusEnteredAt: 'T2', blockReason: 'question', notice: 'B blocked notice' }),
+        ],
+      }),
+    )
+    const bBlocked = gens.find((g) => g.generation === 'session_blocked:b::s:T2')
+    expect(bBlocked?.meta.notice).toBe('B blocked notice')
+    expect(bBlocked?.meta.blockReason).toBe('question')
+  })
+})

@@ -46,6 +46,8 @@ export interface AgentSession {
   pid: number
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
+  /** Transient line-2 content for the current attention state (CLI-captured). */
+  notice?: string
 }
 
 /** Entry of the `yaco agent providers --json` catalog — the CLI is the
@@ -112,6 +114,8 @@ export interface AgentSessionState {
   createdAt: string
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
+  /** Transient line-2 content for the current attention state (CLI-captured). */
+  notice?: string
 }
 
 const VALID_STATUSES = new Set(['starting', 'idle', 'processing', 'blocked', 'crashed'])

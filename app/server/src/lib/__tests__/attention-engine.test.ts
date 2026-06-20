@@ -357,3 +357,92 @@ describe('engine — start/stop lifecycle', () => {
     expect(() => engine.stop()).not.toThrow()
   })
 })
+
+// ── notice threading + F2 generation-aware blocked debounce (notif-content T2) ─
+
+describe('engine — notice in edge payload', () => {
+  it('blocked edge payload carries the live notice', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs), blockReason: 'question', notice: 'Ship v1 or wait?' })]
+    await engine.recompute()
+    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    const ev = (state.events.get('proj') ?? []).find((e) => e.kind === 'session_blocked')
+    expect(ev?.payload?.notice).toBe('Ship v1 or wait?')
+  })
+
+  it('task_done edge payload carries the task notice', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    state.tasks = [task({ id: 'uxr', state: 'done', stateEnteredAt: ISO(state.nowMs), agents: ['a'], notice: 'User research synthesis' })]
+    await engine.recompute()
+    const ev = (state.events.get('proj') ?? []).find((e) => e.kind === 'task_done')
+    expect(ev?.payload?.notice).toBe('User research synthesis')
+  })
+
+  it('(F2) a notice that fills AFTER the first blocked observation is in the appended payload', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const enteredAt = ISO(state.nowMs)
+    // First observation: blocked, NO notice yet (permission_prompt before PermissionRequest).
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: enteredAt, blockReason: 'permission' })]
+    await engine.recompute()
+    // The notice fills (PermissionRequest landed) BEFORE the 1.5s debounce fires.
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: enteredAt, blockReason: 'permission', notice: 'Bash: git push origin main' })]
+    await engine.recompute()
+    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    const ev = (state.events.get('proj') ?? []).find((e) => e.kind === 'session_blocked')
+    expect(ev?.payload?.notice).toBe('Bash: git push origin main')
+  })
+
+  it('(F2) a re-block with a new statusEnteredAt is not stranded until the safety tick', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const gen1 = ISO(state.nowMs)
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: gen1, blockReason: 'question', notice: 'Q1?' })]
+    await engine.recompute()
+    // Re-block with a fresh generation BEFORE the first debounce fires. The old
+    // timer must be cancelled + rescheduled, not left to no-op.
+    const gen2 = ISO(state.nowMs + 1)
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: gen2, blockReason: 'permission', notice: 'Bash: rm -rf build' })]
+    await engine.recompute()
+    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    const blocked = (state.events.get('proj') ?? []).filter((e) => e.kind === 'session_blocked')
+    // The new generation appended (with its notice); the old one never did.
+    expect(blocked.some((e) => e.id === `session_blocked:proj::s:${gen2}` && e.payload?.notice === 'Bash: rm -rf build')).toBe(true)
+    expect(blocked.some((e) => e.id === `session_blocked:proj::s:${gen1}`)).toBe(false)
+  })
+
+  it('boot carries per-project notice with two projects sharing a session name', async () => {
+    const enteredA = ISO(1_000_000 - 60_000)
+    const enteredB = ISO(1_000_000 - 30_000)
+    const { state, engine } = harness({
+      sessions: [
+        sess({ project: 'a', name: 's', status: 'idle', statusEnteredAt: enteredA, spawnedBy: 'user:web', notice: 'A idle' }),
+        sess({ project: 'b', name: 's', status: 'idle', statusEnteredAt: enteredB, spawnedBy: 'user:web', notice: 'B idle' }),
+      ],
+    })
+    await engine.start() // boot reconciliation appends the idle edges
+    const evA = (state.events.get('a') ?? []).find((e) => e.kind === 'session_idle')
+    const evB = (state.events.get('b') ?? []).find((e) => e.kind === 'session_idle')
+    expect(evA?.payload?.notice).toBe('A idle')
+    expect(evB?.payload?.notice).toBe('B idle')
+  })
+})
+
+describe('engine — blocked edge appends once (no re-append loop)', () => {
+  it('(F2) a persistently-blocked session does not re-append/rebroadcast every debounce', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs), blockReason: 'permission', notice: 'Bash: x' })]
+    await engine.recompute()
+    // First append + its post-append recompute land within one debounce window.
+    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 100))
+    const broadcastsAfterAppend = state.broadcasts
+    // Stay blocked on the same generation; let two more debounce intervals pass
+    // with NO external trigger. The settled edge must not re-arm a timer.
+    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS * 2 + 100))
+    expect(state.broadcasts).toBe(broadcastsAfterAppend)
+    expect((state.events.get('proj') ?? []).filter((e) => e.kind === 'session_blocked')).toHaveLength(1)
+  })
+})

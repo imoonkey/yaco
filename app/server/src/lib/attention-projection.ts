@@ -96,6 +96,8 @@ export interface LiveSession {
   blockReason?: string
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
+  /** Transient line-2 content for the current attention state (CLI-captured). */
+  notice?: string
 }
 
 /** Live task snapshot the projector reads. */
@@ -106,6 +108,8 @@ export interface LiveTask {
   stateEnteredAt?: string
   /** Normalized bound session handles (spec §8 — matching is over `agents`). */
   agents: string[]
+  /** Line-2 content for a task row (the task title, clamped). */
+  notice?: string
 }
 
 /** Ack/clear watermarks. `taskReadAt` + `recentClearedAt` land in T5; read them
@@ -220,6 +224,8 @@ interface EventMeta {
   blockReason?: string
   /** The owner class observed when the edge was produced (used for FYI history). */
   owner?: OwnerClass
+  /** Line-2 content captured at edge-append (the question/permission/idle/title). */
+  notice?: string
 }
 
 function metaOf(event: YacoEvent): EventMeta {
@@ -231,7 +237,17 @@ function metaOf(event: YacoEvent): EventMeta {
     exitCode: typeof p.exitCode === 'number' ? p.exitCode : undefined,
     blockReason: typeof p.blockReason === 'string' ? p.blockReason : undefined,
     owner: p.owner === 'OWNED' || p.owner === 'DELEGATED' ? p.owner : undefined,
+    notice: typeof p.notice === 'string' && p.notice ? p.notice : undefined,
   }
+}
+
+/** Line-2 of a notification: the captured `notice` content when present, else the
+ *  location fallback (`project · key`) — the pre-milestone redundant template,
+ *  kept only as the empty-notice floor. The caller passes notice from the LIVE
+ *  snapshot for ACT rows and from the event payload (`metaOf`) for REVIEW/history. */
+function lineTwo(notice: string | undefined, project: string, key: string): string {
+  const n = notice?.trim()
+  return n ? n : `${project} · ${key}`
 }
 
 // ── Copy (spec §9, §10) ─────────────────────────────────────────────────────
@@ -313,7 +329,11 @@ function buildOpenAct(input: ProjectionInput): AttentionItem[] {
       group: 'needs-you',
       subject: { kind: 'session', project: s.project, sessionName: s.name },
       title: sessionTitle(type, s.exitCode, s.blockReason),
-      message: `${s.project} · ${s.name}`,
+      // Crashed ignores notice (the exit code is already in the title); blocked
+      // shows the live question/permission content.
+      message: type === 'session_crashed'
+        ? `${s.project} · ${s.name}`
+        : lineTwo(s.notice, s.project, s.name),
       tsMs: Date.parse(enteredAt) || 0,
       count: 1,
       interrupt: false,
@@ -332,7 +352,7 @@ function buildOpenAct(input: ProjectionInput): AttentionItem[] {
       group: 'needs-you',
       subject: { kind: 'task', project: t.project, taskId: t.id, sessionNames: t.agents },
       title: `Task blocked: ${t.id}`,
-      message: `${t.project} · ${t.id}`,
+      message: lineTwo(t.notice, t.project, t.id),
       tsMs: Date.parse(enteredAt) || 0,
       count: 1,
       interrupt: false,
@@ -476,7 +496,7 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
       group: 'ready',
       subject: { kind: 'session', project: ev.projectId, sessionName: name },
       title: 'Your turn',
-      message: `${ev.projectId} · ${name}`,
+      message: lineTwo(m.notice, ev.projectId, name),
       tsMs: tsMsOf(ev),
       count: 1,
       interrupt: false,
@@ -503,7 +523,7 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
       group: 'ready',
       subject: { kind: 'task', project: ev.projectId, taskId, sessionNames: m.agents ?? [] },
       title: `Task done: ${taskId}`,
-      message: `${ev.projectId} · ${taskId}`,
+      message: lineTwo(m.notice, ev.projectId, taskId),
       tsMs: tsMsOf(ev),
       count: 1,
       interrupt: false,
@@ -578,6 +598,7 @@ function buildHistory(
         : isAct
           ? `Was blocked: ${subject.taskId}` // task_blocked
           : `Task done: ${subject.taskId}` // task_done
+    const locationKey = subject.kind === 'session' ? subject.sessionName : subject.taskId
     out.push({
       generation,
       type,
@@ -585,7 +606,11 @@ function buildHistory(
       group: 'recent',
       subject,
       title,
-      message: `${ev.projectId} · ${subject.kind === 'session' ? subject.sessionName : subject.taskId}`,
+      // Crashed keeps the location fallback (exit code is in the title); every
+      // other row shows the notice captured in the event payload, else location.
+      message: type === 'session_crashed'
+        ? `${ev.projectId} · ${locationKey}`
+        : lineTwo(m.notice, ev.projectId, locationKey),
       tsMs,
       count: 1,
       interrupt: false,
@@ -721,20 +746,23 @@ export function openAndReviewGenerations(input: ProjectionInput): {
   type: AttentionType
   generation: string
   subject: AttentionSubject
-  meta: { exitCode?: number; blockReason?: string; agents?: string[]; owner?: OwnerClass }
+  meta: { exitCode?: number; blockReason?: string; agents?: string[]; owner?: OwnerClass; notice?: string }
   tsMs: number
 }[] {
   const live = buildLiveIndex(input)
   const out: ReturnType<typeof openAndReviewGenerations> = []
 
   for (const it of buildOpenAct(input)) {
-    const meta =
-      it.subject.kind === 'session'
-        ? {
-            exitCode: input.sessions.find((s) => s.name === (it.subject as { sessionName: string }).sessionName)?.exitCode,
-            blockReason: input.sessions.find((s) => s.name === (it.subject as { sessionName: string }).sessionName)?.blockReason,
-          }
-        : { agents: it.subject.kind === 'task' ? it.subject.sessionNames : [] }
+    let meta: { exitCode?: number; blockReason?: string; agents?: string[]; owner?: OwnerClass; notice?: string }
+    if (it.subject.kind === 'session') {
+      // Key by project::name (not a name-only `find`), so two projects sharing a
+      // session name never cross-contaminate each other's edge meta.
+      const s = live.sessionByKey.get(liveKey(it.subject.project, it.subject.sessionName))
+      meta = { exitCode: s?.exitCode, blockReason: s?.blockReason, notice: s?.notice }
+    } else {
+      const t = live.taskByKey.get(liveKey(it.subject.project, it.subject.taskId))
+      meta = { agents: it.subject.sessionNames, notice: t?.notice }
+    }
     out.push({ type: it.type, generation: it.generation, subject: it.subject, meta, tsMs: it.tsMs })
   }
 
@@ -749,7 +777,7 @@ export function openAndReviewGenerations(input: ProjectionInput): {
       type,
       generation: sessionGenerationId(type, s.project, s.name, s.statusEnteredAt),
       subject: { kind: 'session', project: s.project, sessionName: s.name },
-      meta: { owner },
+      meta: { owner, notice: s.notice },
       tsMs: Date.parse(s.statusEnteredAt) || 0,
     })
   }
@@ -759,7 +787,7 @@ export function openAndReviewGenerations(input: ProjectionInput): {
       type: 'task_done',
       generation: taskGenerationId('task_done', t.project, t.id, t.stateEnteredAt),
       subject: { kind: 'task', project: t.project, taskId: t.id, sessionNames: t.agents },
-      meta: { agents: t.agents },
+      meta: { agents: t.agents, notice: t.notice },
       tsMs: Date.parse(t.stateEnteredAt) || 0,
     })
   }
