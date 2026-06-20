@@ -541,6 +541,8 @@ export interface SeedSessionOpts {
   parentSession?: string
   pid?: number
   createdAt?: string
+  /** Transient line-2 content for the current attention state (CLI-captured). */
+  notice?: string
 }
 
 /** Write one session state file into the ephemeral sessions dir. Returns the
@@ -562,6 +564,7 @@ export function seedSession(opts: SeedSessionOpts): string {
   if (opts.blockReason !== undefined) state.blockReason = opts.blockReason
   if (opts.spawnedBy !== undefined) state.spawnedBy = opts.spawnedBy
   if (opts.parentSession !== undefined) state.parentSession = opts.parentSession
+  if (opts.notice !== undefined) state.notice = opts.notice
   writeFileSync(join(dir, `${opts.handle}.json`), JSON.stringify(state, null, 2))
   return opts.handle
 }

@@ -103,6 +103,27 @@ describe('readSessionsFromStateFiles', () => {
     expect(sessions[0]).toMatchObject({ name: 'waiting', status: 'blocked', blockReason: 'permission' })
   })
 
+  it('carries a CLI-written notice from the state file onto the row (F3 plumbing)', async () => {
+    // The real state-file → AgentSessionState → toSessionRow → AgentSession hop
+    // that the projector/engine unit tests stub by injecting LiveSession.notice.
+    writeStateFile(mockedSessionsDir, 'asker', {
+      status: 'blocked',
+      blockReason: 'question',
+      sessionPath: tmpDir,
+      notice: 'Ship v1 or wait for review?',
+    })
+    const single = await readSessionsFromStateFiles(project())
+    expect(single[0]?.notice).toBe('Ship v1 or wait for review?')
+    const all = await readAllSessionsFromStateFiles([project()])
+    expect(all[0]?.notice).toBe('Ship v1 or wait for review?')
+  })
+
+  it('re-clamps an oversized state-file notice at the read boundary', async () => {
+    writeStateFile(mockedSessionsDir, 'verbose', { status: 'blocked', blockReason: 'question', sessionPath: tmpDir, notice: 'z'.repeat(500) })
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions[0]?.notice?.length).toBe(201) // 200 + ellipsis
+  })
+
   it('drops a stray blockReason when status is not blocked', async () => {
     writeStateFile(mockedSessionsDir, 'idle-stray', {
       status: 'idle',

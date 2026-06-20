@@ -148,6 +148,40 @@ test.describe('Attention surfaces', () => {
     await expect(readyRow.getByText('Your turn', { exact: true })).toBeVisible()
   })
 
+  test('the notification bell shows line-2 content (the captured notice), not the location template', async ({ page, request }) => {
+    const project = await fixture(request)
+    // A blocked session carries its captured question as the line-2 notice. The
+    // bell row reads it from the LIVE snapshot (needsYou is derived live), so no
+    // durable event is needed — the cold feed projects it straight from the
+    // seeded state file (state file → readSessions → projector lineTwo → DOM).
+    const handle = `asker-${Date.now()}`
+    const question = 'Ship v1 or wait for review?'
+    seedSession({
+      handle,
+      sessionPath: project.path,
+      status: 'blocked',
+      blockReason: 'question',
+      statusEnteredAt: new Date().toISOString(),
+      spawnedBy: 'user:web',
+      notice: question,
+    })
+
+    await loadProject(page, project)
+    await expect(page.getByText(handle).first()).toBeVisible({ timeout: 15_000 })
+
+    const bell = page.getByRole('button', { name: 'Notifications' })
+    await bell.click()
+    await expect(page.getByText('Needs you', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+    const panel = page.locator('.rounded-xl.w-\\[340px\\]')
+    const row = panel.locator('div.cursor-pointer').filter({ hasText: `${project.name} / ${handle}` }).first()
+    await expect(row).toBeVisible()
+    // Title is the state; line-2 is location + the captured content (NOT the old
+    // redundant `project · name` template).
+    await expect(row.getByText('Has a question', { exact: true })).toBeVisible()
+    await expect(row.getByText(`${project.name} / ${handle} — ${question}`)).toBeVisible()
+  })
+
   test('an owned-idle leaf shows the "your turn" chip; a delegated-idle leaf does not', async ({ page, request }) => {
     const project = await fixture(request)
     const enteredAt = new Date().toISOString()
