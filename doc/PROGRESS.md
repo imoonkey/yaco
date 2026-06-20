@@ -1,5 +1,44 @@
 # Progress
 
+## 2026-06-19: Notification line-2 carries content, not a location template
+
+**What changed:**
+- Every bell + toast notification's line-2 was `${project} · ${name}` — a verbatim
+  repeat of the location already on the title row. It now carries the
+  highest-information content **for the attention state**: the question
+  (`tool_input.questions[0]`), the permission request (`Bash: <cmd>` from
+  `tool_input`), the Claude idle "Your turn" final-message opening (`Stop`
+  transcript tail), or the task title (`Task.title || id`). Crashed keeps the
+  location (exit code is already in the title).
+- One transient field, `SessionState.notice` (CLI-owned). Captured in
+  `applyHookEvent` (question/permission, pure) + the hook wrapper (Claude idle,
+  impure); `setStatus` now uses **one edge predicate** (status OR blocked-reason
+  change) for both `statusEnteredAt` re-stamp and `notice` clear, so a
+  `question → permission` switch mints a fresh generation and never leaks stale
+  text. Sanitized + clamped to ≤200 chars by `clampNotice` (re-exported from
+  `@yaco/cli/core/agent`). Flows through the existing session-state read →
+  `LiveSession.notice` → a `lineTwo()` projector helper at all 5 message sites;
+  `needsYou` reads the live notice, `ready`/`recent` read the event-payload notice.
+- Engine: `notice` rides into the `events.jsonl` payload (bounded content
+  retention). The blocked debounce is now **generation-aware** — it refreshes the
+  latest snapshot each recompute and appends the freshest at fire time (captures a
+  notice that fills mid-window), reschedules a re-block instead of stranding it,
+  and no longer re-appends/rebroadcasts a settled blocked edge every 1.5s.
+  `openAndReviewGenerations` keys edge meta by `project::name` (latent
+  cross-project leak fixed).
+- UI: toast body clamped to 2 lines; bell row keeps its single-line truncate
+  (`location — content`). Codex idle deferred to v1.1 (no reliable `Stop` hook).
+
+**Why:**
+- Two lines, zero new information. The title already shows `project / name` + the
+  state; the second line should be the densest content that fits the state, so the
+  user can triage from the bell/toast without opening the session.
+
+**Key files:** cli/src/lib/core/agent/{model,hook-event,projection,index,providers/output}.ts, app/server/src/lib/{attention-projection,attention-engine,attention-runtime,agent}.ts, app/ui/src/hooks/useAttention.ts, doc/main/app/ui/notifications.md, doc/main/app/data-model/persistence.md
+**Verification:** cli 1037, app/server 674, app/ui 1000 unit + attention e2e (4) green; tsc/lint clean; codex review T1+T2 (1 High each: Stop async-read race re-confirmed against the debounce baseline; settled-blocked re-append loop closed) — both resolved. QA: state-file notice → real `toSessionRow` → projected row, and seeded blocked session → rendered bell line-2, both verified end-to-end.
+**Commit:** a4d7beb6 · ccf7bd57 · 07c47183 · edd7c799
+**Blockers:** None
+
 ## 2026-06-19: Watcher inotify-exhaustion fix (chokidar prune) + server as a service
 
 **What changed:**

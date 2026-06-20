@@ -130,6 +130,40 @@ mirrors the JSON shape). Builds `AttentionSnapshot`:
   otherwise it fails open and pages (pinned ⇒ OWNED ⇒ pages). `nowMs` is injected
   by the engine/cold-feed so the projector stays pure.
 
+## Line-2 content — the `notice` field
+
+Every bell/toast row's **line-2** carries the highest-information content for the
+attention state, not a repeat of the location (the title row already shows
+`project / name`). The content is one transient string, `SessionState.notice`,
+**captured by the CLI** and flowed through the existing session-state read — no
+app-side `~/.claude` / `~/.codex` read (the log-access boundary stays intact).
+
+| State (title) | Line-2 source |
+|---|---|
+| `Has a question` | hook `tool_input.questions[0].question` — Claude `AskUserQuestion` + Codex `request_user_input`, identical shape |
+| `Needs approval` | `${tool_name}: ${arg}` from the gating hook `tool_input` (`command` / `file_path` / `cmd`); bare tool name only when no arg |
+| `Your turn` (idle) | the agent's final-message opening — **Claude only**, from the `Stop` transcript tail (`lastFinalFromTranscript`). **Codex idle deferred to v1.1** (its `Stop` hook does not fire) |
+| `Task done` / `Task blocked` | the task title (`Task.title \|\| id`), set in `readTasks` |
+| `Crashed (exit N)` | — `notice` ignored; the exit code is already in the title |
+
+- **Capture (CLI).** Written in `applyHookEvent` (question/permission — pure) and
+  the hook wrapper (Claude idle — impure, reads the transcript). `setStatus`
+  clears `notice` on every status/blocked-reason **edge** (the same predicate that
+  re-stamps `statusEnteredAt`), so stale question/permission text never leaks into
+  trust/idle/crash; a payload-bearing event then refills it (payload-less
+  re-affirmations never clear). Sanitized + clamped to ≤200 chars by `clampNotice`
+  (`@yaco/cli/core/agent`) at capture, because it lands in the durable
+  `events.jsonl` payload — it is bounded on-disk retention, not purely transient.
+- **Render (projector).** `lineTwo(notice, proj, key)` replaces the old
+  `${proj} · ${key}` template at all five message sites, falling back to the
+  location only when `notice` is empty. **ACT (`needsYou`)** reads the live
+  snapshot notice (`s.notice`/`t.notice`); **REVIEW (`ready`) + Recent** read the
+  event-payload notice captured at edge-append (`metaOf`). `session_crashed`
+  always uses the location fallback. The blocked debounce is generation-aware and
+  appends the *freshest* snapshot at fire time, so a notice that fills during the
+  1.5s window (e.g. `permission_prompt` then `PermissionRequest`) is still
+  captured in the durable edge.
+
 ## SSE Delivery — `notify.ts`
 
 The SSE registry is unchanged transport; the inbox dispatch is gone. Current

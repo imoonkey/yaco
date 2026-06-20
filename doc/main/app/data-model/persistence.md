@@ -87,6 +87,16 @@ Each event `id` is a stable **status-edge generation** —
 restart, a safety-net re-observation, or boot reconciliation never mints a
 duplicate generation.
 
+The `payload` carries projection metadata (`sessionName`/`taskId`/`agents`/
+`owner`/`exitCode`/`blockReason`) **plus `notice`** — the notification line-2
+content (the question / permission command / idle final-message opening / task
+title). `notice` makes this log **bounded content retention**, not pure metadata:
+it is sanitized + clamped to ≤200 chars at capture (`clampNotice`,
+`@yaco/cli/core/agent`) precisely because it becomes durable here. Because
+`appendEvent` is idempotent by id, the edge's notice is fixed at first append —
+the blocked debounce appends the freshest snapshot within its window so a
+late-filling notice is still captured (-> See: [../ui/notifications.md](../ui/notifications.md#line-2-content--the-notice-field)).
+
 Wired emit sites (server-owned):
 
 | Kind | Wired by | Notes |
