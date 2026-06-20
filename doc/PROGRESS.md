@@ -36,7 +36,7 @@
 
 **Key files:** cli/src/lib/core/agent/{model,hook-event,projection,index,providers/output}.ts, app/server/src/lib/{attention-projection,attention-engine,attention-runtime,agent}.ts, app/ui/src/hooks/useAttention.ts, doc/main/app/ui/notifications.md, doc/main/app/data-model/persistence.md
 **Verification:** cli 1037, app/server 674, app/ui 1000 unit + attention e2e (4) green; tsc/lint clean; codex review T1+T2 (1 High each: Stop async-read race re-confirmed against the debounce baseline; settled-blocked re-append loop closed) — both resolved. QA: state-file notice → real `toSessionRow` → projected row, and seeded blocked session → rendered bell line-2, both verified end-to-end.
-**Commit:** a4d7beb6 · ccf7bd57 · 07c47183 · edd7c799
+**Commit:** 41c03b83 · 2d1060aa · b21cf2fc · 89d1686a
 **Blockers:** None
 
 ## 2026-06-19: Watcher inotify-exhaustion fix (chokidar prune) + server as a service
