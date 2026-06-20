@@ -7,6 +7,7 @@
     "app/ui"
   ],
   "scripts": {
+    "postinstall": "node app/scripts/fix-node-pty-perms.mjs",
     "dev": "app/scripts/services.sh restart && app/scripts/services.sh logs",
     "dev:local": "npm run dev:server & npm run dev:ui",
     "dev:server": "cd app/server && npm run dev",
