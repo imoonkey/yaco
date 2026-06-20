@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { X, AlertTriangle, CornerDownLeft, History } from 'lucide-react'
+import { X, AlertTriangle, CornerDownLeft, History, SquareTerminal, ListChecks } from 'lucide-react'
 import { DialogShell, useDialogClose } from './DialogShell'
-import { badgeColorVar, badgeTint } from '../lib/attentionColors'
-import type { AttentionItem, AttentionTier, BadgeColor } from '../hooks/useAttention'
+import { badgeColorVar, badgeTint, tierColor } from '../lib/attentionColors'
+import { identityKey, stateLabel, noticeContent } from '../lib/attentionContent'
+import type { AttentionItem, BadgeColor } from '../hooks/useAttention'
 
 function timeAgo(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000)
@@ -12,22 +13,6 @@ function timeAgo(ts: number): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
-}
-
-/** Per-tier accent color for a row. critical→red, action→orange, handoff→yellow,
- *  fyi (Recent history) → no accent. */
-function tierColor(tier: AttentionTier): BadgeColor {
-  switch (tier) {
-    case 'critical': return 'red'
-    case 'action': return 'orange'
-    case 'handoff': return 'yellow'
-    default: return null
-  }
-}
-
-function itemLocation(item: AttentionItem): string {
-  const s = item.subject
-  return s.kind === 'session' ? `${s.project} / ${s.sessionName}` : `${s.project} / ${s.taskId}`
 }
 
 function PanelCloseButton() {
@@ -49,45 +34,65 @@ function Row({ item, muted, onClick, onDismiss }: {
 }) {
   const accent = tierColor(item.tier)
   const accentVar = accent ? badgeColorVar(accent) : null
-  // Recent rows are muted: they keep their original tier (a seen handoff stays
-  // gold), so coloring by tier would make them indistinguishable from Ready.
-  // The group, not the tier, sets them apart — so we grey them out here.
+  const notice = noticeContent(item)
+  // Kind glyph distinguishes an agent session from a task-graph node — they route
+  // to different places on click. Faint, so the colored state label keeps emphasis.
+  const isTask = item.subject.kind === 'task'
+  const KindIcon = isTask ? ListChecks : SquareTerminal
+  // The state label leads the content in its tier hue. Recent rows are muted —
+  // they keep their original tier (a seen handoff stays gold), so tier-coloring
+  // would blur them into Ready; the group greys them out instead.
+  const labelColor = muted ? 'var(--sol-text-faint)' : (accentVar ?? 'var(--sol-text-faint)')
   return (
     <div
       className="notif-row px-3 py-2 cursor-pointer"
       style={{
         borderBottom: '1px solid var(--sol-border)',
-        borderLeft: `4px solid ${muted ? 'transparent' : (accentVar ?? 'transparent')}`,
-        '--notif-tint': muted ? 'transparent' : badgeTint(accent, 14),
-        '--notif-tint-hover': muted || !accent ? 'var(--sol-hover-bg)' : badgeTint(accent, 24),
+        borderLeft: `3px solid ${muted ? 'transparent' : (accentVar ?? 'transparent')}`,
+        '--notif-tint': muted ? 'transparent' : badgeTint(accent, 12),
+        '--notif-tint-hover': muted || !accent ? 'var(--sol-hover-bg)' : badgeTint(accent, 22),
       } as React.CSSProperties}
       onClick={() => onClick(item)}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-ui-md font-medium truncate flex-1" style={{ color: muted ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}>
-          {item.title}
-        </span>
-        <span className="flex items-center gap-1.5 shrink-0">
-          <span className="text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>
-            {timeAgo(item.tsMs)}
+      {/* Scan line: kind glyph + identity anchor it; project · time as faint meta. */}
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span className="shrink-0 flex" style={{ color: 'var(--sol-text-faint)' }} aria-label={isTask ? 'Task' : 'Session'}>
+            <KindIcon size={13} />
           </span>
+          <span className="text-ui-sm font-semibold truncate" style={{ color: muted ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}>
+            {identityKey(item)}
+          </span>
+        </span>
+        {item.count > 1 && (
+          <span
+            className="text-ui-2xs font-semibold rounded px-1 shrink-0"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--sol-text-faint) 22%, transparent)', color: 'var(--sol-text-dim)' }}
+          >
+            {item.count}
+          </span>
+        )}
+        <span className="flex items-center gap-1 shrink-0 text-ui-2xs" style={{ color: 'var(--sol-text-faint)' }}>
+          <span className="truncate max-w-[96px]">{item.subject.project}</span>
+          <span style={{ opacity: 0.5 }}>·</span>
+          <span className="whitespace-nowrap">{timeAgo(item.tsMs)}</span>
           {onDismiss && (
             <button
               type="button"
               aria-label="Dismiss"
               onClick={(e) => { e.stopPropagation(); onDismiss(item) }}
-              className="flex items-center cursor-pointer opacity-60 hover:opacity-100"
-              style={{ color: 'var(--sol-text-faint)' }}
+              className="flex items-center cursor-pointer opacity-60 hover:opacity-100 ml-0.5"
             >
               <X size={12} />
             </button>
           )}
         </span>
       </div>
-      <div className="text-ui-sm truncate mt-0.5" style={{ color: 'var(--sol-text)' }}>
-        {itemLocation(item)}
-        {item.count > 1 ? ` (${item.count})` : ''}
-        {item.message ? ` — ${item.message}` : ''}
+      {/* Content (the hero): colored state lead-in + the captured notice, 2 lines. */}
+      <div className="text-ui-md line-clamp-2 mt-0.5" style={{ color: muted ? 'var(--sol-text-faint)' : 'var(--sol-text)', lineHeight: 'var(--lh-normal)' }}>
+        <span className="font-semibold" style={{ color: labelColor }}>{stateLabel(item)}</span>
+        {notice && <span style={{ color: 'var(--sol-text-faint)' }}> — </span>}
+        {notice}
       </div>
     </div>
   )

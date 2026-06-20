@@ -100,18 +100,21 @@ describe('NotificationBell', () => {
     expect(screen.getByText('Recent')).toBeTruthy()
   })
 
-  it('renders the notice as line-2 content alongside the location', () => {
+  it('renders identity on the scan line and the notice as state-led content', () => {
     const snapshot = makeSnapshot({
       needsYou: [sessionItem({ project: 'demo', sessionName: 'worker', title: 'Has a question', message: 'Ship v1 or wait for review?' })],
       global: { count: 1, color: 'orange' },
     })
     render(<NotificationBell {...makeProps(snapshot)} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    // Identity (session name) anchors the scan line; project is faint meta.
+    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.getByText('demo')).toBeTruthy()
+    // The state label leads the content line; the captured notice follows on its
+    // own room — no longer crammed behind `project / session` on one truncating line.
     expect(screen.getByText('Has a question')).toBeTruthy()
-    // Line 2 is the location PLUS the captured content — not the old redundant
-    // `project · name` template repeated under the title.
-    const line2 = screen.getByText((_t, el) => el?.textContent === 'demo / worker — Ship v1 or wait for review?')
-    expect(line2).toBeTruthy()
+    const content = screen.getByText((_t, el) => el?.textContent === 'Has a question — Ship v1 or wait for review?')
+    expect(content).toBeTruthy()
   })
 
   it('clicking a Ready item acks it and routes via onItemClick', () => {
@@ -119,7 +122,8 @@ describe('NotificationBell', () => {
     const props = makeProps(makeSnapshot({ ready: [item] }))
     render(<NotificationBell {...props} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
-    fireEvent.click(screen.getByText('task done'))
+    // A task row's state label is the bare verb ('Done'), not the id-bearing title.
+    fireEvent.click(screen.getByText('Done'))
     expect(props.ackTask).toHaveBeenCalledWith('p', 'T7')
     expect(props.onItemClick).toHaveBeenCalledWith(item)
   })
@@ -216,7 +220,9 @@ describe('NotificationBell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
 
     // Two distinct rows, each with its own dismiss control (no fold to one count).
-    expect(screen.getByText('task blocked')).toBeTruthy()
+    // The task row's state label is the bare verb ('Blocked'), the session keeps its
+    // own state phrase ('needs approval').
+    expect(screen.getByText('Blocked')).toBeTruthy()
     expect(screen.getByText('needs approval')).toBeTruthy()
     const dismissButtons = screen.getAllByRole('button', { name: 'Dismiss' })
     expect(dismissButtons).toHaveLength(2)

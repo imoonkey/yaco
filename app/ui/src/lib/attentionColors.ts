@@ -1,4 +1,15 @@
-import type { BadgeColor } from '../hooks/useAttention'
+import type { AttentionTier, BadgeColor } from '../hooks/useAttention'
+
+/** Per-tier accent color. critical→red, action→orange, handoff→yellow,
+ *  fyi (Recent history) → null (no accent — the group, not the tier, sets it apart). */
+export function tierColor(tier: AttentionTier): BadgeColor {
+  switch (tier) {
+    case 'critical': return 'red'
+    case 'action': return 'orange'
+    case 'handoff': return 'yellow'
+    default: return null
+  }
+}
 
 /** Map an attention tier color to its Solarized CSS variable. Null → orange
  *  (the neutral "count" default used by the legacy numeric badge). */

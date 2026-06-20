@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import { toast } from 'sonner'
+import { SquareTerminal, ListChecks } from 'lucide-react'
 import { addSSEListener } from './useSSE'
 import { ApiError } from '../lib/apiError'
+import { badgeColorVar, tierColor } from '../lib/attentionColors'
+import { identityKey, stateLabel, noticeContent } from '../lib/attentionContent'
 
 // ── Client-local mirror of the server's AttentionSnapshot shape ────────────────
 // Facet B is server-projected and pushed over the `attention` SSE event / served
@@ -157,10 +160,16 @@ async function postDismiss(
 
 // ── Interrupt presentation ─────────────────────────────────────────────────────
 
-function itemTitle(item: AttentionItem): string {
-  const s = item.subject
-  const loc = s.kind === 'session' ? `${s.project} / ${s.sessionName}` : `${s.project} / ${s.taskId}`
-  return `${loc}: ${item.title}`
+/** Concise OS-notification title: identity-led, state as the suffix
+ *  (`worker · Needs approval`). The notice goes in the body, so the title stays
+ *  short. */
+function osTitle(item: AttentionItem): string {
+  return `${identityKey(item)} · ${stateLabel(item)}`
+}
+
+/** Kind glyph for the toast meta line — an agent session vs a task-graph node. */
+function kindIcon(item: AttentionItem) {
+  return item.subject.kind === 'task' ? ListChecks : SquareTerminal
 }
 
 function hasPermission(): boolean {
@@ -260,48 +269,74 @@ export function useAttention(
 
     if (items.length === 1) {
       const item = items[0]
-      const title = itemTitle(item)
+      const key = identityKey(item)
+      const label = stateLabel(item)
+      const notice = noticeContent(item)
+      const labelColor = badgeColorVar(tierColor(item.tier))
       if (visible) {
         toast.custom((id) =>
           createElement('div', {
-            style: { padding: '12px 16px', cursor: 'pointer' },
+            style: { padding: '11px 13px', cursor: 'pointer' },
             onClick: () => { toast.dismiss(id); onClickRef.current?.(item) },
           },
-            createElement('div', { className: 'font-medium' }, title),
-            item.message
-              ? createElement('div', {
-                  // The message is now per-state content (the question / command /
-                  // final-message opening), up to ~200 chars — clamp to 2 lines so
-                  // a long notice can't blow up the toast.
-                  style: {
-                    opacity: 0.7,
-                    fontSize: '0.875em',
-                    marginTop: 2,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  },
-                }, item.message)
-              : null,
+            // Scan line: kind glyph + identity anchor it, project demoted to faint meta.
+            createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 7 } },
+              createElement(kindIcon(item), { size: 13, color: 'var(--sol-text-faint)', style: { flexShrink: 0 } }),
+              createElement('span', {
+                className: 'text-ui-sm font-semibold',
+                style: { flex: 1, minWidth: 0, color: 'var(--sol-text-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+              }, key),
+              createElement('span', {
+                className: 'text-ui-2xs',
+                style: { flexShrink: 0, color: 'var(--sol-text-faint)' },
+              }, item.subject.project),
+            ),
+            // Content (the hero): colored state lead-in + the captured notice. Clamp
+            // to 3 lines so a long notice (~200 chars) can't blow up the toast.
+            createElement('div', {
+              className: 'text-ui-lg',
+              style: {
+                marginTop: 4, lineHeight: 'var(--lh-normal)',
+                display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                color: 'var(--sol-text-dark)',
+              },
+            },
+              createElement('span', { className: 'font-semibold', style: { color: labelColor } }, label),
+              notice ? ` — ${notice}` : '',
+            ),
           ),
         )
       } else if (hasPermission()) {
-        const n = new Notification(title, { body: item.message, tag: item.generation })
+        const n = new Notification(osTitle(item), { body: notice || undefined, tag: item.generation })
         n.onclick = () => { window.focus(); onClickRef.current?.(item); n.close() }
       }
       return
     }
 
-    // Burst → one summary (don't spam).
-    const title = `${items.length} sessions need attention`
-    const body = items.map(itemTitle).slice(0, 4).join('\n')
+    // Burst → one summary (don't spam): each agent as state + identity.
+    const title = `${items.length} agents need you`
+    const shown = items.slice(0, 4)
     if (visible) {
-      toast.custom(() => createElement('div', { style: { padding: '12px 16px' } },
-        createElement('div', { className: 'font-medium' }, title),
-        createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2, whiteSpace: 'pre-line' } }, body),
+      toast.custom(() => createElement('div', { style: { padding: '11px 13px' } },
+        createElement('div', { className: 'text-ui-md font-semibold', style: { color: 'var(--sol-text-dark)' } }, title),
+        createElement('div', { style: { marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 } },
+          ...shown.map((it) =>
+            createElement('div', {
+              key: it.generation,
+              className: 'text-ui-sm',
+              style: { display: 'flex', alignItems: 'center', gap: 7 },
+            },
+              createElement(kindIcon(it), { size: 12, color: 'var(--sol-text-faint)', style: { flexShrink: 0 } }),
+              createElement('span', { className: 'font-semibold', style: { flexShrink: 0, color: badgeColorVar(tierColor(it.tier)) } }, stateLabel(it)),
+              createElement('span', {
+                style: { color: 'var(--sol-text-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+              }, identityKey(it)),
+            ),
+          ),
+        ),
       ))
     } else if (hasPermission()) {
+      const body = shown.map((it) => osTitle(it)).join('\n')
       new Notification(title, { body, tag: 'attention-burst' })
     }
   }, [])
