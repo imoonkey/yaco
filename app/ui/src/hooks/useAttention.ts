@@ -269,7 +269,20 @@ export function useAttention(
           },
             createElement('div', { className: 'font-medium' }, title),
             item.message
-              ? createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2 } }, item.message)
+              ? createElement('div', {
+                  // The message is now per-state content (the question / command /
+                  // final-message opening), up to ~200 chars — clamp to 2 lines so
+                  // a long notice can't blow up the toast.
+                  style: {
+                    opacity: 0.7,
+                    fontSize: '0.875em',
+                    marginTop: 2,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  },
+                }, item.message)
               : null,
           ),
         )

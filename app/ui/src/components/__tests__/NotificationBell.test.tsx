@@ -100,6 +100,20 @@ describe('NotificationBell', () => {
     expect(screen.getByText('Recent')).toBeTruthy()
   })
 
+  it('renders the notice as line-2 content alongside the location', () => {
+    const snapshot = makeSnapshot({
+      needsYou: [sessionItem({ project: 'demo', sessionName: 'worker', title: 'Has a question', message: 'Ship v1 or wait for review?' })],
+      global: { count: 1, color: 'orange' },
+    })
+    render(<NotificationBell {...makeProps(snapshot)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    expect(screen.getByText('Has a question')).toBeTruthy()
+    // Line 2 is the location PLUS the captured content — not the old redundant
+    // `project · name` template repeated under the title.
+    const line2 = screen.getByText((_t, el) => el?.textContent === 'demo / worker — Ship v1 or wait for review?')
+    expect(line2).toBeTruthy()
+  })
+
   it('clicking a Ready item acks it and routes via onItemClick', () => {
     const item = taskItem({ project: 'p', taskId: 'T7' })
     const props = makeProps(makeSnapshot({ ready: [item] }))
