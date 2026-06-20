@@ -107,7 +107,7 @@ Both the editor and markdown preview derive from the same `draft` value (`draft 
 - Editor diff gutter: from a **throttled** copy (`useThrottledValue`, 120ms) of the same value.
 - Save: writes the live `draft` to the server.
 
-Both the debounce and throttle are keyed on the file path so a tab switch adopts the new file's content immediately (no stale cross-file frame). They are render-only gates — the live `draft` still drives the editor, save, conflict, and persistence paths, so those are never out of sync. (Perf: keeping the live `draft` out of `selection` + debouncing the preview is what stopped typing in a 420KB file from lagging and stalling the adjacent terminal — see [state.md](../../frontend/state.md#architecture) and [PROGRESS](../../../PROGRESS.md).)
+Both the debounce and throttle are keyed on the file path so a tab switch adopts the new file's content immediately (no stale cross-file frame). They are render-only gates — the live `draft` still drives the editor, save, conflict, and persistence paths, so those are never out of sync. (Perf: keeping the live `draft` out of `selection` + debouncing the preview is what stopped typing in a 420KB file from lagging and stalling the adjacent terminal — see [state.md](../../frontend/state.md#architecture) and [PROGRESS](../../../../PROGRESS.md).)
 
 ## Preview Mode
 

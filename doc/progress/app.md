@@ -4431,7 +4431,7 @@ The data model (`tasks.json`) supports arbitrary-depth parent-child trees via th
 **What changed:**
 - Preview tabs: single-click in file explorer opens a temporary preview tab (italic title, replaced by next click). Double-click or edit pins it. `previewTab` state added to `useWorkspaceState` with localStorage persistence.
 - Cursor visibility: changed `editorSelectionBackground` from `#EEE8D5` to `#D5CCB5` so text selections are distinguishable from the active line highlight.
-- Mermaid rendering: ` ```mermaid ` code fences render as SVG diagrams in markdown preview via `mermaid.render()`. Early return in `renderer.code`, per-diagram `useEffect` with inline error display on failure.
+- Mermaid rendering: `mermaid` code fences render as SVG diagrams in markdown preview via `mermaid.render()`. Early return in `renderer.code`, per-diagram `useEffect` with inline error display on failure.
 
 **Post-review fixes:**
 - `openPreviewTab()` no longer demotes already-pinned tabs to preview state (codex review)

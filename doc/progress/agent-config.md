@@ -73,7 +73,7 @@
 - No skill scripts in `global/skills/**` were rewritten; today no skill script under this repo hardcodes `~/.workflow` or `~/.multmux` paths (`global/skills/multmux/SKILL.md` describes the multmux state-file contract in prose only). The Python resolver is the integration point for future YACO-aware skill scripts.
 
 **Why:**
-- Workflow's [yaco-core design](../../projects/active/yaco-core/final/design.md) §Canonical Path Layout consolidates runtime state under `${YACO_HOME:-~/.yaco}/`. Adding the Python-side resolver in lockstep with the TS resolvers (workflow + multmux) means any new skill script that needs the runtime root has one place to read from and one set of tests it must match.
+- Workflow's [yaco-core design](../../plan/all/yaco-core/final/design.md) §Canonical Path Layout consolidates runtime state under `${YACO_HOME:-~/.yaco}/`. Adding the Python-side resolver in lockstep with the TS resolvers (workflow + multmux) means any new skill script that needs the runtime root has one place to read from and one set of tests it must match.
 
 **Key files:** `global/lib/yaco_home.py` (new), `global/lib/test_yaco_home.py` (new).
 **Verification:** `cd global/lib && python3 -m unittest test_yaco_home -v` → 10 pass / 0 fail. `rg "\.workflow|\.multmux/sessions" global/skills global/lib` only matches the `multmux/SKILL.md` doc paragraphs and this resolver's docstring.

@@ -165,23 +165,21 @@ and flowed through the existing session-state read — no app-side `~/.claude` /
   re-affirmations never clear). Sanitized + clamped to ≤200 chars by `clampNotice`
   (`@yaco/cli/core/agent`) at capture, because it lands in the durable
   `events.jsonl` payload — it is bounded on-disk retention, not purely transient.
-- **Render (server projector).** `lineTwo(notice, proj, key)` is the durable /
-  OS-notification floor at all five message sites: the captured notice, falling
-  back to `${proj} · ${key}` only when empty. **ACT (`needsYou`)** reads the live
-  snapshot notice (`s.notice`/`t.notice`); **REVIEW (`ready`) + Recent** read the
-  event-payload notice captured at edge-append (`metaOf`). `session_crashed` always
-  uses the location fallback. The blocked debounce is generation-aware and appends
-  the *freshest* snapshot at fire time, so a notice that fills during the 1.5s
-  window (e.g. `permission_prompt` then `PermissionRequest`) is still captured in
-  the durable edge.
-- **Render (web client).** Because the scan line already shows identity + project,
-  the web UI **suppresses the server's `${proj} · ${key}` fallback**: `noticeContent`
-  (`ui/src/lib/attentionContent.ts`) treats a message equal to that template as
-  empty, so a no-notice row renders **just its state label** (a crashed row →
-  `Crashed (exit 1)`; a no-notice idle → just `Your turn`). `stateLabel` maps the
-  id-bearing task titles (`Task done: T1`) to a bare verb (`Done`/`Blocked`) so the
-  identity is never double-printed. (The OS `Notification` body still uses the raw
-  notice — it has no scan line to dedupe against.)
+- **Render (server projector).** `noticeText(notice)` sets `message` at all five
+  message sites to the trimmed notice, or **`''` when absent** — no location filler
+  (the scan line already carries identity + project). **ACT (`needsYou`)** reads the
+  live snapshot notice (`s.notice`/`t.notice`); **REVIEW (`ready`) + Recent** read
+  the event-payload notice captured at edge-append (`metaOf`). `session_crashed` is
+  always `''` (the exit code is in the title). The blocked debounce is
+  generation-aware and appends the *freshest* snapshot at fire time, so a notice
+  that fills during the 1.5s window (e.g. `permission_prompt` then
+  `PermissionRequest`) is still captured in the durable edge.
+- **Render (web client).** `noticeContent` renders `message` verbatim and
+  `stateLabel` maps the id-bearing task titles (`Task done: T1`) to a bare verb
+  (`Done`/`Blocked`) so the identity is never double-printed. An empty `message`
+  means the content line is **just the state label** (a crashed row →
+  `Crashed (exit 1)`; a no-notice idle → just `Your turn`). The OS `Notification`
+  body uses the same `noticeContent`, so a no-notice interrupt has an empty body.
 
 ## SSE Delivery — `notify.ts`
 

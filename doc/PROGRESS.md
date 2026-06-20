@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-06-20: Drop the dead `project · key` notice fallback (server source)
+
+**What changed:**
+- Removed the server projector's empty-notice location template (the old `lineTwo`
+  fallback to `${project} · ${key}`). `noticeText(notice)` now sets the row `message`
+  to the trimmed notice or `''`, and `session_crashed` is always `''` (the exit code
+  is in the title). The web client dropped its matching client-side suppression —
+  `noticeContent` renders `message` verbatim; an empty `message` → the row shows just
+  its state label.
+
+**Why:**
+- Completes the panel/toast redesign (above) end-to-end. The scan line already shows
+  identity + project, so the location template was dead weight the client was merely
+  suppressing. Deleting it at the source leaves one contract and no client guard.
+
+**Key files:** `app/server/src/lib/attention-projection.ts`, `app/server/src/lib/__tests__/attention-projection.test.ts`, `app/ui/src/lib/attentionContent.ts`, `doc/main/app/ui/notifications.md`
+**Verification:** app/server `npm test` 675/675 (attention-projection 73/73); app/ui `tsc -b` + vitest 36/36 + eslint — all green.
+**Commit:** 8bfe1875
+**Blockers:** None
+
 ## 2026-06-20: Notification panel + toast redesign (information density)
 
 **What changed:**
