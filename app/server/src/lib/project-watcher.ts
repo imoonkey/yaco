@@ -58,43 +58,46 @@ function toRel(projectPath: string, absPath: string): string | null {
   return sep === '/' ? rel : rel.split(sep).join('/')
 }
 
+/** Stat-free prune verdict: `true` prune, `false` force-keep, `undefined` defer
+ *  to the gitignore check. `node_modules` and git `objects/`/`logs/` are matched
+ *  by path SEGMENT so nested copies (a worktree's own node_modules, a submodule's
+ *  .git) are caught at any depth; `.git` metadata (HEAD/index/refs) is kept for
+ *  the `git` channel. The whole `.worktrees` subtree is force-kept — it is
+ *  gitignored, but the app serves per-worktree filetree/git, so it must stay
+ *  watched (its node_modules/.git are still pruned by the rules above). */
+export function hardVerdict(rel: string): boolean | undefined {
+  const segs = rel.split('/')
+  if (segs.includes('node_modules')) return true
+  if (rel.endsWith('.DS_Store')) return true
+  const gitIdx = segs.indexOf('.git')
+  if (gitIdx !== -1) {
+    const sub = segs[gitIdx + 1]
+    return sub === 'objects' || sub === 'logs'
+  }
+  if (rel === '.worktrees' || rel.startsWith('.worktrees/')) return false
+  return undefined
+}
+
 /** chokidar `ignored` predicate: prunes a directory from the recursive walk so
  *  it never receives an inotify watch. This is the fix for inotify exhaustion —
  *  `node_modules`, git internals, and every gitignored tree (build output, logs,
  *  data dumps) are skipped at the OS level, not merely filtered out of events.
  *
- *  chokidar calls this with (path) then (path, stats); the directory form of a
- *  gitignore pattern (`dist/`) only matches with a trailing slash, so the dir
- *  itself is pruned on the stats-bearing call.
+ *  chokidar calls this with (path) then (path, stats). Gitignore semantics need
+ *  directory-vs-file (a `dir/` pattern and a `!dir/` negation only resolve with
+ *  a trailing slash), so the gitignore decision is deferred to the stats-bearing
+ *  call rather than pruning a path that may be an explicitly unignored directory.
+ *  The stat-free hard rules still prune the heavy trees immediately.
  */
 function makeIgnored(projectPath: string): (absPath: string, stats?: Stats) => boolean {
   return (absPath: string, stats?: Stats): boolean => {
     const rel = toRel(projectPath, absPath)
     if (rel === null) return false // the project root — always walk it
-
-    const segs = rel.split('/')
-    // Heavy/irrelevant trees, pruned by segment so nested copies (a worktree's
-    // own node_modules, a submodule's .git) are caught at any depth.
-    if (segs.includes('node_modules')) return true
-    if (rel.endsWith('.DS_Store')) return true
-    const gitIdx = segs.indexOf('.git')
-    if (gitIdx !== -1) {
-      // Keep `.git` itself + HEAD/index/refs (the `git` channel needs them);
-      // drop only the huge `objects/` + `logs/` subtrees.
-      const sub = segs[gitIdx + 1]
-      return sub === 'objects' || sub === 'logs'
-    }
-
-    // Worktrees: `.worktrees/` is gitignored, but `.worktrees` and each immediate
-    // child must stay watched so worktree add/remove drives the `worktrees`
-    // channel. Deeper contents fall through to the gitignore prune below.
-    if (rel === '.worktrees' || /^\.worktrees\/[^/]+$/.test(rel)) return false
-
-    // Gitignored paths are pruned at the OS level (the actual inotify fix).
+    const hard = hardVerdict(rel)
+    if (hard !== undefined) return hard
+    if (!stats) return false // defer the gitignore decision to the stats call
     const ig = projectIgnores.get(projectPath)
-    if (!ig) return false
-    if (ig.ignores(rel)) return true
-    return !!stats?.isDirectory() && ig.ignores(rel + '/')
+    return !!ig && ig.ignores(stats.isDirectory() ? rel + '/' : rel)
   }
 }
 

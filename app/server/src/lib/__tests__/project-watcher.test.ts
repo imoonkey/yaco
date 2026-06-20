@@ -45,7 +45,7 @@ vi.mock('../attention-runtime', () => ({
   notifyAttentionTaskChange: vi.fn(),
 }))
 
-import { startProjectWatchers, stopProjectWatchers } from '../project-watcher'
+import { startProjectWatchers, stopProjectWatchers, hardVerdict } from '../project-watcher'
 
 function writeSession(handle: string, sessionPath: string): void {
   writeFileSync(join(mock.sessionsDir, `${handle}.json`), JSON.stringify({
@@ -140,5 +140,34 @@ describe('project-watcher agent session refreshes', () => {
     await vi.waitFor(() => {
       expect(mock.emitCalls).toContain('tasks')
     }, { timeout: 2000 })
+  })
+})
+
+
+describe('hardVerdict (watch-prune rules)', () => {
+  it('prunes node_modules at any depth', () => {
+    expect(hardVerdict('node_modules')).toBe(true)
+    expect(hardVerdict('a/b/node_modules/pkg')).toBe(true)
+    expect(hardVerdict('.worktrees/wt/node_modules/pkg')).toBe(true)
+  })
+
+  it('keeps .git metadata but prunes objects/ and logs/', () => {
+    expect(hardVerdict('.git')).toBe(false)
+    expect(hardVerdict('.git/HEAD')).toBe(false)
+    expect(hardVerdict('.git/refs/heads/main')).toBe(false)
+    expect(hardVerdict('.git/objects/ab/cd')).toBe(true)
+    expect(hardVerdict('.git/logs/HEAD')).toBe(true)
+  })
+
+  it('force-keeps the whole .worktrees subtree', () => {
+    expect(hardVerdict('.worktrees')).toBe(false)
+    expect(hardVerdict('.worktrees/wt')).toBe(false)
+    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBe(false)
+  })
+
+  it('defers everything else to the gitignore check', () => {
+    expect(hardVerdict('src/index.ts')).toBeUndefined()
+    expect(hardVerdict('dist')).toBeUndefined()
+    expect(hardVerdict('plan/tasks/x.json')).toBeUndefined()
   })
 })
