@@ -1,6 +1,8 @@
-import { watch, existsSync, type FSWatcher } from 'fs'
+import { watch, existsSync, type FSWatcher, type Stats } from 'fs'
 import { readFile, readdir } from 'fs/promises'
-import { join } from 'path'
+import { join, relative, sep } from 'path'
+import chokidar from 'chokidar'
+import type { FSWatcher as ChokidarWatcher } from 'chokidar'
 import type { Ignore } from 'ignore'
 import { loadProjects, type Project } from './projects'
 import { emitRefresh } from './notify'
@@ -15,6 +17,9 @@ const DEBOUNCE_MS = 200
  *  startup (the agent runtime creates it on first session — without re-arming,
  *  the change-driven engine would have a cold-start blind spot, R3). */
 const SESSIONS_DIR_REARM_MS = 1_000
+/** Upper bound on waiting for a project's chokidar initial scan to complete, so
+ *  a slow or pathological tree can never hang server startup. */
+const WATCHER_READY_TIMEOUT_MS = 10_000
 
 // Small, high-value global watchers (projects.json, agent sessions dir).
 const globalWatchers: FSWatcher[] = []
@@ -22,7 +27,13 @@ const globalWatchers: FSWatcher[] = []
 let sessionsDirRearmTimer: ReturnType<typeof setTimeout> | null = null
 // Per-project recursive watchers, keyed by project path so a project can be
 // watched/unwatched incrementally as it is registered/removed at runtime.
-const projectWatchers = new Map<string, FSWatcher>()
+const projectWatchers = new Map<string, ChokidarWatcher>()
+// Generation per path whose watcher is mid-arming (gitignore load + initial scan
+// in flight). A monotonic token lets a stale in-flight watchProject detect that a
+// newer arm (or an unwatch) superseded it, so its `finally` never clears a newer
+// arm's flag and a quick unwatch/re-watch can't leave the project unwatched.
+const armGeneration = new Map<string, number>()
+let armSeq = 0
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const projectIgnores = new Map<string, Ignore | null>()
 // Per-project matcher for task-graph files, derived from each project's configured
@@ -38,6 +49,54 @@ const IGNORE = [
   /node_modules\//,
   /\.DS_Store$/,
 ]
+
+/** Repo-relative POSIX path of `absPath` under `projectPath`, or null when
+ *  `absPath` is the project root itself (chokidar tests the root too). */
+function toRel(projectPath: string, absPath: string): string | null {
+  const rel = relative(projectPath, absPath)
+  if (!rel || rel.startsWith('..')) return null
+  return sep === '/' ? rel : rel.split(sep).join('/')
+}
+
+/** chokidar `ignored` predicate: prunes a directory from the recursive walk so
+ *  it never receives an inotify watch. This is the fix for inotify exhaustion —
+ *  `node_modules`, git internals, and every gitignored tree (build output, logs,
+ *  data dumps) are skipped at the OS level, not merely filtered out of events.
+ *
+ *  chokidar calls this with (path) then (path, stats); the directory form of a
+ *  gitignore pattern (`dist/`) only matches with a trailing slash, so the dir
+ *  itself is pruned on the stats-bearing call.
+ */
+function makeIgnored(projectPath: string): (absPath: string, stats?: Stats) => boolean {
+  return (absPath: string, stats?: Stats): boolean => {
+    const rel = toRel(projectPath, absPath)
+    if (rel === null) return false // the project root — always walk it
+
+    const segs = rel.split('/')
+    // Heavy/irrelevant trees, pruned by segment so nested copies (a worktree's
+    // own node_modules, a submodule's .git) are caught at any depth.
+    if (segs.includes('node_modules')) return true
+    if (rel.endsWith('.DS_Store')) return true
+    const gitIdx = segs.indexOf('.git')
+    if (gitIdx !== -1) {
+      // Keep `.git` itself + HEAD/index/refs (the `git` channel needs them);
+      // drop only the huge `objects/` + `logs/` subtrees.
+      const sub = segs[gitIdx + 1]
+      return sub === 'objects' || sub === 'logs'
+    }
+
+    // Worktrees: `.worktrees/` is gitignored, but `.worktrees` and each immediate
+    // child must stay watched so worktree add/remove drives the `worktrees`
+    // channel. Deeper contents fall through to the gitignore prune below.
+    if (rel === '.worktrees' || /^\.worktrees\/[^/]+$/.test(rel)) return false
+
+    // Gitignored paths are pruned at the OS level (the actual inotify fix).
+    const ig = projectIgnores.get(projectPath)
+    if (!ig) return false
+    if (ig.ignores(rel)) return true
+    return !!stats?.isDirectory() && ig.ignores(rel + '/')
+  }
+}
 
 /** Route a filename to a refresh channel */
 function routeChange(filename: string): string | null {
@@ -202,38 +261,86 @@ async function watchAgentSessionsDir(): Promise<void> {
   }
 }
 
-/** Start a recursive fs.watch for a single project (idempotent per path). Lets
- *  a project registered at runtime get live file-tree/git SSE without a server
- *  restart. The watcher is installed SYNCHRONOUSLY (before any await) so a
- *  concurrent unwatchProject / duplicate watchProject can't race the gitignore
- *  load and leak a watcher. */
+/** Resolve once chokidar finishes its initial scan, or after a bounded timeout
+ *  so a slow tree never hangs startup. Until 'ready', chokidar reports nothing —
+ *  awaiting it gives callers the old fs.watch guarantee: once watchProject
+ *  resolves, subsequent writes are observed. Both paths tear down their own
+ *  listener/timer so neither leaks. */
+function awaitWatcherReady(watcher: ChokidarWatcher): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false
+    const onReady = (): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      watcher.removeListener('ready', onReady)
+      resolve()
+    }, WATCHER_READY_TIMEOUT_MS)
+    timer.unref?.()
+    watcher.once('ready', onReady)
+  })
+}
+
+/** Start a pruned recursive watcher for a single project (idempotent per path).
+ *  Lets a project registered at runtime get live file-tree/git SSE without a
+ *  server restart. The project's gitignore is loaded BEFORE the watcher is
+ *  created so chokidar's `ignored` predicate can prune gitignored + heavy dirs
+ *  during the initial walk — they never consume an inotify watch. Resolves only
+ *  after the initial scan completes, so callers can rely on later writes firing. */
 export async function watchProject(project: Project): Promise<void> {
-  if (projectWatchers.has(project.path) || !existsSync(project.path)) return
+  const path = project.path
+  if (projectWatchers.has(path) || armGeneration.has(path) || !existsSync(path)) return
+  const gen = ++armSeq
+  armGeneration.set(path, gen)
 
-  // No ignore loaded yet → no filtering until the async load below resolves
-  // (a few extra refresh events at most, never missed ones).
-  projectIgnores.set(project.path, null)
-  // Resolve the project's configured tasks path up front (sync) so task writes
-  // route to the `tasks` channel from the first event.
-  armTaskFileMatcher(project.path)
-
-  let watcher: FSWatcher
   try {
-    watcher = watch(project.path, { recursive: true }, (_event, filename) => {
+    armTaskFileMatcher(path)
+    // Load the gitignore first so the `ignored` predicate prunes from the very
+    // first walk. A failed load → no gitignore filtering (heavy hard-coded dirs
+    // are still pruned), never a missed watch.
+    const ig = await getProjectGitignore(path).catch(() => null)
+    // Superseded by a newer arm / unwatch, or already watching, while we awaited.
+    if (armGeneration.get(path) !== gen || projectWatchers.has(path)) return
+    projectIgnores.set(path, ig)
+
+    let watcher: ChokidarWatcher
+    try {
+      watcher = chokidar.watch(path, {
+        ignored: makeIgnored(path),
+        ignoreInitial: true,
+        persistent: true,
+        followSymlinks: false,
+        ignorePermissionErrors: true,
+      })
+    } catch (err) {
+      console.error(`[project-watcher] failed to watch ${path}:`, err)
+      projectIgnores.delete(path)
+      return
+    }
+
+    watcher.on('all', (_event, absPath) => {
+      const filename = toRel(path, String(absPath))
       if (!filename) return
       const channel = routeChange(filename)
       if (!channel) return
 
-      // Reload gitignore when .gitignore itself changes
+      // Reload gitignore when .gitignore itself changes (affects future pruning
+      // decisions + the event filter below). Note: already-pruned dirs that a
+      // change unignores are not retroactively watched until the next restart.
       if (filename === '.gitignore') {
-        clearGitignoreCache(project.path)
-        void getProjectGitignore(project.path).then(newIg => {
-          if (projectWatchers.has(project.path)) projectIgnores.set(project.path, newIg)
-        })
+        clearGitignoreCache(path)
+        void getProjectGitignore(path).then(newIg => {
+          if (projectWatchers.has(path)) projectIgnores.set(path, newIg)
+        }).catch(() => undefined)
       }
 
-      // Skip SSE for filetree changes inside gitignored paths
-      const currentIg = projectIgnores.get(project.path)
+      // Defense in depth: a gitignored file inside a watched dir still gets no SSE.
+      const currentIg = projectIgnores.get(path)
       if (currentIg && channel === 'filetree' && currentIg.ignores(filename)) return
 
       debouncedEmit(channel)
@@ -245,44 +352,38 @@ export async function watchProject(project: Project): Promise<void> {
       // wakes the change-driven attention engine (a write may be a task_done /
       // task_blocked state edge). plan/tasks/** is not gitignored, so both fire
       // regardless of the ignore check above.
-      if (isTaskFile(filename, project.path)) {
+      if (isTaskFile(filename, path)) {
         debouncedEmit('tasks')
         notifyAttentionTaskChange()
       }
     })
-  } catch (err) {
-    console.error(`[project-watcher] failed to watch ${project.path}:`, err)
-    projectIgnores.delete(project.path)
-    return
+    watcher.on('error', (err) => {
+      console.warn(`[project-watcher] watcher error for ${path}:`, err)
+    })
+    projectWatchers.set(path, watcher)
+    await awaitWatcherReady(watcher)
+  } finally {
+    if (armGeneration.get(path) === gen) armGeneration.delete(path)
   }
-  watcher.on('error', (err) => {
-    console.warn(`[project-watcher] watcher error for ${project.path}:`, err)
-  })
-  projectWatchers.set(project.path, watcher)
-
-  // Load the real gitignore after install; skip if unwatched meanwhile.
-  void getProjectGitignore(project.path)
-    .then((ig) => { if (projectWatchers.has(project.path)) projectIgnores.set(project.path, ig) })
-    .catch(() => undefined)
 }
 
 /** Stop watching a single project (e.g. when it is removed from the registry). */
 export function unwatchProject(path: string): void {
+  armGeneration.delete(path) // abort an in-flight arm
   const watcher = projectWatchers.get(path)
   if (watcher) {
-    watcher.close()
+    void watcher.close()
     projectWatchers.delete(path)
   }
   projectIgnores.delete(path)
   projectTaskFileRe.delete(path)
 }
 
-/** Start recursive fs.watch for each project */
+/** Start pruned recursive watchers for each project */
 export async function startProjectWatchers(projects: Project[]): Promise<void> {
   stopProjectWatchers()
 
-  // Register small, high-value global watchers before recursive project
-  // watchers, which can consume many inotify slots in large workspaces.
+  // Register small, high-value global watchers before per-project watchers.
   watchProjectsFile()
   await watchAgentSessionsDir()
 
@@ -295,7 +396,8 @@ export function stopProjectWatchers(): void {
   if (sessionsDirRearmTimer) { clearTimeout(sessionsDirRearmTimer); sessionsDirRearmTimer = null }
   for (const w of globalWatchers) w.close()
   globalWatchers.length = 0
-  for (const w of projectWatchers.values()) w.close()
+  armGeneration.clear()
+  for (const w of projectWatchers.values()) void w.close()
   projectWatchers.clear()
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()

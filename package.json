@@ -7,9 +7,14 @@
     "app/ui"
   ],
   "scripts": {
-    "dev": "npm run dev:server & npm run dev:ui",
+    "dev": "app/scripts/services.sh restart && app/scripts/services.sh logs",
+    "dev:local": "npm run dev:server & npm run dev:ui",
     "dev:server": "cd app/server && npm run dev",
     "dev:ui": "cd app/ui && npm run dev",
+    "restart": "app/scripts/services.sh restart",
+    "stop": "app/scripts/services.sh stop",
+    "status": "app/scripts/services.sh status",
+    "logs": "app/scripts/services.sh logs",
     "build": "cd app/ui && npm run build",
     "start:server": "cd app/server && npm run start",
     "start:app": "npm run build && npm run start:server"
