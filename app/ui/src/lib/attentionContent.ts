@@ -18,10 +18,10 @@ export function stateLabel(item: AttentionItem): string {
   return item.title
 }
 
-/** The captured notice content, or '' when `message` is only the redundant
- *  `project · key` location fallback (the identity + project already show that;
- *  a crashed row always uses the fallback, so it collapses to its state label). */
+/** The captured notice to render on the content line. The server emits '' when
+ *  there is no notice (no location filler — the scan line already carries identity
+ *  + project), so the client renders `message` verbatim; an empty value means the
+ *  row shows just its state label. */
 export function noticeContent(item: AttentionItem): string {
-  const fallback = `${item.subject.project} · ${identityKey(item)}`
-  return item.message && item.message !== fallback ? item.message : ''
+  return item.message ?? ''
 }

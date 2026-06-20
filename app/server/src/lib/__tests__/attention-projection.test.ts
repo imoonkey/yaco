@@ -870,18 +870,18 @@ describe('line-2 notice — content over location template', () => {
     expect(snap.needsYou[0].message).toBe('Ship v1 or wait?')
   })
 
-  it('blocked session with no notice falls back to proj · name', () => {
+  it('blocked session with no notice → empty content (no location filler)', () => {
     const snap = projectAttention(
       input({ sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: 'T1', blockReason: 'permission' })] }),
     )
-    expect(snap.needsYou[0].message).toBe('proj · s')
+    expect(snap.needsYou[0].message).toBe('')
   })
 
-  it('crashed session ignores a stray notice — keeps the location fallback', () => {
+  it('crashed session ignores a stray notice → empty content (exit code is in the title)', () => {
     const snap = projectAttention(
       input({ sessions: [sess({ name: 'w', status: 'crashed', statusEnteredAt: 'T2', exitCode: 1, notice: 'leftover' })] }),
     )
-    expect(snap.needsYou[0].message).toBe('proj · w')
+    expect(snap.needsYou[0].message).toBe('')
   })
 
   it('task_blocked message = the live task notice (title)', () => {
@@ -932,14 +932,14 @@ describe('line-2 notice — content over location template', () => {
     expect(row?.message).toBe('Which migration path?')
   })
 
-  it('crashed history row ignores the payload notice', () => {
+  it('crashed history row has empty content (exit code is in the title)', () => {
     const snap = projectAttention(
       input({
         events: [ev({ kind: 'session_crashed', id: 'session_crashed:proj::w:T1', sessionId: 'w', ts: '2026-06-10T00:00:00.000Z', payload: { sessionName: 'w', exitCode: 2, notice: 'ignore me' } })],
       }),
     )
     const row = snap.recent.find((r) => r.generation === 'session_crashed:proj::w:T1')
-    expect(row?.message).toBe('proj · w')
+    expect(row?.message).toBe('')
   })
 
   it('openAndReviewGenerations carries notice, keyed by project::name (no cross-project leak)', () => {

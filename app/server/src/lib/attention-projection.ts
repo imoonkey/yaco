@@ -241,13 +241,13 @@ function metaOf(event: YacoEvent): EventMeta {
   }
 }
 
-/** Line-2 of a notification: the captured `notice` content when present, else the
- *  location fallback (`project · key`) — the pre-milestone redundant template,
- *  kept only as the empty-notice floor. The caller passes notice from the LIVE
- *  snapshot for ACT rows and from the event payload (`metaOf`) for REVIEW/history. */
-function lineTwo(notice: string | undefined, project: string, key: string): string {
-  const n = notice?.trim()
-  return n ? n : `${project} · ${key}`
+/** A row's content line: the captured `notice`, trimmed, or '' when absent. The
+ *  web client renders identity + project on the scan line, so an empty notice
+ *  needs no location filler — the row shows just its state label. The caller
+ *  passes notice from the LIVE snapshot for ACT rows, from the event payload
+ *  (`metaOf`) for REVIEW/history. */
+function noticeText(notice: string | undefined): string {
+  return notice?.trim() ?? ''
 }
 
 // ── Copy (spec §9, §10) ─────────────────────────────────────────────────────
@@ -329,11 +329,9 @@ function buildOpenAct(input: ProjectionInput): AttentionItem[] {
       group: 'needs-you',
       subject: { kind: 'session', project: s.project, sessionName: s.name },
       title: sessionTitle(type, s.exitCode, s.blockReason),
-      // Crashed ignores notice (the exit code is already in the title); blocked
-      // shows the live question/permission content.
-      message: type === 'session_crashed'
-        ? `${s.project} · ${s.name}`
-        : lineTwo(s.notice, s.project, s.name),
+      // Crashed ignores notice (the exit code is already in the title) → '';
+      // blocked shows the live question/permission content.
+      message: type === 'session_crashed' ? '' : noticeText(s.notice),
       tsMs: Date.parse(enteredAt) || 0,
       count: 1,
       interrupt: false,
@@ -352,7 +350,7 @@ function buildOpenAct(input: ProjectionInput): AttentionItem[] {
       group: 'needs-you',
       subject: { kind: 'task', project: t.project, taskId: t.id, sessionNames: t.agents },
       title: `Task blocked: ${t.id}`,
-      message: lineTwo(t.notice, t.project, t.id),
+      message: noticeText(t.notice),
       tsMs: Date.parse(enteredAt) || 0,
       count: 1,
       interrupt: false,
@@ -496,7 +494,7 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
       group: 'ready',
       subject: { kind: 'session', project: ev.projectId, sessionName: name },
       title: 'Your turn',
-      message: lineTwo(m.notice, ev.projectId, name),
+      message: noticeText(m.notice),
       tsMs: tsMsOf(ev),
       count: 1,
       interrupt: false,
@@ -523,7 +521,7 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
       group: 'ready',
       subject: { kind: 'task', project: ev.projectId, taskId, sessionNames: m.agents ?? [] },
       title: `Task done: ${taskId}`,
-      message: lineTwo(m.notice, ev.projectId, taskId),
+      message: noticeText(m.notice),
       tsMs: tsMsOf(ev),
       count: 1,
       interrupt: false,
@@ -598,7 +596,6 @@ function buildHistory(
         : isAct
           ? `Was blocked: ${subject.taskId}` // task_blocked
           : `Task done: ${subject.taskId}` // task_done
-    const locationKey = subject.kind === 'session' ? subject.sessionName : subject.taskId
     out.push({
       generation,
       type,
@@ -606,11 +603,9 @@ function buildHistory(
       group: 'recent',
       subject,
       title,
-      // Crashed keeps the location fallback (exit code is in the title); every
-      // other row shows the notice captured in the event payload, else location.
-      message: type === 'session_crashed'
-        ? `${ev.projectId} · ${locationKey}`
-        : lineTwo(m.notice, ev.projectId, locationKey),
+      // Crashed has no content (the exit code is in the title) → ''; every other
+      // row shows the notice captured in the event payload, else ''.
+      message: type === 'session_crashed' ? '' : noticeText(m.notice),
       tsMs,
       count: 1,
       interrupt: false,
