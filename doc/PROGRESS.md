@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-06-20: Notification panel + toast redesign (information density)
+
+**What changed:**
+- Inverted the row hierarchy so the captured `notice` is the hero. Each row is now
+  a **scan line** (identity + faint `project · time` + a kind glyph: `SquareTerminal`
+  = agent session, `ListChecks` = task-graph node) over a **content line** (the
+  tier-colored state label leads, then the notice on its own ≤2 lines; toast ≤3).
+  The toast + burst mirror the panel.
+- The web client **suppresses the server's redundant `${project} · ${key}` fallback**
+  (`noticeContent`) and maps id-bearing task titles to a bare verb (`stateLabel` →
+  `Done`/`Blocked`), so a no-notice row collapses to just its state label
+  (crashed → `Crashed (exit 1)`). New shared `ui/src/lib/attentionContent.ts`
+  (`identityKey`/`stateLabel`/`noticeContent`); `tierColor` moved to `attentionColors.ts`.
+
+**Why:**
+- The notif-content milestone (2026-06-19, below) gave rows real content, but the
+  layout still led with the generic state word ("Your turn") on a bold full-width
+  line and flattened project/session/response onto one truncating line — the
+  response died at ~2 words. Task and session rows were also visually identical
+  despite routing to different places on click.
+
+**Key files:** `app/ui/src/components/NotificationPanel.tsx`, `app/ui/src/hooks/useAttention.ts`, `app/ui/src/lib/attentionContent.ts`, `app/ui/src/lib/attentionColors.ts`
+**Verification:** app/ui `tsc -b` clean; vitest NotificationBell + useAttention 36/36; eslint clean. Visual reviewed via a static Solarized preview (light/dark, all states: blocked/crashed/idle/done, count, no-notice, recent).
+**Commit:** d2cb600f
+**Next:** optional — drop the now-client-suppressed `${project} · ${key}` fallback at the server source (`attention-projection.ts`) so the dead template is gone end-to-end.
+**Blockers:** None
+
 ## 2026-06-19: Notification line-2 carries content, not a location template
 
 **What changed:**

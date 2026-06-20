@@ -179,7 +179,7 @@ Behavior:
 - Routes `refresh` and `ui-state:changed` events to channel-specific / typed listeners (refresh debounced)
 - **Sleep/wake recovery**: module-level `visibilitychange` listener forces `closeSource()` + `getSource()` when page becomes visible — kills zombie EventSource connections that survive sleep without firing `onerror`, then cascades refresh to all polling hooks via the `open` handler
 
-## useAttention.ts (~356 lines)
+## useAttention.ts (~516 lines)
 
 Hidden-tab-safe Facet B consumer — the single client entry point for the bell,
 badges, and interrupts. Mirrors the server `AttentionSnapshot` shape (does not

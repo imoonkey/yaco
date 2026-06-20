@@ -19,7 +19,7 @@ tab still gets interrupted. There is no capped notification inbox.
 
 ## Related Code
 
-`server/src/lib/attention-engine.ts`, `server/src/lib/attention-projection.ts`, `server/src/lib/attention-runtime.ts`, `server/src/routes/attention.ts`, `server/src/lib/notify.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`
+`server/src/lib/attention-engine.ts`, `server/src/lib/attention-projection.ts`, `server/src/lib/attention-runtime.ts`, `server/src/routes/attention.ts`, `server/src/lib/notify.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`, `ui/src/lib/attentionContent.ts`
 
 ## Two Facets, Two Loci
 
@@ -130,21 +130,32 @@ mirrors the JSON shape). Builds `AttentionSnapshot`:
   otherwise it fails open and pages (pinned ⇒ OWNED ⇒ pages). `nowMs` is injected
   by the engine/cold-feed so the projector stays pure.
 
-## Line-2 content — the `notice` field
+## Row anatomy & the `notice` field
 
-Every bell/toast row's **line-2** carries the highest-information content for the
-attention state, not a repeat of the location (the title row already shows
-`project / name`). The content is one transient string, `SessionState.notice`,
-**captured by the CLI** and flowed through the existing session-state read — no
-app-side `~/.claude` / `~/.codex` read (the log-access boundary stays intact).
+Each bell/toast row is a **scan line** + a **content line** (`NotificationPanel`
+row; the toast mirrors it):
 
-| State (title) | Line-2 source |
+- **Scan line** — the **identity** (`identityKey`: session name or task id)
+  anchors it; `project · time` are faint right-aligned meta; a faint **kind glyph**
+  marks the subject (`SquareTerminal` = agent session, `ListChecks` = task-graph
+  node — they route to different places on click). A coalesced `count` shows as a
+  small chip.
+- **Content line (the hero)** — the **state label** (`stateLabel`) leads in its
+  tier color, then the captured `notice` on its own ≤2 lines (toast ≤3). This is
+  the highest-information content for the state; the location is **not** repeated
+  here — the scan line already carries identity + project.
+
+The notice is one transient string, `SessionState.notice`, **captured by the CLI**
+and flowed through the existing session-state read — no app-side `~/.claude` /
+`~/.codex` read (the log-access boundary stays intact).
+
+| State (label) | notice source |
 |---|---|
 | `Has a question` | hook `tool_input.questions[0].question` — Claude `AskUserQuestion` + Codex `request_user_input`, identical shape |
 | `Needs approval` | `${tool_name}: ${arg}` from the gating hook `tool_input` (`command` / `file_path` / `cmd`); bare tool name only when no arg |
 | `Your turn` (idle) | the agent's final-message opening — **Claude only**, from the `Stop` transcript tail (`lastFinalFromTranscript`). **Codex idle deferred to v1.1** (its `Stop` hook does not fire) |
-| `Task done` / `Task blocked` | the task title (`Task.title \|\| id`), set in `readTasks` |
-| `Crashed (exit N)` | — `notice` ignored; the exit code is already in the title |
+| `Done` / `Blocked` (task) | the task title (`Task.title \|\| id`), set in `readTasks` |
+| `Crashed (exit N)` | — `notice` ignored; the exit code is already in the label |
 
 - **Capture (CLI).** Written in `applyHookEvent` (question/permission — pure) and
   the hook wrapper (Claude idle — impure, reads the transcript). `setStatus`
@@ -154,15 +165,23 @@ app-side `~/.claude` / `~/.codex` read (the log-access boundary stays intact).
   re-affirmations never clear). Sanitized + clamped to ≤200 chars by `clampNotice`
   (`@yaco/cli/core/agent`) at capture, because it lands in the durable
   `events.jsonl` payload — it is bounded on-disk retention, not purely transient.
-- **Render (projector).** `lineTwo(notice, proj, key)` replaces the old
-  `${proj} · ${key}` template at all five message sites, falling back to the
-  location only when `notice` is empty. **ACT (`needsYou`)** reads the live
+- **Render (server projector).** `lineTwo(notice, proj, key)` is the durable /
+  OS-notification floor at all five message sites: the captured notice, falling
+  back to `${proj} · ${key}` only when empty. **ACT (`needsYou`)** reads the live
   snapshot notice (`s.notice`/`t.notice`); **REVIEW (`ready`) + Recent** read the
-  event-payload notice captured at edge-append (`metaOf`). `session_crashed`
-  always uses the location fallback. The blocked debounce is generation-aware and
-  appends the *freshest* snapshot at fire time, so a notice that fills during the
-  1.5s window (e.g. `permission_prompt` then `PermissionRequest`) is still
-  captured in the durable edge.
+  event-payload notice captured at edge-append (`metaOf`). `session_crashed` always
+  uses the location fallback. The blocked debounce is generation-aware and appends
+  the *freshest* snapshot at fire time, so a notice that fills during the 1.5s
+  window (e.g. `permission_prompt` then `PermissionRequest`) is still captured in
+  the durable edge.
+- **Render (web client).** Because the scan line already shows identity + project,
+  the web UI **suppresses the server's `${proj} · ${key}` fallback**: `noticeContent`
+  (`ui/src/lib/attentionContent.ts`) treats a message equal to that template as
+  empty, so a no-notice row renders **just its state label** (a crashed row →
+  `Crashed (exit 1)`; a no-notice idle → just `Your turn`). `stateLabel` maps the
+  id-bearing task titles (`Task done: T1`) to a bare verb (`Done`/`Blocked`) so the
+  identity is never double-printed. (The OS `Notification` body still uses the raw
+  notice — it has no scan line to dedupe against.)
 
 ## SSE Delivery — `notify.ts`
 
