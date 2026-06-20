@@ -17,7 +17,12 @@ import {
 import { handleHookEvent } from "../src/commands/agent/hook-event.ts";
 import { writeState, readState, statePath } from "../src/lib/core/agent/session-state.ts";
 import { readOriginForSessionId } from "../src/lib/core/agent/origin.ts";
-import type { SessionState } from "../src/lib/core/agent/model.ts";
+import {
+  clampNotice,
+  NOTICE_MAX,
+  setStatus,
+  type SessionState,
+} from "../src/lib/core/agent/model.ts";
 import { isOk, isErr } from "../src/lib/core/result.ts";
 
 function makeState(overrides: Partial<SessionState> = {}): SessionState {
@@ -31,6 +36,18 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
     createdAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };
+}
+
+/** Spawn a detached child that overwrites the state file mid-debounce.
+ *  Bun.sleepSync blocks the main thread but not other processes, which is
+ *  exactly the race the debounce defends against (two provider hooks
+ *  running concurrently as separate processes). */
+function scheduleRivalWrite(handle: string, afterMs: number, newState: SessionState): void {
+  const path = statePath(handle);
+  const payload = JSON.stringify(newState);
+  const script = `sleep ${(afterMs / 1000).toFixed(3)} && printf '%s' '${payload.replace(/'/g, "'\\''")}' > "${path}"`;
+  const child = spawn("bash", ["-c", script], { stdio: "ignore", detached: true });
+  child.unref();
 }
 
 describe("applyHookEvent", () => {
@@ -228,6 +245,199 @@ describe("applyHookEvent — blocked transitions", () => {
   });
 });
 
+describe("applyHookEvent — notice capture (line-2 content)", () => {
+  const ASK = { questions: [{ question: "Ship v1 or wait for review?", header: "Release" }] };
+
+  it("PreToolUse(AskUserQuestion) sets notice = the question", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PreToolUse", "", true, undefined, "AskUserQuestion", ASK,
+    );
+    expect(next?.blockReason).toBe("question");
+    expect(next?.notice).toBe("Ship v1 or wait for review?");
+  });
+
+  it("Codex request_user_input carries the same questions[] shape → notice", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PreToolUse", "", true, undefined, "request_user_input", ASK,
+    );
+    expect(next?.blockReason).toBe("question");
+    expect(next?.notice).toBe("Ship v1 or wait for review?");
+  });
+
+  it("PermissionRequest(Bash) sets notice = `Bash: <command>`", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "Bash",
+      { command: "git push origin main" },
+    );
+    expect(next?.blockReason).toBe("permission");
+    expect(next?.notice).toBe("Bash: git push origin main");
+  });
+
+  it("Codex exec_command permission sets notice = `exec_command: <cmd>`", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "exec_command",
+      { cmd: "rm -rf build" },
+    );
+    expect(next?.notice).toBe("exec_command: rm -rf build");
+  });
+
+  it("PermissionRequest(Edit) keys on file_path", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "Edit",
+      { file_path: "/repo/src/main.ts" },
+    );
+    expect(next?.notice).toBe("Edit: /repo/src/main.ts");
+  });
+
+  it("a string[] arg (Codex command array) renders as one line", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "exec_command",
+      { command: ["bash", "-lc", "echo hi"] },
+    );
+    expect(next?.notice).toBe("exec_command: bash -lc echo hi");
+  });
+
+  it("Notification(permission_prompt) AFTER PermissionRequest preserves the notice", () => {
+    let s = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "Bash",
+      { command: "git push" },
+    )!;
+    expect(s.notice).toBe("Bash: git push");
+    // A later payload-less permission_prompt is the SAME state (no transition) and
+    // carries no tool_input → it must not erase the filled notice.
+    s = applyHookEvent(s, "Notification", "", true, "permission_prompt")!;
+    expect(s.status).toBe("blocked");
+    expect(s.notice).toBe("Bash: git push");
+  });
+
+  it("permission_prompt FIRST (empty) then PermissionRequest fills the notice", () => {
+    let s = applyHookEvent(
+      makeState({ status: "processing" }), "Notification", "", true, "permission_prompt",
+    )!;
+    expect(s.notice).toBeUndefined();
+    s = applyHookEvent(s, "PermissionRequest", "", true, undefined, "Bash", { command: "git push" })!;
+    expect(s.notice).toBe("Bash: git push");
+  });
+
+  it("a payload-less PermissionRequest re-affirmation does NOT degrade a richer notice", () => {
+    let s = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "Bash", { command: "git push" },
+    )!;
+    expect(s.notice).toBe("Bash: git push");
+    // Same (status, reason) → no transition; a payload-less re-fire must leave the
+    // richer notice intact, not overwrite it with the bare tool name.
+    s = applyHookEvent(s, "PermissionRequest", "", true, undefined, "Bash")!;
+    expect(s.notice).toBe("Bash: git push");
+  });
+
+  it("(F1) blocked(question) → blocked(permission) re-stamps generation + drops old notice", () => {
+    const OLD = "2020-01-01T00:00:00.000Z";
+    // No command arg → notice falls back to the bare tool name; the key point is
+    // the stale question text never leaks into the new permission block, and the
+    // generation key is freshly stamped.
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question", statusEnteredAt: OLD, notice: "old question?" }),
+      "PermissionRequest", "", true, undefined, "Bash",
+    )!;
+    expect(next.blockReason).toBe("permission");
+    expect(next.statusEnteredAt).not.toBe(OLD); // fresh generation
+    expect(next.notice).toBe("Bash"); // NOT "old question?"
+  });
+
+  it("(F1) blocked(question) → blocked(permission) WITH payload fills the new notice", () => {
+    const OLD = "2020-01-01T00:00:00.000Z";
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question", statusEnteredAt: OLD, notice: "old question?" }),
+      "PermissionRequest", "", true, undefined, "Bash", { command: "git push" },
+    )!;
+    expect(next.statusEnteredAt).not.toBe(OLD);
+    expect(next.notice).toBe("Bash: git push");
+  });
+
+  it("(F1) blocked(trust) → blocked(permission) re-stamps + fills", () => {
+    const OLD = "2020-01-01T00:00:00.000Z";
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "trust", statusEnteredAt: OLD }),
+      "PermissionRequest", "", true, undefined, "Bash", { command: "git push" },
+    )!;
+    expect(next.blockReason).toBe("permission");
+    expect(next.statusEnteredAt).not.toBe(OLD);
+    expect(next.notice).toBe("Bash: git push");
+  });
+
+  it("PostToolUse → processing clears a stale question notice", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question", notice: "Ship it?" }),
+      "PostToolUse", "", true, undefined, "AskUserQuestion",
+    )!;
+    expect(next.status).toBe("processing");
+    expect(next.notice).toBeUndefined();
+  });
+
+  it("missing/empty tool_input leaves notice cleared (no crash)", () => {
+    const q = applyHookEvent(makeState({ status: "processing" }), "PreToolUse", "", true, undefined, "AskUserQuestion", {})!;
+    expect(q.notice).toBeUndefined();
+    const p = applyHookEvent(makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "Bash")!;
+    // No args → fall back to the bare tool name.
+    expect(p.notice).toBe("Bash");
+  });
+});
+
+describe("setStatus — notice lifecycle (unified edge predicate)", () => {
+  it("clears notice on a status transition", () => {
+    const s = makeState({ status: "idle", notice: "Your turn: done." });
+    setStatus(s, "processing");
+    expect(s.notice).toBeUndefined();
+  });
+
+  it("preserves notice on a same-(status,reason) re-affirmation", () => {
+    const s = makeState({ status: "blocked", blockReason: "permission", notice: "Bash: git push", statusEnteredAt: "2020-01-01T00:00:00.000Z" });
+    setStatus(s, "blocked", "permission");
+    expect(s.notice).toBe("Bash: git push");
+    expect(s.statusEnteredAt).toBe("2020-01-01T00:00:00.000Z"); // no re-stamp
+  });
+
+  it("clears notice + re-stamps on a blocked-reason change", () => {
+    const OLD = "2020-01-01T00:00:00.000Z";
+    const s = makeState({ status: "blocked", blockReason: "question", notice: "Ship it?", statusEnteredAt: OLD });
+    setStatus(s, "blocked", "permission");
+    expect(s.notice).toBeUndefined();
+    expect(s.statusEnteredAt).not.toBe(OLD);
+  });
+
+  it("clears notice on a crash transition (mark-crashed path)", () => {
+    const s = makeState({ status: "processing", notice: "still working" });
+    setStatus(s, "crashed");
+    expect(s.notice).toBeUndefined();
+  });
+});
+
+describe("clampNotice — sanitize + clamp", () => {
+  it("strips ANSI and control chars and collapses whitespace", () => {
+    expect(clampNotice("[31mred[0m\tand\nnewlines")).toBe("red and newlines");
+  });
+
+  it("clamps to NOTICE_MAX with an ellipsis", () => {
+    const long = "x".repeat(NOTICE_MAX + 50);
+    const out = clampNotice(long);
+    expect(out.length).toBe(NOTICE_MAX + 1); // 200 chars + the ellipsis
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("cuts on a codepoint boundary so a non-BMP char is never split", () => {
+    const out = clampNotice("a".repeat(NOTICE_MAX - 1) + "😀extra");
+    // 199 ASCII + the emoji = 200 codepoints kept, then the ellipsis. The emoji
+    // must survive whole (no lone surrogate, which would be invalid UTF-8 in the
+    // durable events.jsonl).
+    expect([...out].length).toBe(NOTICE_MAX + 1);
+    expect(out.endsWith("😀…")).toBe(true);
+  });
+
+  it("returns empty for all-control input", () => {
+    expect(clampNotice("")).toBe("");
+  });
+});
+
 describe("processHookEvent (with stub handle/state)", () => {
   it("returns null for unknown event names", () => {
     const next = processHookEvent("foo", makeState(), "NotAnEvent", {});
@@ -276,7 +486,7 @@ describe("hook-event origin recording", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("records origin when a hook backfills a real session id", () => {
+  it("records origin when a hook backfills a real session id", async () => {
     const handle = "origin-hook";
     writeState(makeState({
       handle,
@@ -285,7 +495,7 @@ describe("hook-event origin recording", () => {
       parentSession: "parent",
     }));
 
-    runHookEventForHandle(handle, "UserPromptSubmit", {
+    await runHookEventForHandle(handle, "UserPromptSubmit", {
       hook_event_name: "UserPromptSubmit",
       session_id: "hook-real-id",
     });
@@ -298,7 +508,7 @@ describe("hook-event origin recording", () => {
     });
   });
 
-  it("does not record origin on hook writes after the id was already resolved", () => {
+  it("does not record origin on hook writes after the id was already resolved", async () => {
     const handle = "origin-existing";
     writeState(makeState({
       handle,
@@ -308,7 +518,7 @@ describe("hook-event origin recording", () => {
       parentSession: "parent",
     }));
 
-    runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
 
     expect(readOriginForSessionId("already-real")).toBeNull();
   });
@@ -331,26 +541,14 @@ describe("Stop debounce — runHookEventForHandle", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** Spawn a detached child that overwrites the state file mid-debounce.
-   *  Bun.sleepSync blocks the main thread but not other processes, which is
-   *  exactly the race the debounce defends against (two provider hooks
-   *  running concurrently as separate processes). */
-  function scheduleRivalWrite(handle: string, afterMs: number, newState: SessionState): void {
-    const path = statePath(handle);
-    const payload = JSON.stringify(newState);
-    const script = `sleep ${(afterMs / 1000).toFixed(3)} && printf '%s' '${payload.replace(/'/g, "'\\''")}' > "${path}"`;
-    const child = spawn("bash", ["-c", script], { stdio: "ignore", detached: true });
-    child.unref();
-  }
-
-  it("commits Stop → idle when no concurrent mutation lands during the window", () => {
+  it("commits Stop → idle when no concurrent mutation lands during the window", async () => {
     const handle = "debounce-stable";
     writeState(makeState({ handle, status: "processing" }));
-    runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
     expect(readState(handle)?.status).toBe("idle");
   });
 
-  it("backs off when a fresher event mutates state during the debounce window", () => {
+  it("backs off when a fresher event mutates state during the debounce window", async () => {
     const handle = "debounce-race";
     // Simulating: turn N Stop fires. Mid-debounce, turn N+1 UserPromptSubmit
     // lands and writes processing. Stop's post-sleep re-read sees the mutation
@@ -367,14 +565,14 @@ describe("Stop debounce — runHookEventForHandle", () => {
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
-    runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
     expect(after?.sessionId).toBe("turn-N+1");
   });
 
-  it("StopFailure honors the same debounce", () => {
+  it("StopFailure honors the same debounce", async () => {
     const handle = "debounce-failure";
     writeState(makeState({
       handle,
@@ -388,10 +586,90 @@ describe("Stop debounce — runHookEventForHandle", () => {
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
-    runHookEventForHandle(handle, "StopFailure", { hook_event_name: "StopFailure" });
+    await runHookEventForHandle(handle, "StopFailure", { hook_event_name: "StopFailure" });
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
     expect(after?.sessionId).toBe("turn-N+1");
+  });
+});
+
+describe("Claude idle notice — Stop transcript tail", () => {
+  const ORIGINAL = process.env["YACO_AGENT_SESSIONS_DIR"];
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "yaco-idle-notice-"));
+    process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
+  });
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
+    else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Write a Claude transcript JSONL with a trailing end_turn assistant `final`. */
+  function writeTranscript(finalText: string): string {
+    const path = join(dir, "transcript.jsonl");
+    const lines = [
+      JSON.stringify({ type: "assistant", message: { stop_reason: null, content: [{ type: "text", text: "thinking out loud" }] } }),
+      JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "go on" }] } }),
+      JSON.stringify({ type: "assistant", message: { stop_reason: "end_turn", content: [{ type: "text", text: finalText }] } }),
+    ];
+    writeFileSync(path, lines.join("\n") + "\n");
+    return path;
+  }
+
+  it("fills the idle notice with the last final message on Stop", async () => {
+    const handle = "idle-claude";
+    writeState(makeState({ handle, provider: "claude", status: "processing" }));
+    const transcript_path = writeTranscript("All set — every test passes.");
+
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+
+    const after = readState(handle);
+    expect(after?.status).toBe("idle");
+    expect(after?.notice).toBe("All set — every test passes.");
+  });
+
+  it("a stale Stop that backs off in the debounce writes NO notice", async () => {
+    const handle = "idle-stale";
+    writeState(makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N" }));
+    const transcript_path = writeTranscript("This must not be captured.");
+    // A fresher event lands mid-debounce → the Stop backs off without writing.
+    scheduleRivalWrite(
+      handle,
+      Math.floor(STOP_DEBOUNCE_MS / 2),
+      makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N+1" }),
+    );
+
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+
+    const after = readState(handle);
+    expect(after?.status).toBe("processing");
+    expect(after?.notice).toBeUndefined();
+  });
+
+  it("Codex idle gets no notice (no reliable turn-end hook in v1)", async () => {
+    const handle = "idle-codex";
+    writeState(makeState({ handle, provider: "codex", status: "processing" }));
+    const transcript_path = writeTranscript("Codex closing message.");
+
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+
+    const after = readState(handle);
+    expect(after?.status).toBe("idle");
+    expect(after?.notice).toBeUndefined();
+  });
+
+  it("boot SessionStart → idle carries no transcript → no notice", async () => {
+    const handle = "idle-boot";
+    writeState(makeState({ handle, provider: "claude", status: "starting" }));
+
+    await runHookEventForHandle(handle, "SessionStart", { hook_event_name: "SessionStart", session_id: "boot" });
+
+    const after = readState(handle);
+    expect(after?.status).toBe("idle");
+    expect(after?.notice).toBeUndefined();
   });
 });

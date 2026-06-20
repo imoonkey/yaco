@@ -7,6 +7,7 @@
  *  pull them into its hot read path.
  */
 import { isAbsolute, normalize, relative, sep } from "node:path";
+import { clampNotice } from "./model.ts";
 import type { BlockReason, SessionStatus, SpawnedBy } from "./model.ts";
 
 /** A minimal project reference (name + absolute path). */
@@ -33,6 +34,8 @@ export interface AgentSessionRow {
   pid: number;
   spawnedBy?: SpawnedBy;
   parentSession?: string;
+  /** Transient line-2 content for the current attention state (sanitized + clamped). */
+  notice?: string;
 }
 
 /** Loose shape accepted by the projection: persisted SessionState, runtime
@@ -49,6 +52,7 @@ export interface ProjectableSessionState {
   blockReason?: string;
   spawnedBy?: string;
   parentSession?: string;
+  notice?: string;
 }
 
 const VALID_STATUSES = new Set<string>(["starting", "idle", "processing", "blocked", "crashed"]);
@@ -127,6 +131,13 @@ export function toSessionRow(
   }
   if (typeof state.parentSession === "string" && state.parentSession) {
     row.parentSession = state.parentSession;
+  }
+  if (typeof state.notice === "string" && state.notice) {
+    // Defensive clamp at the boundary: the state file is YACO-owned and already
+    // clamped at capture, but re-sanitize so a hand-edited/legacy file can never
+    // leak an oversized or control-laden notice into the app projection.
+    const notice = clampNotice(state.notice);
+    if (notice) row.notice = notice;
   }
   return row;
 }

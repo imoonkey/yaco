@@ -8,7 +8,8 @@ import { execSync } from "child_process";
 import { isResolvedSessionId, recordOriginIfResolved } from "./origin.ts";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
-import { PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
+import { clampNotice, PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
+import { claudeOutput, lastFinalFromTranscript } from "./providers/output.ts";
 
 export type { HookEvent } from "./model.ts";
 
@@ -36,6 +37,61 @@ export interface HookInput {
   notification_type?: string;
   /** Tool name from the hook payload (snake_case, kept verbatim per provider). */
   tool_name?: string;
+  /** Tool arguments from the gating/question hook payload. Same `questions[]`
+   *  shape across Claude (`AskUserQuestion`) and Codex (`request_user_input`);
+   *  provider-specific keys (`command`/`file_path`/`cmd`) for a permission tool.
+   *  Narrowed by the pure notice extractors, never trusted structurally. */
+  tool_input?: unknown;
+  /** Stop-hook transcript path (Claude). Read tail-only to fill the idle notice. */
+  transcript_path?: string;
+}
+
+/** Extract the line-2 notice for a `blocked(question)` edge: the first question's
+ *  text. Shared by Claude `AskUserQuestion` and Codex `request_user_input` —
+ *  identical `tool_input.questions[]` shape, so one extractor, no provider branch. */
+function questionNotice(toolInput: unknown): string | undefined {
+  if (!toolInput || typeof toolInput !== "object") return undefined;
+  const questions = (toolInput as { questions?: unknown }).questions;
+  if (!Array.isArray(questions) || questions.length === 0) return undefined;
+  const first = questions[0] as { question?: unknown } | undefined;
+  return typeof first?.question === "string" && first.question.trim() ? first.question : undefined;
+}
+
+/** A string or string[] argument rendered as one line, or undefined when neither. */
+function argString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string")) {
+    return (value as string[]).join(" ");
+  }
+  return undefined;
+}
+
+/** Extract the line-2 detail for a `blocked(permission)` edge: `${tool}: ${arg}`.
+ *  Provider-aware key pick — Claude `command` (Bash) / `file_path` (Edit/Write),
+ *  Codex `cmd` (`exec_command`) — falling back to the first string-ish arg. Pure
+ *  `tool_input`-derived: returns undefined when there is no arg to show, so a
+ *  payload-less re-affirmation never overwrites a richer existing notice. The
+ *  bare tool name is handled by the caller (fills only an empty notice). */
+function permissionNotice(toolName: string | undefined, toolInput: unknown): string | undefined {
+  const ti = toolInput && typeof toolInput === "object" ? (toolInput as Record<string, unknown>) : {};
+  let keyArg = argString(ti.command) ?? argString(ti.cmd) ?? argString(ti.file_path);
+  if (!keyArg) {
+    for (const value of Object.values(ti)) {
+      keyArg = argString(value);
+      if (keyArg) break;
+    }
+  }
+  if (!keyArg) return undefined;
+  return toolName ? `${toolName}: ${keyArg}` : keyArg;
+}
+
+/** Set `next.notice` from a raw extracted value, sanitized + clamped. Payload-
+ *  gated: a falsy/empty result leaves notice untouched (setStatus already cleared
+ *  it on the edge), so a payload-less re-affirmation never erases a filled notice. */
+function fillNotice(next: SessionState, raw: string | undefined): void {
+  if (!raw) return;
+  const notice = clampNotice(raw);
+  if (notice) next.notice = notice;
 }
 
 /** Derive handle from live tmux session name. */
@@ -64,6 +120,7 @@ export function applyHookEvent(
   sessionAlive: boolean,
   notificationType?: string,
   toolName?: string,
+  toolInput?: unknown,
 ): SessionState | null {
   const next: SessionState = { ...state };
   const isQuestionTool = toolName !== undefined && QUESTION_TOOLS.has(toolName);
@@ -91,8 +148,12 @@ export function applyHookEvent(
     case "PreToolUse":
       // A question tool pauses the agent on the user; any other tool means work
       // is in progress.
-      if (isQuestionTool) setStatus(next, "blocked", "question");
-      else setStatus(next, "processing");
+      if (isQuestionTool) {
+        setStatus(next, "blocked", "question");
+        fillNotice(next, questionNotice(toolInput));
+      } else {
+        setStatus(next, "processing");
+      }
       return next;
     case "PostToolUse":
     case "PostToolUseFailure":
@@ -111,8 +172,18 @@ export function applyHookEvent(
       // Claude fires PermissionRequest for a question tool too (auto-approved,
       // so PreToolUse follows immediately). Classify by tool: a question tool is
       // a question block, anything else is a real permission block.
-      if (isQuestionTool) setStatus(next, "blocked", "question");
-      else setStatus(next, "blocked", "permission");
+      if (isQuestionTool) {
+        setStatus(next, "blocked", "question");
+        fillNotice(next, questionNotice(toolInput));
+      } else {
+        setStatus(next, "blocked", "permission");
+        const detail = permissionNotice(toolName, toolInput);
+        if (detail) fillNotice(next, detail);
+        // Bare tool name fills ONLY an empty notice (a fresh transition just
+        // cleared it), so a payload-less re-affirmation can't degrade a richer
+        // notice (e.g. "Bash: git push" → "Bash").
+        else if (!next.notice) fillNotice(next, toolName);
+      }
       return next;
     case "Notification":
       // permission_prompt → blocked(permission); idle_prompt → idle; any other
@@ -166,29 +237,33 @@ export function processHookEvent(
     hasSession(handle),
     input.notification_type,
     input.tool_name,
+    input.tool_input,
   );
 }
 
 /** Read-apply-write loop for a known handle, with Stop debounce. Extracted
  *  from runHookEvent so tests can drive the debounce without needing a live
- *  tmux session backing deriveHandle. */
-export function runHookEventForHandle(
+ *  tmux session backing deriveHandle. Async because the Claude idle path reads
+ *  the Stop transcript tail to fill the "Your turn" notice. */
+export async function runHookEventForHandle(
   handle: string,
   eventName: string,
   input: HookInput,
-): void {
+): Promise<void> {
   let state = readState(handle);
   if (!state) return;
 
   // Stop/StopFailure debounce: a late Stop for turn N can race with the
   // UserPromptSubmit for turn N+1. Pause briefly, then re-read; if the state
   // file mutated during the pause, a fresher event already won — back off.
-  if (eventName === "Stop" || eventName === "StopFailure") {
-    const beforeSnapshot = JSON.stringify(state);
+  const isStop = eventName === "Stop" || eventName === "StopFailure";
+  let stopBaseline: string | null = null;
+  if (isStop) {
+    stopBaseline = JSON.stringify(state);
     Bun.sleepSync(STOP_DEBOUNCE_MS);
     const refreshed = readState(handle);
     if (!refreshed) return;
-    if (JSON.stringify(refreshed) !== beforeSnapshot) {
+    if (JSON.stringify(refreshed) !== stopBaseline) {
       return; // newer event mutated state during the pause — stale Stop
     }
     state = refreshed;
@@ -197,16 +272,41 @@ export function runHookEventForHandle(
   const hadResolvedId = isResolvedSessionId(state.sessionId);
   const next = processHookEvent(handle, state, eventName, input);
   if (!next) return;
+  // Filling the idle notice reads the transcript (async IO), which widens the
+  // window in which a turn N+1 UserPromptSubmit can land between the debounce
+  // re-read and the write. Do the read first, then re-confirm the on-disk state
+  // is still the debounced baseline before committing; if a fresher event won
+  // during the read, back off and write nothing.
+  await fillIdleNotice(next, eventName, input);
+  if (isStop) {
+    const current = readState(handle);
+    if (!current || JSON.stringify(current) !== stopBaseline) return;
+  }
   writeState(next);
   if (!hadResolvedId && (eventName === "SessionStart" || eventName === "UserPromptSubmit")) {
     recordOriginIfResolved(next);
   }
 }
 
+/** Fill the idle ("Your turn") notice from the agent's closing message. Only on a
+ *  real turn-end (`Stop`/`StopFailure`) that resolved to `idle`, for Claude, with
+ *  a `transcript_path` in the hook stdin — so SessionStart/SessionEnd boot-idle
+ *  (no transcript_path) and Codex (no reliable Stop hook) are naturally excluded.
+ *  Impure (reads the transcript), so it lives in the wrapper, not applyHookEvent.
+ *  Runs only on the writeState path: a stale Stop that backed off above never
+ *  reaches here, so it writes no notice. */
+async function fillIdleNotice(next: SessionState, eventName: string, input: HookInput): Promise<void> {
+  if (eventName !== "Stop" && eventName !== "StopFailure") return;
+  if (next.status !== "idle") return;
+  if (next.provider !== "claude" || !input.transcript_path) return;
+  const final = await lastFinalFromTranscript(input.transcript_path, claudeOutput().classifyLine);
+  fillNotice(next, final ?? undefined);
+}
+
 /** End-to-end: parse stdin JSON, look up the live handle, apply the event,
  *  write the state if anything changed. Used by `yaco agent hook-event`. */
-export function runHookEvent(eventName: string, input: HookInput): void {
+export async function runHookEvent(eventName: string, input: HookInput): Promise<void> {
   const handle = deriveHandle();
   if (!handle) return;
-  runHookEventForHandle(handle, eventName, input);
+  await runHookEventForHandle(handle, eventName, input);
 }

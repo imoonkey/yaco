@@ -39,6 +39,11 @@ export interface SessionState {
   parentSession?: string;
   /** Provider session id passed to --resume. Origin is unknown for resumed threads. */
   resumedFrom?: string;
+  /** Transient line-2 content for the current attention state (the question, the
+   *  permission request, or the idle final-message opening). CLI-owned: written
+   *  by `setStatus` (cleared on every status/reason edge) + the hook handler
+   *  (filled from the event payload). Sanitized + clamped via `clampNotice`. */
+  notice?: string;
 }
 
 /** SessionState extended with runtime-only status values (never persisted). */
@@ -47,24 +52,35 @@ export type RuntimeSessionState = Omit<SessionState, "status"> & {
 };
 
 /** Mutable status-bearing shape: both SessionState and RuntimeSessionState satisfy it. */
-type StatusWritable = { status: string; blockReason?: BlockReason; statusEnteredAt?: string };
+type StatusWritable = {
+  status: string;
+  blockReason?: BlockReason;
+  statusEnteredAt?: string;
+  notice?: string;
+};
 
 /** Write status and blockReason atomically, preserving the invariant
  *  `blockReason` is set iff status === "blocked". A non-blocked status (or a
  *  blocked status with no reason) clears blockReason. In-place mutator: callers
  *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object.
  *
- *  Stamps `statusEnteredAt` (ISO now) only on a real status *transition* — the
- *  durable status-edge generation key (`<kind>:<subject>:<statusEnteredAt>`).
- *  Re-affirming the same status leaves it untouched, so re-seeing the same edge
- *  never mints a new generation (the recurrence fix, spec §4). */
+ *  Stamps `statusEnteredAt` (ISO now) and clears `notice` on a real EDGE — a
+ *  status transition OR a blocked-reason change. The durable status-edge
+ *  generation key (`<kind>:<subject>:<statusEnteredAt>`) is derived from
+ *  `statusEnteredAt`, so a direct `blocked(question) → blocked(permission)` must
+ *  mint a fresh generation, not inherit the prior block's tombstone/history row.
+ *  Re-affirming the same (status, reason) leaves both untouched, so re-seeing the
+ *  same edge never re-mints a generation (the recurrence fix, spec §4). The
+ *  notice resets with the edge; the caller refills it from a payload afterward. */
 export function setStatus<T extends StatusWritable>(
   state: T,
   status: T["status"],
   reason?: BlockReason,
 ): void {
-  if (state.status !== status) {
+  const reasonChanged = status === "blocked" && state.blockReason !== reason;
+  if (state.status !== status || reasonChanged) {
     state.statusEnteredAt = new Date().toISOString();
+    delete state.notice;
   }
   state.status = status;
   if (status === "blocked" && reason) {
@@ -137,6 +153,24 @@ export function stripAnsi(text: string): string {
     .replace(ANSI_REGEX, "")
     .replace(C1_CONTROL_REGEX, "")
     .replace(CONTROL_CHARS_REGEX, "");
+}
+
+/** Max characters of `notice` retained (before the ellipsis). The notice is
+ *  copied into the durable, append-only events.jsonl, so it is bounded on-disk
+ *  retention — not purely transient. */
+export const NOTICE_MAX = 200;
+
+/** Sanitize + clamp line-2 content for `SessionState.notice`. Strips ANSI / C0 /
+ *  C1 controls (via stripAnsi), collapses all whitespace + newlines to single
+ *  spaces, trims, and cuts to NOTICE_MAX chars with a trailing ellipsis. Pure —
+ *  no tmux/hook deps — so it lives here and is re-exported for app/server. */
+export function clampNotice(text: string): string {
+  const cleaned = stripAnsi(text).replace(/\s+/g, " ").trim();
+  if (cleaned.length <= NOTICE_MAX) return cleaned;
+  // Slice by Unicode codepoints, not UTF-16 code units, so a non-BMP char (emoji,
+  // CJK-ext) at the boundary is never split into a lone surrogate — the notice is
+  // durable in events.jsonl, where a lone surrogate would be invalid UTF-8.
+  return `${[...cleaned].slice(0, NOTICE_MAX).join("")}…`;
 }
 
 export function shortHash(): string {

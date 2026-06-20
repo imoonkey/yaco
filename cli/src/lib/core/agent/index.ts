@@ -14,3 +14,5 @@ export {
   type ProjectRef,
   type ProjectableSessionState,
 } from "./projection.ts";
+
+export { clampNotice, NOTICE_MAX } from "./model.ts";

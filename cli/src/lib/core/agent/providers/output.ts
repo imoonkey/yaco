@@ -188,6 +188,58 @@ export function claudeOutput(): ProviderOutput {
   };
 }
 
+/** Read the tail of a provider transcript and return the text of its LAST `final`
+ *  event, or null when there is none / the file is unreadable. Used by the hook
+ *  handler to fill the idle ("Your turn") notice from the agent's closing
+ *  message. Reads only the trailing `tailBytes` (a final answer sits at the end
+ *  of the turn), dropping a possibly-partial first line so a mid-record cut never
+ *  misclassifies. Provider-agnostic: the caller passes the line classifier (e.g.
+ *  `claudeOutput().classifyLine`); NO directory walk — the path is the Stop
+ *  hook's own `transcript_path`. */
+export async function lastFinalFromTranscript(
+  path: string,
+  classify: (line: string) => AgentOutputEvent | null,
+  tailBytes = 256 * 1024,
+): Promise<string | null> {
+  let size: number;
+  try {
+    size = (await stat(path)).size;
+  } catch {
+    return null;
+  }
+  const from = size > tailBytes ? size - tailBytes : 0;
+  let text: string;
+  try {
+    text = (await readRange(path, from, size)).toString("utf-8");
+  } catch {
+    return null;
+  }
+  if (from > 0) {
+    // The tail may begin mid-record. Drop the first (partial) line UNLESS `from`
+    // already sits on a record boundary — i.e. the byte just before it is a
+    // newline — so a final answer that starts exactly at the tail boundary is
+    // not silently discarded.
+    let boundaryClean = false;
+    try {
+      boundaryClean = (await readRange(path, from - 1, from))[0] === NEWLINE;
+    } catch {
+      /* unreadable preceding byte — treat as mid-record */
+    }
+    if (!boundaryClean) {
+      const nl = text.indexOf("\n");
+      text = nl >= 0 ? text.slice(nl + 1) : "";
+    }
+  }
+  let last: string | null = null;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const event = classify(trimmed);
+    if (event?.kind === "final") last = event.text;
+  }
+  return last;
+}
+
 // -- Codex output --
 
 function codexSessionsRoot(): string {

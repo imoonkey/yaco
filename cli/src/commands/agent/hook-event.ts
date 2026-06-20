@@ -52,6 +52,6 @@ export async function handleHookEvent(
     return ok({ event: eventName, applied: false, reason: "no-input" });
   }
 
-  runHookEvent(eventName, input);
+  await runHookEvent(eventName, input);
   return ok({ event: eventName, applied: true });
 }

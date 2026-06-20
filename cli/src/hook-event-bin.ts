@@ -10,7 +10,7 @@
 import { readFileSync } from "fs";
 import { runHookEvent, type HookInput } from "./lib/core/agent/hook-event.ts";
 
-function main(): void {
+async function main(): Promise<void> {
   const eventName = process.argv[2];
   if (!eventName) {
     process.stderr.write("yaco-hook-event: requires <EventName> as argv[1]\n");
@@ -26,9 +26,9 @@ function main(): void {
     // Silent on parse failure — mirrors prior shell handler's contract.
     process.exit(0);
   }
-  runHookEvent(eventName, input);
+  await runHookEvent(eventName, input);
 }
 
 if (import.meta.main) {
-  main();
+  void main();
 }

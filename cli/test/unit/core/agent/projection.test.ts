@@ -127,4 +127,20 @@ describe("toSessionRow", () => {
     const row = toSessionRow(state({ sessionId: undefined as unknown as string }), proj);
     expect(row?.sessionId).toBe("");
   });
+
+  it("carries notice through, clamped defensively (F3)", () => {
+    const row = toSessionRow(state({ status: "blocked", blockReason: "question", notice: "Ship v1 or wait?" }), proj);
+    expect(row?.notice).toBe("Ship v1 or wait?");
+  });
+
+  it("re-clamps an oversized state-file notice at the boundary", () => {
+    const row = toSessionRow(state({ notice: "z".repeat(500) }), proj);
+    expect(row?.notice?.length).toBe(201); // 200 + ellipsis
+    expect(row?.notice?.endsWith("…")).toBe(true);
+  });
+
+  it("omits notice when absent or empty", () => {
+    expect(toSessionRow(state({}), proj)).not.toHaveProperty("notice");
+    expect(toSessionRow(state({ notice: "   " }), proj)).not.toHaveProperty("notice");
+  });
 });
