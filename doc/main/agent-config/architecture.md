@@ -48,7 +48,7 @@ Skills that need stack-specific content (coding-standards, verify, qa) use `refe
 
 ### implement ↔ orchestrate contract
 
-Leaf execution — the implement → review → fix → verify → qa → doc pipeline — is
+Leaf execution — the implement / verify / review / fix / qa / doc recipe — is
 defined **once**, as the fixed recipe in [`implement`](../../../agent-config/global/skills/implement/SKILL.md).
 [`orchestrate`](../../../agent-config/global/skills/orchestrate/SKILL.md) does not
 re-describe those steps; it dispatches a worker that runs `/implement <task>` and keeps
