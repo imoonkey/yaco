@@ -6,9 +6,8 @@ metadata:
 ---
 
 This skill is the operation manual for `yaco worktree`. A **worktree** is an isolated git
-checkout — its own working tree, branch, and git index — keyed by a **slug**. Heavy deps
-(`node_modules`, build artifacts) may be **shared** from the main checkout by the repo's provision
-hook rather than copied (see Provisioning), so a task that *mutates* them needs `resources`.
+checkout — its own working tree, branch, and git index — keyed by a **slug**. (Heavy deps like
+`node_modules` are typically *shared* from the main checkout, not copied — see Provisioning.)
 `/orchestrate` drives this lifecycle; tasks declare a slug through the `worktree` field (see
 `/yaco-task`). The model is **task DAG ≅ worktree/branch DAG**:
 

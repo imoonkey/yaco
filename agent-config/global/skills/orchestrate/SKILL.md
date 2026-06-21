@@ -110,12 +110,11 @@ evidence; orchestrate confirms it exists and is clean.
 | verify | impl leaf | `/verify` is green (re-run it, or read its result) |
 | qa | user-facing change | `/qa` exercised the affected flows |
 
-Orchestrate does **not** re-review: the worker's reviewer was already independent
-(cross-provider), so a second review of the same diff adds nothing. It instead checks the
-review **artifact** against the **real diff it reads itself** (`$base..HEAD`) — the artifact's
-provenance (reviewer, base, scope) is what it cross-checks coverage against, so a stale or
-self-authored one can't pass. This is a judgment over evidence you can see, not trust in the
-worker's word. The artifact lands in the design-doc folder (`/yaco-paths`).
+Orchestrate does **not** re-review — the worker's reviewer was already independent
+(cross-provider), so a second pass over the same diff adds nothing. It instead checks the
+review **artifact** against the **diff it reads itself** (`$base..HEAD`): the artifact's
+provenance (reviewer, base, scope) is what cross-checks coverage, so a stale or self-authored
+one can't pass. The artifact lands in the design-doc folder (`/yaco-paths`).
 
 **Outcome:**
 

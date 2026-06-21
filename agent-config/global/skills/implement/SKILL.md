@@ -74,8 +74,8 @@ Output a plan with phases, affected files, and key design decisions.
 
 ## Step 2: Phased Execution
 
-For each phase, repeat 2.1 → 2.5. **`/verify` and `/code-review` are peer gates on the
-commit** — both must be green before you commit; run `/verify` first to fail fast.
+Run 2.1 → 2.5 for each phase. (The per-phase gate rule — `/verify` and `/code-review` are
+peers, `/verify` first to fail fast — is in the recipe note above.)
 
 ### 2.1 Implement
 - Execute the phase, ideally in a fresh subagent for context cleanliness
@@ -110,9 +110,10 @@ Run `/qa` (**MUST USE**) to verify affected user flows end-to-end. `/qa` analyze
 
 Re-read the whole diff against the original goal/task and hunt for **missing scope** — acceptance criteria or pieces you never built. This is a coverage gate, not a bug hunt: `/code-review`, `/verify`, and `/qa` all check *what's present*; only this step catches what's **absent**.
 
-**If anything is missing, loop back to Step 1 to re-plan for the gap and continue.**
-
-DO NOT STOP UNTIL THE TARGETED SCOPE IS FULLY IMPLEMENTED.
+**If anything is missing, loop back to Step 1, re-plan for the gap, and continue.** The job
+is the *whole* targeted scope, not the first green phase — "looks done" on the parts you
+actually built is precisely the trap this step exists to catch, so don't stop until the
+scope is genuinely covered.
 
 ## Step 5: Update Docs
 
