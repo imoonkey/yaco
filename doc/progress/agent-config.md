@@ -1,3 +1,21 @@
+## 2026-06-20: Collapse leaf execution into the /implement recipe
+
+**What changed:**
+- `/implement` rewritten into the **canonical leaf recipe**: a fixed mermaid flow whose every skill-invoking step is marked MUST-USE in prose (`/coding-standards`, `/tdd`, `/code-review`, `/verify`, `/qa`, `/update-doc`). Added `/verify` as a per-phase build·lint·test·security gate distinct from `/qa`'s E2E gate; preserved Final Check; Review step now requires an **independent reviewer, cross-provider when feasible**. Documented two finishing modes: manual (self-finish) vs orchestrate-worker (run the recipe, stop, do not self-mark-done).
+- `/orchestrate` stops re-describing implement/review/fix/doc and instead dispatches `/implement <task>`. It keeps only its unique orchestration layer: dispatch selection, parallelism, worktrees, **independent** acceptCriteria verification, optional gatekeeper review (critical/high → `blocked: review-failed`, no fix-loop), worktree completion, auto-continue, blocked, and the direct-dispatch path for non-implementation (docs/design/planning) leaves.
+- Docs: new implement↔orchestrate contract subsection in `doc/main/agent-config/architecture.md`; `workflow.md` orchestrate row updated; back-link added from `codify-some-process` to this rewrite as its prerequisite.
+
+**Why:**
+- The two skills each wrote the same implement→review→fix→verify→doc pipeline, so a change meant editing two places and they drifted. Defining leaf execution once (in `/implement`) and having `/orchestrate` delegate gives `codify-some-process`'s gate a single clean mount point.
+- Structure-only (Layer A): no gate wired, no enforcement removed. The one deliberate change is the §1 consistency-strengthening (uniform MUST-USE) — additive, still prose. Gate seams are marked for Phase B.
+
+**Key files:**
+- `global/skills/implement/SKILL.md`, `global/skills/orchestrate/SKILL.md`
+- `doc/main/agent-config/architecture.md`, `doc/dev/agent-config/workflow.md`
+
+**Design docs:** `plan/all/implement-orchestrate-rewrite/design.md`
+**Verification:** Cross-provider codex review (clean); mermaid parse + relative-link sweep + MUST-USE coverage check.
+
 ## 2026-06-04: Tag skills with `metadata.yaco-dependent`
 
 **What changed:**

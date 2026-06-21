@@ -31,7 +31,7 @@ cd agent-config
 | `/tdd` | For core logic | Test-first development |
 | `/update-doc` | After changes | Sync docs, local skills, and changelog |
 | `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
-| `/orchestrate` | Task execution | Dispatch ready tasks to `yaco agent` workers with review loops |
+| `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, independently verify, mark done, merge |
 
 ## Adding a New Skill
 
