@@ -1,5 +1,35 @@
 # Progress
 
+## 2026-06-21: orchestrate + yaco-worktree → task-DAG ≅ worktree/branch-DAG model
+
+**What changed:**
+- Rewrote the two scheduling skills (`agent-config/global/skills/{orchestrate,yaco-worktree}/SKILL.md`)
+  to replace the shared-worktree + scope-overlap model with a 1:1 isomorphism: **every runnable
+  leaf is its own worktree/branch**, merged **up** the DAG into its target.
+- orchestrate: ordering keys on `depends` only; scope-overlap demoted from a dispatch blocker to a
+  scarce-slot tiebreak; two-level parallelism retired; cross-target `depends` not reachable from the
+  target → refuse dispatch (authoring error); terminal semantics = gate pass is *ready-to-merge*,
+  `done` only after merge-up. Evidence-gate criteria table kept intact (enforcement red line).
+- yaco-worktree: merge-up target rule (nearest integration-acceptCriteria ancestor, else main);
+  native git for child→parent vs `yaco worktree merge` for →main (+ primary-checkout constraint);
+  per-target write serialization; conflict resolver protocol + resolver gate; per-leaf +
+  integration-milestone completion; target-aware cleanup; generic provision hook + repo-policy guide.
+- Synced the implement↔orchestrate contract in `doc/main/agent-config/architecture.md`.
+
+**Why:**
+- The worktree scheduler was orchestrate's most baroque part (CWD resolution, two-level parallelism,
+  scope-overlap serialization). Making the worktree/branch DAG mirror the task DAG turns those
+  special cases into one canonical shape: wider parallelism (independent leaves no longer blocked by
+  a scope-overlap heuristic), explicit `depends` ordering instead of inferred scope, and integration
+  still happening at the milestone layer so `main` stays clean. Zero CLI/schema change — leans on the
+  existing `resources` task field and `yaco worktree create --base`.
+
+**Key files:** `agent-config/global/skills/orchestrate/SKILL.md`, `agent-config/global/skills/yaco-worktree/SKILL.md`, `doc/main/agent-config/architecture.md`, `plan/all/orchestrate-worktree-strategy/final/design.md`
+**Verification:** design aligned Claude⇄Codex (8 turns, both APPROVE); cross-provider review (codex) APPROVE after one CHANGES round (3 HIGH + 1 MED + 1 LOW fixed), 0 unresolved critical/high; CLI surface + markdown structure + cross-refs checked; orchestration scenario traced end-to-end. No code touched.
+**Commit:** 83685b8c (skills + design record); docs follow
+**Next:** `/yaco-worktree` provision-hook guide already landed; optional v1.1 — envelope-unified merge primitive, `yaco task validate` rule for duplicate runnable-leaf slug.
+**Blockers:** None
+
 ## 2026-06-20: Drop the dead `project · key` notice fallback (server source)
 
 **What changed:**

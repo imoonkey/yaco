@@ -52,17 +52,19 @@ Leaf execution — the implement / verify / review / fix / qa / doc recipe — i
 defined **once**, as the fixed recipe in [`implement`](../../../agent-config/global/skills/implement/SKILL.md).
 [`orchestrate`](../../../agent-config/global/skills/orchestrate/SKILL.md) does not
 re-describe those steps; it dispatches a worker that runs `/implement <task>` and keeps
-only the orchestration layer `/implement` has no concept of: selecting ready leaves,
-parallelizing, **gatekeeping** their output, marking done, and merging. The worker runs
-the full recipe but defers its "done" decision — orchestrate is the external gatekeeper
-that decides done by **reading the evidence** the worker produced (acceptCriteria, the
-independent-review artifact, `/verify`, `/qa`), never by redoing the work: a not-yet-met
-criterion (missing *or* failed) bounces back to the worker to keep finishing its recipe,
-and only non-convergence (or a human-gate) blocks. This split is why a
+only the orchestration layer `/implement` has no concept of: selecting ready leaves (each
+isolated in its own worktree), parallelizing, **gatekeeping** their output, **merging each
+passed leaf up its worktree/branch DAG, and marking done only after that merge lands**. The
+worker runs the full recipe but defers its "done" decision — orchestrate is the external
+gatekeeper that, by **reading the evidence** the worker produced (acceptCriteria, the
+independent-review artifact, `/verify`, `/qa`), decides the work is *ready to merge*, never by
+redoing it: a not-yet-met criterion (missing *or* failed) bounces back to the worker to keep
+finishing its recipe, and only non-convergence (or a human-gate) blocks. This split is why a
 change to leaf execution touches one file, not two. (Non-implementation leaves —
 docs/design/planning — have no recipe and keep orchestrate's direct dispatch path.) The
 git-worktree lifecycle is its own skill, [`yaco-worktree`](../../../agent-config/global/skills/yaco-worktree/SKILL.md),
-which `/orchestrate` calls for cwd resolution, merge, and cleanup.
+which `/orchestrate` calls to resolve each leaf's cwd off its merge target, merge it up the
+worktree/branch DAG (native git for child→parent, `yaco worktree merge` for →main), and clean up.
 
 ### yaco coupling (`metadata.yaco-dependent`)
 
