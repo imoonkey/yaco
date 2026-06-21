@@ -46,6 +46,19 @@ Agents read both global and project CLAUDE.md, merged into context:
 
 Skills that need stack-specific content (coding-standards, verify, qa) use `references/<stack>.md` and auto-detect the stack from marker files.
 
+### implement ↔ orchestrate contract
+
+Leaf execution — the implement → review → fix → verify → qa → doc pipeline — is
+defined **once**, as the fixed recipe in [`implement`](../../../agent-config/global/skills/implement/SKILL.md).
+[`orchestrate`](../../../agent-config/global/skills/orchestrate/SKILL.md) does not
+re-describe those steps; it dispatches a worker that runs `/implement <task>` and keeps
+only the orchestration layer `/implement` has no concept of: selecting ready leaves,
+parallelizing, worktrees, **independent** acceptCriteria verification, marking done, and
+merging. The worker runs the full recipe but defers its "done" decision — orchestrate is
+the external gatekeeper that independently re-verifies before marking done. This split is
+why a change to leaf execution touches one file, not two. (Non-implementation leaves —
+docs/design/planning — have no recipe and keep orchestrate's direct dispatch path.)
+
 ### yaco coupling (`metadata.yaco-dependent`)
 
 Orthogonal to location, each global skill declares its relationship to the `yaco` CLI through a `metadata.yaco-dependent` frontmatter field (per the [Agent Skills spec](https://agentskills.io/specification), custom keys live under `metadata`). Absence is the default and means standalone.

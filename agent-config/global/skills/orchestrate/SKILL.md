@@ -13,6 +13,15 @@ Every `yaco` invocation in this skill MUST pass `--json` so output flows
 through the `{ok,data}/{ok,error}` envelope and stays parseable from
 shell. Use the canonical `yaco agent start <provider>` form.
 
+**Division of labor with [`/implement`](../implement/SKILL.md).** Leaf execution
+(implement → review → fix → verify → qa → doc) is defined **once**, in `/implement`'s
+recipe. This skill does **not** re-describe those steps; it owns only the
+orchestration layer that `/implement` has no concept of: **selecting** ready leaves,
+**parallelizing** them, resolving **worktrees**, **independently verifying**
+acceptCriteria, **marking done**, and **merging**. A worker is just `/implement <task>`
+running in its own session — and orchestrate is the external gatekeeper that the
+worker, by design, defers its "done" decision to.
+
 ## Dispatch
 
 Read the active workset via `yaco task list --json` (or `/yaco-task`).
@@ -76,7 +85,7 @@ worker, then link its session handle `w-<task-id>` via `yaco task attach`:
 
 ```bash
 yaco task set <task-id> --data '{"state":"running"}' --json
-cd <resolved_cwd> && yaco agent start claude "<prompt>" --name "w-<task-id>" --json
+cd <resolved_cwd> && yaco agent start claude "/implement <task-ref> — <task-context + worker-contract>" --name "w-<task-id>" --json
 yaco task attach <task-id> w-<task-id> --json
 ```
 
@@ -86,23 +95,27 @@ Detach a handle the same way with `yaco task detach <task-id> w-<task-id>`.
 Never write session links through `yaco task set` — the legacy `agent` field
 is rejected.
 
-Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
+The prompt tells the worker to **run `/implement` on the task** and carries: task
+title, description (if any), acceptCriteria, design doc path (if any), scope. It also
+states the worker contract: complete the full `/implement` recipe, then **stop and
+report — do not mark the task `done`** (orchestrate verifies and marks done).
 
 ## Implementation Workflow
 
 For tasks that change implementation files (judge from scope paths — e.g., `src/**`, not `doc/**`):
 
-1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd)
-2. **Dispatch**: start worker with task prompt, acceptCriteria, design doc, scope
-3. **Wait**: block on the worker's final answer with `yaco agent wait w-<task-id> --from-start --json` (a fresh non-resumed worker waits from provider-log start)
-4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`, then wait on it with `yaco agent wait <review-handle> --from-start --json`
-5. **Fix**: if critical/high issues, send back to the implementation worker with `yaco agent send w-<task-id> "<fixes>" --wait --json`. Up to 3 review rounds.
-6. **Verify**: independently check acceptCriteria (see below)
-7. **Doc sync**: send the worker `yaco agent send w-<task-id> "/update-doc" --wait --json` and confirm it completes successfully before marking done
-8. **Mark done**: `yaco task set <task-id> --data '{"state":"done"}' --json`
-9. **Worktree completion**: if task has `worktree` field, check for worktree completion (see below)
+1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd) — scopes the independent verification / gatekeeper diff.
+2. **Dispatch `/implement`**: start the worker to run `/implement <task>` (see Dispatch Command). The worker runs the **whole leaf recipe itself** — implement, its own independent `/code-review`, fix, `/verify`, `/qa`, `/update-doc` — and stops without marking the task done. Orchestrate does **not** re-drive review / fix / doc-sync; those live in `/implement`.
+3. **Wait**: block on the worker's final answer with `yaco agent wait w-<task-id> --from-start --json` (a fresh non-resumed worker waits from provider-log start).
+4. **Independently verify**: re-check acceptCriteria yourself (see Verification) — do not trust the worker's self-report. Optionally run a gatekeeper review (see below).
+5. **Mark done**: on pass, `yaco task set <task-id> --data '{"state":"done"}' --json`.
+6. **Worktree completion**: if the task has a `worktree` field, run the completion check (see below).
 
-For non-implementation tasks (docs, design, planning): dispatch → wait → verify → mark done → worktree completion check. Skip review, fix, and doc sync.
+For **non-implementation leaves** (docs, design, planning) — judged from scope paths — there is no write-code → review → verify recipe, so they do **not** run `/implement`. Dispatch the task prompt directly → wait → independently verify → mark done → worktree completion check. Skip the gatekeeper review.
+
+### Optional gatekeeper review
+
+The worker already ran an independent `/code-review` inside `/implement`. Orchestrate MAY add a **second, independent gatekeeper review** of `git diff <base>..HEAD -- <scope globs>` — start a reviewer (cross-provider when feasible) with `--wait`, then `yaco agent kill` it. This is a gatekeeper double-check, not a duplicate of the worker's self-review (same shape as Final-Check vs independent-Verify: one self-check, one external check). When run, it ranks with acceptCriteria: **critical/high findings → block** with `blockReason: "review-failed"`. Orchestrate does **not** loop fixes back to the worker — a blocked task goes to a human or the next dispatch round.
 
 ## Worktree Completion
 
@@ -134,12 +147,12 @@ After marking a worktree task as `done`, check whether the worktree can be merge
 
 ## Verification
 
-After a worker claims completion, orchestrate **independently verifies** acceptCriteria. Do not trust worker self-reports or commit messages.
+After a worker claims completion, orchestrate **independently verifies** acceptCriteria. Do not trust worker self-reports or commit messages. This external re-check is orchestrate's core job; the worker's own `/implement` run does **not** cover it (a worker that verified its own done-ness is exactly the trust the split removes).
 
 **Sequence:**
 
 1. Worker goes idle
-2. Review loop (if implementation workflow)
+2. Optional gatekeeper review (see Implementation Workflow) — on critical/high, block with `blockReason: "review-failed"`
 3. Read acceptCriteria, independently run checks:
    - Looks like a file path → `test -f <path>`
    - Looks like a command → run it, check exit code
