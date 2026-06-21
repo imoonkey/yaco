@@ -1,3 +1,20 @@
+## 2026-06-21: Extract /yaco-worktree; rebuild /orchestrate around an evidence-gate
+
+**What changed:**
+- New skill **`/yaco-worktree`** — the operation manual for the `yaco worktree` CLI (cwd/branch resolution, create+provision/reuse, merge modes, cleanup, cross-repo, per-slug completion check). Fills the gap in the `/yaco-<area>` skill pattern (`/yaco-agent`, `/yaco-task`, `/yaco-paths` already existed). `yaco-dependent: true`.
+- `/orchestrate` rewritten around a single mermaid **Flow** and shrunk ~30% (182→124 lines): the old `Implementation Workflow` + `Verification` + `Optional gatekeeper review` sections (which overlapped and read muddy) collapsed into one **evidence-gate**. Orchestrate now decides done by *reading evidence* the worker produced — acceptCriteria, the independent-review artifact (no unresolved critical/high), `/verify`, `/qa` — never by re-running the work. The gate has two live outcomes: clean → **done**; not-yet-satisfied (missing *or* failed) → **bounce** the worker to keep finishing its own recipe. Only non-convergence (~3 bounces) or a human-gate **blocks**. Dropped "orchestrate optionally re-reviews" (redundant: the worker's reviewer was already independent/cross-provider). Worktree mechanics now delegate to `/yaco-worktree`; orchestrate keeps only the dispatch decisions (two-level parallelism).
+- Cut the explanatory "division of labor" preamble from `/orchestrate` (commentary belongs in `architecture.md`, not the SKILL artifact). `/yaco-task` worktree field now points at `/yaco-worktree`.
+
+**Why:**
+- `/orchestrate` was doing three jobs (orchestration + worktree lifecycle + a muddy verification story). Extracting worktree (deletion test: complexity concentrates, doesn't move) and reframing verification as an evidence-gate makes its one job legible — and makes it gate-shaped *before* codify-some-process lands, so Phase B swaps human-read evidence for `yaco gate` with the criteria unchanged.
+
+**Key files:**
+- `global/skills/yaco-worktree/SKILL.md` (new), `global/skills/orchestrate/SKILL.md`, `global/skills/yaco-task/SKILL.md`
+- `doc/main/agent-config/architecture.md`
+
+**Design docs:** `plan/all/implement-orchestrate-rewrite/design.md` (§3.3, D2① revised)
+**Verification:** Cross-provider codex review; mermaid parse + relative-link sweep; `yaco worktree merge` behavior cross-checked against `cli/src/lib/core/worktree/merge.ts`.
+
 ## 2026-06-20: Collapse leaf execution into the /implement recipe
 
 **What changed:**

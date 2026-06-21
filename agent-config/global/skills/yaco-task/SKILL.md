@@ -61,8 +61,8 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `agents` | no | `string[]` of session handles (e.g. `["w-auth-fix"]`) linked to this task. Never set through `task set` — written only via `yaco task attach`/`detach`. Retained after done as audit trail |
 | `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
-| `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
-| `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>` |
+| `blockReason` | no | `verification-failed \| human-review \| external \| dependency \| merge-conflict` — distinguishes why a task is blocked |
+| `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>`. Lifecycle (create/merge/cleanup) is driven by `/yaco-worktree` |
 | `created` | auto | ISO timestamp, set automatically on creation |
 | `updated` | auto | ISO timestamp, set automatically on every write |
 

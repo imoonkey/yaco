@@ -31,7 +31,8 @@ cd agent-config
 | `/tdd` | For core logic | Test-first development |
 | `/update-doc` | After changes | Sync docs, local skills, and changelog |
 | `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
-| `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, independently verify, mark done, merge |
+| `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
+| `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |
 
 ## Adding a New Skill
 

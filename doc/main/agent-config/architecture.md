@@ -53,11 +53,16 @@ defined **once**, as the fixed recipe in [`implement`](../../../agent-config/glo
 [`orchestrate`](../../../agent-config/global/skills/orchestrate/SKILL.md) does not
 re-describe those steps; it dispatches a worker that runs `/implement <task>` and keeps
 only the orchestration layer `/implement` has no concept of: selecting ready leaves,
-parallelizing, worktrees, **independent** acceptCriteria verification, marking done, and
-merging. The worker runs the full recipe but defers its "done" decision — orchestrate is
-the external gatekeeper that independently re-verifies before marking done. This split is
-why a change to leaf execution touches one file, not two. (Non-implementation leaves —
-docs/design/planning — have no recipe and keep orchestrate's direct dispatch path.)
+parallelizing, **gatekeeping** their output, marking done, and merging. The worker runs
+the full recipe but defers its "done" decision — orchestrate is the external gatekeeper
+that decides done by **reading the evidence** the worker produced (acceptCriteria, the
+independent-review artifact, `/verify`, `/qa`), never by redoing the work: a not-yet-met
+criterion (missing *or* failed) bounces back to the worker to keep finishing its recipe,
+and only non-convergence (or a human-gate) blocks. This split is why a
+change to leaf execution touches one file, not two. (Non-implementation leaves —
+docs/design/planning — have no recipe and keep orchestrate's direct dispatch path.) The
+git-worktree lifecycle is its own skill, [`yaco-worktree`](../../../agent-config/global/skills/yaco-worktree/SKILL.md),
+which `/orchestrate` calls for cwd resolution, merge, and cleanup.
 
 ### yaco coupling (`metadata.yaco-dependent`)
 
@@ -65,7 +70,7 @@ Orthogonal to location, each global skill declares its relationship to the `yaco
 
 | Value | Meaning | Skills |
 |-------|---------|--------|
-| `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, yaco-agent, yaco-task |
+| `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, yaco-agent, yaco-task, yaco-worktree |
 | `"optional"` | Runs in any repo; has an optional "Inside a YACO project" integration | design, office-hours, update-doc |
 | *(absent)* | Standalone — pure workflow prompt, runs in any repo | everything else |
 

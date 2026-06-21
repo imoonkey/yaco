@@ -5,177 +5,128 @@ metadata:
   yaco-dependent: "true"
 ---
 
-Read the task graph via `yaco task`, dispatch `yaco agent` workers, and drive
-the worktree lifecycle via `yaco worktree`. These commands resolve their paths
-(task graph, worktrees) from yaco.toml — see `/yaco-paths`; don't hardcode `plan/`.
+Read the task graph (`/yaco-task`), dispatch `/implement` workers (`/yaco-agent`),
+**gatekeep** their output, and drive worktrees (`/yaco-worktree`). Every `yaco` call
+MUST pass `--json` and use the canonical `yaco agent start <provider>` form; the task
+graph path resolves from yaco.toml (`/yaco-paths`).
 
-Every `yaco` invocation in this skill MUST pass `--json` so output flows
-through the `{ok,data}/{ok,error}` envelope and stays parseable from
-shell. Use the canonical `yaco agent start <provider>` form.
+A worker is just `/implement <task>` in its own session. Orchestrate never re-runs the
+leaf recipe — it **selects** work, **dispatches**, **gatekeeps by reading evidence**,
+and **merges**.
 
-**Division of labor with [`/implement`](../implement/SKILL.md).** Leaf execution — the
-whole implement / verify / review / fix / qa / doc recipe — is defined **once**, in
-`/implement`. This skill does **not** re-describe those steps; it owns only the
-orchestration layer that `/implement` has no concept of: **selecting** ready leaves,
-**parallelizing** them, resolving **worktrees**, **independently verifying**
-acceptCriteria, **marking done**, and **merging**. A worker is just `/implement <task>`
-running in its own session — and orchestrate is the external gatekeeper that the
-worker, by design, defers its "done" decision to.
+## Flow
+
+```mermaid
+flowchart TB
+  SEL["Select<br/>(ready · active · leaf · depends terminal · parallel · resources)"]
+  CWD["Resolve cwd<br/>(/yaco-worktree)"]
+  DISP["Dispatch<br/>(start worker · attach w-&lt;task-id&gt;)"]
+  WAIT["Wait<br/>(yaco agent wait --from-start)"]
+  GATE{"Gatekeep<br/>(read evidence)"}
+  BOUNCE["Bounce to worker<br/>(keep going — evidence not yet there)"]
+  DONE["Mark done"]
+  MERGE["Merge + cleanup<br/>(/yaco-worktree, when slug terminal)"]
+  BLOCK["Blocked<br/>(not converging / human-review)"]
+  SEL --> CWD --> DISP --> WAIT --> GATE
+  GATE -->|pass| DONE --> MERGE --> SEL
+  GATE -->|not pass| BOUNCE --> WAIT
+  GATE -->|~3 bounces / blocker| BLOCK
+```
+
+## Select
+
+Read the active workset (`yaco task list --json`). Select tasks where ALL of:
+
+- state `ready`, workset `active` (the CLI list surface filters this by default)
+- task is a **leaf** (no other task has it as `parent`)
+- all `depends` are terminal (done/cancelled)
+- passes the parallelism check (below)
+- `resources` (if set) are free — judge by running checks (ports/processes), counting resources held by running tasks, tasks already picked this batch, and external processes outside the project (e.g. `lsof -i :9222`)
+
+**Parallelism — two independent levels:**
+
+| Level | isolates | rule |
+|-------|----------|------|
+| Worktree | `node_modules`, build, git index | different `worktree` slug → **always parallel** |
+| Task | source files | same worktree / both main checkout → **scope-overlap check** |
+
+So: different worktrees → always parallel; same worktree (or both in main checkout) →
+dispatch only if scopes don't overlap; a worktree task + a main-checkout task → always
+parallel.
+
+**Ordering** (tiebreak only — all non-overlapping eligible tasks dispatch in parallel):
+
+1. scope overlap in the same worktree → higher priority wins (`critical > high > normal > low`)
+2. agent concurrency capped → priority gets the slot first
+3. same priority → fewer depends → smaller estimate → alphabetical
 
 ## Dispatch
 
-Read the active workset via `yaco task list --json` (or `/yaco-task`).
-Select tasks where ALL of:
-- state is `ready`
-- workset is `active` (the CLI list surface filters this by default)
-- task is a **leaf** (no other task has this task as `parent`)
-- all `depends` are terminal (done/cancelled)
-- not blocked by parallelism check (see Two-Level Parallelism below)
-- `resources` (if set) are available — check via agent judgment (run commands, check ports/processes), considering resources held by currently running tasks, tasks already selected in this batch, AND external processes outside the project scope (e.g., `lsof -i :9222` to check if a port is in use by anything)
-
-### CWD Resolution
-
-Each task executes in a **resolved cwd** based on the optional `worktree` field:
-
-| `worktree` field | CWD | Branch |
-|-----------------|-----|--------|
-| Present (e.g. `"auth-v2"`) | `<worktrees>/<slug>/` | `task/<slug>` |
-| Absent | Main checkout | Current branch |
-
-To resolve a worktree cwd:
+Resolve the cwd (`/yaco-worktree`), record the pre-work baseline, set the task `running`, start the worker, attach its handle:
 
 ```bash
-worktree_path="$(yaco worktree create <slug> --json | jq -r .data.path)"
-```
-
-`yaco worktree create` creates `<worktrees>/<slug>/` (resolved from yaco.toml; default `<repo>/.worktrees`) on branch
-`task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if
-present, and reuses existing worktrees. Without `--json` it prints the
-worktree path on stdout.
-
-**Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `<worktrees>/` directory independently.
-
-### Two-Level Parallelism
-
-Parallelism is checked at two independent levels:
-
-| Level | What it isolates | Rule |
-|-------|-----------------|------|
-| **Worktree-level** | `node_modules`, build artifacts, git index | Different `worktree` slug → **always parallel** |
-| **Task-level** | Source files | Same worktree (or both in main checkout) → **scope overlap check** |
-
-In practice:
-1. Tasks in **different worktrees** → always parallel (no shared state)
-2. Tasks in the **same worktree** → scope overlap check (same as today)
-3. Tasks in **main checkout** (no `worktree` field) → scope overlap check (same as today)
-4. Task in a **worktree** + task in **main checkout** → always parallel
-
-### Ordering
-
-All eligible tasks with non-overlapping execution context are dispatched in parallel. Priority only serves as a tiebreak:
-
-1. On scope overlap within same worktree → higher priority wins: `critical > high > normal > low`
-2. When agent concurrency is capped → priority determines who gets a slot first
-3. Within the same priority → fewer depends first → smaller estimate first → alphabetical
-
-### Dispatch Command
-
-For each selected task: set state to `running` via `yaco task set`, start the
-worker, then link its session handle `w-<task-id>` via `yaco task attach`:
-
-```bash
+base="$(git -C <resolved_cwd> rev-parse HEAD)"   # capture BEFORE the worker commits — scopes the task diff
 yaco task set <task-id> --data '{"state":"running"}' --json
-cd <resolved_cwd> && yaco agent start claude "/implement <task-ref> — <task-context + worker-contract>" --name "w-<task-id>" --json
+cd <resolved_cwd> && yaco agent start claude "/implement <task-ref> — <task-context>" --name "w-<task-id>" --json
 yaco task attach <task-id> w-<task-id> --json
 ```
 
-`yaco task attach` is a locked delta mutation on the task's `agents` list:
-it is idempotent and never overwrites handles attached by concurrent workers.
-Detach a handle the same way with `yaco task detach <task-id> w-<task-id>`.
-Never write session links through `yaco task set` — the legacy `agent` field
-is rejected.
+- **Implementation leaf** → the worker runs `/implement <task>`. The prompt carries task title, acceptCriteria, design-doc path, scope, and the **worker contract**: complete the recipe, then **stop and report — do not mark the task `done`** (orchestrate gatekeeps that).
+- **Non-implementation leaf** (docs/design/planning — no code recipe) → dispatch the task prompt directly, no `/implement`.
+- `$base` is the gate's diff scope: the task's work is `git diff $base..HEAD` in the cwd.
+- `yaco task attach` is an idempotent delta on the task's `agents` list — never write session links through `yaco task set` (the legacy `agent` field is rejected). Detach with `yaco task detach`.
 
-The prompt tells the worker to **run `/implement` on the task** and carries: task
-title, description (if any), acceptCriteria, design doc path (if any), scope. It also
-states the worker contract: complete the full `/implement` recipe, then **stop and
-report — do not mark the task `done`** (orchestrate verifies and marks done).
+Then **wait** for the worker: `yaco agent wait w-<task-id> --from-start --json`.
 
-## Implementation Workflow
+## Gatekeep
 
-For tasks that change implementation files (judge from scope paths — e.g., `src/**`, not `doc/**`):
+Orchestrate's core job: **decide done by reading evidence — never by redoing the work,
+never by trusting the worker's word.** The worker's `/implement` already produced the
+evidence; orchestrate confirms it exists and is clean.
 
-1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd) — scopes the independent verification / gatekeeper diff.
-2. **Dispatch `/implement`**: start the worker to run `/implement <task>` (see Dispatch Command). The worker runs the **whole `/implement` recipe itself** and stops without marking the task done. Orchestrate does **not** re-drive review / fix / doc-sync; those live in `/implement`.
-3. **Wait**: block on the worker's final answer with `yaco agent wait w-<task-id> --from-start --json` (a fresh non-resumed worker waits from provider-log start).
-4. **Independently verify**: re-check acceptCriteria yourself (see Verification) — do not trust the worker's self-report. Optionally run a gatekeeper review (see below).
-5. **Mark done**: on pass, `yaco task set <task-id> --data '{"state":"done"}' --json`.
-6. **Worktree completion**: if the task has a `worktree` field, run the completion check (see below).
+**Gate criteria** — read the evidence; a criterion passes only when present *and* clean:
 
-For **non-implementation leaves** (docs, design, planning) — judged from scope paths — there is no code-writing recipe to run, so they do **not** run `/implement`. Dispatch the task prompt directly → wait → independently verify → mark done → worktree completion check. Skip the gatekeeper review.
+| criterion | required | passes when |
+|-----------|----------|-------------|
+| acceptCriteria | always | every item independently checks out — file → `test -f`; command → run it, check exit; observable → read files / `git diff <base>..HEAD` |
+| independent review | impl leaf | reading `git diff $base..HEAD` yourself, you confirm a `/code-review` artifact from an **independent reviewer** (≠ the worker) covers that diff with **no unresolved critical/high**. A changed hunk no artifact covers = unreviewed → not a pass |
+| verify | impl leaf | `/verify` is green (re-run it, or read its result) |
+| qa | user-facing change | `/qa` exercised the affected flows |
 
-### Optional gatekeeper review
+Orchestrate does **not** re-review: the worker's reviewer was already independent
+(cross-provider), so a second review of the same diff adds nothing. It instead checks the
+review **artifact** against the **real diff it reads itself** (`$base..HEAD`) — the artifact's
+provenance (reviewer, base, scope) is what it cross-checks coverage against, so a stale or
+self-authored one can't pass. This is a judgment over evidence you can see, not trust in the
+worker's word. The artifact lands in the design-doc folder (`/yaco-paths`).
 
-The worker already ran an independent `/code-review` inside `/implement`. Orchestrate MAY add a **second, independent gatekeeper review** of `git diff <base>..HEAD -- <scope globs>` — start a reviewer (cross-provider when feasible) with `--wait`, then `yaco agent kill` it. This is a gatekeeper double-check, not a duplicate of the worker's self-review (same shape as the worker's Completeness Check vs orchestrate's independent Verification: one self-check, one external check). When run, it ranks with acceptCriteria: **critical/high findings → block** with `blockReason: "review-failed"`. Orchestrate does **not** loop fixes back to the worker — a blocked task goes to a human or the next dispatch round.
+**Outcome:**
 
-## Worktree Completion
+- **Pass** (every criterion present + clean) → `yaco task set <task-id> --data '{"state":"done"}' --json`. (If `requireHumanReview: true` → `blocked` / `blockReason: "human-review"` instead; report and wait.)
+- **Not pass** (any criterion missing *or* failed — no review artifact, unresolved critical/high, `/verify` red, acceptCriteria unmet) → **bounce** the worker to keep going: `yaco agent send w-<task-id> "<what's missing or failing> — finish it" --wait --json`, then re-gate. This is the worker completing its own recipe, not orchestrate driving fixes — and it's the whole point of the gate: a worker can't claim done until the evidence is actually there.
+- **Not converging** — after ~3 bounces with no progress, or an unresolvable blocker (needs a human decision) → `blocked`, `blockReason: "verification-failed"`, note which criterion. Keep scanning other ready tasks.
 
-After marking a worktree task as `done`, check whether the worktree can be merged and cleaned up:
+**Non-implementation leaf** → gate on acceptCriteria evidence only.
 
-1. **Check sibling tasks**: find all tasks sharing the same `worktree` slug
-2. **All terminal?** (done/cancelled) → proceed to merge. **Some non-terminal?** → skip (worktree still in use)
-3. **Merge**:
+## Worktree completion
 
-   ```bash
-   # PR mode (default) — push branch + create PR
-   yaco worktree merge <slug> --mode pr --json
-
-   # Local merge mode — rebase + fast-forward merge
-   yaco worktree merge <slug> --mode local --json
-   ```
-
-   Default to `pr` mode. Use `local` only when instructed by user or task metadata.
-
-4. **Cleanup**: after successful merge/PR creation
-
-   ```bash
-   yaco worktree cleanup <slug> --json
-   ```
-
-5. **Cross-repo**: if the worktree spanned multiple repos, merge and cleanup each repo independently using the same slug.
-
-**Failure handling**: if merge fails (conflicts, dirty state), set the parent task to `blocked` with `blockReason: "merge-conflict"` and report. Do not force-cleanup — the worktree stays on disk for human resolution.
-
-## Verification
-
-After a worker claims completion, orchestrate **independently verifies** acceptCriteria. Do not trust worker self-reports or commit messages. This external re-check is orchestrate's core job: the worker self-checks coverage inside `/implement` (its Completeness Check), but an **external** verifier must still confirm it — trusting the worker's own done-ness is exactly what the split removes.
-
-**Sequence:**
-
-1. Worker goes idle
-2. Optional gatekeeper review (see Implementation Workflow) — on critical/high, block with `blockReason: "review-failed"`
-3. Read acceptCriteria, independently run checks:
-   - Looks like a file path → `test -f <path>`
-   - Looks like a command → run it, check exit code
-   - Looks like an observable condition → use judgment (read files, check git diff)
-   - For implementation tasks with user-facing changes → run `/qa` to verify affected flows
-4. **On pass** → `yaco task set <task-id> --data '{"state":"done"}' --json`
-   - If `requireHumanReview: true` → set state to `blocked` with `blockReason: "human-review"`, report and wait for human
-5. **On fail** → set state to `blocked` with `blockReason: "verification-failed"`, note = "<which criteria failed>"
-   - Continue scanning other ready tasks (do not stop the whole run)
+When a worktree task reaches a terminal state, run the per-slug **completion check**
+(`/yaco-worktree`): all siblings terminal → merge, then cleanup (`local` now, `pr` after
+the PR merges). On merge failure, `/yaco-worktree` sets the **triggering leaf** back to
+`blocked` / `blockReason: "merge-conflict"` (not the milestone parent).
 
 ## Auto-Continue
 
-After each batch completes, automatically scan for next ready tasks and dispatch. **Stop only when:**
+After each batch, scan for newly-ready tasks and dispatch. **Stop only when:**
 
-- A task with `requireHumanReview: true` completes — report and wait for human input
-- **Circuit breaker**: 3 consecutive task failures with no success in between → stop and report all failures
-- No more ready tasks → report final status
+- a `requireHumanReview: true` task completes → report and wait for human input
+- **circuit breaker**: 3 consecutive task failures with no success in between → stop and report all failures
+- no more ready tasks → report final status
 
-If stopped for human review, wait for human to send instructions. Human can:
-- **Approve**: set state directly to `done`
-- **Request changes**: set state to `ready` with a note
-- **Abandon**: set state to `cancelled`
+On a human-review stop the human may **approve** (→ `done`), **request changes**
+(→ `ready` + note), or **abandon** (→ `cancelled`).
 
-## Blocked Tasks
+## Blocked
 
-If a task is `blocked`, report it (read `note` field for context) and skip. Do not attempt to unblock automatically — blocked tasks require human intervention or dependency resolution.
+A `blocked` task: report it (read `note` / `blockReason`) and skip. Don't auto-unblock —
+blocked tasks need human intervention or dependency resolution.
