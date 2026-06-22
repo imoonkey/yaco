@@ -21,22 +21,21 @@ cd agent-config
 |-------|-------|-------------|
 | `/init-all` | In project root | Initialize project for all AI agents (CLAUDE.md + symlinks + doc/) |
 | `/implement` | `/implement <task>` | Full workflow: plan -> build -> review -> verify -> docs |
-| `/worktree-task` | `/worktree-task create <slug>` | Manage worktree lifecycle directly |
 | `/office-hours` | `/office-hours <problem>` | YC-style problem definition — forcing questions, design doc output |
 | `/design` | `/design <goal>` | Design doc before implementation |
 | `/code-review` | After changes | Severity-based code review |
 | `/investigate` | Before fixing bugs | Systematic debugging — investigate before fixing |
 | `/qa` | After implementation | E2E/integration QA: verify affected user flows (Playwright, HTTP, CLI) |
-| `/retro` | End of week | Engineering retrospective across projects |
 | `/tdd` | For core logic | Test-first development |
 | `/update-doc` | After changes | Sync docs, local skills, and changelog |
 | `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
 | `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
 | `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |
+| `/write-skill` | Writing/editing a skill | Quality bar for authoring a skill's SKILL.md, reference, and scripts |
 
 ## Adding a New Skill
 
-1. Global: create `global/skills/<name>/SKILL.md`
+1. Global: create `global/skills/<name>/SKILL.md` — follow [`/write-skill`](../../../agent-config/global/skills/write-skill/SKILL.md) for the content quality bar.
 2. Project: create `.claude/skills/<name>/SKILL.md` in the project
 
 **Skills call `yaco` subcommands, not shell helpers.** All durable behavior

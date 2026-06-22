@@ -1,3 +1,22 @@
+## 2026-06-21: Add /write-skill — quality bar for authoring skills
+
+**What changed:**
+- New global standalone skill **`/write-skill`**: treats a SKILL.md as *executable prose* (loaded into context, it runs). One **axiom** — a skill earns every token by changing execution (MDL/surprisal: ground truth is the task + the model's default competence; carry only the residual) — and four corollaries: **no document-archaeology** (a skill has no comment channel, so describe only current behavior in present tense — no "used to / now"), **lead with the shape** (process / gates / principles each stated in its densest form, prose only for the *why*), **deep skill / progressive disclosure** (SKILL.md body = interface, `reference/` + `scripts/` = implementation behind it; deletion test gates what splits down a layer), and **one owner per fact**.
+- Self-contained and provider-neutral: no references to `skill-creator` or `update-doc` (a Codex agent may have neither) — the applicable MDL substance is inlined and adapted to skill writing. The frontmatter `description` is carved out as a *selection* surface (lean **and** context-complete) rather than execution prose.
+- `workflow.md`: added a `/write-skill` row to Key Skills, pointed "Adding a New Skill" at it, and pruned two stale rows (`/worktree-task` — superseded by the existing `/yaco-worktree`; `/retro` — skill no longer exists).
+
+**Why:**
+- Agents (Claude and Codex) repeatedly mis-author skills — padding with defaults, narrating the document's own edit history, and duplicating across SKILL.md / reference / sibling skills. A skill is a deliverable that *runs* like code but has no comment channel, so it needs its own quality bar distinct from the create→eval→trigger loop. Kept deliberately short ("a few bullets, expand as we discover"); it obeys its own rules.
+
+**Key files:**
+- `global/skills/write-skill/SKILL.md` (new)
+- `doc/dev/agent-config/workflow.md`
+
+**Verification:** `scripts/check-docs.py` clean on touched docs; skill is live via the `~/.claude/skills` → `global/skills` symlink (confirmed in the session's available-skills list).
+**Commit:** `dea70c97` (skill) + this docs commit
+**Next:** Expand the skill as new authoring failure modes surface.
+**Blockers:** None
+
 ## 2026-06-21: Extract /yaco-worktree; rebuild /orchestrate around an evidence-gate
 
 **What changed:**
