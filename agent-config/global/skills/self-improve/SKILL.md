@@ -7,18 +7,15 @@ metadata:
 
 # Self-Improve — harvest your history into reusable tooling
 
-The goal is leverage: find work you've already done by hand more than once and
-turn it into something you never hand-do again. The evidence is your own agent
-history. The discipline is restraint — most candidates should be *skipped*, and
-the shortlist comes *before* anything gets built.
+Find work you've done by hand more than once and turn it into tooling you never
+hand-do again. The evidence is your own agent history; the discipline is
+restraint — most candidates get *skipped*.
 
-## The one rule that makes this work
-
-**Shortlist before you build.** Discovery is cheap and seductive — every repeated
-phrase looks like a skill. Creating assets is expensive and clutters the
-namespace forever. So the deliverable of the first pass is a *compact shortlist
-the user signs off on*, never a freshly-minted skill. You create only after the
-user has seen the candidates and the reasoning.
+**The one rule: shortlist before you build.** Discovery is cheap and finds a
+"skill" in every repeated phrase; a created asset clutters the namespace forever.
+So the first pass delivers a compact shortlist the user signs off on — never a
+freshly-minted skill. You create only after the user has seen the candidates and
+the reasoning.
 
 ## Where the evidence comes from
 
@@ -41,32 +38,31 @@ yaco agent messages <handle> --summary --json     # what a candidate session DID
 yaco agent messages <handle> --role user --json   # the full repeated procedure, not just the opener
 ```
 
-Two things the rows now tell you directly — no client-side workarounds:
+Two row fields are load-bearing:
 
 - **`truncated`** — if `true`, your `--limit` dropped in-window rows and the scan
   is incomplete for that project; raise `--limit`. With a high limit it never
   fires. (`oldestUpdatedAt` is the oldest row returned, for your coverage note.)
 - **`spawnedBy`** — drop rows where `spawnedBy === "agent"`. A session started by
   *another agent* (a yaco sub-agent fan-out) is one task exploding into N
-  children, not a user's manual workflow, and counting it is the fan-out
-  anti-pattern below. Keep `user:*` and `null`. **Caveat:** origin is durable
-  only for sessions resolved after the origin index shipped; older GC'd sessions
-  report `spawnedBy: null` (unknowable) — so still lean on the cross-project and
-  fan-out heuristics in phase 2 to catch fan-outs that predate it (an
-  orchestrator's `summary` often embeds file paths / brief text that pollutes
-  clustering, which is exactly what dropping `"agent"` rows removes).
+  children, not a user's manual workflow; counting it inflates a single task into
+  false repetition. Keep `user:*` and `null`. **Caveat:** origin is durable only
+  for sessions resolved after the origin index shipped; older GC'd sessions report
+  `spawnedBy: null` (unknowable), so an orchestrator opener can still slip through
+  — the cross-project signal (phase 2) is your backstop against fan-outs that
+  predate the index (an orchestrator's `summary` often embeds file paths / brief
+  text that pollutes clustering, which is exactly what dropping `"agent"` rows
+  removes).
 
 ## Phases
 
 ### 1. Discover
 
-Loop `project list` × `history --since <iso-cutoff> --limit <high>`. The cutoff
-is now − 30 days as an ISO-8601 timestamp (the CLI rejects relative forms). From
-each project's `rows`, drop those with `spawnedBy === "agent"` so a fan-out
-doesn't masquerade as repetition, and note any project that still comes back
-`truncated: true`. Collect every `summary` with its project, date, and provider.
-This is your raw corpus — typically a few hundred openers. Don't open any session
-yet.
+Loop `project list` × `history --since <iso-cutoff> --limit <high>`, cutoff =
+now − 30 days as an ISO-8601 timestamp. From each project's `rows`, drop
+`spawnedBy === "agent"` and note any project still `truncated: true`. Collect
+every `summary` with its project, date, and provider — your raw corpus, typically
+a few hundred openers. Don't open any session yet.
 
 ### 2. Cluster
 
@@ -77,21 +73,25 @@ repetition that's worth tooling is often the boring connective work, not the
 headline feature. For each cluster note: how many times, across how many
 projects, over what span. A pattern that recurs across *different* projects is
 stronger evidence than one that repeats inside a single project's sprint (the
-latter is often just one task, restarted).
+latter is often just one task, restarted). Ten sessions all named "continue the
+refactor" inside one project over two days is *one* task, not a recurring
+workflow.
 
 ### 3. Cross-check what already exists
 
 Before proposing anything, read what's installed: `~/.claude/skills/`, any
 custom subagents, any scheduled automations. The fastest win is usually
-*extending* an existing asset, not creating a sibling that overlaps it. If a
-cluster is already adequately covered, it's a skip — say so explicitly so the
-user knows you checked, not that you missed it.
+*extending* an existing asset, not creating a sibling that overlaps it — two
+assets covering one job leave neither canonical. If a cluster is already
+adequately covered, it's a skip — say so explicitly so the user knows you
+checked, not that you missed it.
 
 ### 4. Qualify
 
 A cluster earns a place on the shortlist only if **all** hold:
 
 - **Recurred ≥ 2 times**, or is clearly about to recur and is costly to repeat.
+  Novelty is not frequency — a fascinating one-off is a skip.
 - **Stable inputs, a repeatable procedure, and a clear output / stopping
   condition.** If every instance is shaped differently, there's no SOP to
   capture — skip it.
@@ -107,8 +107,7 @@ session body, not the opener alone.
 
 ### 5. Shortlist (STOP here and show the user)
 
-Emit the compact table below and **stop**. Do not create anything yet. This is
-the checkpoint the whole skill is built around.
+Emit the compact table below and **stop**. Do not create anything yet.
 
 ### 6. Choose the smallest form, then create only the high-confidence items
 
@@ -126,10 +125,9 @@ that fits — adding surface area is a cost, not a feature:
 - **Skip** — too one-off, ambiguous, sensitive, or thinly evidenced.
 
 Create them narrow and validatable. A new skill goes in
-`agent-config/global/skills/<name>/SKILL.md` and follows `/skill-creator`
-(SOP-style, explain the *why*, pushy description). Don't create speculative,
-overlapping, or broad-by-default assets — when unsure between two scopes, ship
-the narrower one.
+`agent-config/global/skills/<name>/SKILL.md` and follows `/write-skill`. Don't
+create speculative, overlapping, or broad-by-default assets — when unsure between
+two scopes, ship the narrower one.
 
 ## Output template
 
@@ -155,26 +153,9 @@ Phase 5 prints exactly this, then waits:
 
 After the user picks, do phase 6 for the greenlit rows only.
 
-## Anti-patterns
-
-- **Building during discovery.** The first pass *never* writes a skill. If you
-  catch yourself reaching for Write before the user has seen the shortlist, stop.
-- **Counting restarts as recurrence.** Ten sessions all named "continue the
-  refactor" inside one project over two days is *one* task, not a recurring
-  workflow. Cross-project repetition is the real signal.
-- **Packaging the rare-but-interesting.** Novelty is not frequency. A
-  fascinating one-off is a skip.
-- **Duplicating existing coverage.** Always phase 3 before you propose. An asset
-  that overlaps an existing one is worse than no asset — now there are two and
-  neither is canonical.
-- **Trusting the opener alone for confidence.** Cluster on openers (cheap), but
-  qualify on bodies (`messages --summary` / `--role user`) before you call
-  something high-confidence.
-
 ## Done =
 
 A signed-off shortlist, the greenlit assets created (narrow, validatable, in the
-right form), an explicit skip list so the user knows what you considered and
-rejected, and an honest coverage note. "I made five skills" is not success —
-"I found the two patterns worth tooling, built them, and told you why the other
-six weren't" is.
+right form), and the skip + coverage notes from the template. "I made five
+skills" is not success — "I found the two patterns worth tooling, built them, and
+told you why the other six weren't" is.

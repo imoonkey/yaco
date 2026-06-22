@@ -5,14 +5,7 @@ description: Coding conventions and patterns. Auto-applied as reference during c
 
 # Coding Standards
 
-## Core Principles
-
-1. **Readability First** — clear > clever
-2. **KISS** — simplest solution that works
-3. **DRY** — extract common logic
-4. **YAGNI** — don't build unneeded features
-
-## Code Smells
+## Refactor thresholds
 
 | Smell | Threshold | Fix |
 |-------|-----------|-----|
@@ -22,19 +15,11 @@ description: Coding conventions and patterns. Auto-applied as reference during c
 | God class | Does everything | Single responsibility |
 | Magic numbers | Unexplained | Named constants |
 
-## Error Handling
-
-- Explicit error handling, no silent failures
-- Use specific exception/error types, not generic catches
-- Never swallow errors: `catch (e) { }` is always wrong
-
 ## Stack-Specific Standards
 
-Detect the project stack and read the matching reference:
+Detect the project stack from its marker file and read the matching reference for house-style idioms:
 
 | Marker file | Stack | Reference |
 |-------------|-------|-----------|
 | `build.gradle.kts` or `build.gradle` | Kotlin/Android | `references/kotlin-android.md` |
 | `package.json` | TypeScript/Node | `references/typescript-node.md` |
-
-Read the reference file from this skill's directory for language-specific idioms and patterns.

@@ -5,9 +5,7 @@ description: Review an implementation plan before coding — for work that touch
 
 # Engineering Plan Review
 
-Review a proposed implementation plan before writing code.
-
-The job is to make the plan tighter, safer, and easier to execute. Do not jump into implementation. First make sure the plan is worth implementing.
+Do not jump into implementation — first decide whether the plan is worth implementing.
 
 ## Usage
 
@@ -28,12 +26,7 @@ Always produce these sections:
 
 ### 1. Gather Real Context
 
-- Read the plan or design doc first
-- Read the relevant code in the affected area
-- Read nearby docs and TODOs if they change the review
-- Identify the existing abstractions, boundaries, and tests
-
-Review the plan against the real codebase, not against the plan in isolation.
+Read the plan or design doc first, then review it against the real codebase, not against the plan in isolation. Read the affected code, plus nearby docs and TODOs where they change the review, and identify the existing abstractions, boundaries, and tests the plan must reuse or not break.
 
 ### 2. Run a Scope Sanity Check
 
@@ -102,12 +95,4 @@ State a clear verdict and the reason:
 - **Ready** — the plan is sound enough to start building.
 - **Send back** — name which earlier stage must redo work (scope, UX, or system design) and why.
 
-Report the verdict; let the caller decide what runs next.
-
-## Review Standard
-
-- Minimal diff over sprawling architecture
-- Explicit trade-offs over vague confidence
-- Reuse over reinvention
-- Concrete failure modes over generic caution
-- Testable plans over aspirational plans
+Back the verdict with explicit trade-offs, not vague confidence. Report the verdict; let the caller decide what runs next.

@@ -1,126 +1,35 @@
-# TypeScript/Node.js Coding Standards
+# TypeScript/Node.js house style
 
-## TypeScript Idioms
+- Files: `kebab-case` (`session-manager.ts`).
+- Exports: named only — no `export default`. Re-export the public API through a barrel `index.ts`.
+- Explicit return types on public APIs (don't rely on inference at the boundary).
+- `readonly` on config/data structures.
+- Avoid `any` — use `unknown` and narrow at the boundary.
 
-### Naming
+## Result envelope
 
-```typescript
-// Classes/Interfaces/Types: PascalCase
-class SessionManager {}
-interface SkillManifest {}
-type OperationResult = ...
-
-// Functions/variables: camelCase
-function processEvent() {}
-const isRunning: boolean = true
-
-// Constants: SCREAMING_SNAKE
-const MAX_RETRIES = 3
-
-// Files: kebab-case
-// session-manager.ts, skill-manifest.ts
-```
-
-### Strict Typing
+Model fallible operations as a discriminated union, not thrown exceptions across boundaries:
 
 ```typescript
-// Prefer explicit types for public APIs
-function parseHar(input: HarLog): ParsedRequest[] { ... }
-
-// Use union types / discriminated unions for state
 type Result<T> =
   | { ok: true; data: T }
   | { ok: false; error: string }
-
-// Avoid `any`
 ```
 
-### Immutability
+## Errors
+
+- Never swallow: `catch (e) {}` and `catch (e) { /* ignore */ }` are always wrong.
+- Handle the known cases; re-throw the rest so unexpected errors surface:
 
 ```typescript
-// Prefer const
-const state: SessionState = { ... }
-
-// Use spread for modifications
-const newState = { ...state, status: 'running' }
-
-// Use readonly for data structures
-interface Config {
-  readonly baseUrl: string
-  readonly timeout: number
-}
-
-// Avoid let unless necessary
-```
-
-### Discriminated Unions for State
-
-```typescript
-type OperationResult<T> =
-  | { status: 'success'; data: T }
-  | { status: 'error'; error: string; code: number }
-  | { status: 'pending' }
-```
-
-## Node.js Patterns
-
-### Async/Await
-
-```typescript
-// Proper async with error handling
-async function fetchData(url: string): Promise<Response> {
-  const response = await fetch(url)
-  if (!response.ok) throw new HttpError(response.status)
-  return response.json()
-}
-
-// Concurrent operations
-const [users, posts] = await Promise.all([
-  fetchUsers(),
-  fetchPosts(),
-])
-
-// Avoid unhandled promises — always await or .catch()
-```
-
-### Error Handling
-
-```typescript
-// Custom error classes
-class SkillError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-  ) {
-    super(message)
-    this.name = 'SkillError'
-  }
-}
-
-// Structured error handling
 try {
-  const result = await riskyOperation()
-  return { ok: true, data: result }
+  return { ok: true, data: await riskyOperation() }
 } catch (e) {
-  if (e instanceof SkillError) {
-    logger.error(`Skill error [${e.code}]: ${e.message}`)
-    return { ok: false, error: e.message }
-  }
-  throw e  // Re-throw unexpected errors
+  if (e instanceof SkillError) return { ok: false, error: e.message }
+  throw e  // re-throw unexpected errors
 }
-
-// Never swallow: try { await riskyOperation() } catch (e) { }
 ```
 
-### Module Organization
+## Async
 
-```typescript
-// Named exports (prefer over default)
-export function parseHar(har: HarLog): ParsedRequest[] { ... }
-export interface ParsedRequest { ... }
-
-// Barrel files for public API
-// index.ts
-export { parseHar } from './parser.js'
-export type { ParsedRequest } from './types.js'
-```
+- No floating promises — always `await` or `.catch()`.

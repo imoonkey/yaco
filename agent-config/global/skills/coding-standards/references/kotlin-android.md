@@ -1,89 +1,26 @@
-# Kotlin/Android Coding Standards
+# Kotlin/Android house style
 
-## Kotlin Idioms
+- No force-unwrap `!!` — use `?.`, Elvis `?:`, or a checked branch.
+- No `GlobalScope` — launch in `viewModelScope` / `lifecycleScope` so work cancels with its owner.
+- No static/long-lived `Context` references — they leak the Activity.
+- UI off the collector thread: `repeatOnLifecycle(STARTED)` for `Flow` collection; `withContext(Dispatchers.IO)` for blocking work.
+- Never swallow: `catch (e: Exception) {}` is always wrong. Catch a specific type, log with context, or re-throw.
 
-### Naming
+## Canonical shapes
 
-```kotlin
-// Classes: PascalCase
-class SessionManager
-
-// Functions/variables: camelCase
-fun processEvent()
-val isRunning: Boolean
-
-// Constants: SCREAMING_SNAKE
-const val MAX_RETRIES = 3
-```
-
-### Null Safety
+Collect a `Flow` scoped to lifecycle — the outer `lifecycleScope.launch` and the inner `repeatOnLifecycle(STARTED)` are both required; collecting without the inner block keeps running in the background:
 
 ```kotlin
-// Prefer safe calls
-user?.name?.uppercase()
-
-// Elvis for defaults
-val name = user?.name ?: "Unknown"
-
-// Avoid force unwrap — user!!.name is BAD
-```
-
-### Immutability
-
-```kotlin
-// Prefer val
-val state: SessionState
-
-// Use copy() for modifications
-val newState = state.copy(status = Running)
-
-// Avoid var unless necessary
-```
-
-### Sealed Classes for State
-
-```kotlin
-sealed class Result<T> {
-    data class Success<T>(val data: T) : Result<T>()
-    data class Error<T>(val error: Throwable) : Result<T>()
-}
-```
-
-## Android Patterns
-
-### Coroutines
-
-```kotlin
-// Structured concurrency
-viewModelScope.launch {
-    // Cancelled when ViewModel cleared
-}
-
-// Main-safe
-suspend fun fetchData() = withContext(Dispatchers.IO) {
-    // Heavy work
-}
-
-// Avoid GlobalScope
-```
-
-### Lifecycle
-
-```kotlin
-// Scope to lifecycle
 lifecycleScope.launch {
     repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.state.collect { }
     }
 }
-
-// Avoid static Context refs — they leak
 ```
 
-### State Management
+Expose ViewModel state as a private mutable `MutableStateFlow` with a public read-only `asStateFlow()`; mutate through `update`:
 
 ```kotlin
-// ViewModel
 private val _state = MutableStateFlow(initialState)
 val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -92,17 +29,11 @@ fun updateState(action: Action) {
 }
 ```
 
-## Error Handling
+Model success/failure as a sealed result, not nullables or exceptions across boundaries:
 
 ```kotlin
-// Comprehensive
-try {
-    val result = riskyOperation()
-    onSuccess(result)
-} catch (e: SpecificException) {
-    log.error("Context: ${e.message}")
-    onError(AgentError.from(e))
+sealed class Result<T> {
+    data class Success<T>(val data: T) : Result<T>()
+    data class Error<T>(val error: Throwable) : Result<T>()
 }
-
-// Never swallow: try { riskyOperation() } catch (e: Exception) { }
 ```

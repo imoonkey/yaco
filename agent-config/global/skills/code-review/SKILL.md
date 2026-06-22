@@ -5,67 +5,25 @@ description: Systematic code review with severity-based findings. Use before mer
 
 # Code Review
 
-Systematic review process with high standards.
-
-## Guidelines
-Analyze the code changes based on the following pillars:
-
-*   **Correctness**: Does the code achieve its stated purpose without bugs or logical errors?
-*   **Maintainability**: Is the code clean, well-structured, and easy to understand and modify in the future? Consider factors like code clarity, modularity, and adherence to established design patterns.
-*   **Readability**: Is the code well-commented (where necessary) and consistently formatted according to our project's coding style guidelines?
-*   **Efficiency**: Are there any obvious performance bottlenecks or resource inefficiencies introduced by the changes?
-*   **Security**: Are there any potential security vulnerabilities or insecure coding practices?
-*   **Edge Cases and Error Handling**: Does the code appropriately handle edge cases and potential errors?
-*   **Testability**: Is the new or modified code adequately covered by tests (even if preflight checks pass)? Suggest additional test cases that would improve coverage or robustness.
-
-## Review Mindset
-
-High standards like kernel code. Find:
-- Logic holes
-- Design principle violations
-- Risks and bugs
-- Redundancies
+High standards, like kernel code. Hunt for logic holes, design-principle violations, hidden risks, and redundancy — not just local readability.
 
 ## Process
 
-1. **Get context**
-   ```bash
-   git diff --stat
-   git log -3 --oneline
-   ```
+1. **Context** — `git diff --stat` and `git log -3 --oneline`.
+2. **Review** — classify every issue into the severity table below.
+3. **Fix small issues inline**, flag big ones for follow-up.
+4. **Report** in the output format.
 
-2. **Review changes** against checklist
+Treat project docs as context; code is source-of-truth.
 
-3. **Document findings** by severity
+## Severity
 
-4. **Fix small issues** inline
-
-5. **Flag big issues** for follow-up
-
-## Severity Levels
-
-### Critical (Must Fix)
-- Security: secrets, injection, leaks
-- Crashes: unhandled exceptions, null dereferences
-- Data loss: state corruption, race conditions
-
-### High (Should Fix)
-- Correctness: errors / bugs
-- Maintainability: spaghetti code, confusing logic, significant code duplication
-- Efficiency: significant efficiency issues
-- Resource leaks (memory, handles, connections)
-- Missing validation at system boundaries
-
-### Medium (Consider)
-- Readability: hard to read logic, moderate code duplication
-- Missing tests
-- Large files/functions
-- Poor naming
-
-### Low (Nice-to-Have)
-- Style consistency
-- Documentation gaps
-- Minor optimizations
+| Level | Includes |
+|-------|----------|
+| **Critical** (must fix) | Secrets / injection / leaks; unhandled crashes, null derefs; data loss, state corruption, race conditions |
+| **High** (should fix) | Correctness bugs; spaghetti or confusing logic, significant duplication; significant inefficiency; resource leaks (memory, handles, connections); missing validation at system boundaries |
+| **Medium** (consider) | Hard-to-read logic, moderate duplication; missing tests (even if preflight passes); oversized files/functions; poor naming |
+| **Low** (nice-to-have) | Style consistency; doc gaps; minor optimizations |
 
 ## Output Format
 
@@ -87,7 +45,3 @@ High standards like kernel code. Find:
 ## Recommendation
 [APPROVE / CHANGES_REQUESTED]
 ```
-
-## Reference
-
-- Treat project docs as context (code is source-of-truth)
