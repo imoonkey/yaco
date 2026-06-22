@@ -94,8 +94,8 @@ interface GitChange {
 ### Session Status
 
 - Derived from yaco agent live state: `processing` or `idle`
-- Claude idle: detected via Stop hook (100% reliable)
-- Codex idle: detected via polling heuristic (15s min processing + debounce)
+- Idle detection: the provider's **Stop hook** writes `idle` to the session state file — Claude and Codex both install one (a capture-pane regex is the fallback when a hook event is missed).
+- Whether an idle then *notifies* ("your turn") is a separate, provider-agnostic decision in the attention engine (`MIN_PROCESSING_MS` work span + `EDGE_DEBOUNCE_MS` debounce) → see [notifications](../ui/notifications.md).
 
 ## Workspace State Types
 

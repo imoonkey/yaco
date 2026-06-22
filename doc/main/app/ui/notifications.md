@@ -77,7 +77,7 @@ Recompute triggers: session fs-watch, task fs-watch, pin change
 | `session_crashed` | →crashed | `session_crashed:<proj>::<s>:<statusEnteredAt>` | critical | immediate |
 | `session_blocked` | →blocked | `session_blocked:…:<statusEnteredAt>` | action | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s held since `statusEnteredAt`) |
 | `task_blocked` | task→blocked | `task_blocked:<proj>::<id>:<stateEnteredAt>` | action | immediate |
-| `session_idle` | active→idle | `session_idle:…:<statusEnteredAt>` | handoff(owned)/fyi(deleg) | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s) + fixed ≥`MIN_PROCESSING_MS` (15s) work span (`idleAt − activeSince`) |
+| `session_idle` | active→idle | `session_idle:…:<statusEnteredAt>` | handoff(owned)/fyi(deleg) | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s) + fixed ≥`MIN_PROCESSING_MS` (1.5s) work span (`idleAt − activeSince`) |
 | `task_done` | task→done | `task_done:…:<stateEnteredAt>` | handoff | immediate |
 
 **Boot reconciliation.** An empty cache cannot mean "no edges happened" — a

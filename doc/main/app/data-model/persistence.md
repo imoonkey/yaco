@@ -71,7 +71,7 @@ Known v0 event kinds (consumers MUST tolerate unknown kinds):
 | Kind | When |
 |---|---|
 | `dispatched` | a task transitions `ready → running` and an agent session is started |
-| `session_idle` | a yaco agent session transitions active → `idle` (NOT task completion; debounced ~1.5s + ≥15s work span) |
+| `session_idle` | a yaco agent session transitions active → `idle` (NOT task completion; debounced ~1.5s + ≥1.5s work span) |
 | `session_blocked` | a yaco agent session enters `blocked` (debounced ~1.5s) |
 | `session_crashed` | a yaco agent session enters `crashed` (non-zero agent exit) |
 | `task_done` | a task transitions to `done` |

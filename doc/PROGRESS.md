@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-06-22: voice read-back silence fixed (StrictMode); idle min-processing 15s → 1.5s
+
+**What changed:**
+- `useSpeech` unmount cleanup no longer sets `enabledRef.current = false`. Under React
+  StrictMode (dev) that cleanup runs once at mount, so when `enabled` was restored from
+  `localStorage` (speaker icon on, no fresh toggle click) `enabledRef` was stranded `false`
+  and `speak()` silently no-op'd — total read-back silence with the icon on. Teardown now
+  relies on the `speakIdRef` bump (invalidates in-flight `current()` checks) + `preempt()`.
+- `MIN_PROCESSING_MS` 15_000 → 1_500. The `session_idle` notification (toast + read-back)
+  fired only after ≥15s of agent work, so a quick foreground reply appeared on screen with
+  no notif/read-back at all. Kept a separate constant from `EDGE_DEBOUNCE_MS` — they gate
+  adjacent intervals (work span before idle vs idle dwell after), not the same quantity.
+- Doc accuracy: idle detection is now hook-driven for BOTH Claude and Codex (Codex installs a
+  Stop hook); the min-processing + debounce gate is the shared, provider-agnostic engine
+  decision, not a codex-only polling heuristic (`types.md`, `persistence.md`).
+
+**Why:**
+- The silence was a StrictMode ref-vs-state desync — NOT autoplay or tab-visibility (both
+  ruled out by evidence: an in-app toast showed, so `visible` was true and `onSpeak` ran, yet
+  zero `/voice/speak` server hits → `speak()` bailed at its `enabledRef` gate). Codex GO.
+- 15s was tuned for visual-notification noise but over-suppressed the audio read-back, which
+  should surface every real reply.
+
+**Key files:** `app/ui/src/hooks/useSpeech.ts` (+test), `app/server/src/lib/attention-engine.ts` (+test), `doc/main/app/{ui/notifications.md, backend/libs.md, data-model/types.md, data-model/persistence.md}`
+**Verification:** useSpeech suite incl. new StrictMode guard (fails with the bug, passes without) green; attention-engine 30/30; `tsc -b` clean; codex review GO on ae12c45a; user confirmed read-back live.
+**Commit:** ae12c45a (read-back) + b3a1cfa8 (min-processing)
+**Next:** Optional — decouple read-back from the visual-notif gate so it can surface even sub-1.5s turns.
+**Blockers:** None
+
 ## 2026-06-22: idle/blocked notifications debounce off `statusEnteredAt`, not a poll-streak
 
 **What changed:**
