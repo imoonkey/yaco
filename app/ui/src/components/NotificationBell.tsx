@@ -80,7 +80,7 @@ export function NotificationBell({
           onClick={() => voiceReadback.setEnabled(!voiceReadback.enabled)}
           className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
           aria-pressed={voiceReadback.enabled}
-          aria-label={voiceReadback.enabled ? 'Turn off read-aloud' : 'Read notifications aloud'}
+          aria-label="Read notifications aloud"
           title={voiceReadback.enabled ? 'Read notifications aloud: on' : 'Read notifications aloud: off'}
           style={voiceReadback.enabled ? { color: 'var(--sol-blue)' } : undefined}
         >

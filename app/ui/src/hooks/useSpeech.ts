@@ -49,6 +49,10 @@ export type VoiceReadback = Pick<UseSpeech, 'supported' | 'enabled' | 'setEnable
  */
 export function useSpeech(): UseSpeech {
   const [enabled, setEnabledState] = useState<boolean>(() => SUPPORTED && loadEnabled())
+  // Synchronous source of truth for `speak`: a notification can arrive in the same
+  // render the user toggles off, before an effect-updated value would propagate —
+  // reading a ref written inside setEnabled closes that audio-after-opt-out window.
+  const enabledRef = useRef(enabled)
   const primedRef = useRef(false)
 
   const prime = useCallback(() => {
@@ -63,6 +67,7 @@ export function useSpeech(): UseSpeech {
   }, [])
 
   const setEnabled = useCallback((on: boolean) => {
+    enabledRef.current = on // synchronous: speak() sees the new value immediately
     setEnabledState(on)
     try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0') } catch { /* ignore */ }
     if (!SUPPORTED) return
@@ -79,15 +84,16 @@ export function useSpeech(): UseSpeech {
     return () => window.removeEventListener('pointerdown', onGesture, true)
   }, [enabled, prime])
 
+  // Stable (no enabled dep): reads enabledRef so a toggle-off is honored instantly.
   const speak = useCallback((text: string) => {
-    if (!SUPPORTED || !enabled || !text) return
+    if (!SUPPORTED || !enabledRef.current || !text) return
     try {
       window.speechSynthesis.cancel() // latest-wins: a new notice preempts a stale one
       const u = new SpeechSynthesisUtterance(text)
       u.lang = detectLang(text)
       window.speechSynthesis.speak(u)
     } catch { /* ignore */ }
-  }, [enabled])
+  }, [])
 
   return { supported: SUPPORTED, enabled, setEnabled, speak }
 }
