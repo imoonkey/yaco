@@ -362,21 +362,17 @@ export function useAttention(
       if (!item.interrupt) continue
       if (seenInterrupts.current.has(item.generation)) continue
       seenInterrupts.current.add(item.generation)
-      if (isActivelyViewing(item)) {
-        // Suppress the toast for the actively-viewed target either way. Only a Ready
-        // (REVIEW) row auto-acks — viewing it IS reading it. An actively-viewed ACT
-        // row (crashed/blocked Needs-you) must NOT be auto-dismissed: dismiss is a
-        // generation tombstone the user owns, so it requires an explicit × /
-        // mark-all-read (design §"Active-viewing must not auto-dismiss ACT"). Ack the
-        // subject's own scope so a task interrupt clears the TASK watermark, not a
-        // session one; record the generation so the F3 engage-ack effect doesn't
-        // re-POST the same ack.
-        if (item.group === 'ready') {
-          engagedAcks.current.add(item.generation)
-          if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
-          else ackTask(item.subject.project, item.subject.taskId)
-        }
-        continue
+      // Viewing a REVIEW row reads it: ack the subject's own scope so a task
+      // interrupt clears the TASK watermark, not a session one; record the
+      // generation so the F3 engage-ack effect doesn't re-POST the same ack. An
+      // ACT row (crashed/blocked Needs-you) is never auto-acked — dismiss is a
+      // generation tombstone the user owns (design §"Active-viewing must not
+      // auto-dismiss ACT"). Either way the item still surfaces (toast + foreground
+      // read-back) like any other interrupt.
+      if (isActivelyViewing(item) && item.group === 'ready') {
+        engagedAcks.current.add(item.generation)
+        if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
+        else ackTask(item.subject.project, item.subject.taskId)
       }
       fresh.push(item)
     }

@@ -247,7 +247,7 @@ describe('useAttention', () => {
     expect(notificationCtor).toHaveBeenCalledTimes(1)
   })
 
-  it('active-viewing a crash (ACT) suppresses the toast/OS but does NOT auto-dismiss it — the Needs-you row stays (§"Active-viewing must not auto-dismiss ACT")', async () => {
+  it('active-viewing a crash (ACT) still SURFACES a foreground toast but does NOT auto-dismiss it — the Needs-you row stays (§"Active-viewing must not auto-dismiss ACT")', async () => {
     installNotification('granted')
     setHidden(false)
     setFocus(true)
@@ -258,8 +258,8 @@ describe('useAttention', () => {
 
     pushAttention(makeSnapshot({ needsYou: [crashItem({ interrupt: true })], global: { count: 1, color: 'red' } }))
 
-    // No toast / OS for the actively-viewed target.
-    expect(toastCustom).not.toHaveBeenCalled()
+    // Active-viewing surfaces a foreground toast (not OS); it does not suppress.
+    expect(toastCustom).toHaveBeenCalledTimes(1)
     expect(notificationCtor).not.toHaveBeenCalled()
 
     // Active-view auto-ack is READY-ONLY: an actively-viewed ACT (crash/blocked)
@@ -271,7 +271,7 @@ describe('useAttention', () => {
     expect(result.current.snapshot.needsYou[0].type).toBe('session_crashed')
   })
 
-  it('active-viewing suppresses a bound task_done interrupt AND auto-acks the TASK (M-medium-1)', async () => {
+  it('active-viewing a bound task_done still SURFACES a foreground toast AND auto-acks the TASK (M-medium-1)', async () => {
     installNotification('granted')
     setHidden(false)
     setFocus(true)
@@ -289,8 +289,8 @@ describe('useAttention', () => {
       })],
     }))
 
-    // No toast / OS for the actively-viewed task.
-    expect(toastCustom).not.toHaveBeenCalled()
+    // Active-viewing surfaces a foreground toast (not OS); it does not suppress.
+    expect(toastCustom).toHaveBeenCalledTimes(1)
     expect(notificationCtor).not.toHaveBeenCalled()
 
     // Auto-ack POSTed for the TASK (scope=task, key=taskId) — not a session ack,

@@ -56,8 +56,8 @@ therefore computed in different places:
         ┌──────────────── CLIENT ────────────────┐
         │  Facet A: status dots ← useWorkspaceSessions (live)│
         │  Facet B: useAttention ← `attention` SSE (direct)  │
-        │    renders bell/badges; toast/OS w/ active-view    │
-        │    guard; lazy GET /feed for Recent; POST ack/clear │
+        │    renders bell/badges; toast/OS + read-back;      │
+        │    active-view → ack; lazy GET /feed; POST ack/clear│
         └─────────────────────────────────────────────────────┘
 ```
 
@@ -216,9 +216,11 @@ event, and no `notifications:changed` event anymore.
   read-back below.
 - **Active-viewing guard** → `document.visibilityState === 'visible' &&
   document.hasFocus() && attached to the target`; when true the target's
-  interrupt (toast/OS) is suppressed. Auto-ack is **`group==='ready'` only** — a
-  viewed REVIEW acks, but a viewed ACT (crash/block) is never auto-dismissed
-  (it requires an explicit ✕). Live dot unaffected.
+  interrupt **still surfaces** (toast + foreground read-back) like any other —
+  it is not suppressed. The guard only drives auto-ack, **`group==='ready'`
+  only** — a viewed REVIEW acks (so the bell clears on engage), but a viewed ACT
+  (crash/block) is never auto-dismissed (it requires an explicit ✕). Live dot
+  unaffected.
 - **OS permission** is requested **only on a user gesture** (the first bell
   interaction via `requestPermission()`), never on mount.
 - Returns `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask,

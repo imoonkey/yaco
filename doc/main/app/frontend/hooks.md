@@ -191,7 +191,7 @@ Behavior:
 - Cold mount: `GET /api/attention/feed` for the initial snapshot + first Recent page; `loadMore()` pages older history via the opaque composite `nextBefore` cursor.
 - Live: subscribes to the `attention` SSE event directly (hidden-safe) and replaces the snapshot.
 - Interrupts: a newly-seen `interrupt` item fires `toast.custom` (visible) or one `new Notification` (hidden, permission-granted only); a burst collapses to one summary; dedup by generation so reconnect/re-projection never re-toasts.
-- Active-viewing guard: `visible && document.hasFocus() && attached to target` → suppress the interrupt; auto-ack **only when `group==='ready'`** — a viewed REVIEW acks, a viewed ACT (crash/block) is never auto-dismissed (it needs an explicit ✕).
+- Active-viewing guard: `visible && document.hasFocus() && attached to target` → the interrupt **still surfaces** (toast + foreground read-back), not suppressed; the guard only auto-acks **when `group==='ready'`** — a viewed REVIEW acks, a viewed ACT (crash/block) is never auto-dismissed (it needs an explicit ✕).
 - `dismissNeedsYou(row)`: POST `/attention/dismiss` with the row's `{project,kind,key,generation}`; 204 → optimistic drop + badge−1, 409 → silent refetch (row resolved/re-entered).
 - OS permission requested **only on a user gesture** (`requestPermission`, fired by the first bell open), never on mount.
 
