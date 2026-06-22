@@ -121,4 +121,4 @@ Nothing under `/assets/vad/` is served, and `MIME_TYPES` no longer carries
 | `GROQ_TRANSCRIPTION_MODEL` | `whisper-large-v3-turbo` | Whisper model for speech-to-text |
 | `GROQ_FORMATTER_MODEL` | unset | Optional single LLM formatter override. Ignored when `VOICE_FORMATTER_MODELS` is set; otherwise the built-in chain starts with `openai/gpt-oss-120b` |
 | `VOICE_TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | edge-tts neural voice for notification read-back. The `*MultilingualNeural` voices return empty audio from the endpoint — use a standard neural voice |
-| `VOICE_SPEAK_MODELS` | unset | Comma-separated Groq models for the spoken rewrite (fast-first); falls back to a built-in chain led by `llama-3.1-8b-instant` |
+| `VOICE_SPEAK_MODELS` | unset | Comma-separated Groq models for the spoken paraphrase (quality-first); falls back to a built-in chain led by `llama-3.3-70b-versatile` (the fast 8B translated 中文→English) |

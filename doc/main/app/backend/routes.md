@@ -169,9 +169,9 @@ Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 The **output** half of voice (read-back), independent of the STT pipeline above:
 **no `GROQ_API_KEY` gate** — TTS works keyless on the raw text; a key only adds the
 spoken rewrite. Request body `{ text }`:
-- `text` (string, required) — the notice; capped at `VOICE_MAX_SPEAK_CHARS` (600) → 413.
+- `text` (string, required) — the notice (the agent's near-full final message); capped at `VOICE_MAX_SPEAK_CHARS` (2400, counted by codepoints) → 413.
 
-Flow: validate → blank `text` → `204` → rewrite to a spoken summary when keyed
+Flow: validate → blank `text` → `204` → paraphrase into spoken text when keyed
 (`rewriteForSpeech`, raw text otherwise) → re-validate (trim + re-cap, raw on empty) →
 `synthesizeSpeech` (edge-tts) → `200 audio/mpeg` bytes (`Cache-Control: no-store`). The
 client plays the mp3 and degrades to browser TTS on any non-200. -> See:

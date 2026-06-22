@@ -162,9 +162,10 @@ and flowed through the existing session-state read — no app-side `~/.claude` /
   clears `notice` on every status/blocked-reason **edge** (the same predicate that
   re-stamps `statusEnteredAt`), so stale question/permission text never leaks into
   trust/idle/crash; a payload-bearing event then refills it (payload-less
-  re-affirmations never clear). Sanitized + clamped to ≤200 chars by `clampNotice`
-  (`@yaco/cli/core/agent`) at capture, because it lands in the durable
-  `events.jsonl` payload — it is bounded on-disk retention, not purely transient.
+  re-affirmations never clear). Sanitized + clamped to ≤2000 chars by `clampNotice`
+  (`@yaco/cli/core/agent`) at capture — it carries the (near-)full final message (the
+  read-back paraphrases it; the toast shows a teaser) and lands in the durable
+  `events.jsonl` payload, so it is bounded on-disk retention, not purely transient.
 - **Render (server projector).** `noticeText(notice)` sets `message` at all five
   message sites to the trimmed notice, or **`''` when absent** — no location filler
   (the scan line already carries identity + project). **ACT (`needsYou`)** reads the
@@ -261,8 +262,8 @@ Escape to dismiss.
 
 Speaks the surfaced notification aloud when the app is foreground — the output
 half of voice (STT input is `useVoice`; -> See: [../frontend/hooks.md](../frontend/hooks.md#usevoicets-290-lines)).
-**Server-first neural** with a browser fallback: the notice is rewritten into a
-spoken summary (Groq) and synthesized with a neural voice (edge-tts), played
+**Server-first neural** with a browser fallback: the notice is paraphrased into
+natural spoken text (Groq) and synthesized with a neural voice (edge-tts), played
 through a reused `<audio>`; the browser **Web Speech API** (`speechSynthesis`) is
 the degradation tier. `ui/src/hooks/useSpeech.ts` + `speechTextFor` in
 `ui/src/lib/attentionContent.ts` + [POST /api/voice/speak](../backend/routes.md#voice).
@@ -271,7 +272,7 @@ Three strict tiers, each a degradation of the one above — no dead ends:
 
 ```
 speechTextFor(items)  ->  POST /api/voice/speak {text}
-   -> Groq rewrite to a spoken summary (drops tables/markdown/paths; raw text if no key/timeout)
+   -> Groq paraphrase into natural spoken text (info preserved, tables described; raw text if no key/timeout)
    -> edge-tts neural synth -> mp3 -> <audio> plays              [neural + rewrite]
 on 502 / network / play-reject:  speechSynthesis.speak(rawText)  [browser TTS, raw]
 on no audio path at all:         toast still shows, silent        [silent]
@@ -283,9 +284,13 @@ on no audio path at all:         toast still shows, silent        [silent]
   hidden/backgrounded tab. ACT + REVIEW interrupts speak; FYI never interrupts.
 - **What it says.** `speechTextFor`: single item → `"<stateLabel>. <notice>"`
   (empty notice → just the label, e.g. `Crashed (exit 1)`); a burst → a count
-  summary (`"N agents need your attention"`), never N messages. The server rewrite
-  is **speech-only** — the toast still shows the verbatim notice, so the visible
-  record is never softened by the summary.
+  summary (`"N agents need your attention"`), never N messages.
+- **Display/speech fork.** The `notice` now carries the agent's (near-)full final
+  message (`NOTICE_MAX` 2000). Speech reads the **whole** notice (`noticeContent`) and
+  **paraphrases** it — preserving the information, describing a table in spoken words
+  rather than summarizing it away. The toast / panel / OS-notification clamp it to a
+  ~200-char teaser (`noticeDisplay`), so the visible surfaces stay terse and the
+  speech-only paraphrase never alters the record.
 - **`useSpeech`** → `{ supported, enabled, setEnabled, speak }`. `enabled` is
   opt-in, **persisted** (`localStorage` `yaco.voiceReadback`, default off).
   `supported` is a **pure client audio check** (can this browser play `<audio>`),

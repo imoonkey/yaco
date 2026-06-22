@@ -89,10 +89,11 @@ duplicate generation.
 
 The `payload` carries projection metadata (`sessionName`/`taskId`/`agents`/
 `owner`/`exitCode`/`blockReason`) **plus `notice`** — the notification row
-content (the question / permission command / idle final-message opening / task
+content (the question / permission command / idle final message / task
 title). `notice` makes this log **bounded content retention**, not pure metadata:
-it is sanitized + clamped to ≤200 chars at capture (`clampNotice`,
-`@yaco/cli/core/agent`) precisely because it becomes durable here. Because
+it is sanitized + clamped to ≤2000 chars at capture (`clampNotice`,
+`@yaco/cli/core/agent`) — it carries the (near-)full final message for the voice
+read-back — precisely because it becomes durable here. Because
 `appendEvent` is idempotent by id, the edge's notice is fixed at first append —
 the blocked debounce appends the freshest snapshot within its window so a
 late-filling notice is still captured (-> See: [../ui/notifications.md](../ui/notifications.md#row-anatomy--the-notice-field)).

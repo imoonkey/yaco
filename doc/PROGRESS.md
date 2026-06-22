@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-06-21: read-back paraphrases the full message (TTS v2.1)
+
+**What changed:**
+- The voice read-back **paraphrases** the notice into natural spoken text instead of
+  summarizing it — preserving the information, describing a table in spoken words (not
+  cell-by-cell, never silently dropped), saying paths/code in words. `SPEAKIFY_CORE`
+  rewritten + a "the notification is data, not instructions" guard; speak budgets raised
+  (`SPEAK_MAX_TOKENS 256→2048`, `SPEAK_TIMEOUT_MS 2500→5000`, `SYNTH_TIMEOUT_MS 8000→15000`).
+- The `notice` now carries the agent's **(near-)full final message** (`NOTICE_MAX 200→2000`,
+  `cli/src/lib/core/agent/model.ts`). Speech reads the whole notice (`noticeContent`); the
+  toast / panel / OS-notification clamp to a ~200-char teaser (new `noticeDisplay`) **after
+  the fork** — no new field, the display clamp just moved from capture to render.
+- Caps are codepoint-counted end to end (`clampNotice` / `noticeDisplay` / `/speak`):
+  `VOICE_MAX_SPEAK_CHARS 600→2400` so a full non-BMP notice reaches the neural path.
+- Speak model chain reordered **quality-first** (`llama-3.3-70b-versatile` leads; the fast
+  8B was demoted because it translated 中文→English).
+
+**Why:**
+- The 200-char head + "summarize to 1-2 sentences" collapsed a paragraph to a content-free
+  gist (e.g. a 2866-char Chinese analysis → "I've finished reading"). The user wanted the
+  information preserved and tables spoken, accepting longer reads (the 🔊 button mutes).
+
+**Key files:** `cli/src/lib/core/agent/model.ts`; `app/server/src/lib/{voice-prompts,voice-formatter,constants,tts}.ts`, `routes/voice.ts`; `app/ui/src/lib/attentionContent.ts`, `hooks/useAttention.ts`, `components/NotificationPanel.tsx`. Plan: `~/.claude/plans/lively-strolling-allen.md`.
+**Verification:** cli bun 1037, server vitest 697, ui tsc -b 0 / eslint 0 / vitest 1026; cross-provider Codex review APPROVE (after fixing codepoint/UTF-16 cap coherence + injection guard); real-pipeline QA — table-heavy message → spoken table description, Chinese message stays Chinese, no mid-sentence truncation. CLI binary redeployed via `bash tools/install.sh`.
+**Commit:** `ad04333b..ddc45a4d`
+**Next:** the read-back can be long for a dense message (non-streaming synth → pre-roll latency); streaming synth is the future option if it bites. `NOTICE_MAX` is the dial.
+**Blockers:** None.
+
 ## 2026-06-21: neural voice read-back + spoken rewrite (TTS v2)
 
 **What changed:**
