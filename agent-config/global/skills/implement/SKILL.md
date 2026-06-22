@@ -18,21 +18,13 @@ read it as your contract.
 
 ## Principles
 
-Think like Linus Torvalds. Design from first principles.
-
-- KISS — avoid over-engineering, keep nesting shallow
-- Minimal redundancy — if simpler logic does the same thing, use it
-- Turn edge cases into canonical cases through smart design, not special-casing
-- High readability — code should be self-evident
-- No backward compatibility hacks — only the latest, best implementation matters
-- Read existing code first, align with codebase conventions
-- Use `/ultra-think` for critical or complex design decisions
+Think like Linus Torvalds. Beyond the global rules (KISS, minimal redundancy, edge→canonical, readability, no backward compat, read existing code first): use `/ultra-think` for critical or complex design decisions.
 
 ## The recipe
 
 The steps are a **fixed flow**. *How* you run each one — the prompt, whether you spawn
-a subagent, which tools — stays self-directed, but the shape does not change. **Every
-step that names a skill MUST USE it** (prose enforcement — do not skip the boring tail):
+a subagent, which tools — is self-directed; the shape is not. **Every step that names a
+skill MUST invoke it** — including the boring tail (`/qa`, `/update-doc`).
 
 ```mermaid
 flowchart TB
@@ -64,25 +56,21 @@ land** — not a per-phase peer. `/verify` (unit-level build · lint · test · 
 
 ## Step 1: Design & Plan
 
-Come up with a phased implementation plan. Write your plan to a file.
+Write a plan to a file — phases, affected files, key design decisions.
 
-- If the scope is large, break into multiple phases
-- If the scope is reasonable, treat as a single phase
-- Each phase should be independently committable
-
-Output a plan with phases, affected files, and key design decisions.
+- Large scope → multiple phases; reasonable scope → a single phase
+- Each phase must be independently committable
 
 ## Step 2: Phased Execution
 
-Run 2.1 → 2.5 for each phase. (The per-phase gate rule — `/verify` and `/code-review` are
-peers, `/verify` first to fail fast — is in the recipe note above.)
+Run 2.1 → 2.5 for each phase.
 
 ### 2.1 Implement
 - Execute the phase, ideally in a fresh subagent for context cleanliness
 - Use `/coding-standards` and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
 
 ### 2.2 Verify
-- Run `/verify` (**MUST USE**) — build · lint · test · security. Deterministic and fast, so run it first: no point spending a reviewer on code that doesn't build. Get it green before review.
+- Run `/verify` (**MUST USE**) — build · lint · test · security. Get it green before review.
 
 ### 2.3 Code Review
 - Run `/code-review` (**MUST USE**) with an **independent reviewer**.
@@ -110,14 +98,11 @@ Run `/qa` (**MUST USE**) to verify affected user flows end-to-end. `/qa` analyze
 
 Re-read the whole diff against the original goal/task and hunt for **missing scope** — acceptance criteria or pieces you never built. This is a coverage gate, not a bug hunt: `/code-review`, `/verify`, and `/qa` all check *what's present*; only this step catches what's **absent**.
 
-**If anything is missing, loop back to Step 1, re-plan for the gap, and continue.** The job
-is the *whole* targeted scope, not the first green phase — "looks done" on the parts you
-actually built is precisely the trap this step exists to catch, so don't stop until the
-scope is genuinely covered.
+**If anything is missing, loop back to Step 1, re-plan for the gap, and continue.** The job is the *whole* targeted scope, not the first green phase — "looks done" on the parts you built is precisely the trap this step exists to catch.
 
 ## Step 5: Update Docs
 
-Run `/update-doc`  (**MUST USE the mentioned skills**) to sync `doc/main/`, `doc/dev/`, project-local skills in `./.claude/skills/*`, and `doc/PROGRESS.md` with the changes.
+Run `/update-doc` (**MUST USE**) to sync `doc/main/`, `doc/dev/`, project-local skills in `./.claude/skills/*`, and `doc/PROGRESS.md` with the changes.
 
 ## Finish
 

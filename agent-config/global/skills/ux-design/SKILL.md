@@ -5,7 +5,7 @@ description: Product & UX design from the user's problem. Produce a UX spec with
 
 # UX Design
 
-Design product experiences like Steve Jobs. Start from the problem, end with a precise spec.
+Design product experiences like Steve Jobs: start from the problem, design for the user, refuse complexity that doesn't earn its place.
 
 ## Usage
 
@@ -20,12 +20,11 @@ Design product experiences like Steve Jobs. Start from the problem, end with a p
 - **Why** does it matter?
 - What changes in user behavior or outcome if we solve it?
 
-Do not jump to solutions. Understand the problem deeply first.
+Stay on the problem until these answer cleanly; do not jump to solutions.
 
 ### 2. Design the Experience
 
 - Propose the **simplest flow** that solves the problem end-to-end
-- Prioritize user value, clarity, and speed
 - Call out key trade-offs (power vs simplicity) and choose intentionally
 - If existing requirements/opinions exist, respect them — but challenge when they hurt the user
 

@@ -5,8 +5,6 @@ description: Sync docs with code changes and maintain changelog. Use after archi
 
 # Update Doc
 
-Keep documentation in sync with code. Maintain a living changelog as project memory.
-
 ## Usage
 
 `/update-doc [scope or commit range]`

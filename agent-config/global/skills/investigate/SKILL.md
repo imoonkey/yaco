@@ -5,36 +5,17 @@ description: Systematic debugging with root cause investigation. Use when debugg
 
 # Investigate
 
-Disciplined debugging. No guessing, no premature fixes.
-
-## Core Rule
-
-Phases 1-3 are INVESTIGATION ONLY — no code changes allowed.
+Phases 1-3 are INVESTIGATION ONLY — no code changes until the root cause is confirmed.
 
 ## Phases
 
-### 1. Reproduce & Gather Evidence
+1. **Reproduce & gather evidence.** Reproduce it. Define expected vs actual. Collect logs, traces, stack traces, repro steps.
+2. **Form hypotheses.** Rank 1-3 by likelihood. Each MUST cite specific evidence (log line, stack frame, state value) — "maybe it's X" with no evidence is not a hypothesis.
+3. **Test hypotheses.** Add temporary logging, inspect state, trace execution paths. Confirm or eliminate each. Still no fixes.
+4. **Fix the root cause.** Fix only the confirmed cause, one atomic commit. Remove the debug instrumentation. If the fix is non-trivial, run a full plan → build → verify.
+5. **Validate.** Confirm the original repro is gone and related tests pass. On failure, return to phase 2.
 
-Reproduce the bug. Collect logs, traces, stack traces, repro steps. Define expected vs actual behavior.
-
-### 2. Form Hypotheses
-
-List 1-3 hypotheses ranked by likelihood. Each hypothesis MUST cite specific evidence (log line, stack frame, state value). No evidence = not a hypothesis.
-
-### 3. Test Hypotheses
-
-Add temporary logging, inspect state, trace execution paths. Confirm or eliminate each hypothesis. Still NO fixes.
-
-### 4. Fix Root Cause
-
-Fix the CONFIRMED root cause only. One atomic commit per fix. Remove temporary debug instrumentation. If the fix is complicated, follow a full plan → build → verify workflow.
-
-### 5. Validate
-
-Verify fix resolves the original repro. Verify no regressions (run related tests). If fix fails, return to Phase 2.
-
-## Hard Limits
+## Hard limits
 
 - **Max 3 fix attempts.** If all fail, stop and report: what was tried, what was learned, what remains unknown.
-- **Every hypothesis needs evidence.** "Maybe it's X" is not investigation.
 - **Done = root cause identified + fix verified.** "Seems to work" is not done.

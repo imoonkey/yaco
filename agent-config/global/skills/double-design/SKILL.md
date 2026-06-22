@@ -8,14 +8,12 @@ metadata:
 # Double Design
 
 Two agents independently design, cross-review, then align via multi-round
-discussion. The skill writes the
-`<plan>/all/<project>/{initial,discussion,final}/` bundle layout and
-coordinates `yaco agent` workers around it. Keep `<active>/<project>` as a
-symlink view to the bundle home `<plan>/all/<project>` while the bundle is active.
+discussion. The invoking agent coordinates `yaco agent` workers around the
+`<plan>/all/<project>/{initial,discussion,final}/` bundle layout.
 
-**Paths:** resolve `<plan>`/`<active>` once with `yaco paths project --json`
-(honors yaco.toml; see `/yaco-paths`) and substitute the resolved values into the
-worker prompts below — don't hardcode `plan/`.
+Resolve `<plan>` once with `yaco paths project --json` and substitute the value
+into the worker prompts below (see `/yaco-paths` for the layout and the
+`<active>` symlink view).
 
 ## Usage
 
@@ -79,11 +77,7 @@ Before starting `/align`, explicitly choose exactly one first mover. Do not send
 
 Choose the first mover from Step 2 cross-reviews: each review should state which design is the better base for the first aligned draft. If both reviews point to the same side, use that side as the first mover. If they disagree, the invoking agent makes the call, but the selection still must be explicit in both `/align` prompts.
 
-The first draft must be conservative:
-
-- Reflect consensus first, not the first mover's preferred design
-- Avoid locking in unresolved choices too early
-- Hold `final/*` to the `/align` Final Doc Quality Bar and record unresolved items as `/align` Open Question packets from the first draft
+The first draft must be conservative — capture consensus, not the first mover's preferred design, and record unresolved choices as open questions rather than locking them in. The Step-3 prompts carry this instruction to the agents; `/align` owns the `final/*` quality bar and Open Question packet schema they enforce.
 
 Send both agents into `/align` mode with the first mover explicitly assigned. Example below assumes the cross-reviews selected Claude.
 
@@ -94,7 +88,7 @@ yaco agent send codex-design  "Run /align. Read all files in <plan>/all/<project
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
 
-**Do NOT block-wait on alignment turns (`send --wait` or `agent wait`)** — it can deadlock. Agents self-poll via `yaco align wait` inside `/align`, but a session may go idle prematurely (stop polling) or its `wait` may return without resuming work. The invoking agent should manually monitor and nudge the side whose turn it is.
+**Do NOT block-wait on alignment turns (`send --wait` or `agent wait`)** — it can deadlock. (Steps 1 & 2 block-wait safely: those are bounded tasks that finish. Step 3 is a turn loop that can stall mid-flight.) Agents self-poll via `yaco align wait` inside `/align`, but a session may go idle prematurely (stop polling) or its `wait` may return without resuming work. The invoking agent should manually monitor and nudge the side whose turn it is.
 
 Minimal manual monitoring loop:
 
@@ -104,16 +98,11 @@ yaco agent status claude-design --json
 yaco agent status codex-design  --json
 ```
 
-If `yaco align status` reports `next=CLAUDE` and `yaco agent status claude-design --json` returns `idle`, send:
+When `yaco align status` reports `next=<SIDE>` and that side's `yaco agent status` returns `idle`, nudge it. Map the uppercase side to its lowercase session name — `next=CLAUDE` → `claude-design`, `next=CODEX` → `codex-design`:
 
 ```bash
-yaco agent send claude-design "It's your turn. Read the latest discussion files and continue /align." --json
-```
-
-If `yaco align status` reports `next=CODEX` and `yaco agent status codex-design --json` returns `idle`, send:
-
-```bash
-yaco agent send codex-design "It's your turn. Read the latest discussion files and continue /align." --json
+yaco agent send claude-design "It's your turn. Read the latest discussion files and continue /align." --json   # next=CLAUDE
+yaco agent send codex-design  "It's your turn. Read the latest discussion files and continue /align." --json   # next=CODEX
 ```
 
 Repeat until `yaco align status` reports `done=true` (`next=DONE`).
@@ -122,12 +111,3 @@ Repeat until `yaco align status` reports `done=true` (`next=DONE`).
 
 Final aligned design lands in `<plan>/all/<project>/final/*.md`.
 Hand off to `/implement` when ready.
-
-## Notes
-
-- Both agents must NOT read each other's work during Step 1 — independent thinking is the whole point
-- Session reuse (`send` instead of `start`) keeps prior context so agents build on their own reasoning
-- Steps 1 & 2: blocking provider-log waits (`wait --from-start` for fresh starts, `send --wait` for follow-up turns) are safe (bounded tasks, agents will finish)
-- Step 3: never block-wait — manually monitor `yaco align status` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
-- Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
-- Final-doc quality and the Open Question packet format are owned by `/align` (Final Doc Quality Bar, Open Questions); the Step 3 prompts already send both agents there. `final/*` stays self-contained — a resolved open question isn't done until folded into the body and its packet deleted.

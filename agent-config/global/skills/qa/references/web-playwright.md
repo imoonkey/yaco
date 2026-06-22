@@ -1,98 +1,34 @@
-# Web/Playwright Testing Commands
+# Web/Playwright
 
-## Setup Check
+Detect: `grep -q '"@playwright/test"' package.json`. If absent, scaffold with `npm init playwright@latest`.
 
-```bash
-npx playwright --version 2>/dev/null || echo "Playwright not installed"
-grep -q '"@playwright/test"' package.json 2>/dev/null && echo "Found in package.json"
-```
-
-If not installed: `npm init playwright@latest`
-
-## Test Commands
+Run a spec headed/with inspector while diagnosing a failure; the trace viewer replays a recorded run:
 
 ```bash
-# Run all tests
-npx playwright test
-
-# Run specific test file
-npx playwright test tests/example.spec.ts
-
-# Run with UI mode (interactive)
-npx playwright test --ui
-
-# Run headed (visible browser)
-npx playwright test --headed
-
-# Show HTML report after run
-npx playwright show-report
+npx playwright test                             # whole suite
+npx playwright test --ui                        # interactive runner
+npx playwright test path/to.spec.ts --headed    # visible browser
+npx playwright test path/to.spec.ts --debug     # step inspector
+npx playwright show-report                       # open the HTML report
+npx playwright show-trace trace.zip             # needs use:{ trace:'on-first-retry' } in config
 ```
 
-## Writing a Basic Test
+## Wait for the response, then click — never the reverse
 
-```typescript
-import { test, expect } from '@playwright/test';
-
-test('page loads and shows title', async ({ page }) => {
-  await page.goto('/');
-  await expect(page).toHaveTitle(/My App/);
-  await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
-});
-```
-
-## Common Patterns
-
-### Navigation & Assertions
-
-```typescript
-await page.goto('/dashboard');
-await expect(page).toHaveURL(/dashboard/);
-await expect(page.locator('.status')).toHaveText('Active');
-```
-
-### Form Filling
-
-```typescript
-await page.getByLabel('Email').fill('user@example.com');
-await page.getByLabel('Password').fill('secret');
-await page.getByRole('button', { name: 'Sign in' }).click();
-await expect(page.getByText('Welcome back')).toBeVisible();
-```
-
-### Waiting for Network
+Listening after the click races the network and flakes. Arm the wait first:
 
 ```typescript
 await Promise.all([
-  page.waitForResponse(resp => resp.url().includes('/api/data') && resp.status() === 200),
+  page.waitForResponse(r => r.url().includes('/api/data') && r.status() === 200),
   page.getByRole('button', { name: 'Load' }).click(),
 ]);
 ```
 
-## Visual Regression
+## Visual regression
+
+First run writes the reference snapshot (no assertion); later runs diff against it. Use `maxDiffPixelRatio` to tolerate antialiasing noise; regenerate intentional changes with `--update-snapshots`.
 
 ```typescript
-// Screenshot comparison (generates reference on first run)
-await expect(page).toHaveScreenshot('homepage.png');
-
-// Element screenshot
-await expect(page.locator('.card')).toHaveScreenshot('card.png', {
-  maxDiffPixelRatio: 0.01,
-});
-```
-
-Update snapshots: `npx playwright test --update-snapshots`
-
-## Debugging
-
-```bash
-# Debug mode (opens inspector)
-npx playwright test --debug
-
-# Trace viewer (after test with trace enabled)
-npx playwright show-trace trace.zip
-```
-
-Enable tracing in config:
-```typescript
-use: { trace: 'on-first-retry' }
+await expect(page).toHaveScreenshot('homepage.png');                                   // full page
+await expect(page.locator('.card')).toHaveScreenshot('card.png', { maxDiffPixelRatio: 0.01 });  // element
 ```

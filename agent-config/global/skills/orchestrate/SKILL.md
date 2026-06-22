@@ -10,10 +10,9 @@ Read the task graph (`/yaco-task`), dispatch `/implement` workers (`/yaco-agent`
 call MUST pass `--json` and use the canonical `yaco agent start <provider>` form; the task graph
 path resolves from yaco.toml (`/yaco-paths`).
 
-A worker is just `/implement <task>` in its own session. Orchestrate never re-runs the leaf
-recipe — it **selects** work, **dispatches**, **gatekeeps by reading evidence**, and **merges up**.
-The model is **task DAG ≅ worktree/branch DAG**: every runnable leaf is its own worktree/branch,
-merged up into its target only after it passes the gate.
+A worker is just `/implement <task>` in its own session — orchestrate never re-runs the leaf
+recipe, it gatekeeps by **reading evidence**. The model is **task DAG ≅ worktree/branch DAG**
+(`/yaco-worktree`): a runnable leaf merges up into its target only after it passes the gate.
 
 ## Flow
 
@@ -54,10 +53,10 @@ Read the active workset (`yaco task list --json`). Select tasks where ALL of:
   depend on the whole merged-up milestone).
 - `resources` (if set) are free — judge by running checks (ports/processes), counting resources held by running tasks, tasks already picked this batch, and external processes outside the project (e.g. `lsof -i :9222`)
 
-**Parallelism.** Every runnable leaf gets its own worktree/branch, so **all eligible leaves
-dispatch in parallel** — there is no scope-overlap serialization. The only limits are agent
-concurrency and `resources`. Overlapping scopes are resolved at merge-up (isolation + merge), not
-prevented. Correctness ordering is expressed as `depends`, **never inferred from `scope`**.
+**Parallelism.** Because each leaf is isolated, **all eligible leaves dispatch in parallel** —
+there is no scope-overlap serialization. The only limits are agent concurrency and `resources`.
+Overlapping scopes are resolved at merge-up (isolation + merge), not prevented. Correctness
+ordering is expressed as `depends`, **never inferred from `scope`**.
 
 **Ordering** (tiebreak only — when agent slots or resources are scarce; otherwise everything eligible dispatches):
 
@@ -70,16 +69,16 @@ leaves must not share a slug** — a duplicate is an authoring error; block befo
 
 ## Dispatch
 
-Resolve the cwd (`/yaco-worktree`): ensure the merge-target branch exists, create the leaf's **own**
-worktree off it (every runnable leaf is isolated — slug defaults to the task id), record the pre-work
-baseline, set the task `running`, start the worker, attach its handle:
+Resolve the cwd (`/yaco-worktree`): ensure the merge-target branch exists, create the leaf's own
+worktree off it, record the pre-work baseline, set the task `running`, start the worker, attach its
+handle:
 
 ```bash
-# 1. Merge target = nearest integration-milestone ancestor branch, else main (/yaco-worktree rule).
-#    If it's an integration milestone, create/reuse its worktree first so the branch exists:
+# 1. Target = nearest integration-milestone ancestor branch, else main. When it's a milestone,
+#    create/reuse its worktree first so the branch exists:
 yaco worktree create <milestone-slug> --base <parent-target> --json   # only when target is a milestone
 target="task/<milestone-slug>"                                        # else: target="main"
-# 2. Every runnable leaf gets its own worktree (slug = task's `worktree` field, else task-id), off target:
+# 2. Leaf's own worktree, off target:
 slug="<worktree field | task-id>"
 cwd="$(yaco worktree create "$slug" --base "$target" --json | jq -r .data.path)"
 base="$(git -C "$cwd" rev-parse HEAD)"   # capture BEFORE the worker commits — scopes the task diff
@@ -110,11 +109,10 @@ evidence; orchestrate confirms it exists and is clean.
 | verify | impl leaf | `/verify` is green (re-run it, or read its result) |
 | qa | user-facing change | `/qa` exercised the affected flows |
 
-Orchestrate does **not** re-review — the worker's reviewer was already independent
-(cross-provider), so a second pass over the same diff adds nothing. It instead checks the
-review **artifact** against the **diff it reads itself** (`$base..HEAD`): the artifact's
-provenance (reviewer, base, scope) is what cross-checks coverage, so a stale or self-authored
-one can't pass. The artifact lands in the design-doc folder (`/yaco-paths`).
+Orchestrate does **not** re-review: the worker's reviewer was already independent (cross-provider).
+It checks the review **artifact** against the **diff it reads itself** (`$base..HEAD`) — the
+artifact's provenance (reviewer, base, scope) cross-checks coverage, so a stale or self-authored one
+can't pass. The artifact lands in the design-doc folder (`/yaco-paths`).
 
 **Outcome:**
 

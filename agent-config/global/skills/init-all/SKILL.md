@@ -13,9 +13,7 @@ Initialize a project for multi-agent development. CLAUDE.md is the single source
 
 ### 1. Run `/init`
 
-Invoke Claude's built-in `/init` to analyze the project and generate CLAUDE.md.
-
-After `/init` completes, review the generated CLAUDE.md and trim it to follow the pointer convention:
+Invoke Claude's built-in `/init`, then trim the generated CLAUDE.md to the pointer convention:
 
 - Don't repeat global rules (already loaded from `~/.claude/CLAUDE.md`)
 - Don't embed architecture or workflow details — point to `doc/main/` and `doc/dev/` as SOTA instead
@@ -23,14 +21,11 @@ After `/init` completes, review the generated CLAUDE.md and trim it to follow th
 
 ### 2. Multi-Tool Symlinks
 
-Run from the project root. Pass `--json` so the result flows through the
-`{ok,data}/{ok,error}` envelope (standard skill CLI contract):
+From the project root:
 
 ```bash
 yaco init links --json
 ```
-
-This creates:
 
 | Symlink | Target | Purpose |
 |---------|--------|---------|
@@ -39,14 +34,7 @@ This creates:
 | `AGENTS.md` | `CLAUDE.md` | Codex config |
 | `GEMINI.md` | `CLAUDE.md` | Gemini config |
 
-Idempotent across re-runs. Semantics:
-
-- Missing `CLAUDE.md` → hard precondition failure (exit 3) so callers
-  can't end up with `AGENTS.md`/`GEMINI.md` pointing at nothing.
-- A regular file or directory at a target path → refuses to clobber
-  (exit 1).
-- An existing symlink at a target path is removed and re-created so the
-  command stays idempotent even if the target moved.
+Idempotent. Requires CLAUDE.md (fails if missing); refuses to clobber a real file or directory at any target, but replaces an existing symlink. Read pass/fail from the `{ok}` envelope.
 
 ### 3. Bootstrap Doc Structure
 
@@ -75,7 +63,7 @@ ls -la ~/.claude/CLAUDE.md ~/.claude/skills ~/.codex/AGENTS.md ~/.agents/skills 
 
 If any are missing, warn:
 
-> Global config not fully linked. Run `tools/install.sh --cli-only` from the YACO monorepo root, or run the monorepo-local `agent-config/setup.sh` shim. After install, the per-skill symlinks under `~/.claude/skills/<skill>/SKILL.md` always reflect the current `agent-config/global/skills/` layout.
+> Global config not fully linked. Run `tools/install.sh --cli-only` from the YACO monorepo root, or the monorepo-local `agent-config/setup.sh` shim.
 
 ### 5. Summary
 

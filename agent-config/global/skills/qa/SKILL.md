@@ -5,21 +5,15 @@ description: E2E and integration QA — derive the user flows a change affects a
 
 # QA
 
-Verify changes work from the user's perspective. Integration tests, E2E, browser tests — not unit tests.
-
-## Scope
+Verify a change works from the user's perspective — E2E, integration, browser. Not unit tests.
 
 | Skill | Level | What |
 |-------|-------|------|
 | `/tdd` | Unit | Write unit tests, RED→GREEN→REFACTOR |
 | `/verify` | Gate | Build + lint + unit tests + security |
-| **`/qa`** | **E2E / Integration** | **Verify user flows affected by changes** |
+| **`/qa`** | **E2E / Integration** | **Verify user flows affected by a change** |
 
-## When to Use
-
-- After implementation — validate the feature actually works end-to-end
-- Before PR — confirm no user-facing regressions
-- After deploy — smoke test critical flows
+Triggers: after implementation, before a PR, or after deploy (smoke-test critical flows).
 
 ## Stack Detection
 
@@ -27,53 +21,47 @@ Verify changes work from the user's perspective. Integration tests, E2E, browser
 |-------------|-------|-----------|
 | `package.json` + web UI present | Web/Playwright | `references/web-playwright.md` |
 | `package.json` + API/server | TypeScript/Node | `references/typescript-node.md` |
-| `build.gradle.kts` or `build.gradle` | Kotlin/Android | `references/kotlin-android.md` |
 
-Read the matching reference file from this skill's directory for stack-specific commands.
+Read the matching reference for stack-specific commands.
 
 ## Process
 
-### 1. Analyze Changes
+### 1. Derive affected user flows
 
 ```bash
 git diff --stat main...HEAD
 ```
 
-Identify: what files changed, what features they touch, what user-facing behavior is affected.
-
-### 2. Derive Affected User Flows
-
-List the user flows (actions a user would take) that touch the changed code. Examples:
+From the diff, list the user flows (concrete actions a user takes) that touch the changed code, one assertion each:
 - "User signs in → sees dashboard → data loads"
 - "User runs `tool deploy --env staging` → exits 0, prints the deploy URL"
 - "API receives POST /items → validates → returns 201"
 
-### 3. Verify Each Flow
+### 2. Verify each flow
 
-Use stack-appropriate tools from the reference file:
+Pick the tool by surface:
 - **Web UI** → Playwright: navigate, interact, assert
-- **API** → HTTP calls: hit real endpoints, check responses
-- **CLI** → Run commands, check stdout/stderr/exit codes
-- **Manual check** → When automation isn't practical, read code + trace logic
+- **API** → HTTP: hit real endpoints, check responses
+- **CLI** → run commands, check stdout/stderr/exit codes
+- **Manual** → when automation isn't practical, read code + trace logic
 
-For each flow: **PASS** (works as expected) or **FAIL** (describe what broke).
+Mark each flow **PASS** or **FAIL** (describe what broke).
 
-### 4. Fix-Verify Loop
+### 3. Fix-verify loop
 
 For each failure:
 1. Categorize: **real bug** / **flaky** / **environment issue**
 2. Fix real bugs only — one atomic commit per fix (`fix: ...`)
 3. Re-verify the affected flow
-4. Loop. Exit when: all flows pass OR 3 consecutive fix failures
+4. Loop. Exit when all flows pass OR 3 consecutive fix failures.
 
-**Rules:**
-- Flaky: note it, don't fix in QA
-- Environment issue: report and stop
-- Max 3 consecutive failures → stop, report remaining
+- Flaky → note it, don't fix here.
+- Environment issue → report and stop.
+- On the 3-failure stop, report the flows still unverified.
 
-### 5. Regression Check
+### 4. Regression check
 
-Re-verify all flows (not just the fixed ones) to confirm no regressions.
+Re-verify **all** flows (not just fixed ones) to confirm no new breakage.
 
 ## Output Format
 
@@ -86,4 +74,5 @@ Flows verified:
 
 Fixes:    [N commits]
 Flaky:    [list or none]
-Blocked:  [environment issues or none]```
+Blocked:  [environment issues or none]
+```

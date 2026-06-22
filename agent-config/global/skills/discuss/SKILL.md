@@ -46,22 +46,18 @@ labels. Number turns so the newest round and the thread structure are obvious:
 >> <mark>**A3**</mark> your reply
 ```
 
-Three rules, each minimal:
-
 - **Number** — new topic → next integer (`Q3`); follow-up to the latest thread →
   decimal (`Q2.1`). Judge from content: does the comment continue the previous
-  exchange or open a new subject? Placement is a hint too — a comment sitting
-  right under the last reply is usually a follow-up.
-- **Highlight what's new this pass** — one `/discuss` can answer several comments
-  at once. Wrap the `**A{n}**` marker of *every* reply you write this pass in
-  `<mark>…</mark>`, and first strip the `<mark>` off the previous pass's replies.
-  The yellow marks then always point at exactly what you just added — one reply
-  or several — and fade next time. Highlight only the **A** marker: not the
-  question (that's the user's own text), and not the whole reply block (a wall of
-  yellow is hard to scan).
+  exchange or open a new subject? Placement is a hint — a comment sitting right
+  under the last reply is usually a follow-up.
+- **Highlight what's new this pass** — first strip the `<mark>` off the previous
+  pass's replies, then wrap the `**A{n}**` marker of *every* reply you write this
+  pass in `<mark>…</mark>`. The marks then point at exactly what you just added —
+  one reply or several — and fade next time. Mark only the **A** marker: not the
+  question (the user's own text), not the whole reply block (a wall of yellow is
+  hard to scan).
 - **You keep the books** — the user writes a bare `> their comment`. You add the
-  `**Q{n}**` marker, the number, and the `<mark>` on your `**A{n}**`. They
-  shouldn't have to.
+  `**Q{n}**` marker, the number, and the `<mark>` on your `**A{n}**`.
 
 Don't reformat earlier turns — leave the discussion's history as-is and apply
 this format to the round you're adding. If the doc already uses its own marker
@@ -70,9 +66,8 @@ add the number and move the `<mark>` so navigation works.
 
 ## Reply well
 
-The format just makes your answers findable — the answer is the point, and your
-own judgment carries it. Two steers, because they counter failure modes specific
-to "replying to comments," not general knowledge:
+The format only makes answers findable; the answer is the point. Two steers
+against failure modes specific to replying to comments:
 
 - **Don't rubber-stamp.** Being asked to "reply to a comment" pulls toward
   agreement. If you disagree, push back with evidence — these comments are left
@@ -80,7 +75,6 @@ to "replying to comments," not general knowledge:
 - **Verify, don't guess.** When the question is about the system, read the code
   or run it before you answer. A doc answer carries `file:line` weight, not
   chat-quick-take weight.
-
 
 ## Wrap-up
 

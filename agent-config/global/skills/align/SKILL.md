@@ -7,8 +7,6 @@ metadata:
 
 # Align
 
-Align the design of the system or anything else between Codex and Claude.
-
 Align uses the `yaco align` CLI for turn handoff (a `wait → work → handoff`
 loop), numbered discussion turns (`NNNN_{CLAUDE,CODEX}.md`), and a
 self-contained `final/*` output inside a YACO project bundle.
@@ -20,21 +18,11 @@ self-contained `final/*` output inside a YACO project bundle.
 - Never assume — when the other agent disagrees or raises a point you didn't cover, investigate: read code, search the web, analyze data. Resolve disagreements with evidence.
 - Stay open-minded but principled. Don't compromise easily. The goal is not fast consensus but high-quality consensus.
 - For key disagreements unresolved after multiple rounds, summarize as open questions in the final doc and escalate to the master user.
+- Use `/ultra-think` for critical decisions.
 
 ### Design Principles
 
-Write and discuss the design like Linus Torvalds would.
-
-- **KISS** — keep it simple, stupid. Avoid over-design and over-engineering. Minimal nesting depth.
-- **Minimal redundancy** — if simpler logic achieves the same result, use it. Turn edge cases into canonical cases through smart design rather than special-casing. Simplify state machines the same way, explicit or implict.
-- **High readability** — code should be self-evident
-- **No backward compatibility** — code reflects the latest, best implementation only. No legacy hacks, no deprecation shims. Product is pre-release.
-- **Align with codebase** — read existing code first, make sure your design is aligned. DRY and don't reinvent wheels, but old codebase could have slops, don't refrain from enforcing better patterns.
-- Question assumptions — why does it have to work that way?
-- Prefer designs that turn edge cases into canonical cases
-- Specify key interactions as state machines where applicable (states, transitions, guards, side effects)
-- No broken windows: no dead ends, no ambiguous states, no undefined behavior
-- Use `/ultra-think` for critical decisions
+Judge the design against the `/design` Design Principles — that is the consensus bar `final/*` must clear. Product is pre-release: no backward-compat hacks, no deprecation shims.
 
 ## Process
 
