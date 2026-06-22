@@ -24,9 +24,3 @@ pnpm vitest run 2>&1 | tail -50
 grep -rn "api_key\|apiKey\|API_KEY" --include="*.ts" src/ 2>/dev/null | head -10
 grep -rn "sk-\|key-" --include="*.ts" src/ 2>/dev/null | head -10
 ```
-
-## 5. Code Quality
-
-```bash
-find src -name "*.ts" -exec wc -l {} + | awk '$1 > 400 {print}'
-```

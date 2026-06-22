@@ -1,17 +1,11 @@
 ---
 name: verify
-description: Run verification loop (build, lint, test, security) before commits. Use before any commit or PR. Detects project stack automatically.
+description: Run verification loop (build, lint, test, security) before commits. Use before any commit or PR, or after significant changes. Detects project stack automatically.
 ---
 
 # Verify
 
 Pre-commit quality gates: build, lint, unit tests, security. For E2E/integration testing of user flows, use `/qa`.
-
-## When to Use
-
-- Before commits
-- After significant changes
-- Before PR creation
 
 ## Arguments
 
@@ -32,11 +26,10 @@ Read the matching reference file from this skill's directory for stack-specific 
 Run these phases in order. If any phase fails, STOP and report errors.
 
 1. **Build** — compile/typecheck
-2. **Lint** — static analysis
+2. **Lint** — static analysis; errors block, warnings are acceptable
 3. **Tests** — run test suite
 4. **Security Scan** — check for hardcoded keys/secrets
-5. **Code Quality** — check for files >400 lines
-6. **Git Status** — `git diff --stat`
+5. **Git Status** — `git diff --stat`
 
 The reference file provides the exact commands for each phase.
 
@@ -55,10 +48,3 @@ Ready for commit: [YES/NO]
 Issues:
 1. ...
 ```
-
-## Quality Thresholds
-
-- Build: Must pass
-- Lint: No errors (warnings acceptable)
-- Tests: All must pass
-- Security: No hardcoded secrets

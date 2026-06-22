@@ -24,9 +24,3 @@
 grep -rn "api_key\|apiKey\|API_KEY" --include="*.kt" app/src/ 2>/dev/null | head -10
 grep -rn "sk-\|key-" --include="*.kt" app/src/ 2>/dev/null | head -10
 ```
-
-## 5. Code Quality
-
-```bash
-find app/src -name "*.kt" -exec wc -l {} + | awk '$1 > 400 {print}'
-```
