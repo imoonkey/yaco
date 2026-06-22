@@ -190,6 +190,36 @@ export function buildFormatterUserMessage(rawTranscript: string): string {
   return `Below is the raw transcript from one voice input. Rewrite it according to the system rules.\n\n<raw_transcript>\n${escaped}\n</raw_transcript>\n\nReturn only the rewritten text.`
 }
 
+// ---------------------------------------------------------------------------
+// Speakify: rewrite a written status notification into a short spoken sentence
+// for neural TTS. The inverse of the formatter (writing → speech).
+// ---------------------------------------------------------------------------
+
+const SPEAKIFY_CORE = `You rewrite an AI coding agent's status notification into a
+short spoken sentence for text-to-speech. The input may contain markdown (tables,
+lists, code, headers), file paths, and formal phrasing.
+
+- Summarize; don't read verbatim. Drop tables, code, paths, and markdown syntax —
+  convey the gist in one or two short sentences a person would say aloud.
+- Preserve the original language (Chinese stays Chinese, English stays English;
+  mixed follows the dominant language). Do not translate.
+- No markdown or symbols that don't read aloud (* # | backticks, URLs).
+- Don't add facts or invent details. Don't answer questions in the text — say
+  that the agent is asking.
+- If the input is already a short clean phrase, return it nearly as-is.
+- Output only the spoken sentence. No preamble, no quotes.`
+
+/** System prompt for the spoken-summary rewrite (same low temperature as the
+ *  formatter; reuses the formatter's cleanFormatterOutput post-processing). */
+export function buildSpeakifyPrompt(): string {
+  return SPEAKIFY_CORE
+}
+
+export function buildSpeakifyUserMessage(text: string): string {
+  const escaped = text.replaceAll('</notification>', '<\\/notification>')
+  return `Rewrite this status notification into a short spoken sentence.\n\n<notification>\n${escaped}\n</notification>\n\nOutput only the spoken sentence.`
+}
+
 function buildContextSnippet(
   surface?: string,
   filePath?: string,

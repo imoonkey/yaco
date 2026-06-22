@@ -1,5 +1,9 @@
 import OpenAI from 'openai'
-import { buildFormatterUserMessage } from './voice-prompts'
+import {
+  buildFormatterUserMessage,
+  buildSpeakifyPrompt,
+  buildSpeakifyUserMessage,
+} from './voice-prompts'
 
 const DEFAULT_MODELS = [
   'openai/gpt-oss-120b',
@@ -8,7 +12,21 @@ const DEFAULT_MODELS = [
   'llama-3.1-8b-instant',
 ]
 
+/** Spoken-rewrite model chain: fast-first, since the task is light and the speak
+ *  path is latency-sensitive (a short timeout, raw-text fallback). */
+const DEFAULT_SPEAK_MODELS = [
+  'llama-3.1-8b-instant',
+  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-120b',
+]
+
 const TIMEOUT_MS = 5000
+
+/** Spoken rewrite is short (1–2 sentences) and on the audio hot path: a tight
+ *  output budget and a ~2.5s timeout keep total latency under ~2s, with the raw
+ *  notice as the fallback when the model is slow. */
+const SPEAK_MAX_TOKENS = 256
+const SPEAK_TIMEOUT_MS = 2500
 
 /** Strip <think>...</think> blocks that some models (e.g. Qwen3) emit */
 function stripThinking(text: string): string {
@@ -82,21 +100,27 @@ function applyModelReasoningParams(model: string, params: Record<string, unknown
   }
 }
 
+/** Split a comma-separated model env var into a clean list, or null when unset/empty. */
+function parseModelEnv(value: string | undefined): string[] | null {
+  if (!value) return null
+  const models = value.split(',').map((m) => m.trim()).filter(Boolean)
+  return models.length > 0 ? models : null
+}
+
 /**
  * Parse formatter model list from env vars.
  * Priority: VOICE_FORMATTER_MODELS (comma-separated) > GROQ_FORMATTER_MODEL (single) > defaults.
  */
 export function resolveFormatterModels(): string[] {
-  const multi = process.env.VOICE_FORMATTER_MODELS
-  if (multi) {
-    const models = multi.split(',').map((m) => m.trim()).filter(Boolean)
-    if (models.length > 0) return models
-  }
+  return (
+    parseModelEnv(process.env.VOICE_FORMATTER_MODELS) ??
+    (process.env.GROQ_FORMATTER_MODEL ? [process.env.GROQ_FORMATTER_MODEL] : DEFAULT_MODELS)
+  )
+}
 
-  const single = process.env.GROQ_FORMATTER_MODEL
-  if (single) return [single]
-
-  return DEFAULT_MODELS
+/** Spoken-rewrite model list. Priority: VOICE_SPEAK_MODELS > fast-first defaults. */
+export function resolveSpeakModels(): string[] {
+  return parseModelEnv(process.env.VOICE_SPEAK_MODELS) ?? DEFAULT_SPEAK_MODELS
 }
 
 export interface FormatResult {
@@ -120,21 +144,33 @@ function describeFormatError(err: unknown): string {
   return String(err)
 }
 
+/** Caller-owned generation budget. The formatter and the spoken rewrite want
+ *  different output sizes and timeouts, so neither is baked into the shared loop. */
+export interface CompleteOptions {
+  maxTokens: number
+  timeoutMs: number
+  logLabel: string
+}
+
 /**
- * Try each model in order until one succeeds. All use the same API key + base URL.
- * Returns formatted text on success, or raw input text if all models fail.
+ * Try each model in order until one returns non-empty cleaned output. All share
+ * the same API key + base URL. Returns `{ text, model }` on the first success, or
+ * `null` when every model fails or returns empty — the caller owns the fallback
+ * (the formatter falls back to the raw transcript, the rewrite to the raw notice),
+ * so the raw value is never wrapped inside this loop.
  */
-export async function formatWithFallback(
+export async function completeWithFallback(
   models: string[],
   systemPrompt: string,
-  text: string,
-): Promise<FormatResult> {
+  userMessage: string,
+  opts: CompleteOptions,
+): Promise<{ text: string; model: string } | null> {
   const client = new OpenAI({
     apiKey: process.env.GROQ_API_KEY,
     baseURL: process.env.VOICE_FORMATTER_BASE_URL || 'https://api.groq.com/openai/v1',
     // No SDK-level retries: the sequential model fallback below IS our retry, and
-    // the default maxRetries (2) would multiply each model's 5s timeout up to 3×,
-    // blowing past the client's 30s budget and forcing a raw-transcript fallback.
+    // the default maxRetries (2) would multiply each model's timeout up to 3×,
+    // blowing past the caller's budget and forcing a raw fallback.
     maxRetries: 0,
   })
 
@@ -144,35 +180,66 @@ export async function formatWithFallback(
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: buildFormatterUserMessage(text) },
+          { role: 'user', content: userMessage },
         ],
         temperature: 0.1,
-        max_tokens: 2048,
+        max_tokens: opts.maxTokens,
       }
 
       applyModelReasoningParams(model, params)
 
       const completion = await client.chat.completions.create(
         params as Parameters<typeof client.chat.completions.create>[0],
-        { timeout: TIMEOUT_MS },
+        { timeout: opts.timeoutMs },
       )
 
       const raw = completion.choices[0]?.message?.content
-      const formatted = raw ? cleanFormatterOutput(raw) : ''
-      if (formatted) {
-        return { text: formatted, model, status: 'formatted' }
-      }
-      console.warn(`[voice-format] model ${model} returned empty output; trying next`)
+      const cleaned = raw ? cleanFormatterOutput(raw) : ''
+      if (cleaned) return { text: cleaned, model }
+      console.warn(`[${opts.logLabel}] model ${model} returned empty output; trying next`)
     } catch (err) {
-      console.warn(`[voice-format] model ${model} failed: ${describeFormatError(err)}; trying next`)
+      console.warn(`[${opts.logLabel}] model ${model} failed: ${describeFormatError(err)}; trying next`)
     }
   }
 
-  console.warn(`[voice-format] all ${models.length} model(s) failed; returning raw transcript`)
+  console.warn(`[${opts.logLabel}] all ${models.length} model(s) failed`)
+  return null
+}
+
+/**
+ * STT formatter: clean a raw transcript into insertable text. Thin wrapper over
+ * completeWithFallback that owns the raw-transcript fallback.
+ */
+export async function formatWithFallback(
+  models: string[],
+  systemPrompt: string,
+  text: string,
+): Promise<FormatResult> {
+  const result = await completeWithFallback(models, systemPrompt, buildFormatterUserMessage(text), {
+    maxTokens: 2048,
+    timeoutMs: TIMEOUT_MS,
+    logLabel: 'voice-format',
+  })
+  if (result) return { text: result.text, model: result.model, status: 'formatted' }
   return {
     text,
     model: '',
     status: 'fallback_raw',
     warning: 'Formatting failed; showing raw transcript.',
   }
+}
+
+/**
+ * Rewrite a written status notification into a short spoken sentence for TTS.
+ * Returns the raw notice unchanged on any failure/empty/timeout — the v1 string
+ * is already speakable, just not pretty.
+ */
+export async function rewriteForSpeech(text: string): Promise<string> {
+  const result = await completeWithFallback(
+    resolveSpeakModels(),
+    buildSpeakifyPrompt(),
+    buildSpeakifyUserMessage(text),
+    { maxTokens: SPEAK_MAX_TOKENS, timeoutMs: SPEAK_TIMEOUT_MS, logLabel: 'voice-speak' },
+  )
+  return result?.text ?? text
 }

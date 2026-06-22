@@ -23,7 +23,7 @@ vi.mock('openai', () => {
   }
 })
 
-import { resolveFormatterModels, formatWithFallback } from '../voice-formatter'
+import { resolveFormatterModels, resolveSpeakModels, formatWithFallback, rewriteForSpeech } from '../voice-formatter'
 
 describe('resolveFormatterModels', () => {
   beforeEach(() => {
@@ -70,6 +70,80 @@ describe('resolveFormatterModels', () => {
       'qwen/qwen3-32b',
       'llama-3.1-8b-instant',
     ])
+  })
+})
+
+describe('resolveSpeakModels', () => {
+  beforeEach(() => {
+    delete process.env.VOICE_SPEAK_MODELS
+  })
+  afterEach(() => {
+    delete process.env.VOICE_SPEAK_MODELS
+  })
+
+  it('returns a fast-first default chain when no env var set', () => {
+    const models = resolveSpeakModels()
+    // Latency-sensitive: the smallest/fastest model leads.
+    expect(models[0]).toBe('llama-3.1-8b-instant')
+    expect(models.length).toBeGreaterThan(1)
+  })
+
+  it('parses VOICE_SPEAK_MODELS comma-separated list', () => {
+    process.env.VOICE_SPEAK_MODELS = 'speak-a, speak-b'
+    expect(resolveSpeakModels()).toEqual(['speak-a', 'speak-b'])
+  })
+
+  it('ignores empty VOICE_SPEAK_MODELS and falls to defaults', () => {
+    process.env.VOICE_SPEAK_MODELS = '  ,  '
+    expect(resolveSpeakModels()[0]).toBe('llama-3.1-8b-instant')
+  })
+})
+
+describe('rewriteForSpeech', () => {
+  beforeEach(() => {
+    mockCreate = vi.fn()
+    process.env.GROQ_API_KEY = 'test-key'
+  })
+  afterEach(() => {
+    delete process.env.GROQ_API_KEY
+    delete process.env.VOICE_SPEAK_MODELS
+  })
+
+  it('returns the cleaned spoken rewrite on success', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('Done — I refactored the parser.'))
+    const out = await rewriteForSpeech('Done. Refactored the parser into 3 modules.\n| a | b |')
+    expect(out).toBe('Done — I refactored the parser.')
+  })
+
+  it('drives the model with the speakify system prompt and notification envelope', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('ok'))
+    await rewriteForSpeech('Your turn. Finished the parser refactor.')
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.messages[0].content).toContain('text-to-speech')
+    expect(callArgs.messages[1].content).toContain('<notification>')
+    expect(callArgs.messages[1].content).toContain('Your turn. Finished the parser refactor.')
+    // Short output budget + tight timeout for the audio hot path (pin the contract).
+    expect(callArgs.max_tokens).toBe(256)
+    expect(mockCreate.mock.calls[0][1].timeout).toBe(2500)
+  })
+
+  it('honors the speak model order (independent of the formatter chain)', async () => {
+    process.env.VOICE_SPEAK_MODELS = 'speak-x,speak-y'
+    mockCreate.mockResolvedValueOnce(chatResponse('spoken'))
+    await rewriteForSpeech('some notice')
+    expect(mockCreate.mock.calls[0][0].model).toBe('speak-x')
+  })
+
+  it('falls back to the raw text when every model fails', async () => {
+    mockCreate.mockRejectedValue(new Error('all down'))
+    const raw = 'Crashed (exit 1). See the log.'
+    expect(await rewriteForSpeech(raw)).toBe(raw)
+  })
+
+  it('falls back to the raw text when the model returns empty', async () => {
+    mockCreate.mockResolvedValue(chatResponse(''))
+    const raw = 'Needs approval to run the migration.'
+    expect(await rewriteForSpeech(raw)).toBe(raw)
   })
 })
 
@@ -156,6 +230,9 @@ describe('formatWithFallback', () => {
       },
     ])
     expect(callArgs.temperature).toBe(0.1)
+    // STT generation budget stays byte-identical after the completeWithFallback extraction.
+    expect(callArgs.max_tokens).toBe(2048)
+    expect(mockCreate.mock.calls[0][1].timeout).toBe(5000)
   })
 
   it('uses current Groq reasoning params for Qwen models', async () => {
