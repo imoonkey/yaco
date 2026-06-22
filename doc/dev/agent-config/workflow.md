@@ -31,7 +31,7 @@ cd agent-config
 | `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
 | `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
 | `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |
-| `/write-skill` | Writing/editing a skill | Quality bar for authoring a skill's SKILL.md, reference, and scripts |
+| `/write-skill` | Writing/editing a skill | Quality bar for authoring a skill's SKILL.md, references/, and scripts |
 
 ## Adding a New Skill
 
@@ -42,7 +42,7 @@ cd agent-config
 (task graph, worktrees, agent sessions, alignment polling, multi-tool
 symlinks) is exposed through `yaco <area> <subcommand> --json`. New skills
 should follow the same pattern — see `global/skills/{orchestrate,
-update-tasks,agent,align,init-all}/SKILL.md` for the canonical form.
+yaco-task,yaco-agent,align,init-all}/SKILL.md` for the canonical form.
 
 Skills MUST pass `--json` on every `yaco` invocation so output flows
 through the `{ok,data}/{ok,error}` envelope. The top-level provider
