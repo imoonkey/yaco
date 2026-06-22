@@ -5,17 +5,14 @@ metadata:
   yaco-dependent: "true"
 ---
 
-This skill is the operation manual for `yaco task`. The task graph lives in
-`plan/tasks/**/tasks.json`, but you never edit those files directly and never
-manipulate them with helper scripts or Python — every read and write goes
+Operation manual for `yaco task` — the project task graph, from top-level
+milestones down to leaf tasks. The graph lives in `plan/tasks/**/tasks.json`,
+but never edit those files or script around them: every read and write goes
 through the `yaco task` CLI, which owns the graph constraints (ref validation,
-cycle detection, state guards, parent rollup). Design bundles live under
-`plan/all/<bundle>/`; `plan/active`, `plan/backlog`, and `plan/archive` are
-symlink views.
+cycle detection, state guards, parent rollup). For where docs, bundles, and the
+archive/symlink views live, follow `/yaco-paths`.
 
 ## Scope
-
-You manage the project's task graph — from top-level milestones down to leaf tasks.
 
 - **Planning**: seed milestones from a roadmap or user intent, structure them into a dependency graph
 - **Decomposition**: when `/design T` produces a `## Tasks` section, parse it and create subtasks under T in topological order
@@ -41,7 +38,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 }
 ```
 
-ID (JSON key) is a stable slug — used in `depends`/`parent` references, never changes.
+ID (JSON key) is a stable slug — used in `depends`/`parent` references, never changes. Parent provides namespace grouping.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -77,7 +74,7 @@ This means `blocked → done` (human approve), `done → ready` (reopen), and `c
 
 ## Writing acceptCriteria
 
-acceptCriteria is the most important field in a task — it defines what "done" looks like. Spend as much time designing acceptCriteria as designing the task itself.
+acceptCriteria defines what "done" looks like — design it as carefully as the task itself.
 
 **Rules:**
 - Required and non-empty on every leaf task. `yaco task set` rejects blank values.
@@ -108,11 +105,8 @@ Before writing any task, analyze and decide:
 
 ## Tools
 
-Reads and writes both go through `yaco task`, which has graph constraints
-(ref validation, cycle detection, state guards, parent rollup) built in:
-
 ```bash
-# Read
+# Read (text by default; add --json to parse the {ok,data} envelope)
 yaco task list                                    # active workset (default)
 yaco task list --workset all                      # full task map: active + backlog + archive
 yaco task list --workset archive                  # archive only
@@ -132,29 +126,16 @@ yaco task attach <id> <session-handle> [--repo <path>] --json   # add a handle t
 yaco task detach <id> <session-handle> [--repo <path>] --json   # remove a handle from agents
 ```
 
-`yaco task list` returns the active workset by default. Use
-`--workset all` to get the full task map across active, backlog, and archive in
-one read; use `--workset archive` to inspect the archive alone. `yaco task get
-<id>` reads a single task's full detail. All three default to readable text;
-add `--json` when you need to parse the records programmatically.
+`yaco task set` mutates ordinary task fields only; it **rejects** `agent` and
+`agents`. To dispatch a task to a worker, run two commands: move its state with
+`task set` and link the handle with `task attach`.
 
-`yaco task set` mutates ordinary task fields only. It **rejects** both `agent`
-and `agents` — the `agents` link list is delta-mutated exclusively through
-`yaco task attach` and `yaco task detach`. To dispatch a task to a worker,
-move its state with `task set` and link the handle with `task attach` as two
-separate commands.
-
-`archive` sets `workset=archive` on a terminal task and all its descendants.
-All descendants must also be terminal. Non-terminal work that should leave the
-current workset belongs in `workset=backlog`, not `archive`.
-
-When archiving a top-level bundle, follow `/yaco-paths` for the archive
-procedure — the bundle's docs stay under `<plan>/all/<bundle>/` and the view
-symlink moves to the dated `<archive>/YYYYMMDD_<bundle>` name. If the bundle's
-task store is relocated to an archive area, reuse that dated name (e.g.
-`<tasks>/archive/YYYYMMDD_<bundle>/tasks.json`).
-
-Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
+`archive` sets `workset=archive` on a terminal task and all its descendants,
+which must themselves be terminal. Non-terminal work that should leave the
+current workset goes to `workset=backlog`, not `archive`. To archive a
+top-level bundle, follow `/yaco-paths` — it covers the bundle docs and the
+dated view-symlink rename. If the bundle's task store is relocated to an
+archive area, reuse that dated name (e.g. `<tasks>/archive/YYYYMMDD_<bundle>/tasks.json`).
 
 ## Examples
 
@@ -170,8 +151,7 @@ yaco task set workspace-state --data '{
   "acceptCriteria": ["npm test passes", "no console errors on reload"]
 }' --json
 
-# Move a task to running and link its worker handle (two commands —
-# `task set` never writes `agent`/`agents`)
+# Move a task to running and link its worker handle (two commands)
 yaco task set workspace-state --data '{"state":"running"}' --json
 yaco task attach workspace-state w-workspace-state --json
 

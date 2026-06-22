@@ -5,20 +5,18 @@ metadata:
   yaco-dependent: "true"
 ---
 
-This skill is the operation manual for `yaco worktree`. A **worktree** is an isolated git
-checkout — its own working tree, branch, and git index — keyed by a **slug**. (Heavy deps like
-`node_modules` are typically *shared* from the main checkout, not copied — see Provisioning.)
-`/orchestrate` drives this lifecycle; tasks declare a slug through the `worktree` field (see
-`/yaco-task`). The model is **task DAG ≅ worktree/branch DAG**:
+Operation manual for `yaco worktree` — each worktree is an isolated git checkout (its own working
+tree, branch, and git index) keyed by a **slug**. `/orchestrate` drives this lifecycle; tasks
+declare a slug through the `worktree` field (see `/yaco-task`). The model is **task DAG ≅
+worktree/branch DAG**:
 
 - **1 runnable leaf = 1 worktree = 1 branch.** No shared mutable checkout, no inherited slug.
 - **1 integration milestone = 1 integration worktree/branch** — a milestone whose children must
   be verified *together* (non-empty `acceptCriteria`) owns a `task/<slug>` tree that children
   merge into. A pure grouping milestone owns no tree.
 
-A slug maps to a **fixed convention** — directory `<repoRoot>/.worktrees/<slug>`, branch
-`task/<slug>` — so the path is not configurable (it is *not* read from yaco.toml). Pass `--json`
-on every invocation so output flows through the `{ok,data}/{ok,error}` envelope.
+The slug↔path↔branch convention is **fixed**, not read from yaco.toml (see the CWD table). Pass
+`--json` on every invocation so output flows through the `{ok,data}/{ok,error}` envelope.
 
 ## CWD resolution
 
@@ -40,10 +38,9 @@ the orchestrator's home and the →main merge transport, **never a leaf's execut
 worktree_path="$(yaco worktree create <slug> --base <target-branch> --json | jq -r .data.path)"
 ```
 
-`yaco worktree create <slug> [--base <branch>]` creates `<repoRoot>/.worktrees/<slug>/` on branch
-`task/<slug>` off `--base` (default `main`), runs the repo's own `scripts/worktree-provision.sh`
-if present (see Provisioning), and **reuses** an existing worktree of the same slug. Without
-`--json` it prints the path on stdout.
+`yaco worktree create <slug> [--base <branch>]` creates the worktree on branch `task/<slug>` off
+`--base` (default `main`), runs `scripts/worktree-provision.sh` if present (see Provisioning), and
+**reuses** an existing worktree of the same slug. Without `--json` it prints the path on stdout.
 
 **Cross-repo:** if work spans multiple repos, create a worktree in each repo using the **same
 slug**. Each repo manages its own `.worktrees/` directory independently.
@@ -96,7 +93,7 @@ merge commit; a textual conflict triggers the resolver.
 
 A merge-up conflict is decided by **git hunks**, not the `scope` field. The common source is two
 leaves with **no `depends`, same target, real edits to the same region** — exactly the overlap this
-model parallelizes. Serial chains don't conflict with their own predecessors (a dependent dispatches
+model parallelizes. A serial chain can't conflict with its own predecessors (a dependent dispatches
 only after its predecessor is terminal); different targets don't share a checkout.
 
 When `git merge` conflicts, **dispatch a resolver agent in the target's checkout** (`/yaco-agent`),

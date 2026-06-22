@@ -7,11 +7,9 @@ metadata:
 
 # yaco-agent — Agent Lifecycle Orchestration
 
-This skill is the operation manual for `yaco agent`. It drives the lifecycle of
-coding-agent sessions (Claude Code, Codex): start them, send follow-up turns,
-wait for their structured completion, inspect them, link them to tasks, and tear
-them down. The runtime is tmux-backed, but you operate it through `yaco agent`,
-never through raw `tmux` commands.
+Operation manual for `yaco agent`, the lifecycle driver for coding-agent
+sessions (Claude Code, Codex). The runtime is tmux-backed, but you operate it
+through `yaco agent`, never through raw `tmux` commands.
 
 ## CLI contract for skill automation
 
@@ -20,9 +18,7 @@ Text is the default surface for reads and inspection. `agent list`, `status`,
 straight to stdout — no `--json`, no `jq`. Pass `--json` when you need to parse
 returned fields programmatically or branch on the `{ok,data}` / `{ok,error}`
 discriminator; mutations (`start`, `send`, `rename`, `kill`, and task
-`attach`/`detach`) carry it so you can check success. `yaco agent capture` has
-two modes: text streams the clean pane buffer (default), `--json` wraps it as
-`{ok:true, data:{text:"..."}}`.
+`attach`/`detach`) carry it so you can check success.
 
 ## Session model
 
@@ -76,9 +72,9 @@ yaco agent kill <handle> --json
 Codex is rewritten to the `codex resume <id>` subcommand. The state file records
 `sessionId` immediately.
 
-`whoami` resolves the current process to its YACO session handle. It uses
-`TMUX_PANE` first, then known provider session-id environment such as
-`CODEX_THREAD_ID` or `CLAUDE_CODE_SESSION_ID`, then process ancestry.
+`whoami` resolves via `TMUX_PANE` first, then known provider session-id
+environment such as `CODEX_THREAD_ID` or `CLAUDE_CODE_SESSION_ID`, then process
+ancestry.
 
 ## Waiting for completion
 
@@ -144,16 +140,16 @@ yaco agent capture <handle> --strip-ansi false # keep ANSI codes
 ```
 
 `capture` is a diagnostic snapshot of the tmux pane — use it to eyeball what a
-session is currently showing, not to wait for or read a result. Text mode
-returns clean text (ANSI stripped by default); `--json` wraps it as
-`{ok:true, data:{text:"..."}}`.
+session is currently showing, never to read a turn's result (use `--wait` /
+`messages` for that). Text mode returns clean text (ANSI stripped by default);
+`--json` wraps it as `{ok:true, data:{text:"..."}}`.
 
 ## Navigating message history
 
 `messages` reads a session's **full** message history from the provider's
 structured log (never PTY). The orchestrator's structured **final** message
 already comes from `wait` / `--wait`; reach for `messages` to navigate *earlier*
-turns by a stable index. `capture` stays debug-only.
+turns by a stable index.
 
 ```bash
 # Orient first on a long session: shape + prompt-landmark indices, constant size
@@ -222,27 +218,14 @@ yaco agent kill --all --json   # all sessions under cwd — human-only
 agent sessions, so only a human should invoke it. Skills kill sessions one
 handle at a time.
 
-## Examples
+## Example — capture and thread a handle
 
 ```bash
-# Start a claude worker non-blocking, then wait for its first turn
+# Start non-blocking, capture the handle, then drive the session by it
 HANDLE=$(yaco agent start claude "Fix the failing unit tests" \
   --name fixer --json | jq -r .data.handle)
 RESULT=$(yaco agent wait "$HANDLE" --from-start)
-
-# Or do it in one blocking call
-yaco agent start claude "Fix the failing unit tests" --name fixer --wait
-
-# Send a follow-up turn and wait for its completion
 yaco agent send "$HANDLE" "Now add tests for the edge cases" --wait
-
-# Inspect the session and its lineage
-yaco agent status "$HANDLE"
-
-# Resume a previous conversation
-yaco agent start claude --resume abc123 --name fixer --json
-
-# Clean up when done
 yaco agent kill "$HANDLE" --json
 ```
 
