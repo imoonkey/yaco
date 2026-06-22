@@ -38,14 +38,17 @@ import {
   type Watermarks,
 } from './attention-projection'
 
-/** Hold a `session_blocked` this long before appending + pushing, so a
- *  permission-then-auto-allow flicker does not produce an item (spec §5.1, M11). */
-export const BLOCKED_DEBOUNCE_MS = 1_500
-/** A session must have been active (processing|blocked) at least this long before
- *  an idle transition can produce a `session_idle` edge (spec §11.3). */
+/** Hold a debounced session edge (`blocked`/`idle`) this long before appending +
+ *  pushing, so a permission-then-auto-allow flicker — or an idle the user instantly
+ *  continues — produces no item (spec §5.1, M11). Measured as `now − statusEnteredAt`
+ *  and re-evaluated against the fresh snapshot each recompute; a wake timer only
+ *  schedules that re-evaluation, it never appends. */
+export const EDGE_DEBOUNCE_MS = 1_500
+/** A session must have done at least this much real work — idle entry minus the
+ *  start of its active span — before an idle transition produces a `session_idle`
+ *  edge. A fixed duration (both ends parsed from status timestamps), so a trivial
+ *  turn never drifts into one on a later tick (spec §11.3). */
 export const MIN_PROCESSING_MS = 15_000
-/** Consecutive idle observations required to confirm idle (debounce flap). */
-export const IDLE_CONFIRM_COUNT = 2
 /** 60s safety tick — a recompute backstop in case a watcher event is missed. */
 export const SAFETY_TICK_MS = 60_000
 
@@ -79,10 +82,10 @@ export interface AttentionEngineDeps {
 interface SessionCacheEntry {
   status: LiveSession['status']
   statusEnteredAt?: string
-  /** ms the session first observed active (processing|blocked) in this streak. */
+  /** ms the session entered the FIRST active status (processing|blocked) of its
+   *  current active span — carried across the span and into idle so the
+   *  MIN_PROCESSING work-duration gate is fixed at idle entry. */
   activeSince?: number
-  /** consecutive idle observations. */
-  idleStreak: number
 }
 
 interface TaskCacheEntry {
@@ -90,19 +93,30 @@ interface TaskCacheEntry {
   stateEnteredAt?: string
 }
 
-/** A pending debounced `session_blocked` edge. `latestSession` is refreshed on
- *  every recompute while the same generation (`enteredAt`) is still blocked, so
- *  the timer appends the FRESHEST snapshot — capturing a notice that filled AFTER
- *  the first blocked observation (events are idempotent by generation id, so a
- *  late notice could never be corrected by a second append). */
-interface BlockedPending {
-  enteredAt: string
-  latestSession: LiveSession
-  timer: ReturnType<typeof setTimeout>
-}
-
 function sKey(project: string, name: string): string {
   return `${project}::${name}`
+}
+
+function isActiveStatus(status: LiveSession['status']): boolean {
+  return status === 'processing' || status === 'blocked'
+}
+
+/** ms a session's active span started, parsed from its `statusEnteredAt`. undefined
+ *  for a non-active status or an unparseable timestamp. */
+function activeSinceFrom(s: LiveSession): number | undefined {
+  if (!isActiveStatus(s.status)) return undefined
+  const ms = Date.parse(s.statusEnteredAt ?? '')
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+/** True when an idle session's turn did ≥ MIN_PROCESSING of real work: idle entry
+ *  minus the start of its active span. Both ends are fixed status timestamps, so
+ *  this never drifts true on a later tick. Requires a parseable idle
+ *  `statusEnteredAt` and a known active span. */
+function idleIsRealWork(s: LiveSession, activeSince: number | undefined): boolean {
+  if (activeSince === undefined) return false
+  const idleAt = Date.parse(s.statusEnteredAt ?? '')
+  return Number.isFinite(idleAt) && idleAt - activeSince >= MIN_PROCESSING_MS
 }
 
 // ── Engine ───────────────────────────────────────────────────────────────────
@@ -119,7 +133,10 @@ export class AttentionEngine {
   private recomputeInFlight = false
   private recomputeQueued = false
   private safetyTimer: ReturnType<typeof setInterval> | null = null
-  private blockedTimers = new Map<string, BlockedPending>()
+  /** Per-session one-shot timers that only trigger a recompute after the debounce
+   *  window — they never append. The append decision is made in `detectEdges`
+   *  against the fresh snapshot. */
+  private wakeTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(deps: Partial<AttentionEngineDeps> = {}) {
     this.deps = {
@@ -146,8 +163,8 @@ export class AttentionEngine {
 
   stop(): void {
     if (this.safetyTimer) { clearInterval(this.safetyTimer); this.safetyTimer = null }
-    for (const p of this.blockedTimers.values()) clearTimeout(p.timer)
-    this.blockedTimers.clear()
+    for (const t of this.wakeTimers.values()) clearTimeout(t)
+    this.wakeTimers.clear()
   }
 
   /** Test-only: reset all in-memory state. */
@@ -157,8 +174,8 @@ export class AttentionEngine {
     this.knownGenerations.clear()
     this.liveEdgeGenerations.clear()
     this.booted = false
-    for (const p of this.blockedTimers.values()) clearTimeout(p.timer)
-    this.blockedTimers.clear()
+    for (const t of this.wakeTimers.values()) clearTimeout(t)
+    this.wakeTimers.clear()
   }
 
   // Triggers (project-watcher / ui-state). All collapse into one recompute.
@@ -183,8 +200,7 @@ export class AttentionEngine {
       this.sessionCache.set(sKey(s.project, s.name), {
         status: s.status,
         statusEnteredAt: s.statusEnteredAt,
-        idleStreak: s.status === 'idle' ? IDLE_CONFIRM_COUNT : 0,
-        activeSince: s.status === 'processing' || s.status === 'blocked' ? 0 : undefined,
+        activeSince: activeSinceFrom(s),
       })
     }
     for (const t of snapshot.tasks) {
@@ -278,52 +294,42 @@ export class AttentionEngine {
       const key = sKey(s.project, s.name)
       liveSessionKeys.add(key)
       const prev = this.sessionCache.get(key)
-      const active = s.status === 'processing' || s.status === 'blocked'
 
-      // Track active-since (for idle MIN_PROCESSING) + idle streak. activeSince
-      // is preserved across the idle streak so the MIN_PROCESSING gate still
-      // sees how long the session worked before it went idle.
+      // Track the start of the active span: set on the first active observation,
+      // preserved across processing↔blocked and into idle (so the work-duration
+      // gate is fixed at idle entry), cleared on starting/crashed.
       let activeSince = prev?.activeSince
-      let idleStreak = prev?.idleStreak ?? 0
-      if (active) {
-        if (!prev || (prev.status !== 'processing' && prev.status !== 'blocked')) activeSince = now
-        idleStreak = 0
-      } else if (s.status === 'idle') {
-        idleStreak = idleStreak + 1
-      } else {
-        idleStreak = 0
+      if (isActiveStatus(s.status)) {
+        if (!prev || !isActiveStatus(prev.status)) activeSince = activeSinceFrom(s) ?? now
+      } else if (s.status !== 'idle') {
         activeSince = undefined
       }
 
-      // ── Crash edge — immediate ──────────────────────────────────────────────
+      // ── Crash edge — immediate, never debounced ─────────────────────────────
       if (s.status === 'crashed' && s.statusEnteredAt && this.statusEntered(prev, s)) {
         await this.appendSessionEdge('session_crashed', s, now)
       }
 
-      // ── Blocked edge — debounced ~1 confirm ─────────────────────────────────
-      if (s.status === 'blocked' && s.statusEnteredAt) {
-        this.scheduleBlockedEdge(s)
-      } else {
-        this.cancelBlockedEdge(key)
-      }
+      // ── Debounced session edge — blocked + idle ─────────────────────────────
+      // One mechanism: append once the session has held the same statusEnteredAt
+      // generation for ≥ EDGE_DEBOUNCE_MS. Idle additionally requires a fixed
+      // ≥MIN_PROCESSING work span (idle entry − active span start).
+      const debounced: 'session_blocked' | 'session_idle' | null =
+        s.status === 'blocked' ? 'session_blocked'
+        : s.status === 'idle' && idleIsRealWork(s, activeSince) ? 'session_idle'
+        : null
+      if (debounced && s.statusEnteredAt) await this.evaluateDebouncedEdge(key, debounced, s, now)
+      else this.clearWakeTimer(key)
 
-      // ── Idle edge — ≥MIN_PROCESSING + idle-confirm streak ───────────────────
-      // Appends when the idle streak first reaches the confirm count. The
-      // generation is statusEnteredAt-keyed so re-appends are idempotent no-ops;
-      // a newer idle (new statusEnteredAt) resets the streak and re-confirms.
-      if (s.status === 'idle' && s.statusEnteredAt && idleStreak >= IDLE_CONFIRM_COUNT) {
-        const wasRealWork = activeSince !== undefined && now - activeSince >= MIN_PROCESSING_MS
-        if (wasRealWork) {
-          await this.appendSessionEdge('session_idle', s, now)
-        }
-      }
-
-      this.sessionCache.set(key, { status: s.status, statusEnteredAt: s.statusEnteredAt, activeSince, idleStreak })
+      // Commit the cache LAST: an append above that throws leaves the prior
+      // generation uncached, so the edge is retried on the next recompute rather
+      // than swallowed (e.g. a crash whose event write failed).
+      this.sessionCache.set(key, { status: s.status, statusEnteredAt: s.statusEnteredAt, activeSince })
     }
 
-    // Prune sessions that disappeared (resolves blocked timers, frees the cache).
+    // Prune sessions that disappeared (frees the cache + any wake timer).
     for (const key of [...this.sessionCache.keys()]) {
-      if (!liveSessionKeys.has(key)) { this.sessionCache.delete(key); this.cancelBlockedEdge(key) }
+      if (!liveSessionKeys.has(key)) { this.sessionCache.delete(key); this.clearWakeTimer(key) }
     }
 
     // ── Task edges — immediate ──────────────────────────────────────────────
@@ -351,51 +357,53 @@ export class AttentionEngine {
 
   // ── Blocked debounce ────────────────────────────────────────────────────────
 
-  private scheduleBlockedEdge(s: LiveSession): void {
-    const key = sKey(s.project, s.name)
-    const enteredAt = s.statusEnteredAt!
-    const generation = sessionGenerationId('session_blocked', s.project, s.name, enteredAt)
+  // ── Debounced session edge (blocked + idle) ─────────────────────────────────
+
+  /** Append `type` once the session has held the same `statusEnteredAt` generation
+   *  for ≥ EDGE_DEBOUNCE_MS, evaluated against the FRESH snapshot `s`. A wake timer
+   *  only schedules the re-evaluation (`recompute`); it never appends from cache.
+   *  A non-finite OR future-dated `statusEnteredAt` is anomalous (you can't enter a
+   *  status in the future) → fail open (append now) rather than parking a wake loop
+   *  that re-arms until wall time catches up. Idle never reaches here on a bad
+   *  timestamp because `idleIsRealWork` already screened it out. */
+  private async evaluateDebouncedEdge(
+    key: string,
+    type: 'session_blocked' | 'session_idle',
+    s: LiveSession,
+    now: number,
+  ): Promise<void> {
+    const generation = sessionGenerationId(type, s.project, s.name, s.statusEnteredAt!)
     // Already durably recorded — appended live this run OR boot-discovered. The
-    // edge exists; scheduling again would make a persistently-blocked session
-    // re-append (idempotent no-op) + rebroadcast every debounce interval forever,
-    // because the timer deletes its entry before the post-append recompute lands.
+    // edge exists; re-evaluating would re-append (idempotent no-op) and re-arm a
+    // wake timer every tick forever. Stop here: no re-append, no wake-loop, no
+    // second interrupt.
     if (this.liveEdgeGenerations.has(generation) || this.knownGenerations.has(generation)) {
-      this.cancelBlockedEdge(key)
+      this.clearWakeTimer(key)
       return
     }
-    const existing = this.blockedTimers.get(key)
-    if (existing) {
-      if (existing.enteredAt === enteredAt) {
-        // Same generation still blocked — refresh the snapshot so the pending
-        // timer appends the latest (a notice may have filled since it was
-        // scheduled). Do NOT reset the timer: the debounce window is anchored to
-        // the first observation.
-        existing.latestSession = s
-        return
-      }
-      // A new generation (rapid re-block) — the old timer would no-op against the
-      // new statusEnteredAt and never schedule this one until the safety tick.
-      // Cancel it and reschedule for the new generation.
-      clearTimeout(existing.timer)
-      this.blockedTimers.delete(key)
+    const enteredMs = Date.parse(s.statusEnteredAt!)
+    const elapsed = Number.isFinite(enteredMs) && enteredMs <= now ? now - enteredMs : EDGE_DEBOUNCE_MS
+    if (elapsed >= EDGE_DEBOUNCE_MS) {
+      this.clearWakeTimer(key)
+      await this.appendSessionEdge(type, s, now)
+    } else {
+      this.ensureWakeTimer(key, EDGE_DEBOUNCE_MS - elapsed)
     }
-    const timer = setTimeout(() => {
-      const pending = this.blockedTimers.get(key)
-      this.blockedTimers.delete(key)
-      // Confirm the session is STILL blocked on the same generation before
-      // appending, then append the FRESHEST captured snapshot.
-      const cur = this.sessionCache.get(key)
-      if (pending && cur?.status === 'blocked' && cur.statusEnteredAt === enteredAt) {
-        void this.appendSessionEdge('session_blocked', pending.latestSession, this.deps.now()).then(() => void this.recompute())
-      }
-    }, BLOCKED_DEBOUNCE_MS)
-    timer.unref?.()
-    this.blockedTimers.set(key, { enteredAt, latestSession: s, timer })
   }
 
-  private cancelBlockedEdge(key: string): void {
-    const p = this.blockedTimers.get(key)
-    if (p) { clearTimeout(p.timer); this.blockedTimers.delete(key) }
+  /** Schedule a single recompute after `ms` so the debounce gate is re-evaluated
+   *  against a fresh snapshot. `ms` is always within (0, EDGE_DEBOUNCE_MS] at the
+   *  call site (elapsed is clamped non-negative); the timer ONLY triggers recompute. */
+  private ensureWakeTimer(key: string, ms: number): void {
+    if (this.wakeTimers.has(key)) return
+    const timer = setTimeout(() => { this.wakeTimers.delete(key); void this.recompute() }, Math.max(0, ms))
+    timer.unref?.()
+    this.wakeTimers.set(key, timer)
+  }
+
+  private clearWakeTimer(key: string): void {
+    const t = this.wakeTimers.get(key)
+    if (t) { clearTimeout(t); this.wakeTimers.delete(key) }
   }
 
   // ── Edge append (idempotent; marks the generation as a live edge → toast) ───

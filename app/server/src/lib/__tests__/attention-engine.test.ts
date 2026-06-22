@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { AttentionEngine, MIN_PROCESSING_MS, BLOCKED_DEBOUNCE_MS, IDLE_CONFIRM_COUNT } from '../attention-engine'
+import { AttentionEngine, MIN_PROCESSING_MS, EDGE_DEBOUNCE_MS, SAFETY_TICK_MS } from '../attention-engine'
 import type { AttentionEngineDeps } from '../attention-engine'
 import type { AttentionSnapshot, LiveSession, LiveTask, Watermarks } from '../attention-projection'
 import type { YacoEvent, EventInput } from '../eventsLog'
@@ -22,6 +22,8 @@ function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?
     onReadDismissed: undefined as (() => void) | undefined,
     lastSnapshot: null as AttentionSnapshot | null,
     broadcasts: 0,
+    /** One-shot: make the next appendEvent throw, to exercise append-failure retry. */
+    throwOnNextAppend: false,
   }
   for (const e of initial?.events ?? []) {
     const list = state.events.get(e.projectId) ?? []
@@ -43,6 +45,7 @@ function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?
     // stale snapshot), so a concurrently-added live id survives.
     removeDismissedActGen: async (dead) => { for (const g of dead) state.dismissedActGen.delete(g) },
     appendEvent: async (projectId, input) => {
+      if (state.throwOnNextAppend) { state.throwOnNextAppend = false; throw new Error('append failed (test)') }
       const list = state.events.get(projectId) ?? []
       const existing = input.id ? list.find((e) => e.id === input.id) : undefined
       if (existing) return existing
@@ -105,61 +108,172 @@ describe('engine — change-driven edge detection', () => {
     expect(state.lastSnapshot?.needsYou.some((i) => i.type === 'task_blocked')).toBe(true)
   })
 
-  it('blocked edge is held BLOCKED_DEBOUNCE_MS before append', async () => {
+  it('blocked edge is held EDGE_DEBOUNCE_MS, then the wake timer appends it', async () => {
     const { state, engine } = harness()
     await engine.start()
-    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs), blockReason: 'permission' })]
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(t0), blockReason: 'permission' })]
     await engine.recompute()
-    // Not yet appended — debounce pending.
+    // Within the debounce window — not appended; a wake timer is armed.
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_blocked')).toBe(false)
 
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    // Clock advances past the window; the real wake timer fires a recompute that appends.
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 50
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS + 50))
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_blocked')).toBe(true)
   })
 
   it('blocked debounce is cancelled if the session leaves blocked before it fires (flicker)', async () => {
     const { state, engine } = harness()
     await engine.start()
-    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs) })]
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(t0) })]
     await engine.recompute()
-    // Auto-allow before the debounce window → back to processing.
-    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(state.nowMs + 1) })]
+    // Auto-allow before the window → processing clears the wake timer.
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0 + 1) })]
     await engine.recompute()
 
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    // Even past the window the gate now reads processing → nothing appends.
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 50
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS + 50))
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_blocked')).toBe(false)
   })
 
-  it('idle edge fires only after MIN_PROCESSING + idle-confirm streak', async () => {
+  it('a future-dated statusEnteredAt fails open (appends now, no wake loop)', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    // 60s in the future — you can't enter a status in the future; treat as anomalous.
+    const future = ISO(state.nowMs + 60_000)
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: future, blockReason: 'permission' })]
+    await engine.recompute()
+    // Appended immediately rather than parking a wake timer that re-arms every
+    // window until wall time catches up.
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_blocked')).toBe(true)
+  })
+
+  it('crash edge is retried when the first append throws (cache committed only on success)', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    state.throwOnNextAppend = true
+    state.sessions = [sess({ name: 'w', status: 'crashed', statusEnteredAt: ISO(state.nowMs), exitCode: 1 })]
+    await engine.recompute().catch(() => {}) // first append throws and propagates
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_crashed')).toBe(false)
+    // Same generation still crashed → the uncommitted cache lets it retry, now succeeds.
+    await engine.recompute()
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_crashed')).toBe(true)
+  })
+
+  it('idle edge fires after MIN_PROCESSING work + the debounce window', async () => {
     const { state, engine } = harness()
     await engine.start()
     const t0 = state.nowMs
-    // active (processing) for ≥ MIN_PROCESSING.
+    // active (processing) ≥ MIN_PROCESSING before idle.
     state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
     await engine.recompute()
-    state.nowMs = t0 + MIN_PROCESSING_MS + 1_000
-    // First idle observation: streak 1 (no edge yet).
-    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(state.nowMs), spawnedBy: 'user:web' })]
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
     await engine.recompute()
+    // Within the debounce window — no edge yet.
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
-    // Second idle observation: streak reaches IDLE_CONFIRM_COUNT → edge.
+    // Past the window → edge.
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 1
     await engine.recompute()
-    expect(IDLE_CONFIRM_COUNT).toBe(2)
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(true)
     expect(state.lastSnapshot?.ready.some((i) => i.type === 'session_idle')).toBe(true)
   })
 
-  it('idle below MIN_PROCESSING (trivial idle) produces no idle edge', async () => {
+  it('trivial idle (< MIN_PROCESSING work) produces no idle edge, even past a later tick', async () => {
     const { state, engine } = harness()
     await engine.start()
     const t0 = state.nowMs
     state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
     await engine.recompute()
-    state.nowMs = t0 + 2_000 // < MIN_PROCESSING
-    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(state.nowMs), spawnedBy: 'user:web' })]
+    const idleAt = t0 + 2_000 // < MIN_PROCESSING work span
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+    // Drift guard: the fixed idleAt−activeSince gate stays false no matter how far
+    // `now` advances (the old now−activeSince gate would cross 15s here and fire).
+    state.nowMs = idleAt + MIN_PROCESSING_MS + EDGE_DEBOUNCE_MS + 10_000
     await engine.recompute()
     await engine.recompute()
     expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+  })
+
+  it('idle edge is appended by the REAL wake timer (no manual recompute after idle)', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
+    await engine.recompute() // arms the wake timer; no edge yet
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+    // Advance the clock past the window and let the REAL wake timer fire the
+    // recompute that appends — proves the idle wake path actually triggers.
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 50
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS + 50))
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(true)
+  })
+
+  it('idle flap: the REAL wake timer reads fresh state — continued session appends nothing', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
+    await engine.recompute() // arms the wake timer
+    // User continues before the wake fires: the state file now says processing.
+    // We do NOT recompute manually — the armed wake timer must itself re-read the
+    // fresh snapshot, see processing, and append nothing.
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(idleAt + 500), spawnedBy: 'user:web' })]
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 50
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS + 50))
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+  })
+
+  it('a live idle edge sets interrupt exactly once', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
+    await engine.recompute() // no edge yet
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 1
+    await engine.recompute() // append + project → interrupt true
+    expect(state.lastSnapshot?.ready.find((i) => i.type === 'session_idle')?.interrupt).toBe(true)
+    await engine.recompute() // same generation → no second toast
+    expect(state.lastSnapshot?.ready.find((i) => i.type === 'session_idle')?.interrupt).toBe(false)
+  })
+
+  it('a persistently-idle session adds no second event or interrupt on a later safety tick', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt
+    state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 1
+    await engine.recompute() // append idle edge
+    expect((state.events.get('proj') ?? []).filter((e) => e.kind === 'session_idle')).toHaveLength(1)
+    // A later safety-tick recompute (still idle, same generation): no re-append, no re-toast.
+    state.nowMs += SAFETY_TICK_MS
+    await engine.recompute()
+    expect((state.events.get('proj') ?? []).filter((e) => e.kind === 'session_idle')).toHaveLength(1)
+    expect(state.lastSnapshot?.ready.find((i) => i.type === 'session_idle')?.interrupt).toBe(false)
   })
 })
 
@@ -183,9 +297,11 @@ describe('engine — ACT auto-resolves', () => {
   it('blocked session killed → ACT auto-resolves (status gone)', async () => {
     const { state, engine } = harness()
     await engine.start()
-    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs) })]
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(t0) })]
     await engine.recompute()
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 50
+    await engine.recompute()
     expect(state.lastSnapshot?.needsYou.some((i) => i.type === 'session_blocked')).toBe(true)
     state.sessions = []
     await engine.recompute()
@@ -364,9 +480,11 @@ describe('engine — notice in edge payload', () => {
   it('blocked edge payload carries the live notice', async () => {
     const { state, engine } = harness()
     await engine.start()
-    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs), blockReason: 'question', notice: 'Ship v1 or wait?' })]
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(t0), blockReason: 'question', notice: 'Ship v1 or wait?' })]
     await engine.recompute()
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 50
+    await engine.recompute()
     const ev = (state.events.get('proj') ?? []).find((e) => e.kind === 'session_blocked')
     expect(ev?.payload?.notice).toBe('Ship v1 or wait?')
   })
@@ -383,14 +501,17 @@ describe('engine — notice in edge payload', () => {
   it('(F2) a notice that fills AFTER the first blocked observation is in the appended payload', async () => {
     const { state, engine } = harness()
     await engine.start()
-    const enteredAt = ISO(state.nowMs)
+    const t0 = state.nowMs
+    const enteredAt = ISO(t0)
     // First observation: blocked, NO notice yet (permission_prompt before PermissionRequest).
     state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: enteredAt, blockReason: 'permission' })]
     await engine.recompute()
-    // The notice fills (PermissionRequest landed) BEFORE the 1.5s debounce fires.
+    // The notice fills (PermissionRequest landed) BEFORE the debounce window elapses.
     state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: enteredAt, blockReason: 'permission', notice: 'Bash: git push origin main' })]
     await engine.recompute()
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    // Past the window: the append reads the fresh snapshot, which carries the notice.
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 50
+    await engine.recompute()
     const ev = (state.events.get('proj') ?? []).find((e) => e.kind === 'session_blocked')
     expect(ev?.payload?.notice).toBe('Bash: git push origin main')
   })
@@ -398,15 +519,17 @@ describe('engine — notice in edge payload', () => {
   it('(F2) a re-block with a new statusEnteredAt is not stranded until the safety tick', async () => {
     const { state, engine } = harness()
     await engine.start()
-    const gen1 = ISO(state.nowMs)
+    const t0 = state.nowMs
+    const gen1 = ISO(t0)
     state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: gen1, blockReason: 'question', notice: 'Q1?' })]
     await engine.recompute()
-    // Re-block with a fresh generation BEFORE the first debounce fires. The old
-    // timer must be cancelled + rescheduled, not left to no-op.
-    const gen2 = ISO(state.nowMs + 1)
+    // Re-block with a fresh generation BEFORE the first window elapses. The new
+    // generation must win; the old one must never append.
+    const gen2 = ISO(t0 + 1)
     state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: gen2, blockReason: 'permission', notice: 'Bash: rm -rf build' })]
     await engine.recompute()
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 50))
+    state.nowMs = t0 + 1 + EDGE_DEBOUNCE_MS + 50
+    await engine.recompute()
     const blocked = (state.events.get('proj') ?? []).filter((e) => e.kind === 'session_blocked')
     // The new generation appended (with its notice); the old one never did.
     expect(blocked.some((e) => e.id === `session_blocked:proj::s:${gen2}` && e.payload?.notice === 'Bash: rm -rf build')).toBe(true)
@@ -434,14 +557,16 @@ describe('engine — blocked edge appends once (no re-append loop)', () => {
   it('(F2) a persistently-blocked session does not re-append/rebroadcast every debounce', async () => {
     const { state, engine } = harness()
     await engine.start()
-    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(state.nowMs), blockReason: 'permission', notice: 'Bash: x' })]
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'blocked', statusEnteredAt: ISO(t0), blockReason: 'permission', notice: 'Bash: x' })]
     await engine.recompute()
-    // First append + its post-append recompute land within one debounce window.
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS + 100))
+    // Advance past the window; the real wake timer fires a recompute that appends.
+    state.nowMs = t0 + EDGE_DEBOUNCE_MS + 100
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS + 100))
     const broadcastsAfterAppend = state.broadcasts
-    // Stay blocked on the same generation; let two more debounce intervals pass
-    // with NO external trigger. The settled edge must not re-arm a timer.
-    await new Promise((r) => setTimeout(r, BLOCKED_DEBOUNCE_MS * 2 + 100))
+    // Stay blocked on the same generation; let two more windows pass with NO
+    // external trigger. The settled edge must not re-arm a wake timer.
+    await new Promise((r) => setTimeout(r, EDGE_DEBOUNCE_MS * 2 + 100))
     expect(state.broadcasts).toBe(broadcastsAfterAppend)
     expect((state.events.get('proj') ?? []).filter((e) => e.kind === 'session_blocked')).toHaveLength(1)
   })
