@@ -12,21 +12,25 @@ const DEFAULT_MODELS = [
   'llama-3.1-8b-instant',
 ]
 
-/** Spoken-rewrite model chain: fast-first, since the task is light and the speak
- *  path is latency-sensitive (a short timeout, raw-text fallback). */
+/** Spoken-paraphrase model chain: quality-first. The paraphrase must preserve the
+ *  original language (small/fast models like llama-3.1-8b translate 中文→English)
+ *  and faithfully render the content, so a capable instruction-follower leads; the
+ *  fast model is only a last-resort fallback. Latency matters less now the read-back
+ *  is a paragraph, not one sentence. */
 const DEFAULT_SPEAK_MODELS = [
-  'llama-3.1-8b-instant',
   'llama-3.3-70b-versatile',
   'openai/gpt-oss-120b',
+  'llama-3.1-8b-instant',
 ]
 
 const TIMEOUT_MS = 5000
 
-/** Spoken rewrite is short (1–2 sentences) and on the audio hot path: a tight
- *  output budget and a ~2.5s timeout keep total latency under ~2s, with the raw
- *  notice as the fallback when the model is slow. */
-const SPEAK_MAX_TOKENS = 256
-const SPEAK_TIMEOUT_MS = 2500
+/** Spoken paraphrase preserves the message's information (not a summary), so it
+ *  needs room — a faithful rendering of the full notice can be a short paragraph.
+ *  Bounded by tokens (not truncated mid-thought) with the raw notice as the
+ *  fallback when slow. */
+const SPEAK_MAX_TOKENS = 2048
+const SPEAK_TIMEOUT_MS = 5000
 
 /** Strip <think>...</think> blocks that some models (e.g. Qwen3) emit */
 function stripThinking(text: string): string {
@@ -118,7 +122,7 @@ export function resolveFormatterModels(): string[] {
   )
 }
 
-/** Spoken-rewrite model list. Priority: VOICE_SPEAK_MODELS > fast-first defaults. */
+/** Spoken-paraphrase model list. Priority: VOICE_SPEAK_MODELS > quality-first defaults. */
 export function resolveSpeakModels(): string[] {
   return parseModelEnv(process.env.VOICE_SPEAK_MODELS) ?? DEFAULT_SPEAK_MODELS
 }
@@ -230,9 +234,10 @@ export async function formatWithFallback(
 }
 
 /**
- * Rewrite a written status notification into a short spoken sentence for TTS.
- * Returns the raw notice unchanged on any failure/empty/timeout — the v1 string
- * is already speakable, just not pretty.
+ * Paraphrase a written status notification into natural spoken text for TTS,
+ * preserving the information (structure described, not summarized away). Returns
+ * the raw notice unchanged on any failure/empty/timeout — the v1 string is already
+ * speakable, just not pretty.
  */
 export async function rewriteForSpeech(text: string): Promise<string> {
   const result = await completeWithFallback(

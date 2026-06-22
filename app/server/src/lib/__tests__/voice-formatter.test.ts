@@ -81,10 +81,12 @@ describe('resolveSpeakModels', () => {
     delete process.env.VOICE_SPEAK_MODELS
   })
 
-  it('returns a fast-first default chain when no env var set', () => {
+  it('returns a quality-first default chain when no env var set', () => {
     const models = resolveSpeakModels()
-    // Latency-sensitive: the smallest/fastest model leads.
-    expect(models[0]).toBe('llama-3.1-8b-instant')
+    // Quality-first: a capable instruction-follower leads (preserves language /
+    // faithful paraphrase); the fast model is only a fallback.
+    expect(models[0]).toBe('llama-3.3-70b-versatile')
+    expect(models).toContain('llama-3.1-8b-instant')
     expect(models.length).toBeGreaterThan(1)
   })
 
@@ -95,7 +97,7 @@ describe('resolveSpeakModels', () => {
 
   it('ignores empty VOICE_SPEAK_MODELS and falls to defaults', () => {
     process.env.VOICE_SPEAK_MODELS = '  ,  '
-    expect(resolveSpeakModels()[0]).toBe('llama-3.1-8b-instant')
+    expect(resolveSpeakModels()[0]).toBe('llama-3.3-70b-versatile')
   })
 })
 
@@ -122,9 +124,9 @@ describe('rewriteForSpeech', () => {
     expect(callArgs.messages[0].content).toContain('text-to-speech')
     expect(callArgs.messages[1].content).toContain('<notification>')
     expect(callArgs.messages[1].content).toContain('Your turn. Finished the parser refactor.')
-    // Short output budget + tight timeout for the audio hot path (pin the contract).
-    expect(callArgs.max_tokens).toBe(256)
-    expect(mockCreate.mock.calls[0][1].timeout).toBe(2500)
+    // Paraphrase needs room (not a 1-2 sentence cap) but stays token-bounded (pin the contract).
+    expect(callArgs.max_tokens).toBe(2048)
+    expect(mockCreate.mock.calls[0][1].timeout).toBe(5000)
   })
 
   it('honors the speak model order (independent of the formatter chain)', async () => {

@@ -221,8 +221,8 @@ app.post('/format', async (c) => {
   return c.json(response)
 })
 
-// Notification text → neural spoken audio. Rewrites the written notice into a
-// short spoken summary (Groq, when a key is present), then synthesizes it with a
+// Notification text → neural spoken audio. Paraphrases the written notice into
+// natural spoken text (Groq, when a key is present), then synthesizes it with a
 // neural voice (edge-tts, keyless). No GROQ_API_KEY gate: TTS works without it,
 // just on the raw text. Returns mp3 bytes; the client falls back to browser TTS
 // on any non-200.
@@ -238,7 +238,9 @@ app.post('/speak', async (c) => {
   if (typeof text !== 'string') {
     return fail(c, 400, 'Invalid request.')
   }
-  if (text.length > VOICE_MAX_SPEAK_CHARS) {
+  // Count by codepoints so the cap is consistent with NOTICE_MAX / the notice clamp
+  // (a non-BMP-heavy notice must not be 413'd past the neural path on UTF-16 length).
+  if ([...text].length > VOICE_MAX_SPEAK_CHARS) {
     return fail(c, 413, 'Text too long.')
   }
   if (text.trim() === '') {
@@ -246,10 +248,10 @@ app.post('/speak', async (c) => {
   }
 
   // rewriteForSpeech already falls back to the raw text on failure/empty/timeout;
-  // skip it entirely with no key. Re-validate the result (trim + cap), falling
-  // back to the raw notice if the model emptied it.
+  // skip it entirely with no key. Re-validate the result (trim + cap by codepoints),
+  // falling back to the raw notice if the model emptied it.
   const rewritten = process.env.GROQ_API_KEY ? await rewriteForSpeech(text) : text
-  const spoken = rewritten.trim().slice(0, VOICE_MAX_SPEAK_CHARS) || text
+  const spoken = [...rewritten.trim()].slice(0, VOICE_MAX_SPEAK_CHARS).join('') || text
 
   let audio: Buffer
   try {

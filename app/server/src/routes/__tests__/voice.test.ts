@@ -522,6 +522,21 @@ describe('POST /speak', () => {
     expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
   })
 
+  it('caps by codepoints: a full non-BMP notice at the cap is accepted (not 413)', async () => {
+    mockRewriteForSpeech.mockResolvedValue('spoken')
+    mockSynthesizeSpeech.mockResolvedValue(Buffer.from([1]))
+    // VOICE_MAX_SPEAK_CHARS emoji = the cap in codepoints but 2× in UTF-16 units.
+    const res = await postSpeak({ text: '😀'.repeat(VOICE_MAX_SPEAK_CHARS) })
+    expect(res.status).toBe(200)
+    expect(mockSynthesizeSpeech).toHaveBeenCalled()
+  })
+
+  it('413s one codepoint over the cap (non-BMP)', async () => {
+    const res = await postSpeak({ text: '😀'.repeat(VOICE_MAX_SPEAK_CHARS + 1) })
+    expect(res.status).toBe(413)
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
+  })
+
   it('returns 502 when synthesis fails', async () => {
     mockRewriteForSpeech.mockResolvedValue('spoken')
     mockSynthesizeSpeech.mockRejectedValue(new Error('edge down'))

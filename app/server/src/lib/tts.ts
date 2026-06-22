@@ -13,10 +13,11 @@ import type { Readable } from 'node:stream'
  *  endpoint — they return empty audio — so we use the standard neural voice.) */
 const DEFAULT_VOICE = 'zh-CN-XiaoxiaoNeural'
 
-/** Hard ceiling on a single synthesis (WSS connect + stream). A short notice is
- *  ~1s of audio; this only guards a hung/slow endpoint, and must cover the
- *  connect (setMetadata) too — a hung connect is the most likely stall. */
-const SYNTH_TIMEOUT_MS = 8000
+/** Hard ceiling on a single synthesis (WSS connect + stream). A spoken paraphrase
+ *  can be a short paragraph (tens of seconds of audio), and the whole mp3 is
+ *  collected before responding, so this only guards a hung/slow endpoint, and must
+ *  cover the connect (setMetadata) too — a hung connect is the most likely stall. */
+const SYNTH_TIMEOUT_MS = 15000
 
 /** Resolve the neural voice from env, falling back to the default. */
 export function resolveTtsVoice(): string {
