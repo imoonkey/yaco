@@ -19,7 +19,7 @@ tab still gets interrupted. There is no capped notification inbox.
 
 ## Related Code
 
-`server/src/lib/attention-engine.ts`, `server/src/lib/attention-projection.ts`, `server/src/lib/attention-runtime.ts`, `server/src/routes/attention.ts`, `server/src/lib/notify.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`, `ui/src/lib/attentionContent.ts`
+`server/src/lib/attention-engine.ts`, `server/src/lib/attention-projection.ts`, `server/src/lib/attention-runtime.ts`, `server/src/routes/attention.ts`, `server/src/lib/notify.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/useSpeech.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`, `ui/src/lib/attentionContent.ts`
 
 ## Two Facets, Two Loci
 
@@ -199,7 +199,7 @@ event, and no `notifications:changed` event anymore.
 
 ## Client Consumer — `useAttention`
 
-`useAttention(activeTarget, onItemClick?)` in `ui/src/hooks/useAttention.ts`:
+`useAttention(activeTarget, onItemClick?, onSpeak?)` in `ui/src/hooks/useAttention.ts`:
 
 - **Cold mount** → `GET /api/attention/feed` for the initial snapshot + Recent
   page; `loadMore()` pages older history via the opaque `nextBefore` cursor.
@@ -208,7 +208,11 @@ event, and no `notifications:changed` event anymore.
 - **Interrupts** → a newly-seen `interrupt` item fires a sonner `toast.custom`
   (visible) or one `new Notification` (hidden, only when permission granted);
   a burst collapses to one summary. Dedup by generation (`seenInterrupts`) so a
-  reconnect/re-projection never re-toasts.
+  reconnect/re-projection never re-toasts. In the **visible** branch only, the
+  same batch is also passed to `onSpeak(items)` for voice read-back — so the
+  spoken set equals the toasted set, and audio is foreground-only by construction
+  (the hidden branch emits an OS Notification, never speech). -> See: Voice
+  read-back below.
 - **Active-viewing guard** → `document.visibilityState === 'visible' &&
   document.hasFocus() && attached to the target`; when true the target's
   interrupt (toast/OS) is suppressed. Auto-ack is **`group==='ready'` only** — a
@@ -233,7 +237,10 @@ bell + badge + panel; manages its own open/close.
 
 - Used in desktop header (App.tsx) and mobile header (`notificationBell` slot).
 - Badge = `snapshot.global` (count + tier color) via `BadgeCount`.
-- Props: `{ snapshot, onItemClick, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, size? }`.
+- Props: `{ snapshot, onItemClick, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, voiceReadback, size? }`.
+- A 🔊 **read-aloud toggle** sits beside the bell button (not in the panel), so it
+  shows in both the desktop top-bar and the mobile chrome and its on/off state is
+  glanceable. Hidden when `voiceReadback.supported` is false. -> See: Voice read-back.
 - The first bell open is the user gesture that may request OS permission.
 - Opening/clicking a **Ready** (handoff) item acks it (a REVIEW the user has now
   seen). A **Needs-you** (ACT) row carries a ✕ that dismisses that generation
@@ -249,6 +256,37 @@ three sections: **Needs you** (`needsYou`), **Ready** (`ready`), **Recent**
 (`recent`). Each Needs-you (ACT) row carries a ✕ (generation dismiss). "Clear"
 sets the clear watermark for every project that has a Recent row. Click-outside /
 Escape to dismiss.
+
+## Voice read-back (TTS)
+
+Speaks the surfaced notification aloud when the app is foreground — the output
+half of voice (STT input is `useVoice`; -> See: [../frontend/hooks.md](../frontend/hooks.md#usevoicets-290-lines)).
+Browser **Web Speech API** (`speechSynthesis`) only — no backend, key, or
+dependency; voice quality is OS-provided. `ui/src/hooks/useSpeech.ts` +
+`speechTextFor` in `ui/src/lib/attentionContent.ts`.
+
+- **Trigger.** `App.tsx` passes `onSpeak = speak(speechTextFor(items))` to
+  `useAttention`, which calls it only in `surfaceInterrupts`' visible branch — so
+  read-back fires exactly where a toast does (spoken == toasted), never for a
+  hidden/backgrounded tab. ACT + REVIEW interrupts speak; FYI never interrupts.
+- **What it says.** `speechTextFor`: single item → `"<stateLabel>. <notice>"`
+  (empty notice → just the label, e.g. `Crashed (exit 1)`); a burst → a count
+  summary (`"N agents need your attention"`), never N messages.
+- **`useSpeech`** → `{ supported, enabled, setEnabled, speak }`. `enabled` is
+  opt-in, **persisted** (`localStorage` `yaco.voiceReadback`, default off). `speak`
+  is **latest-wins** (`speechSynthesis.cancel()` before each utterance, so a new
+  notice preempts a stale one) and picks `lang` by a CJK heuristic (any CJK ⇒
+  `zh-CN`, else `en-US`) for the user's mixed 中英文 notices. It reads `enabled`
+  through a **synchronous ref** (not the render value), so a toggle-off silences
+  read-back in the same tick — no stale-closure audio after opt-out.
+- **iOS audio unlock.** Browsers forbid starting audio outside a user gesture,
+  once per page load. `useSpeech` *primes* by speaking a silent (`volume:0`)
+  utterance inside a gesture: the toggle tap directly, or — when `enabled` was
+  restored on reload — a one-shot `pointerdown` listener. **Known gap (inherent to
+  web audio policy):** a notification arriving on a freshly-reloaded session before
+  the user's first tap shows its toast but is not spoken (no gesture yet to unlock;
+  speaking it later would read stale content). Self-corrects after the first tap;
+  on desktop, where audio needs no gesture, even that first one speaks.
 
 ## Surface Chips & Badges
 

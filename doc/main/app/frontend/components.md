@@ -358,7 +358,7 @@ Reusable attention badge: a count in a tier-colored circle (red → orange → y
 
 **File**: `ui/src/components/NotificationBell.tsx`
 
-Self-contained bell icon with the global attention badge and a panel dropdown (Needs-you / Ready / Recent sections). Manages open/close state internally; the first open is the user gesture that may request OS notification permission. Used in desktop header (App.tsx) and mobile header (WorkspaceLayout via `notificationBell` ReactNode slot).
+Self-contained bell icon with the global attention badge and a panel dropdown (Needs-you / Ready / Recent sections). Manages open/close state internally; the first open is the user gesture that may request OS notification permission. A 🔊 read-aloud toggle (voice read-back) sits beside the bell, shown when the browser supports `speechSynthesis`. Used in desktop header (App.tsx) and mobile header (WorkspaceLayout via `notificationBell` ReactNode slot).
 
 -> See: [../ui/notifications.md](../ui/notifications.md) for full notification pipeline docs
 

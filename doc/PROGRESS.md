@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-06-21: voice read-back of foreground notifications (TTS)
+
+**What changed:**
+- Added the output half of voice: when an attention interrupt surfaces while the app
+  is foreground, the agent's final message (the notice) is read aloud. STT (`useVoice`
+  + Groq Whisper) untouched.
+- New `ui/src/hooks/useSpeech.ts` (browser **Web Speech API** — no backend/key/dep):
+  `{ supported, enabled, setEnabled, speak }`. Opt-in + persisted; latest-wins
+  playback (`cancel()` before each utterance); CJK→`zh-CN` else `en-US`; iOS audio
+  unlocked by a silent `volume:0` utterance primed from a user gesture; `enabled`
+  read via a synchronous ref so a toggle-off silences instantly.
+- `speechTextFor(items)` in `ui/src/lib/attentionContent.ts`: single → `"<state>.
+  <notice>"`, burst → count summary.
+- `useAttention` gained an `onSpeak?` param, called once in `surfaceInterrupts`'
+  **visible** branch — spoken set == toasted set, foreground-only by construction.
+- A 🔊 read-aloud toggle sits beside the notification bell (desktop top-bar + mobile
+  chrome), hidden when `speechSynthesis` is unsupported.
+
+**Why:**
+- Wanted bidirectional voice for running yaco on a phone — hear an agent's reply
+  without watching the screen. Web Speech keeps it zero-cost / zero-key / no
+  self-host; hooking the one `surfaceInterrupts` visible branch reuses the existing
+  dedup + active-viewing suppression, so audio never fires for a backgrounded tab.
+  Groq's own TTS (now Orpheus) is English/Arabic only, so it can't be the bilingual
+  path; the `speak(text)` seam isolates a future edge-tts swap if OS voices disappoint.
+
+**Key files:** `app/ui/src/hooks/useSpeech.ts`, `app/ui/src/hooks/useAttention.ts`, `app/ui/src/lib/attentionContent.ts`, `app/ui/src/App.tsx`, `app/ui/src/components/NotificationBell.tsx`, `plan/all/voice-notif-readback/design.md`
+**Verification:** `npx tsc -b` + `npm run lint` clean; vitest 43 passed (attentionContent + NotificationBell + useAttention); real-device smoke on iOS + desktop confirmed by user; codex review (2 MAJOR + 1 MINOR) — fixed the stale-`enabled` closure + toggle ARIA, judged the cold-reload-before-first-gesture audio gap inherent to web audio policy and documented it.
+**Commit:** eaf0049f (feat) + c6f4ad38 (codex fixes); docs follow
+**Next:** optional — swap to a server edge-tts route behind `speak(text)` if OS voice quality (esp. Android/Linux) disappoints; Codex idle notice still deferred to v1.1.
+
 ## 2026-06-21: orchestrate + yaco-worktree → task-DAG ≅ worktree/branch-DAG model
 
 **What changed:**

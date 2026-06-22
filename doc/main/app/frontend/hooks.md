@@ -185,7 +185,7 @@ Hidden-tab-safe Facet B consumer — the single client entry point for the bell,
 badges, and interrupts. Mirrors the server `AttentionSnapshot` shape (does not
 import across packages).
 
-**Export**: `useAttention(activeTarget, onItemClick?)` → `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, permission }`
+**Export**: `useAttention(activeTarget, onItemClick?, onSpeak?)` → `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, permission }`. `onSpeak(items)` (optional) is invoked with the toasted batch in the visible branch only — drives voice read-back, -> See: [useSpeech.ts](#usespeechts) and [notifications.md](../ui/notifications.md#voice-read-back-tts).
 
 Behavior:
 - Cold mount: `GET /api/attention/feed` for the initial snapshot + first Recent page; `loadMore()` pages older history via the opaque composite `nextBefore` cursor.
@@ -230,6 +230,25 @@ type/paste with no recording at all.
 An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution.
 
 Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): record→transcribe→format→append, retry-from-cache after a transcribe failure, `/format` failure → raw append, no-speech, unmount cleanup.
+
+## useSpeech.ts
+
+Voice **output** (TTS) — the read-aloud half paired with `useVoice`'s input.
+Wraps the browser **Web Speech API** (`speechSynthesis`); no backend/key/dep.
+
+**Export**: `useSpeech()` → `{ supported, enabled, setEnabled, speak }`.
+`speak(text)` no-ops unless `supported && enabled && text`.
+
+Hook-specific contract (subsystem wiring + behavior is owned by
+[notifications.md](../ui/notifications.md#voice-read-back-tts)):
+
+- `enabled` is persisted (`localStorage` `yaco.voiceReadback`, default off); read by
+  `speak` through a **synchronous ref**, so a toggle-off silences read-back in the
+  same tick (no stale-closure audio after opt-out — speak stays a stable callback).
+- `speak` is **latest-wins** (`cancel()` before each utterance) and sets `lang` by a
+  CJK heuristic (`zh-CN` / `en-US`).
+- iOS audio is gesture-locked: a silent `volume:0` utterance **primes** the engine
+  from the toggle tap, or a one-shot `pointerdown` after a reload-restored `enabled`.
 
 ## useThrottledValue.ts / useDebouncedValue.ts
 
