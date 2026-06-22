@@ -5,6 +5,8 @@ import type { MobileDock } from '../workspace/panelMeta'
 
 export type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
 
+export type LoadError = { status: number; message: string }
+
 export type FileState = {
   serverContent: string | null
   draft: string | null
@@ -12,6 +14,7 @@ export type FileState = {
   viewportLine: number
   status: FileStatus
   editedAt: number
+  loadError: LoadError | null
 }
 
 export type PreviewMode = 'edit' | 'preview' | 'split'
@@ -145,7 +148,7 @@ export function parseDiffTab(tab: string): { path: string; base?: string; compar
 // --- Helpers ---
 
 export function defaultFileState(): FileState {
-  return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0 }
+  return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0, loadError: null }
 }
 
 export function layoutKey(project: string, worktree?: string | null): string {

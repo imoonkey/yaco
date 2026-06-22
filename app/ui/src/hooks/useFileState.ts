@@ -50,6 +50,7 @@ export function useFileState(
         viewportLine: entry.viewportLine,
         status: entry.draft != null ? 'dirty' : 'clean',
         editedAt: entry.updatedAt,
+        loadError: null,
       }
     }
     return restored
@@ -69,6 +70,17 @@ export function useFileState(
 
   const refetchAbortRef = useRef<AbortController | null>(null)
 
+  // Record a failed content fetch (e.g. 413 "file too large") onto the path's
+  // state so the editor pane can show why, instead of spinning forever.
+  const recordLoadError = useCallback((path: string, err: unknown) => {
+    const status = err instanceof ApiError ? err.status : 0
+    const message = err instanceof ApiError ? err.message : 'Failed to load file'
+    setFiles(prev => {
+      const existing = prev[path] ?? defaultFileState()
+      return { ...prev, [path]: fileTransition(existing, { type: 'LOAD_ERROR', status, message }) }
+    })
+  }, [])
+
   // --- Hydration: fetch server truth for open file tabs on mount ---
   const hydrated = useRef(false)
   useEffect(() => {
@@ -85,7 +97,10 @@ export function useFileState(
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
-      }).catch(() => {/* network/server error — file stays in current state */})
+      }).catch(err => {
+        if (projectRef.current !== projectName) return
+        recordLoadError(path, err)
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName])
@@ -110,7 +125,10 @@ export function useFileState(
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
-      }).catch(() => {/* AbortError or network — ignore */})
+      }).catch(err => {
+        if (err?.name === 'AbortError' || ac.signal.aborted || projectRef.current !== project) return
+        recordLoadError(path, err)
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -160,8 +178,11 @@ export function useFileState(
         const next = reconcileFile(existing, result)
         return next === existing ? prev : { ...prev, [path]: next }
       })
-    }).catch(() => {/* network/server error — file stays in current state */})
-  }, [])
+    }).catch(err => {
+      if (projectRef.current !== project) return
+      recordLoadError(path, err)
+    })
+  }, [recordLoadError])
 
   /** Shared-buffer GC (design: §B). Keep a buffer iff some open editor view still
    *  references its path OR it is dirty — so closing one view never drops a buffer

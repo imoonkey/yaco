@@ -365,12 +365,25 @@ export function MarkdownPreview({
   )
 }
 
+// --- Too-large notice (shown when a file exceeds the editor's 1 MB content cap) ---
+function FileTooLarge({ canPreview }: { canPreview?: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center" style={{ color: 'var(--sol-text)' }}>
+      <span className="text-ui-md">&#9888; File too large to open in the editor</span>
+      <span className="text-ui-sm" style={{ color: 'var(--sol-muted)' }}>
+        Editing is capped at 1&nbsp;MB.{canPreview ? ' Switch to Preview to view it.' : ''}
+      </span>
+    </div>
+  )
+}
+
 // --- Editor Area (conflict banner + content switching) ---
 export function WorkspaceEditorArea({
   activeTab,
   activeFilePath,
   activeFileContent,
   activeFileLoading,
+  activeFileError,
   activeViewportLine,
   isDiffTab,
   activeDiff,
@@ -406,6 +419,7 @@ export function WorkspaceEditorArea({
   activeFilePath: string | null
   activeFileContent: string | null
   activeFileLoading: boolean
+  activeFileError?: { status: number; message: string } | null
   activeViewportLine: number
   isDiffTab: boolean | undefined
   activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
@@ -541,6 +555,9 @@ export function WorkspaceEditorArea({
   const isPreviewable = isMd || isHtml
   const showSplit = isPreviewable && previewMode === 'split'
   const showPreviewOnly = isPreviewable && previewMode === 'preview'
+  // Over the editor's 1 MB content cap: the buffer never loaded. HTML can still
+  // preview from the higher-limit /raw endpoint; the editor pane shows a notice.
+  const tooLarge = activeFileError?.status === 413
 
   const editorElement = (
     <Editor content={activeFileContent!} filePath={activeTab!}
@@ -563,8 +580,16 @@ export function WorkspaceEditorArea({
     />
   )
 
+  const editorSlot = activeFileContent !== null
+    ? editorElement
+    : <FileTooLarge canPreview={isHtml} />
+
   const previewElement = isHtml ? (
-    <HtmlPreview content={previewContent} />
+    <HtmlPreview
+      content={previewContent}
+      rawUrl={activeTab ? rawFileUrl(projectName, activeTab, worktree) : ''}
+      useRaw={tooLarge && activeFileContent === null}
+    />
   ) : (
     <MarkdownPreview
       content={previewContent}
@@ -617,11 +642,11 @@ export function WorkspaceEditorArea({
             <PdfPreview src={rawFileUrl(projectName, activeFilePath, worktree)} />
           </PreviewErrorBoundary>
         ) : activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
-        : activeFileContent !== null ? (
+        : activeFileContent !== null || (isHtml && tooLarge) ? (
           showSplit ? (
             <div ref={splitContainerRef} className={splitDirection === 'vertical' ? 'flex flex-col h-full' : 'flex h-full'} style={{ userSelect: isDragging ? 'none' : undefined }}>
               <div className={splitDirection === 'vertical' ? 'min-h-0 overflow-hidden' : 'min-w-0 overflow-hidden'} style={{ flex: `0 0 ${splitSize}%` }}>
-                {editorElement}
+                {editorSlot}
               </div>
               {splitDirection === 'vertical'
                 ? <HResizeHandle onMouseDown={handleSplitMouseDown} isDragging={isDragging} />
@@ -634,9 +659,10 @@ export function WorkspaceEditorArea({
           ) : showPreviewOnly ? (
             previewElement
           ) : (
-            editorElement
+            editorSlot
           )
-        ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text)' }}>Unable to load file</div>
+        ) : tooLarge ? <FileTooLarge />
+        : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text)' }}>Unable to load file</div>
       ) : <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
           <span className="text-ui-md">No file open</span>
           <span className="text-ui-sm">

@@ -13,6 +13,7 @@ export type FileEvent =
   | { type: 'SAVE_CONFLICT' }
   | { type: 'SAVE_ERROR' }
   | { type: 'ACCEPT_DISK'; content: string; revision: number }
+  | { type: 'LOAD_ERROR'; status: number; message: string }
 
 // --- Transition ---
 
@@ -46,6 +47,7 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
             viewportLine: state.viewportLine,
             status: 'clean',
             editedAt: state.editedAt,
+            loadError: null,
           }
         }
         // Disk content genuinely diverged under an unsaved draft — real conflict.
@@ -53,7 +55,7 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
       }
 
       // Clean file: adopt server content
-      if (state.serverContent === event.content && state.baseRevision === event.revision && state.status === 'clean') {
+      if (state.serverContent === event.content && state.baseRevision === event.revision && state.status === 'clean' && state.loadError == null) {
         return state
       }
       return {
@@ -63,13 +65,14 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
         viewportLine: state.viewportLine,
         status: 'clean',
         editedAt: state.editedAt,
+        loadError: null,
       }
     }
 
     case 'FILL_REVISION':
       // Gentle fill for tab-open fetch: only update if no base revision yet
       if (state.baseRevision == null) {
-        return { ...state, serverContent: event.content, baseRevision: event.revision }
+        return { ...state, serverContent: event.content, baseRevision: event.revision, loadError: null }
       }
       return state
 
@@ -90,9 +93,9 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
       // still equals the bytes we persisted; otherwise keep the newer draft
       // dirty over the freshly-written revision.
       if (state.draft == null || state.draft === event.content) {
-        return { ...state, serverContent: event.content, draft: null, baseRevision: event.revision, status: 'clean' }
+        return { ...state, serverContent: event.content, draft: null, baseRevision: event.revision, status: 'clean', loadError: null }
       }
-      return { ...state, serverContent: event.content, baseRevision: event.revision, status: 'dirty' }
+      return { ...state, serverContent: event.content, baseRevision: event.revision, status: 'dirty', loadError: null }
 
     case 'SAVE_CONFLICT':
       return { ...state, status: 'conflict' }
@@ -108,7 +111,21 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
         viewportLine: state.viewportLine,
         status: 'clean',
         editedAt: state.editedAt,
+        loadError: null,
       }
+
+    case 'LOAD_ERROR': {
+      // A 413 on a clean file means the bytes on disk now exceed the editor cap —
+      // drop the stale buffer so the pane shows the too-large notice, not old
+      // content. Keep a draft (unsaved work) and keep content on transient
+      // (non-413) errors so a flaky refetch never blanks an open file.
+      const clearStale = event.status === 413 && state.draft == null
+      return {
+        ...state,
+        serverContent: clearStale ? null : state.serverContent,
+        loadError: { status: event.status, message: event.message },
+      }
+    }
   }
 }
 

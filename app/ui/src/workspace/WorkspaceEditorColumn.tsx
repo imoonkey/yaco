@@ -70,7 +70,8 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const isHtml = !!activeFilePath && isHtmlFile(activeFilePath)
   const activeFileState = activeFilePath ? files[activeFilePath] : null
   const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
-  const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
+  const activeFileError = activeFileState?.loadError ?? null
+  const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing' && activeFileError == null
   const activeViewportLine = activeFileState?.viewportLine ?? 1
   const hasConflict = !!activeFilePath && conflictTabs.has(activeFilePath)
   const handleViewportLine = useCallback((line: number) => {
@@ -95,6 +96,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         activeFilePath={activeFilePath}
         activeFileContent={activeFileContent}
         activeFileLoading={activeFileLoading}
+        activeFileError={activeFileError}
         activeViewportLine={activeViewportLine}
         isDiffTab={activeDiffTab}
         activeDiff={activeDiff}

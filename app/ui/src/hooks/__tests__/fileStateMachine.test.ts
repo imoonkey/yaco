@@ -107,3 +107,37 @@ describe('fileStateMachine — SERVER_MISSING keeps unsaved work', () => {
     expect(next.draft).toBe('unsaved edits')  // retained; GC keys off draft != null
   })
 })
+
+describe('fileStateMachine — LOAD_ERROR surfaces a failed fetch', () => {
+  it('records status + message so the pane can stop spinning', () => {
+    const next = fileTransition(defaultFileState(), { type: 'LOAD_ERROR', status: 413, message: 'file too large' })
+    expect(next.loadError).toEqual({ status: 413, message: 'file too large' })
+  })
+
+  it('drops the stale buffer when a clean open file grows past the cap (413)', () => {
+    const clean = synced('old small bytes', 100)
+    const next = fileTransition(clean, { type: 'LOAD_ERROR', status: 413, message: 'file too large' })
+    expect(next.serverContent).toBeNull()       // pane shows the too-large notice, not stale content
+    expect(next.loadError?.status).toBe(413)
+  })
+
+  it('keeps an unsaved draft even when disk grew past the cap', () => {
+    const dirty = synced('old', 100, 'my unsaved edits')
+    const next = fileTransition(dirty, { type: 'LOAD_ERROR', status: 413, message: 'file too large' })
+    expect(next.draft).toBe('my unsaved edits')  // never discard unsaved work
+    expect(next.serverContent).toBe('old')
+  })
+
+  it('keeps displayed content on a transient (non-413) refetch error', () => {
+    const clean = synced('shown', 100)
+    const next = fileTransition(clean, { type: 'LOAD_ERROR', status: 0, message: 'Failed to load file' })
+    expect(next.serverContent).toBe('shown')     // a flaky refetch must not blank an open file
+    expect(next.loadError?.status).toBe(0)
+  })
+
+  it('clears once content loads (SERVER_SYNC), even on an unchanged-bytes resync', () => {
+    const failed = fileTransition(synced('shown', 100), { type: 'LOAD_ERROR', status: 0, message: 'oops' })
+    const recovered = fileTransition(failed, { type: 'SERVER_SYNC', content: 'shown', revision: 100 })
+    expect(recovered.loadError).toBeNull()       // no-op resync still clears the stale error
+  })
+})

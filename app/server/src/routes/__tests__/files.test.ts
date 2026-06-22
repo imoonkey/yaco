@@ -14,6 +14,7 @@ vi.mock('../../lib/projects', () => ({
 // Import the file routes (after mocks are set up)
 const { fileRoutes } = await import('../files')
 const { clearColocatedReposCache } = await import('../../lib/colocatedRepos')
+const { FILE_SIZE_LIMIT } = await import('../../lib/constants')
 
 describe('POST /:project/create-file', () => {
   beforeEach(async () => {
@@ -418,5 +419,32 @@ describe('GET /:project — colocated-repo tree badge', () => {
     const nested = children.find(n => n.path === 'src/plan')
     expect(nested).toBeDefined()
     expect(nested?.colocated).toBeUndefined()
+  })
+})
+
+describe('content vs raw size limits', () => {
+  // Locks the contract the HTML preview relies on: a file over the 1 MB content
+  // cap is rejected by /content (413) but still served whole by /raw, so large
+  // self-contained HTML can preview from raw bytes.
+  beforeEach(async () => {
+    testProjectPath = await mkdtemp(join(tmpdir(), 'workflow-test-'))
+  })
+  afterEach(async () => {
+    await rm(testProjectPath, { recursive: true, force: true })
+  })
+
+  it('rejects an over-cap file on /content but serves it whole on /raw', async () => {
+    const big = 'a'.repeat(FILE_SIZE_LIMIT + 1)
+    await writeFile(join(testProjectPath, 'big.html'), big)
+
+    const content = await fileRoutes.request('/test-project/content?path=big.html')
+    expect(content.status).toBe(413)
+
+    const raw = await fileRoutes.request('/test-project/raw?path=big.html')
+    expect(raw.status).toBe(200)
+    expect((await raw.text()).length).toBe(big.length)
+    // Security guard: HTML must NOT be served as text/html, or GET /raw?path=…html
+    // would render attacker-authored HTML on the app origin in a normal tab.
+    expect(raw.headers.get('content-type')).toBe('application/octet-stream')
   })
 })
