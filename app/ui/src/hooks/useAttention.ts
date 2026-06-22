@@ -210,10 +210,13 @@ export interface UseAttention {
  *
  * @param activeTarget the session the user is attached to + viewing (or null).
  * @param onItemClick  optional routing invoked when an interrupt is clicked.
+ * @param onSpeak      optional voice read-back invoked with the items being
+ *   toasted (visible/foreground only) — see `useSpeech`.
  */
 export function useAttention(
   activeTarget: AttentionTarget | null,
   onItemClick?: (item: AttentionItem) => void,
+  onSpeak?: (items: AttentionItem[]) => void,
 ): UseAttention {
   const [snapshot, setSnapshot] = useState<AttentionSnapshot>(EMPTY)
   const [nextBefore, setNextBefore] = useState<string | null>(null)
@@ -236,6 +239,8 @@ export function useAttention(
   useEffect(() => { activeTargetRef.current = activeTarget }, [activeTarget])
   const onClickRef = useRef(onItemClick)
   useEffect(() => { onClickRef.current = onItemClick }, [onItemClick])
+  const onSpeakRef = useRef(onSpeak)
+  useEffect(() => { onSpeakRef.current = onSpeak }, [onSpeak])
 
   const ackSession = useCallback((project: string, sessionName: string) => {
     postAck('session', project, sessionName).catch(() => { /* server resyncs via SSE */ })
@@ -266,6 +271,10 @@ export function useAttention(
   const surfaceInterrupts = useCallback((items: AttentionItem[]) => {
     if (items.length === 0) return
     const visible = document.visibilityState === 'visible'
+
+    // Voice read-back: what earns a toast (visible/foreground) also gets spoken.
+    // Foreground-only — the hidden branch below emits an OS notification, no audio.
+    if (visible) onSpeakRef.current?.(items)
 
     if (items.length === 1) {
       const item = items[0]

@@ -7,6 +7,8 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { NotificationBell } from './components/NotificationBell'
 import { ChannelsHeaderButton } from './components/WeChatLoginDialog'
 import { useAttention, type AttentionItem } from './hooks/useAttention'
+import { useSpeech } from './hooks/useSpeech'
+import { speechTextFor } from './lib/attentionContent'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useIsMobile } from './hooks/useIsMobile'
 import { toggleTheme } from './lib/theme'
@@ -228,7 +230,14 @@ function App() {
   )
 
   // Facet B — server-projected attention feed (bell sections, badges, interrupts).
-  const attention = useAttention(activeTarget, handleNotificationClick)
+  // Voice read-back speaks the freshly-surfaced batch when foreground (useSpeech
+  // gates on enabled/supported, so this is a cheap no-op when off).
+  const { supported: speechSupported, enabled: speechEnabled, setEnabled: setSpeechEnabled, speak } = useSpeech()
+  const speakItems = useCallback(
+    (items: AttentionItem[]) => speak(speechTextFor(items)),
+    [speak],
+  )
+  const attention = useAttention(activeTarget, handleNotificationClick, speakItems)
   const { snapshot, ackSession, ackTask, clear, dismissNeedsYou, requestPermission } = attention
 
   const notificationBellProps = {
@@ -239,6 +248,7 @@ function App() {
     dismissNeedsYou,
     clear,
     requestPermission,
+    voiceReadback: { supported: speechSupported, enabled: speechEnabled, setEnabled: setSpeechEnabled },
   }
 
   // Project-list "Mark All Read" (per project, from the sidebar menu). Same contract

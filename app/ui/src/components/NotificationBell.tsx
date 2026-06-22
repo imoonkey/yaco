@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell, Volume2, VolumeX } from 'lucide-react'
 import { BadgeCount } from './BadgeCount'
 import { NotificationPanel } from './NotificationPanel'
 import type { AttentionItem, AttentionSnapshot } from '../hooks/useAttention'
+import type { VoiceReadback } from '../hooks/useSpeech'
 
 export function NotificationBell({
   snapshot,
@@ -12,6 +13,7 @@ export function NotificationBell({
   dismissNeedsYou,
   clear,
   requestPermission,
+  voiceReadback,
   size = 15,
 }: {
   snapshot: AttentionSnapshot
@@ -22,6 +24,8 @@ export function NotificationBell({
   clear: (project: string) => void
   /** Requested on the first bell interaction (user gesture), never on mount. */
   requestPermission: () => void
+  /** Voice read-back toggle (hidden when the browser has no speechSynthesis). */
+  voiceReadback: VoiceReadback
   size?: number
 }) {
   const [open, setOpen] = useState(false)
@@ -69,32 +73,47 @@ export function NotificationBell({
   }, [requestPermission])
 
   return (
-    <span className="relative">
-      <button
-        className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
-        onClick={toggleOpen}
-        title="Notifications"
-        aria-label="Notifications"
-      >
-        <Bell size={size} />
-      </button>
-      <BadgeCount
-        count={snapshot.global.count}
-        color={snapshot.global.color}
-        className="absolute -top-1.5 -right-1.5 px-0.5"
-      />
-      {open && (
-        <NotificationPanel
-          needsYou={snapshot.needsYou}
-          ready={snapshot.ready}
-          recent={snapshot.recent}
-          onClickItem={handleItemClick}
-          onDismissNeedsYou={dismissNeedsYou}
-          onClear={handleClear}
-          onMarkAllRead={handleMarkAllRead}
-          onClose={() => setOpen(false)}
-        />
+    <span className="flex items-center gap-1">
+      {voiceReadback.supported && (
+        <button
+          type="button"
+          onClick={() => voiceReadback.setEnabled(!voiceReadback.enabled)}
+          className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
+          aria-pressed={voiceReadback.enabled}
+          aria-label={voiceReadback.enabled ? 'Turn off read-aloud' : 'Read notifications aloud'}
+          title={voiceReadback.enabled ? 'Read notifications aloud: on' : 'Read notifications aloud: off'}
+          style={voiceReadback.enabled ? { color: 'var(--sol-blue)' } : undefined}
+        >
+          {voiceReadback.enabled ? <Volume2 size={size} /> : <VolumeX size={size} />}
+        </button>
       )}
+      <span className="relative flex items-center">
+        <button
+          className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
+          onClick={toggleOpen}
+          title="Notifications"
+          aria-label="Notifications"
+        >
+          <Bell size={size} />
+        </button>
+        <BadgeCount
+          count={snapshot.global.count}
+          color={snapshot.global.color}
+          className="absolute -top-1.5 -right-1.5 px-0.5"
+        />
+        {open && (
+          <NotificationPanel
+            needsYou={snapshot.needsYou}
+            ready={snapshot.ready}
+            recent={snapshot.recent}
+            onClickItem={handleItemClick}
+            onDismissNeedsYou={dismissNeedsYou}
+            onClear={handleClear}
+            onMarkAllRead={handleMarkAllRead}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </span>
     </span>
   )
 }

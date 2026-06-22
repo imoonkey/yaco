@@ -25,3 +25,17 @@ export function stateLabel(item: AttentionItem): string {
 export function noticeContent(item: AttentionItem): string {
   return item.message ?? ''
 }
+
+/** The spoken string for a batch of freshly-surfaced interrupts (voice read-back).
+ *  Mirrors the toast's single-vs-burst split (`surfaceInterrupts`): one item reads
+ *  its state then its notice (`"Your turn. Finished the parser refactor."`), an
+ *  empty notice collapses to the state alone (`"Crashed (exit 1)"`); a burst reads
+ *  a count, never N messages. '' when there is nothing to say. */
+export function speechTextFor(items: AttentionItem[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) {
+    const item = items[0]
+    return [stateLabel(item), noticeContent(item)].filter(Boolean).join('. ')
+  }
+  return `${items.length} agents need your attention`
+}

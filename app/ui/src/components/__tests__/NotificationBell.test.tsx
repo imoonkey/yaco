@@ -62,6 +62,7 @@ function makeProps(snapshot: AttentionSnapshot) {
     dismissNeedsYou: vi.fn(),
     clear: vi.fn(),
     requestPermission: vi.fn(),
+    voiceReadback: { supported: false, enabled: false, setEnabled: vi.fn() },
   }
 }
 
@@ -240,5 +241,22 @@ describe('NotificationBell', () => {
     expect(screen.getByText('Nothing needs you')).toBeTruthy()
     // No Clear when there is nothing recent.
     expect(screen.queryByText('Clear')).toBeNull()
+  })
+
+  it('toggles voice read-back from the speaker button beside the bell', () => {
+    const setEnabled = vi.fn()
+    const props = {
+      ...makeProps(makeSnapshot()),
+      voiceReadback: { supported: true, enabled: false, setEnabled },
+    }
+    render(<NotificationBell {...props} />)
+    // Visible without opening the bell — a glanceable top-bar control.
+    fireEvent.click(screen.getByRole('button', { name: 'Read notifications aloud' }))
+    expect(setEnabled).toHaveBeenCalledWith(true)
+  })
+
+  it('hides the read-aloud toggle when speechSynthesis is unsupported', () => {
+    render(<NotificationBell {...makeProps(makeSnapshot())} />) // makeProps → supported:false
+    expect(screen.queryByRole('button', { name: /read.*aloud/i })).toBeNull()
   })
 })
