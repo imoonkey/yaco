@@ -5,9 +5,7 @@ description: Challenge problem framing and scope before design. Use when the use
 
 # Scope Review
 
-Pressure-test the problem and scope before locking in a solution.
-
-The goal is not to brainstorm endlessly. The goal is to decide what should be built now, what should be deferred, and what should be reframed entirely.
+Pressure-test the problem and scope before locking in a solution. Decide what to build now, what to defer, and what to reframe — do not brainstorm open-endedly.
 
 ## Usage
 
@@ -19,7 +17,7 @@ Always produce these sections:
 
 - **Problem** — the real user or business problem, not just the requested feature
 - **Current leverage** — existing code, workflows, or product behaviors that already solve part of it
-- **Scope options** — expanded, right-sized, and reduced versions
+- **Scope options** — the Expand, Hold, and Reduce versions
 - **Recommendation** — which scope to choose now, and why
 - **Not now** — explicitly deferred work
 - **Open questions** — only decisions that actually block design
@@ -33,7 +31,7 @@ Always produce these sections:
 - What happens if we do nothing?
 - What pain is real today versus hypothetical?
 
-Do not accept the framing blindly if the requested feature is solving the wrong problem.
+If the requested feature solves the wrong problem, reject the framing.
 
 ### 2. Read Existing Context
 
@@ -41,7 +39,7 @@ Do not accept the framing blindly if the requested feature is solving the wrong 
 - Identify what already exists that partially solves the problem
 - Prefer extending an existing path over creating a parallel system
 
-List concrete reuse opportunities, not vague statements.
+Name concrete reuse opportunities, not vague statements.
 
 ### 3. Review Through Three Scope Lenses
 
@@ -89,7 +87,6 @@ If a follow-up idea is good but not needed now, put it in **Not now** instead of
 
 - Prefer simple scope over heroic execution
 - Prefer one clear user outcome over a bundle of adjacent ideas
-- Prefer reuse over parallel systems
 - Prefer explicit trade-offs over hand-wavy optimism
 - Treat deferred work as a deliberate choice, not an omission
 
