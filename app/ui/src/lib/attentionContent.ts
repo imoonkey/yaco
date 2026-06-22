@@ -21,9 +21,24 @@ export function stateLabel(item: AttentionItem): string {
 /** The captured notice to render on the content line. The server emits '' when
  *  there is no notice (no location filler — the scan line already carries identity
  *  + project), so the client renders `message` verbatim; an empty value means the
- *  row shows just its state label. */
+ *  row shows just its state label. Carries the agent's (near-)full final message —
+ *  the voice read-back paraphrases it; visual surfaces clamp via `noticeDisplay`. */
 export function noticeContent(item: AttentionItem): string {
   return item.message ?? ''
+}
+
+/** Short visual teaser for the toast / panel / OS notification. `message` now
+ *  carries the full final message (for speech), so the visual surfaces clamp it
+ *  here — the fork: speech reads `noticeContent` (full), the eye gets this. Slice
+ *  by codepoints so a non-BMP char at the boundary isn't split. */
+const NOTICE_DISPLAY_MAX = 200
+export function noticeDisplay(item: AttentionItem): string {
+  const text = noticeContent(item)
+  // Count + slice by codepoints so an exactly-200-codepoint non-BMP teaser isn't
+  // over-ellipsized and a boundary char isn't split.
+  const cps = [...text]
+  if (cps.length <= NOTICE_DISPLAY_MAX) return text
+  return `${cps.slice(0, NOTICE_DISPLAY_MAX).join('')}…`
 }
 
 /** The spoken string for a batch of freshly-surfaced interrupts (voice read-back).

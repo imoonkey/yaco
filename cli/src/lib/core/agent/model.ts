@@ -155,10 +155,12 @@ export function stripAnsi(text: string): string {
     .replace(CONTROL_CHARS_REGEX, "");
 }
 
-/** Max characters of `notice` retained (before the ellipsis). The notice is
- *  copied into the durable, append-only events.jsonl, so it is bounded on-disk
- *  retention — not purely transient. */
-export const NOTICE_MAX = 200;
+/** Max characters of `notice` retained (before the ellipsis). The notice now
+ *  carries the agent's (near-)full final message: the app's voice read-back
+ *  paraphrases it into spoken text, while the toast / panel / OS-notification
+ *  clamp it to a short teaser at render. A generous bound keeps real messages
+ *  intact while bounding durable events.jsonl retention + synth latency. */
+export const NOTICE_MAX = 2000;
 
 /** Sanitize + clamp line-2 content for `SessionState.notice`. Strips ANSI / C0 /
  *  C1 controls (via stripAnsi), collapses all whitespace + newlines to single
@@ -166,11 +168,13 @@ export const NOTICE_MAX = 200;
  *  no tmux/hook deps — so it lives here and is re-exported for app/server. */
 export function clampNotice(text: string): string {
   const cleaned = stripAnsi(text).replace(/\s+/g, " ").trim();
-  if (cleaned.length <= NOTICE_MAX) return cleaned;
-  // Slice by Unicode codepoints, not UTF-16 code units, so a non-BMP char (emoji,
-  // CJK-ext) at the boundary is never split into a lone surrogate — the notice is
-  // durable in events.jsonl, where a lone surrogate would be invalid UTF-8.
-  return `${[...cleaned].slice(0, NOTICE_MAX).join("")}…`;
+  // Count + slice by Unicode codepoints (not UTF-16 code units), so the bound is
+  // consistent for non-BMP text (emoji, CJK-ext) and a char at the boundary is
+  // never split into a lone surrogate — the notice is durable in events.jsonl,
+  // where a lone surrogate would be invalid UTF-8.
+  const cps = [...cleaned];
+  if (cps.length <= NOTICE_MAX) return cleaned;
+  return `${cps.slice(0, NOTICE_MAX).join("")}…`;
 }
 
 export function shortHash(): string {

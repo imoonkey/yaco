@@ -23,6 +23,7 @@ vi.mock('../constants', () => ({
 }))
 
 import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type AgentSessionState } from '../agent'
+import { NOTICE_MAX } from '@yaco/cli/core/agent'
 
 function writeStateFile(dir: string, handle: string, overrides: Partial<AgentSessionState> = {}) {
   const state: AgentSessionState = {
@@ -119,9 +120,9 @@ describe('readSessionsFromStateFiles', () => {
   })
 
   it('re-clamps an oversized state-file notice at the read boundary', async () => {
-    writeStateFile(mockedSessionsDir, 'verbose', { status: 'blocked', blockReason: 'question', sessionPath: tmpDir, notice: 'z'.repeat(500) })
+    writeStateFile(mockedSessionsDir, 'verbose', { status: 'blocked', blockReason: 'question', sessionPath: tmpDir, notice: 'z'.repeat(NOTICE_MAX + 300) })
     const sessions = await readSessionsFromStateFiles(project())
-    expect(sessions[0]?.notice?.length).toBe(201) // 200 + ellipsis
+    expect(sessions[0]?.notice?.length).toBe(NOTICE_MAX + 1) // NOTICE_MAX + ellipsis
   })
 
   it('drops a stray blockReason when status is not blocked', async () => {

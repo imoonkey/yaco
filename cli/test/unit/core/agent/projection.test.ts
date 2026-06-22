@@ -10,6 +10,7 @@ import {
   type ProjectableSessionState,
   type ProjectRef,
 } from "../../../../src/lib/core/agent/projection.ts";
+import { NOTICE_MAX } from "../../../../src/lib/core/agent/model.ts";
 
 function state(overrides: Partial<ProjectableSessionState> = {}): ProjectableSessionState {
   return {
@@ -134,8 +135,8 @@ describe("toSessionRow", () => {
   });
 
   it("re-clamps an oversized state-file notice at the boundary", () => {
-    const row = toSessionRow(state({ notice: "z".repeat(500) }), proj);
-    expect(row?.notice?.length).toBe(201); // 200 + ellipsis
+    const row = toSessionRow(state({ notice: "z".repeat(NOTICE_MAX + 300) }), proj);
+    expect(row?.notice?.length).toBe(NOTICE_MAX + 1); // NOTICE_MAX + ellipsis
     expect(row?.notice?.endsWith("…")).toBe(true);
   });
 

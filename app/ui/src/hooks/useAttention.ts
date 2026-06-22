@@ -4,7 +4,7 @@ import { SquareTerminal, ListChecks } from 'lucide-react'
 import { addSSEListener } from './useSSE'
 import { ApiError } from '../lib/apiError'
 import { badgeColorVar, tierColor } from '../lib/attentionColors'
-import { identityKey, stateLabel, noticeContent } from '../lib/attentionContent'
+import { identityKey, stateLabel, noticeDisplay } from '../lib/attentionContent'
 
 // ── Client-local mirror of the server's AttentionSnapshot shape ────────────────
 // Facet B is server-projected and pushed over the `attention` SSE event / served
@@ -280,7 +280,7 @@ export function useAttention(
       const item = items[0]
       const key = identityKey(item)
       const label = stateLabel(item)
-      const notice = noticeContent(item)
+      const notice = noticeDisplay(item)
       const labelColor = badgeColorVar(tierColor(item.tier))
       if (visible) {
         toast.custom((id) =>

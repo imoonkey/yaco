@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, AlertTriangle, CornerDownLeft, History, SquareTerminal, ListChecks } from 'lucide-react'
 import { DialogShell, useDialogClose } from './DialogShell'
 import { badgeColorVar, badgeTint, tierColor } from '../lib/attentionColors'
-import { identityKey, stateLabel, noticeContent } from '../lib/attentionContent'
+import { identityKey, stateLabel, noticeDisplay } from '../lib/attentionContent'
 import type { AttentionItem, BadgeColor } from '../hooks/useAttention'
 
 function timeAgo(ts: number): string {
@@ -34,7 +34,7 @@ function Row({ item, muted, onClick, onDismiss }: {
 }) {
   const accent = tierColor(item.tier)
   const accentVar = accent ? badgeColorVar(accent) : null
-  const notice = noticeContent(item)
+  const notice = noticeDisplay(item)
   // Kind glyph distinguishes an agent session from a task-graph node — they route
   // to different places on click. Faint, so the colored state label keeps emphasis.
   const isTask = item.subject.kind === 'task'
