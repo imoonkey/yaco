@@ -73,6 +73,12 @@ export const VOICE_MAX_TRANSCRIPT_CHARS = 8_000
  *  real repo-relative paths are far shorter. */
 export const VOICE_MAX_FILEPATH_CHARS = 256
 
+/** Max text (chars) accepted by POST /api/voice/speak, and the cap re-applied to
+ *  the rewritten spoken summary before synthesis. The notice is already ≤200
+ *  chars plus a short state label, so 600 leaves ample headroom while bounding a
+ *  runaway LLM rewrite before it reaches edge-tts. */
+export const VOICE_MAX_SPEAK_CHARS = 600
+
 /** Max files for non-git search-index walk */
 export const SEARCH_INDEX_BUDGET = 100_000
 

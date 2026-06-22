@@ -5,10 +5,12 @@ import {
   VOICE_MAX_UPLOAD_BYTES,
   VOICE_MAX_TRANSCRIPT_CHARS,
   VOICE_MAX_FILEPATH_CHARS,
+  VOICE_MAX_SPEAK_CHARS,
 } from '../lib/constants'
 import { fail } from '../lib/response'
 import { buildWhisperPrompt, buildFormatterPrompt } from '../lib/voice-prompts'
-import { resolveFormatterModels, formatWithFallback } from '../lib/voice-formatter'
+import { resolveFormatterModels, formatWithFallback, rewriteForSpeech } from '../lib/voice-formatter'
+import { synthesizeSpeech, resolveTtsVoice } from '../lib/tts'
 
 const DEFAULT_STT_MODEL = 'whisper-large-v3-turbo'
 
@@ -95,15 +97,20 @@ function mapUpstreamError(err: unknown): { status: number; error: string; retryA
 const app = new Hono()
 
 app.get('/status', (c) => {
+  // TTS is keyless (edge-tts) — advertised even when STT is unconfigured. The
+  // top-level `enabled` stays STT-only (voice INPUT, needs GROQ_API_KEY): the UI's
+  // useVoice reads it for mic readiness, so TTS must never flip it.
+  const tts = { enabled: true, voice: resolveTtsVoice() }
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
-    return c.json({ enabled: false, reason: 'missing_api_key' })
+    return c.json({ enabled: false, reason: 'missing_api_key', tts })
   }
   return c.json({
     enabled: true,
     sttModel: getSttModel(),
     formatterModels: resolveFormatterModels(),
     maxUploadBytes: VOICE_MAX_UPLOAD_BYTES,
+    tts,
   })
 })
 
@@ -212,6 +219,51 @@ app.post('/format', async (c) => {
   }
   if (result.warning) response.warning = result.warning
   return c.json(response)
+})
+
+// Notification text → neural spoken audio. Rewrites the written notice into a
+// short spoken summary (Groq, when a key is present), then synthesizes it with a
+// neural voice (edge-tts, keyless). No GROQ_API_KEY gate: TTS works without it,
+// just on the raw text. Returns mp3 bytes; the client falls back to browser TTS
+// on any non-200.
+app.post('/speak', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return fail(c, 400, 'Invalid request.')
+  }
+
+  const { text } = (body ?? {}) as { text?: unknown }
+  if (typeof text !== 'string') {
+    return fail(c, 400, 'Invalid request.')
+  }
+  if (text.length > VOICE_MAX_SPEAK_CHARS) {
+    return fail(c, 413, 'Text too long.')
+  }
+  if (text.trim() === '') {
+    return c.body(null, 204)
+  }
+
+  // rewriteForSpeech already falls back to the raw text on failure/empty/timeout;
+  // skip it entirely with no key. Re-validate the result (trim + cap), falling
+  // back to the raw notice if the model emptied it.
+  const rewritten = process.env.GROQ_API_KEY ? await rewriteForSpeech(text) : text
+  const spoken = rewritten.trim().slice(0, VOICE_MAX_SPEAK_CHARS) || text
+
+  let audio: Buffer
+  try {
+    audio = await synthesizeSpeech(spoken, resolveTtsVoice())
+  } catch (err) {
+    // edge-tts is an unofficial endpoint; surface the cause server-side, then let
+    // the client degrade to browser TTS on the 502.
+    console.warn(`[voice-speak] synthesis failed: ${err instanceof Error ? err.message : String(err)}`)
+    return fail(c, 502, 'Speech synthesis failed.')
+  }
+
+  return new Response(audio, {
+    headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' },
+  })
 })
 
 export const voiceRoutes = app

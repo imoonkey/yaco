@@ -39,16 +39,25 @@ vi.mock('groq-sdk/uploads', () => ({
 
 // Mock voice-formatter module
 const mockFormatWithFallback = vi.fn()
+const mockRewriteForSpeech = vi.fn()
 vi.mock('../../lib/voice-formatter', () => ({
   resolveFormatterModels: vi.fn().mockReturnValue(['test-model']),
   formatWithFallback: (...args: unknown[]) => mockFormatWithFallback(...args),
+  rewriteForSpeech: (...args: unknown[]) => mockRewriteForSpeech(...args),
+}))
+
+// Mock the edge-tts synthesis module
+const mockSynthesizeSpeech = vi.fn()
+vi.mock('../../lib/tts', () => ({
+  synthesizeSpeech: (...args: unknown[]) => mockSynthesizeSpeech(...args),
+  resolveTtsVoice: vi.fn().mockReturnValue('zh-CN-XiaoxiaoMultilingualNeural'),
 }))
 
 // Import after mocks are set up
 import Groq from 'groq-sdk'
 import { voiceRoutes } from '../voice'
 import { resolveFormatterModels } from '../../lib/voice-formatter'
-import { VOICE_MAX_TRANSCRIPT_CHARS, VOICE_MAX_FILEPATH_CHARS } from '../../lib/constants'
+import { VOICE_MAX_TRANSCRIPT_CHARS, VOICE_MAX_FILEPATH_CHARS, VOICE_MAX_SPEAK_CHARS } from '../../lib/constants'
 
 function makeAudioBlob(size = 1000): File {
   const bytes = new Uint8Array(size)
@@ -88,7 +97,21 @@ describe('GET /status', () => {
     const res = await voiceRoutes.request('/status')
     expect(res.status).toBe(200)
     const json = await res.json()
-    expect(json).toEqual({ enabled: false, reason: 'missing_api_key' })
+    expect(json).toEqual({
+      enabled: false,
+      reason: 'missing_api_key',
+      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoMultilingualNeural' },
+    })
+  })
+
+  it('advertises TTS without flipping the top-level STT enabled flag', async () => {
+    // TTS needs no key; STT does. Advertising TTS must never make `useVoice` (which
+    // reads the top-level `enabled`) think the mic/server is ready.
+    delete process.env.GROQ_API_KEY
+    const res = await voiceRoutes.request('/status')
+    const json = await res.json()
+    expect(json.enabled).toBe(false)
+    expect(json.tts.enabled).toBe(true)
   })
 
   it('returns enabled:true with defaults when GROQ_API_KEY is set', async () => {
@@ -101,6 +124,7 @@ describe('GET /status', () => {
       sttModel: 'whisper-large-v3-turbo',
       formatterModels: ['test-model'],
       maxUploadBytes: 20_000_000,
+      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoMultilingualNeural' },
     })
   })
 
@@ -430,6 +454,104 @@ describe('POST /format', () => {
     expect(res.status).toBe(200)
     const systemPrompt = mockFormatWithFallback.mock.calls[0][1]
     expect(systemPrompt).toContain('Context: editing file src/app.py (Python)')
+  })
+})
+
+describe('POST /speak', () => {
+  function postSpeak(body: unknown) {
+    return voiceRoutes.request('/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // A raw string is sent verbatim (the invalid-JSON case); an object is the
+      // JSON request body.
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    })
+  }
+
+  beforeEach(() => {
+    process.env.GROQ_API_KEY = 'test-key'
+    mockRewriteForSpeech.mockReset()
+    mockSynthesizeSpeech.mockReset()
+  })
+
+  afterEach(() => {
+    delete process.env.GROQ_API_KEY
+  })
+
+  it('rewrites then synthesizes, returning mp3 bytes', async () => {
+    mockRewriteForSpeech.mockResolvedValue('I refactored the parser.')
+    mockSynthesizeSpeech.mockResolvedValue(Buffer.from([1, 2, 3]))
+
+    const res = await postSpeak({ text: 'Done. Refactored the parser.\n| a | b |' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('audio/mpeg')
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    expect([...bytes]).toEqual([1, 2, 3])
+    // The rewritten (not the raw) text is synthesized with the resolved voice.
+    expect(mockSynthesizeSpeech).toHaveBeenCalledWith(
+      'I refactored the parser.',
+      'zh-CN-XiaoxiaoMultilingualNeural',
+    )
+  })
+
+  it('returns 204 for empty/whitespace text without rewriting or synthesizing', async () => {
+    const res = await postSpeak({ text: '   ' })
+    expect(res.status).toBe(204)
+    expect(mockRewriteForSpeech).not.toHaveBeenCalled()
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for invalid JSON', async () => {
+    const res = await postSpeak('not json')
+    expect(res.status).toBe(400)
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when text is missing or not a string', async () => {
+    expect((await postSpeak({ text: 7 })).status).toBe(400)
+    expect((await postSpeak({})).status).toBe(400)
+    expect(mockRewriteForSpeech).not.toHaveBeenCalled()
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
+  })
+
+  it('returns 413 when text exceeds the cap', async () => {
+    const res = await postSpeak({ text: 'a'.repeat(VOICE_MAX_SPEAK_CHARS + 1) })
+    expect(res.status).toBe(413)
+    expect(mockRewriteForSpeech).not.toHaveBeenCalled()
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled()
+  })
+
+  it('returns 502 when synthesis fails', async () => {
+    mockRewriteForSpeech.mockResolvedValue('spoken')
+    mockSynthesizeSpeech.mockRejectedValue(new Error('edge down'))
+    const res = await postSpeak({ text: 'Done.' })
+    expect(res.status).toBe(502)
+  })
+
+  it('skips the rewrite and synthesizes raw text when GROQ_API_KEY is absent', async () => {
+    delete process.env.GROQ_API_KEY
+    mockSynthesizeSpeech.mockResolvedValue(Buffer.from([9]))
+    const res = await postSpeak({ text: 'Crashed (exit 1)' })
+    expect(res.status).toBe(200)
+    expect(mockRewriteForSpeech).not.toHaveBeenCalled()
+    expect(mockSynthesizeSpeech).toHaveBeenCalledWith('Crashed (exit 1)', expect.any(String))
+  })
+
+  it('falls back to the raw text when the rewrite returns empty', async () => {
+    mockRewriteForSpeech.mockResolvedValue('   ')
+    mockSynthesizeSpeech.mockResolvedValue(Buffer.from([1]))
+    const res = await postSpeak({ text: 'Needs approval' })
+    expect(res.status).toBe(200)
+    expect(mockSynthesizeSpeech).toHaveBeenCalledWith('Needs approval', expect.any(String))
+  })
+
+  it('caps an overlong rewrite before synthesis', async () => {
+    mockRewriteForSpeech.mockResolvedValue('x'.repeat(VOICE_MAX_SPEAK_CHARS + 50))
+    mockSynthesizeSpeech.mockResolvedValue(Buffer.from([1]))
+    await postSpeak({ text: 'Summarize this' })
+    const synthesized = mockSynthesizeSpeech.mock.calls[0][0] as string
+    expect(synthesized.length).toBe(VOICE_MAX_SPEAK_CHARS)
   })
 })
 
