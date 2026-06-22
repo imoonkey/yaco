@@ -1,5 +1,59 @@
 # Progress
 
+## 2026-06-22: idle/blocked notifications debounce off `statusEnteredAt`, not a poll-streak
+
+**What changed:**
+- Replaced the idle-notification mechanism in `attention-engine.ts`. The engine
+  required `IDLE_CONFIRM_COUNT=2` consecutive idle *observations*, but the CLI
+  `Stop` hook writes `idle` to the state file exactly once — so the 2nd confirm
+  only arrived on the 60s safety tick, making idle "your turn" notifications fire
+  **0–60s late** (avg ~30s) for a quiet single session.
+- `session_blocked` + `session_idle` are now one **debounced session edge**: in
+  `detectEdges`, append once the session has held the same `statusEnteredAt`
+  generation for ≥ `EDGE_DEBOUNCE_MS` (1.5s), evaluated against the **fresh**
+  `readSessions()` snapshot each recompute. A per-session **wake timer** only
+  triggers a recompute — it never appends from cache (closes the old blocked-timer
+  stale-cache window; a missed fs event self-corrects at the wake). Idle latency:
+  up-to-60s → ~1.5s.
+- `MIN_PROCESSING` is now a **fixed** work-duration gate (`idleAt − activeSince`,
+  both parsed status timestamps), killing a latent drift bug where the old
+  `now − activeSince` check let a trivial sub-15s turn fire a late idle edge on a
+  later safety tick. `activeSince` is seeded from the active span's parsed
+  `statusEnteredAt` (no `0` sentinel), preserved across `processing↔blocked` into
+  idle.
+- Deleted `idleStreak` / `IDLE_CONFIRM_COUNT` and the `BlockedPending` /
+  `scheduleBlockedEdge` / `cancelBlockedEdge` machinery; `BLOCKED_DEBOUNCE_MS` →
+  `EDGE_DEBOUNCE_MS`. Future/unparseable `statusEnteredAt` fails open (append now,
+  no wake loop); the session cache commits **last** in the loop so an append
+  failure retries (no swallowed crash edge).
+
+**Why:**
+- `IDLE_CONFIRM_COUNT` was a polling-style debounce bolted onto an event-driven
+  trigger that never supplied a 2nd sample. Anchoring the debounce to
+  `now − statusEnteredAt` and re-evaluating against the fresh snapshot makes blocked
+  and idle one canonical case, removes the streak/blocked-timer special-casing, and
+  is self-correcting — net less code, fixed latency.
+
+**Key files:** `app/server/src/lib/attention-engine.ts`,
+`app/server/src/lib/__tests__/attention-engine.test.ts`; docs
+`doc/main/app/backend/libs.md`, `doc/main/app/ui/notifications.md`,
+`doc/main/app/data-model/persistence.md`. Design + reviews:
+`plan/all/idle-notif-debounce/`.
+
+**Verification:** app/server 721 unit (engine 30, incl. real-wake-timer + drift +
+flap + interrupt-once + crash-retry + future-dated regressions); `tsc -b` 78
+pre-existing errors, **0 in scope** (78==78 vs main). Cross-provider review: codex
+NO-GO (3 issues: crash-retry-on-append-failure, future-timestamp wake loop, idle
+tests not driving the real timer) → all fixed → codex **GO**
+(`plan/all/idle-notif-debounce/review-implementation.md`). QA: drove a real Claude
+agent through a 22s turn — confirmed the turn-end `idle` is written **once** with a
+`statusEnteredAt`, work span 22s ≥ 15s, notice captured (validates the bug premise
++ the fix's inputs).
+
+**Commit:** `87a6d96` (code) + docs
+**Next:** Codex idle (its `Stop` hook does not fire) still deferred — unchanged.
+**Blockers:** None
+
 ## 2026-06-22: actively-viewed terminal now toasts + speaks (read-back un-suppressed)
 
 **What changed:**

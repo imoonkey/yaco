@@ -146,14 +146,14 @@ SSE broadcast registry + push helpers. The osascript desktop sink and the inbox 
 - `addSSEClient` / `removeSSEClient` — registry for `/api/notifications/stream`
 - No `emitNotification`, no per-item `notification` event, no `notifications:changed` event
 
-### attention-engine.ts (~430 lines)
+### attention-engine.ts (~510 lines)
 
 Change-driven Facet B **producer** (spec §5). Keeps an in-memory cache of last-seen session statuses + task states, detects status/state **edges** on each recompute, appends each edge to `events.jsonl` idempotently (by stable generation id), then projects via `attention-projection.ts` and pushes over the `attention` SSE.
 
-**Exports**: `AttentionEngine` (class), `BLOCKED_DEBOUNCE_MS`, `MIN_PROCESSING_MS`, `IDLE_CONFIRM_COUNT`, `SAFETY_TICK_MS`
+**Exports**: `AttentionEngine` (class), `EDGE_DEBOUNCE_MS`, `MIN_PROCESSING_MS`, `SAFETY_TICK_MS`
 
-- Recompute triggers: session fs-watch, task fs-watch, pin change, 60s safety tick. Concurrent triggers coalesce into one trailing recompute.
-- Edges: `session_crashed`/`task_blocked`/`task_done` immediate; `session_blocked` debounced ~1.5s (re-confirm same generation); `session_idle` after 15s active + 2 idle observations, OWNED → REVIEW vs DELEGATED → FYI decided at projection.
+- Recompute triggers: session fs-watch, task fs-watch, pin change, 60s safety tick, plus a per-session **wake timer** (it only triggers a recompute — never appends). Concurrent triggers coalesce into one trailing recompute.
+- Edges: `session_crashed`/`task_blocked`/`task_done` immediate; `session_blocked` + `session_idle` are one **debounced session edge** — appended once the session has held the same `statusEnteredAt` generation for ≥ `EDGE_DEBOUNCE_MS` (1.5s), re-evaluated against the **fresh** `readSessions()` snapshot each recompute (so a flap or missed fs event self-corrects; the wake timer never appends from cache). `session_idle` additionally needs a **fixed** ≥`MIN_PROCESSING_MS` (15s) work span (`idleAt − activeSince`, both parsed status timestamps — never drifts), OWNED → REVIEW vs DELEGATED → FYI decided at projection. A future/unparseable `statusEnteredAt` fails open (append now); the session cache commits **last** in the loop so an append failure retries.
 - Boot reconciliation: treats the current snapshot as truth for open ACT, id-scans `events.jsonl`, appends missing edges, and marks them known so a restart surfaces them **without** re-toasting (`interrupt=false`). Readers are injectable for unit tests.
 
 ### attention-projection.ts (~680 lines)

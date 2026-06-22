@@ -71,8 +71,8 @@ Known v0 event kinds (consumers MUST tolerate unknown kinds):
 | Kind | When |
 |---|---|
 | `dispatched` | a task transitions `ready → running` and an agent session is started |
-| `session_idle` | a yaco agent session transitions active → `idle` (NOT task completion) |
-| `session_blocked` | a yaco agent session enters `blocked` (debounced ~1.5s confirm) |
+| `session_idle` | a yaco agent session transitions active → `idle` (NOT task completion; debounced ~1.5s + ≥15s work span) |
+| `session_blocked` | a yaco agent session enters `blocked` (debounced ~1.5s) |
 | `session_crashed` | a yaco agent session enters `crashed` (non-zero agent exit) |
 | `task_done` | a task transitions to `done` |
 | `task_blocked` | a task transitions to `blocked` |
@@ -95,8 +95,8 @@ it is sanitized + clamped to ≤2000 chars at capture (`clampNotice`,
 `@yaco/cli/core/agent`) — it carries the (near-)full final message for the voice
 read-back — precisely because it becomes durable here. Because
 `appendEvent` is idempotent by id, the edge's notice is fixed at first append —
-the blocked debounce appends the freshest snapshot within its window so a
-late-filling notice is still captured (-> See: [../ui/notifications.md](../ui/notifications.md#row-anatomy--the-notice-field)).
+the debounced session edge appends the fresh snapshot at fire time (it re-reads
+state each recompute) so a late-filling notice is still captured (-> See: [../ui/notifications.md](../ui/notifications.md#row-anatomy--the-notice-field)).
 
 Wired emit sites (server-owned):
 

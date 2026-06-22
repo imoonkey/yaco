@@ -75,9 +75,9 @@ Recompute triggers: session fs-watch, task fs-watch, pin change
 | Kind | Edge | Generation id | Tier | Timing |
 |---|---|---|---|---|
 | `session_crashed` | →crashed | `session_crashed:<proj>::<s>:<statusEnteredAt>` | critical | immediate |
-| `session_blocked` | →blocked | `session_blocked:…:<statusEnteredAt>` | action | debounced (`BLOCKED_DEBOUNCE_MS` = 1.5s, re-confirm same generation) |
+| `session_blocked` | →blocked | `session_blocked:…:<statusEnteredAt>` | action | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s held since `statusEnteredAt`) |
 | `task_blocked` | task→blocked | `task_blocked:<proj>::<id>:<stateEnteredAt>` | action | immediate |
-| `session_idle` | active→idle | `session_idle:…:<statusEnteredAt>` | handoff(owned)/fyi(deleg) | `MIN_PROCESSING_MS` (15s) active + `IDLE_CONFIRM_COUNT` (2) idle observations |
+| `session_idle` | active→idle | `session_idle:…:<statusEnteredAt>` | handoff(owned)/fyi(deleg) | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s) + fixed ≥`MIN_PROCESSING_MS` (15s) work span (`idleAt − activeSince`) |
 | `task_done` | task→done | `task_done:…:<stateEnteredAt>` | handoff | immediate |
 
 **Boot reconciliation.** An empty cache cannot mean "no edges happened" — a
@@ -171,9 +171,9 @@ and flowed through the existing session-state read — no app-side `~/.claude` /
   (the scan line already carries identity + project). **ACT (`needsYou`)** reads the
   live snapshot notice (`s.notice`/`t.notice`); **REVIEW (`ready`) + Recent** read
   the event-payload notice captured at edge-append (`metaOf`). `session_crashed` is
-  always `''` (the exit code is in the title). The blocked debounce is
-  generation-aware and appends the *freshest* snapshot at fire time, so a notice
-  that fills during the 1.5s window (e.g. `permission_prompt` then
+  always `''` (the exit code is in the title). The debounced session edge appends
+  from the **fresh snapshot at fire time** (it re-reads state each recompute), so a
+  notice that fills during the 1.5s window (e.g. `permission_prompt` then
   `PermissionRequest`) is still captured in the durable edge.
 - **Render (web client).** `noticeContent` renders `message` verbatim and
   `stateLabel` maps the id-bearing task titles (`Task done: T1`) to a bare verb
