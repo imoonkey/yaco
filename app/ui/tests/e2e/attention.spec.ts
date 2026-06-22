@@ -132,18 +132,20 @@ test.describe('Attention surfaces', () => {
     // spec's Recent item ("Your turn", different location) coexists in the
     // panel; filtering on a bare `div` resolves to an ancestor that wraps BOTH
     // rows and the title assertion then matches 2 "Your turn" spans. The row
-    // class pins to exactly one item, and the location string is unique to this
-    // run's fixture, so each assertion is scoped to THIS spec's seeded items.
-    const row = (location: string) =>
-      panel.locator('div.cursor-pointer').filter({ hasText: location }).first()
+    // class pins to exactly one item, and the handle is unique to this run's
+    // fixture (it carries `Date.now()`), so each assertion is scoped to THIS
+    // spec's seeded items. The row renders the handle as its identity line, with
+    // the project + time as faint meta — match on the handle, not a location.
+    const row = (handleText: string) =>
+      panel.locator('div.cursor-pointer').filter({ hasText: handleText }).first()
 
-    // The crashed item: title "Crashed (exit 3)" at location `project / crashed`.
-    const crashedRow = row(`${project.name} / ${crashed}`)
+    // The crashed item: title "Crashed (exit 3)".
+    const crashedRow = row(crashed)
     await expect(crashedRow).toBeVisible()
     await expect(crashedRow.getByText('Crashed (exit 3)')).toBeVisible()
 
-    // The idle item: title "Your turn" at location `project / idle`.
-    const readyRow = row(`${project.name} / ${idle}`)
+    // The idle item: title "Your turn".
+    const readyRow = row(idle)
     await expect(readyRow).toBeVisible()
     await expect(readyRow.getByText('Your turn', { exact: true })).toBeVisible()
   })
@@ -174,12 +176,13 @@ test.describe('Attention surfaces', () => {
     await expect(page.getByText('Needs you', { exact: true })).toBeVisible({ timeout: 10_000 })
 
     const panel = page.locator('.rounded-xl.w-\\[340px\\]')
-    const row = panel.locator('div.cursor-pointer').filter({ hasText: `${project.name} / ${handle}` }).first()
+    const row = panel.locator('div.cursor-pointer').filter({ hasText: handle }).first()
     await expect(row).toBeVisible()
-    // Title is the state; line-2 is location + the captured content (NOT the old
-    // redundant `project · name` template).
+    // Title is the state; line-2 is the captured content (`<state> — <notice>`),
+    // NOT the old redundant `project / name` location template.
     await expect(row.getByText('Has a question', { exact: true })).toBeVisible()
-    await expect(row.getByText(`${project.name} / ${handle} — ${question}`)).toBeVisible()
+    await expect(row).toContainText(`Has a question — ${question}`)
+    await expect(row).not.toContainText(`${project.name} / ${handle} — ${question}`)
   })
 
   test('an owned-idle leaf shows the "your turn" chip; a delegated-idle leaf does not', async ({ page, request }) => {

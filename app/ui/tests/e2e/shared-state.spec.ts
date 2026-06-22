@@ -141,7 +141,7 @@ async function readSessionListNames(page: Page, names: string[]): Promise<string
 // acking a REVIEW (Ready) item does NOT delete it — it advances the watermark so
 // the item drops out of `ready` and `buildHistory` re-emits it into `recent`.
 // Only Clear hides Recent. So the durable assertion is "no longer Ready, now in
-// Recent", scoped to THIS run's unique `project / handle` location (the feed is
+// Recent", scoped to THIS run's unique project name (the feed is
 // GLOBAL; sibling specs seed their own rows into the shared YACO_HOME).
 
 test.describe('Shared state: attention', () => {
@@ -184,9 +184,9 @@ test.describe('Shared state: attention', () => {
       // (`div.sticky`) carrying the exact label, with its rows as following
       // siblings inside the same wrapper. Scope a row lookup to ONE section so we
       // can tell "in Ready" from "in Recent" — both render the same "Your turn"
-      // title and the same `project / handle` location. Anchor on the section's
-      // header, then take the sibling rows (`div.cursor-pointer`) filtered to the
-      // unique location.
+      // title and the same project. Anchor on the section's header, then take the
+      // sibling rows (`div.cursor-pointer`) filtered to the unique per-run
+      // project name.
       const panel = (page: Page) => page.locator('.rounded-xl.w-\\[340px\\]')
       const sectionRow = (page: Page, label: string, location: string) =>
         panel(page)
@@ -196,9 +196,10 @@ test.describe('Shared state: attention', () => {
           .filter({ hasText: location })
 
       // Both tabs project the SAME server state → both show the Ready item in the
-      // Ready section. Assert on THIS run's unique location row, never a global
-      // "Your turn" count (parallel specs seed their own Ready items).
-      const location = `${project.name} / ${handle}`
+      // Ready section. Assert on THIS run's unique row — anchored on the per-run
+      // project name (rendered as the row's faint meta), never a global "Your
+      // turn" count (parallel specs seed their own Ready items).
+      const location = project.name
       await gotoApp(a.page)
       await gotoApp(b.page)
       await openBell(a.page)
