@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 
 // SUPPORTED is evaluated when useSpeech is imported, off the global `Audio`
 // constructor — which jsdom doesn't expose by default. So we stub the browser
@@ -228,6 +229,17 @@ describe('useSpeech', () => {
     act(() => { window.dispatchEvent(new Event('pointerdown')) })
     expect(audioEl.play).toHaveBeenCalled()
     expect(speech.speak).toHaveBeenCalled()
+  })
+
+  it('still speaks under StrictMode when enabled was restored from storage', async () => {
+    // StrictMode runs the unmount cleanup once at mount (setup→cleanup→setup). That
+    // cleanup must NOT clear enabledRef, or speak() would no-op while the icon shows
+    // enabled (restored from storage, no fresh toggle to re-set the ref).
+    localStorage.setItem('yaco.voiceReadback', '1')
+    const { result } = renderHook(() => useSpeech(), { wrapper: StrictMode })
+    expect(result.current.enabled).toBe(true)
+    act(() => result.current.speak('Done.'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
   })
 
   it('does nothing on a 204 (nothing to say): no audio, no fallback', async () => {

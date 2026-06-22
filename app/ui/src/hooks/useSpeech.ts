@@ -218,10 +218,13 @@ export function useSpeech(): UseSpeech {
   }, [enabled, prime])
 
   // On unmount, fully preempt: a teardown mid-speak must not leave audio playing,
-  // a fetch in flight, or a pending async branch able to act (bump the generation
-  // and clear enabledRef so any in-flight `current()` check fails permanently).
+  // a fetch in flight, or a pending async branch able to act. Bumping the
+  // generation makes every in-flight `current()` check fail; preempt() aborts the
+  // fetch and pauses audio — that is the whole teardown. It must NOT touch
+  // enabledRef: under StrictMode this cleanup runs once at mount, and clearing the
+  // flag there would strand enabledRef=false while `enabled` (restored from
+  // storage) stays true, silently no-op'ing speak().
   useEffect(() => () => {
-    enabledRef.current = false
     speakIdRef.current++
     preempt()
   }, [preempt])
