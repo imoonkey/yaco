@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-06-22: actively-viewed terminal now toasts + speaks (read-back un-suppressed)
+
+**What changed:**
+- `useAttention.ingest()` no longer diverts an interrupt for the actively-viewed
+  target (visible + window-focused + attached) off the surface path. The early
+  `continue` is gone; the `isActivelyViewing` branch collapses to just the READY
+  auto-ack, then the item falls through to `surfaceInterrupts` like any other — so
+  a reply landing in the terminal you are watching now fires a toast **and** a TTS
+  read-back.
+- Invariants held: READY (`group==='ready'`) auto-ack preserved (bell still clears
+  on engage; `engagedAcks` still gates the F3 engage-ack effect against a
+  double-POST); ACT (crash/block) rows are never auto-dismissed; `seenInterrupts`
+  dedup unchanged, so the ack → `ui-state:changed` → refetch → re-ingest cycle
+  cannot re-toast/re-speak a generation.
+- Two `useAttention` unit tests flipped from "suppressed" to "surfaces". Fixed a
+  pre-existing strict-mode locator collision in `attention.spec.ts` (the bell vs.
+  the 🔊 "Read notifications aloud" toggle) with `exact: true`.
+
+**Why:**
+- Voice-first on a phone: after voice-input in a terminal you wait while watching
+  that very terminal — exactly the case the active-viewing guard silenced, so the
+  read-back never fired. Option A removes the surface-path fork rather than
+  threading speech around the suppression (Option B): audio and visual stay
+  unified and a burst stays one spoken utterance. Supersedes the "active-viewing
+  suppression" reuse noted in the original voice-read-back entry below.
+
+**Key files:** `app/ui/src/hooks/useAttention.ts`, `app/ui/src/hooks/__tests__/useAttention.test.tsx`, `app/ui/tests/e2e/attention.spec.ts`, `doc/main/app/ui/notifications.md`, `doc/main/app/frontend/hooks.md`. Plan/review: `plan/all/active-session-readback/{plan,review_codex}.md`.
+**Verification:** ui `tsc -b` 0 / eslint 0 / vitest 1026 pass; cross-provider Codex review CLEAN (traced the re-ingest dedup + F3 double-POST paths). QA: behavior proven at unit level (2 flipped tests); `attention.spec.ts` regression gate partially blocked by a separate pre-existing fixture `ENOENT` (harness otherwise healthy — other specs pass).
+**Commit:** `7dd823fd` (feat) + `16e03a92` (e2e locator fix)
+**Next:** the `attention.spec.ts` fixture-provisioning `ENOENT` in single-spec isolated runs deserves a follow-up so the notification e2e gate is reliable.
+**Blockers:** None.
+
 ## 2026-06-21: read-back paraphrases the full message (TTS v2.1)
 
 **What changed:**
