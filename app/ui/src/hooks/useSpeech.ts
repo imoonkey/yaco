@@ -7,8 +7,11 @@ import { API } from './useApi'
 // server path is unavailable (offline, 502, or audio not yet unlocked), fall back
 // to the browser's Web Speech API — the v1 path, now the degradation tier.
 //
-// Foreground-only by construction: the one caller (useAttention.surfaceInterrupts)
-// only speaks in its visible branch, where audio playback is actually allowed.
+// Visibility-independent: the one caller (useAttention.surfaceInterrupts) speaks
+// in both its visible and hidden branches, so a background tab still reads the
+// reply aloud. Playback needs the audio engine primed by an earlier gesture; an
+// unprimed background tab degrades to the browser-TTS tier (or stays silent until
+// the next interaction unlocks it).
 
 // "This browser can play audio." The neural path needs only <audio>, not
 // speechSynthesis and not a server key — so the toggle is offered ~everywhere.

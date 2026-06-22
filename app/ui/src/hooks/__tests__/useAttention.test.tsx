@@ -180,6 +180,22 @@ describe('useAttention', () => {
     expect(toastCustom).not.toHaveBeenCalled()
   })
 
+  it('still speaks the read-back while HIDDEN (audio is not foreground-gated)', async () => {
+    installNotification('granted')
+    setHidden(true)
+    const onSpeak = vi.fn()
+    const calls = installFetchStub()
+    renderHook(() => useAttention(null, undefined, onSpeak))
+    await settleInitialFeed(calls, makeSnapshot())
+
+    pushAttention(makeSnapshot({ needsYou: [crashItem({ interrupt: true })] }))
+
+    // Hidden → OS Notification for the eye, but the read-back still fires for the ear.
+    expect(onSpeak).toHaveBeenCalledTimes(1)
+    expect(notificationCtor).toHaveBeenCalledTimes(1)
+    expect(toastCustom).not.toHaveBeenCalled()
+  })
+
   it('does NOT fire an OS Notification when permission is not granted', async () => {
     installNotification('default')
     setHidden(true)

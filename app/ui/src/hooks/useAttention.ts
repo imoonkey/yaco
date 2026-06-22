@@ -210,8 +210,8 @@ export interface UseAttention {
  *
  * @param activeTarget the session the user is attached to + viewing (or null).
  * @param onItemClick  optional routing invoked when an interrupt is clicked.
- * @param onSpeak      optional voice read-back invoked with the items being
- *   toasted (visible/foreground only) — see `useSpeech`.
+ * @param onSpeak      optional voice read-back invoked with the freshly-surfaced
+ *   items, regardless of tab visibility (audio is not foreground-gated) — see `useSpeech`.
  */
 export function useAttention(
   activeTarget: AttentionTarget | null,
@@ -272,9 +272,11 @@ export function useAttention(
     if (items.length === 0) return
     const visible = document.visibilityState === 'visible'
 
-    // Voice read-back: what earns a toast (visible/foreground) also gets spoken.
-    // Foreground-only — the hidden branch below emits an OS notification, no audio.
-    if (visible) onSpeakRef.current?.(items)
+    // Voice read-back fires regardless of tab visibility: audio can play in a
+    // background tab once the engine is primed, and a hidden tab is exactly when
+    // hearing the reply matters most. The visible/hidden split below only governs
+    // the VISUAL surface (in-app toast vs OS notification), never the audio.
+    onSpeakRef.current?.(items)
 
     if (items.length === 1) {
       const item = items[0]
