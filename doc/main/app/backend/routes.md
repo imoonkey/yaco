@@ -102,6 +102,7 @@ A **colocated repo** is a depth-1 child directory that is its own git repo but i
 | GET | `/api/voice/status` | Voice pipeline availability and config |
 | POST | `/api/voice/transcribe` | Transcribe one recording (Whisper only) |
 | POST | `/api/voice/format` | Format a whole transcript (formatter only) |
+| POST | `/api/voice/speak` | Notification text → neural spoken audio (Groq rewrite + edge-tts) |
 
 **`GET /api/voice/status`**
 
@@ -109,13 +110,17 @@ Returns pipeline readiness so the UI can gate recording controls.
 
 Enabled (GROQ_API_KEY set):
 ```json
-{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "llama-3.1-8b-instant"], "maxUploadBytes": 20000000 }
+{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "llama-3.1-8b-instant"], "maxUploadBytes": 20000000, "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" } }
 ```
 
 Disabled (key missing):
 ```json
-{ "enabled": false, "reason": "missing_api_key" }
+{ "enabled": false, "reason": "missing_api_key", "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" } }
 ```
+
+Top-level `enabled` is **STT-only** (voice input — needs `GROQ_API_KEY`; the UI's
+`useVoice` reads it for mic readiness). The nested `tts` is advertised in **both**
+branches (edge-tts is keyless), so advertising read-back never flips the mic UI to ready.
 
 The pipeline is **split** into two single-responsibility endpoints. The client
 records one continuous take (native `MediaRecorder`, ended by the user via
@@ -159,6 +164,19 @@ Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 { "displayText": "", "formattingStatus": "empty" }
 ```
 
+**`POST /api/voice/speak`** (`application/json`) — notification text → neural mp3.
+
+The **output** half of voice (read-back), independent of the STT pipeline above:
+**no `GROQ_API_KEY` gate** — TTS works keyless on the raw text; a key only adds the
+spoken rewrite. Request body `{ text }`:
+- `text` (string, required) — the notice; capped at `VOICE_MAX_SPEAK_CHARS` (600) → 413.
+
+Flow: validate → blank `text` → `204` → rewrite to a spoken summary when keyed
+(`rewriteForSpeech`, raw text otherwise) → re-validate (trim + re-cap, raw on empty) →
+`synthesizeSpeech` (edge-tts) → `200 audio/mpeg` bytes (`Cache-Control: no-store`). The
+client plays the mp3 and degrades to browser TTS on any non-200. -> See:
+[../ui/notifications.md § Voice read-back](../ui/notifications.md#voice-read-back-tts), [libs.md § tts.ts](libs.md#ttsts).
+
 **Error responses** — stable JSON `{ "error": "<message>" }`:
 
 | Condition | HTTP | `error` message | Route |
@@ -169,6 +187,9 @@ Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 | Audio > 20 MB | 413 | Recording too large. Keep it short. | transcribe |
 | Invalid JSON / `surface` / `filePath` | 400 | Invalid request. | format |
 | Transcript > `VOICE_MAX_TRANSCRIPT_CHARS` | 413 | Transcript too long. | format |
+| Invalid JSON / non-string `text` | 400 | Invalid request. | speak |
+| `text` > `VOICE_MAX_SPEAK_CHARS` | 413 | Text too long. | speak |
+| edge-tts synthesis failed | 502 | Speech synthesis failed. | speak |
 | Upstream rate limit | 429 | Rate limit reached. Try again shortly. | transcribe |
 | Upstream timeout/network | 502 | Transcription failed. Try again. | transcribe |
 

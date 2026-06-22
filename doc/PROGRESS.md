@@ -1,5 +1,49 @@
 # Progress
 
+## 2026-06-21: neural voice read-back + spoken rewrite (TTS v2)
+
+**What changed:**
+- Upgraded read-back from browser `speechSynthesis` to a **server-first neural** path
+  behind the v1 `speak(text)` seam (attention wiring unchanged): the notice is rewritten
+  to a spoken summary (Groq) and synthesized with a neural voice (edge-tts), played via a
+  reused `<audio>`; browser TTS is the fallback tier. Three strict tiers — neural+rewrite
+  → browser TTS(raw) → silent (toast still shows).
+- New `app/server/src/lib/tts.ts` — `synthesizeSpeech(text, voice)` over `msedge-tts@2.0.6`
+  (one instance/request, a single timer bounding connect+stream, one cleanup on every
+  terminal path), `resolveTtsVoice()`, `escapeForSsml()`.
+- `voice-formatter.ts` — extracted `completeWithFallback(models, system, userMessage, opts)`
+  with a caller-owned `{maxTokens,timeoutMs,logLabel}` budget; STT `formatWithFallback`
+  byte-identical over it; added `rewriteForSpeech` (speakify prompt, fast-first
+  `VOICE_SPEAK_MODELS`, 256 tok / 2.5s) + `resolveSpeakModels`. New `buildSpeakifyPrompt` /
+  `buildSpeakifyUserMessage` in `voice-prompts.ts`.
+- New keyless `POST /api/voice/speak` (204/400/413/502) and nested `tts:{enabled,voice}` on
+  `GET /api/voice/status` (top-level STT `enabled` untouched). New `VOICE_MAX_SPEAK_CHARS` (600).
+- `useSpeech.ts` rewired server-first + browser fallback with a monotonic `speakIdRef`
+  latest-wins guard (AbortError never falls back; toggle-off/unmount bump the generation so
+  a re-enable can't resurrect a stale branch), a dual gesture prime (silent-mp3 on the reused
+  `<audio>` + a `volume:0` utterance), and `supported` as a pure client audio check
+  independent of `/status`.
+
+**Why:**
+- Two complaints with v1: OS `speechSynthesis` voices are robotic off iOS, and the raw
+  notice is too written (tables/markdown/paths). A neural voice + a spoken rewrite fix both,
+  while the fallback tier keeps the feature working with no key and no edge endpoint.
+- edge-tts (not Groq TTS): Groq TTS is English+Arabic only — no Mandarin — so it can't read
+  the user's mixed 中英文; edge-tts is free, keyless, multilingual.
+
+**Key files:** `app/server/src/lib/{tts,voice-formatter,voice-prompts,constants}.ts`,
+`app/server/src/routes/voice.ts`, `app/ui/src/hooks/useSpeech.ts`. Design: `plan/all/voice-tts-neural/`.
+**Verification:** server vitest 694, ui vitest 1022 (incl. 15 new useSpeech specs), `tsc -b` +
+eslint clean; per-phase cross-provider Codex reviews (`plan/all/voice-tts-neural/review-phase{1..4}.md`);
+real-pipeline QA — `POST /api/voice/speak` returns mp3 for English, mixed 中英文, keyed
+(Groq rewrite→synth) and keyless (raw synth).
+**Commit:** `9bf05f34..65132007`
+**Next:** manual device smokes — iPhone gesture unlock; live "kill edge endpoint → browser
+fallback". Optional: prefer enhanced `getVoices()` voices in the fallback tier.
+**Blockers:** the `zh-CN-*MultilingualNeural` voices return empty audio from the Read Aloud
+endpoint (QA finding) — defaulted to `zh-CN-XiaoxiaoNeural` (native Mandarin + embedded
+English), overridable via `VOICE_TTS_VOICE`.
+
 ## 2026-06-21: voice read-back of foreground notifications (TTS)
 
 **What changed:**

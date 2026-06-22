@@ -21,7 +21,7 @@ Server-side library modules providing business logic, background services, and s
 
 Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
-**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `YACO_AGENT_COMMAND_TIMEOUT_MS`, `YACO_AGENT_START_TIMEOUT_MS`, `YACO_AGENT_STATUS_TIMEOUT_MS`, `YACO_TASK_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `YACO_PATH`, `AGENT_SESSIONS_DIR`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `YACO_AGENT_COMMAND_TIMEOUT_MS`, `YACO_AGENT_START_TIMEOUT_MS`, `YACO_AGENT_STATUS_TIMEOUT_MS`, `YACO_TASK_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `YACO_PATH`, `AGENT_SESSIONS_DIR`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `VOICE_MAX_SPEAK_CHARS`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
 
 - `YACO_PATH` — resolved once at startup: `process.env.YACO_PATH` wins (test/escape hatch); otherwise `which yaco`; otherwise the bare name `yaco` so PATH resolution still runs. Imported by `agent.ts` and `routes/tasks.ts`.
 - `YACO_TASK_COMMAND_TIMEOUT_MS` — `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`). Must strictly EXCEED the CLI's task-lock timeout so lock contention surfaces as the structured `{ok:false,error:{code:'LOCK',...}}` envelope on stderr before the server's execFile kills the child — otherwise LOCK would be swallowed into a generic 500.
@@ -335,25 +335,64 @@ Session name validation and tmux session resolution.
 
 Prompt templates for the voice formatting pipeline.
 
-**Exports**: `buildWhisperPrompt(context?)`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `FILE_TYPE_MAP`
+**Exports**: `buildWhisperPrompt(context?)`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `buildSpeakifyPrompt()`, `buildSpeakifyUserMessage(text)`, `FILE_TYPE_MAP`
 
 - `buildWhisperPrompt(context?)` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, yaco). Optional `context` appends a vocabulary-bias tail, capped at a small char budget (`WHISPER_CONTEXT_MAX_CHARS`) so it cannot crowd the base under Groq's 224-token prompt limit; blank context is ignored.
 - `buildFormatterPrompt()` — OpenLess-style speech-to-writing core prompt: treats ASR as messy source text, not a command to answer/execute; removes filler and false starts; keeps only the final correction (`no wait`, `actually`, `scratch that`, `不对`, etc.); forces 2+ distinct items into numbered lists; recovers implicit first items when list markers appear late (`第二`/`第三` after unmarked lead-in); allows semantic regrouping for messy 3+ item dictation; preserves technical tokens and language. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
 - `buildFormatterUserMessage()` — wraps raw ASR text in a `<raw_transcript>` envelope before sending it as the user message, escaping accidental closing tags.
+- `buildSpeakifyPrompt()` / `buildSpeakifyUserMessage(text)` — the **inverse** transform (writing → speech) for TTS read-back: rewrite a written notice into one or two short spoken sentences (drop tables/markdown/paths, preserve language, no invent, output-only). Own `<notification>` envelope with closing-tag escaping. -> See: [voice-formatter.ts](#voice-formatterts) `rewriteForSpeech`.
 - `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets
 
-### voice-formatter.ts (~130 lines)
+### voice-formatter.ts (~230 lines)
 
-Multi-model LLM formatter with fallback chain via `openai` SDK.
+Multi-model Groq LLM caller behind both voice transforms — the STT **formatter**
+and the TTS **spoken rewrite** — over one shared fallback loop via the `openai` SDK.
 
-**Exports**: `resolveFormatterModels()`, `formatWithFallback(models, systemPrompt, text)`, `FormatResult`
+**Exports**: `resolveFormatterModels()`, `resolveSpeakModels()`, `completeWithFallback(models, systemPrompt, userMessage, opts)`, `formatWithFallback(models, systemPrompt, text)`, `rewriteForSpeech(text)`, `FormatResult`
 
-- Tries models in order (default: `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `qwen/qwen3-32b` → `llama-3.1-8b-instant`), all via same Groq API key
-- Leverages per-model rate limits for resilience (429 on one model doesn't block others)
-- Sends the raw transcript through `buildFormatterUserMessage()` so the model sees a bounded `<raw_transcript>` source block.
-- Sets current Groq reasoning params for reasoning-capable formatter models (Qwen3: `reasoning_effort=none`; GPT-OSS: low-effort hidden reasoning), strips legacy `<think>...</think>` blocks, and removes common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).
-- Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
-- 5s timeout per model attempt, **with `maxRetries: 0`** on the OpenAI client — the sequential model fallback IS the retry, and the SDK's default 2 retries would multiply each model's 5s up to 3×, blowing past the UI's 30s `/format` budget and forcing a raw-transcript fallback (which the tray then mislabels). One attempt per model keeps the whole chain ≤ ~models×5s.
+- `completeWithFallback(models, system, userMessage, opts)` — the shared loop: tries each
+  model in order, returns `{ text, model }` on the first non-empty cleaned output or `null`
+  when all fail/empty. `opts` is **caller-owned** (`{ maxTokens, timeoutMs, logLabel }`) so
+  formatter and rewrite keep their own budgets, and the **raw fallback stays caller-owned** —
+  the pre-wrapped `userMessage` is never returned as the fallback.
+- `formatWithFallback()` (STT) — wraps the transcript in `buildFormatterUserMessage()`, runs
+  the loop at `maxTokens 2048` / `5000ms`, and falls back to the **raw transcript**
+  (`fallback_raw`) when it returns `null`.
+- `rewriteForSpeech()` (TTS) — runs the loop with the speakify prompt + speak models at a
+  short `maxTokens 256` / `2500ms` (the audio hot path), falling back to the **raw notice**
+  on any failure/empty/timeout (the v1 string is already speakable).
+- Model lists: `resolveFormatterModels()` (`VOICE_FORMATTER_MODELS` > `GROQ_FORMATTER_MODEL`
+  > default chain) and `resolveSpeakModels()` (`VOICE_SPEAK_MODELS` > fast-first default led
+  by `llama-3.1-8b-instant`, since the rewrite is light and latency-sensitive).
+- Sets current Groq reasoning params for reasoning-capable models (Qwen3 `reasoning_effort=none`;
+  GPT-OSS low-effort hidden), strips legacy `<think>...</think>` blocks, and removes boilerplate
+  wrappers (`Here is the cleaned text:`, `整理如下：`, outer fences, surrounding quotes) — shared
+  by both transforms.
+- **`maxRetries: 0`** on the OpenAI client — the sequential model fallback IS the retry; the
+  SDK's default 2 retries would multiply each model's timeout up to 3×, blowing past the
+  caller's budget and forcing a raw fallback.
+
+### tts.ts (~100 lines)
+
+Server-side neural speech synthesis via edge-tts (Microsoft "Read Aloud" voices) — the
+synth half of voice read-back, behind [POST /api/voice/speak](routes.md#voice).
+
+**Exports**: `synthesizeSpeech(text, voice)`, `resolveTtsVoice()`, `escapeForSsml(text)`
+
+- `synthesizeSpeech(text, voice)` → `Promise<Buffer>` (mp3). One `MsEdgeTTS`
+  (`msedge-tts@2.0.6`) per request opens an outbound WSS, `setMetadata(voice,
+  AUDIO_24KHZ_48KBITRATE_MONO_MP3)`, streams audio, and collects it into a Buffer. A
+  **single timer bounds the whole op** (connect + stream, 8s); every terminal path —
+  success, empty audio, stream error, timeout, connect failure — runs one cleanup (destroy
+  the stream + `close()` the socket), so a hung connect or a synchronous `toStream()` throw
+  can't leak. XML-escapes the text (the lib builds SSML).
+- `resolveTtsVoice()` — `VOICE_TTS_VOICE` or default `zh-CN-XiaoxiaoNeural`. The
+  `zh-CN-*MultilingualNeural` voices the design first chose are **no longer served by the
+  Read Aloud endpoint** (they return empty audio); a standard zh-CN neural voice reads native
+  Mandarin plus embedded English terms.
+- edge-tts is **keyless** but an **unofficial endpoint** — it can change or rate-limit; the
+  client's browser-TTS fallback tier means a broken endpoint degrades to v1 behavior, not
+  silence. -> See: [../ui/notifications.md § Voice read-back](../ui/notifications.md#voice-read-back-tts).
 
 ### autocomplete.ts (~570 lines)
 

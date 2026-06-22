@@ -234,21 +234,32 @@ Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`):
 ## useSpeech.ts
 
 Voice **output** (TTS) — the read-aloud half paired with `useVoice`'s input.
-Wraps the browser **Web Speech API** (`speechSynthesis`); no backend/key/dep.
+**Server-first**: POSTs the notice to [`/api/voice/speak`](../backend/routes.md#voice)
+(Groq rewrite → edge-tts neural synth) and plays the returned mp3 through a reused
+`<audio>`, falling back to the browser **Web Speech API** (`speechSynthesis`).
 
 **Export**: `useSpeech()` → `{ supported, enabled, setEnabled, speak }`.
 `speak(text)` no-ops unless `supported && enabled && text`.
 
-Hook-specific contract (subsystem wiring + behavior is owned by
+Hook-specific contract (subsystem wiring + the three degradation tiers are owned by
 [notifications.md](../ui/notifications.md#voice-read-back-tts)):
 
+- `supported` is a **pure client audio check** (`typeof Audio`), not gated on
+  `speechSynthesis` or `/status` — the neural path needs neither.
 - `enabled` is persisted (`localStorage` `yaco.voiceReadback`, default off); read by
   `speak` through a **synchronous ref**, so a toggle-off silences read-back in the
-  same tick (no stale-closure audio after opt-out — speak stays a stable callback).
-- `speak` is **latest-wins** (`cancel()` before each utterance) and sets `lang` by a
-  CJK heuristic (`zh-CN` / `en-US`).
-- iOS audio is gesture-locked: a silent `volume:0` utterance **primes** the engine
-  from the toggle tap, or a one-shot `pointerdown` after a reload-restored `enabled`.
+  same tick (speak stays a stable callback).
+- **Latest-wins** via a monotonic `speakIdRef` gating every post-`await` action (an
+  `AbortError` never falls back); `setEnabled(false)`/unmount bump it so a re-enable
+  can't resurrect an in-flight branch.
+- `prime()` unlocks **both** audio paths in one gesture (silent-mp3 on the reused
+  `<audio>` + a `volume:0` utterance), from the toggle tap or a one-shot
+  `pointerdown` after a reload-restored `enabled`.
+- The browser-fallback utterance sets `lang` by a CJK heuristic (`zh-CN` / `en-US`).
+
+Tested in `__tests__/useSpeech.test.tsx` (stubbed `Audio`/`fetch`/`speechSynthesis`):
+neural success, 502/network/play-reject → fallback, a stale request never falling
+back over a newer speak, off→on no resurrection, dual prime, unmount preempt.
 
 ## useThrottledValue.ts / useDebouncedValue.ts
 

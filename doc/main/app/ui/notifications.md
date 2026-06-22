@@ -261,9 +261,21 @@ Escape to dismiss.
 
 Speaks the surfaced notification aloud when the app is foreground — the output
 half of voice (STT input is `useVoice`; -> See: [../frontend/hooks.md](../frontend/hooks.md#usevoicets-290-lines)).
-Browser **Web Speech API** (`speechSynthesis`) only — no backend, key, or
-dependency; voice quality is OS-provided. `ui/src/hooks/useSpeech.ts` +
-`speechTextFor` in `ui/src/lib/attentionContent.ts`.
+**Server-first neural** with a browser fallback: the notice is rewritten into a
+spoken summary (Groq) and synthesized with a neural voice (edge-tts), played
+through a reused `<audio>`; the browser **Web Speech API** (`speechSynthesis`) is
+the degradation tier. `ui/src/hooks/useSpeech.ts` + `speechTextFor` in
+`ui/src/lib/attentionContent.ts` + [POST /api/voice/speak](../backend/routes.md#voice).
+
+Three strict tiers, each a degradation of the one above — no dead ends:
+
+```
+speechTextFor(items)  ->  POST /api/voice/speak {text}
+   -> Groq rewrite to a spoken summary (drops tables/markdown/paths; raw text if no key/timeout)
+   -> edge-tts neural synth -> mp3 -> <audio> plays              [neural + rewrite]
+on 502 / network / play-reject:  speechSynthesis.speak(rawText)  [browser TTS, raw]
+on no audio path at all:         toast still shows, silent        [silent]
+```
 
 - **Trigger.** `App.tsx` passes `onSpeak = speak(speechTextFor(items))` to
   `useAttention`, which calls it only in `surfaceInterrupts`' visible branch — so
@@ -271,22 +283,25 @@ dependency; voice quality is OS-provided. `ui/src/hooks/useSpeech.ts` +
   hidden/backgrounded tab. ACT + REVIEW interrupts speak; FYI never interrupts.
 - **What it says.** `speechTextFor`: single item → `"<stateLabel>. <notice>"`
   (empty notice → just the label, e.g. `Crashed (exit 1)`); a burst → a count
-  summary (`"N agents need your attention"`), never N messages.
+  summary (`"N agents need your attention"`), never N messages. The server rewrite
+  is **speech-only** — the toast still shows the verbatim notice, so the visible
+  record is never softened by the summary.
 - **`useSpeech`** → `{ supported, enabled, setEnabled, speak }`. `enabled` is
-  opt-in, **persisted** (`localStorage` `yaco.voiceReadback`, default off). `speak`
-  is **latest-wins** (`speechSynthesis.cancel()` before each utterance, so a new
-  notice preempts a stale one) and picks `lang` by a CJK heuristic (any CJK ⇒
-  `zh-CN`, else `en-US`) for the user's mixed 中英文 notices. It reads `enabled`
-  through a **synchronous ref** (not the render value), so a toggle-off silences
-  read-back in the same tick — no stale-closure audio after opt-out.
-- **iOS audio unlock.** Browsers forbid starting audio outside a user gesture,
-  once per page load. `useSpeech` *primes* by speaking a silent (`volume:0`)
-  utterance inside a gesture: the toggle tap directly, or — when `enabled` was
-  restored on reload — a one-shot `pointerdown` listener. **Known gap (inherent to
-  web audio policy):** a notification arriving on a freshly-reloaded session before
-  the user's first tap shows its toast but is not spoken (no gesture yet to unlock;
-  speaking it later would read stale content). Self-corrects after the first tap;
-  on desktop, where audio needs no gesture, even that first one speaks.
+  opt-in, **persisted** (`localStorage` `yaco.voiceReadback`, default off).
+  `supported` is a **pure client audio check** (can this browser play `<audio>`),
+  **independent of `/status`** — the neural path needs no `speechSynthesis` and
+  edge-tts needs no key, so the 🔊 toggle shows ~everywhere.
+- **Latest-wins (`speakIdRef`).** A bare `AbortController` isn't enough: a stale
+  request can reach its `catch` or a rejected `play()` *after* a newer `speak()`
+  and fire the browser fallback over fresh audio. A monotonic `speakIdRef` gates
+  every post-`await` action; an `AbortError` never falls back. Toggle-off and
+  unmount bump the generation so a re-enable can't resurrect an in-flight branch.
+  `enabled` is read through a **synchronous ref** → toggle-off silences in the same tick.
+- **Dual gesture prime.** iOS gesture-locks each audio path separately. `prime()`
+  unlocks **both** in one gesture — a silent-mp3 data URL on the *same reused*
+  `<audio>` element + a `volume:0` utterance — from the toggle tap, or a one-shot
+  `pointerdown` after a reload-restored `enabled`. **Known gap** (web audio policy):
+  a notice arriving before the first tap shows its toast but isn't spoken.
 
 ## Surface Chips & Badges
 
