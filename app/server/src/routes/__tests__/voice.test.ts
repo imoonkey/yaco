@@ -50,7 +50,7 @@ vi.mock('../../lib/voice-formatter', () => ({
 const mockSynthesizeSpeech = vi.fn()
 vi.mock('../../lib/tts', () => ({
   synthesizeSpeech: (...args: unknown[]) => mockSynthesizeSpeech(...args),
-  resolveTtsVoice: vi.fn().mockReturnValue('zh-CN-XiaoxiaoMultilingualNeural'),
+  resolveTtsVoice: vi.fn().mockReturnValue('zh-CN-XiaoxiaoNeural'),
 }))
 
 // Import after mocks are set up
@@ -100,7 +100,7 @@ describe('GET /status', () => {
     expect(json).toEqual({
       enabled: false,
       reason: 'missing_api_key',
-      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoMultilingualNeural' },
+      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoNeural' },
     })
   })
 
@@ -124,7 +124,7 @@ describe('GET /status', () => {
       sttModel: 'whisper-large-v3-turbo',
       formatterModels: ['test-model'],
       maxUploadBytes: 20_000_000,
-      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoMultilingualNeural' },
+      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoNeural' },
     })
   })
 
@@ -491,7 +491,7 @@ describe('POST /speak', () => {
     // The rewritten (not the raw) text is synthesized with the resolved voice.
     expect(mockSynthesizeSpeech).toHaveBeenCalledWith(
       'I refactored the parser.',
-      'zh-CN-XiaoxiaoMultilingualNeural',
+      'zh-CN-XiaoxiaoNeural',
     )
   })
 

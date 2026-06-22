@@ -7,15 +7,18 @@ import type { Readable } from 'node:stream'
 // the whole synthesis (connect + stream) is bounded by a single timeout and the
 // caller (the /speak route) degrades to browser TTS on failure.
 
-/** One multilingual voice reads mixed 中英文, so no per-utterance language pick. */
-const DEFAULT_VOICE = 'zh-CN-XiaoxiaoMultilingualNeural'
+/** A zh-CN neural voice: native Mandarin that also reads embedded English
+ *  terms, so no per-utterance language pick for the user's mixed 中英文 notices.
+ *  (The zh-CN-*MultilingualNeural voices are no longer served by the Read Aloud
+ *  endpoint — they return empty audio — so we use the standard neural voice.) */
+const DEFAULT_VOICE = 'zh-CN-XiaoxiaoNeural'
 
 /** Hard ceiling on a single synthesis (WSS connect + stream). A short notice is
  *  ~1s of audio; this only guards a hung/slow endpoint, and must cover the
  *  connect (setMetadata) too — a hung connect is the most likely stall. */
 const SYNTH_TIMEOUT_MS = 8000
 
-/** Resolve the neural voice from env, falling back to the multilingual default. */
+/** Resolve the neural voice from env, falling back to the default. */
 export function resolveTtsVoice(): string {
   return process.env.VOICE_TTS_VOICE?.trim() || DEFAULT_VOICE
 }

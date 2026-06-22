@@ -36,9 +36,9 @@ afterEach(() => {
 describe('resolveTtsVoice', () => {
   afterEach(() => { delete process.env.VOICE_TTS_VOICE })
 
-  it('defaults to the multilingual Xiaoxiao voice', () => {
+  it('defaults to the zh-CN Xiaoxiao neural voice', () => {
     delete process.env.VOICE_TTS_VOICE
-    expect(resolveTtsVoice()).toBe('zh-CN-XiaoxiaoMultilingualNeural')
+    expect(resolveTtsVoice()).toBe('zh-CN-XiaoxiaoNeural')
   })
 
   it('honors VOICE_TTS_VOICE override', () => {
@@ -48,7 +48,7 @@ describe('resolveTtsVoice', () => {
 
   it('falls back to default for a blank override', () => {
     process.env.VOICE_TTS_VOICE = '   '
-    expect(resolveTtsVoice()).toBe('zh-CN-XiaoxiaoMultilingualNeural')
+    expect(resolveTtsVoice()).toBe('zh-CN-XiaoxiaoNeural')
   })
 })
 
