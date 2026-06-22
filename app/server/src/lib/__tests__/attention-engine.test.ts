@@ -189,7 +189,7 @@ describe('engine — change-driven edge detection', () => {
     const t0 = state.nowMs
     state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
     await engine.recompute()
-    const idleAt = t0 + 2_000 // < MIN_PROCESSING work span
+    const idleAt = t0 + 1_000 // < MIN_PROCESSING work span
     state.nowMs = idleAt
     state.sessions = [sess({ name: 's', status: 'idle', statusEnteredAt: ISO(idleAt), spawnedBy: 'user:web' })]
     await engine.recompute()

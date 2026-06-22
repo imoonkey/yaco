@@ -46,9 +46,12 @@ import {
 export const EDGE_DEBOUNCE_MS = 1_500
 /** A session must have done at least this much real work — idle entry minus the
  *  start of its active span — before an idle transition produces a `session_idle`
- *  edge. A fixed duration (both ends parsed from status timestamps), so a trivial
- *  turn never drifts into one on a later tick (spec §11.3). */
-export const MIN_PROCESSING_MS = 15_000
+ *  edge, so a near-instant / zero-work idle (a spurious or no-op turn) never
+ *  notifies. A fixed duration (both ends parsed from status timestamps), so a
+ *  trivial turn never drifts into one on a later tick (spec §11.3). Distinct from
+ *  `EDGE_DEBOUNCE_MS`, which gates the idle DWELL (`now − statusEnteredAt`), not
+ *  the work span — the two measure adjacent intervals and are not interchangeable. */
+export const MIN_PROCESSING_MS = 1_500
 /** 60s safety tick — a recompute backstop in case a watcher event is missed. */
 export const SAFETY_TICK_MS = 60_000
 
