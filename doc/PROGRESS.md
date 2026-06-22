@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-06-22: voice read-back now fires for hidden/background tabs
+
+**What changed:**
+- `useAttention.surfaceInterrupts` no longer gates `onSpeak(items)` behind
+  `document.visibilityState === 'visible'`. Read-back now speaks in **both** the
+  visible and hidden branches; the visible/hidden split still governs only the
+  VISUAL surface (in-app toast vs OS notification).
+
+**Why:**
+- A hidden/background tab is exactly when hearing the reply matters most — gating
+  audio to the foreground defeated the purpose of an audio notification. Audio
+  plays in a background tab once the engine is primed (unprimed → browser-TTS tier
+  or silent until the next interaction unlocks it).
+
+**Key files:** `app/ui/src/hooks/useAttention.ts`, `app/ui/src/hooks/useSpeech.ts` (comment), `app/ui/src/hooks/__tests__/useAttention.test.tsx`, `doc/main/app/{ui/notifications.md, frontend/hooks.md}`
+**Verification:** useAttention suite incl. new hidden-read-back guard (fails with the gate, passes without) 26/26; `tsc -b` clean.
+**Commit:** bd50b971
+**Next:** If background read-back is silent, harden audio priming (prime on more gesture types) — currently relies on a prior gesture having unlocked the engine.
+**Blockers:** None
+
 ## 2026-06-22: voice read-back silence fixed (StrictMode); idle min-processing 15s → 1.5s
 
 **What changed:**

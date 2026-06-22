@@ -209,14 +209,13 @@ event, and no `notifications:changed` event anymore.
 - **Interrupts** → a newly-seen `interrupt` item fires a sonner `toast.custom`
   (visible) or one `new Notification` (hidden, only when permission granted);
   a burst collapses to one summary. Dedup by generation (`seenInterrupts`) so a
-  reconnect/re-projection never re-toasts. In the **visible** branch only, the
-  same batch is also passed to `onSpeak(items)` for voice read-back — so the
-  spoken set equals the toasted set, and audio is foreground-only by construction
-  (the hidden branch emits an OS Notification, never speech). -> See: Voice
-  read-back below.
+  reconnect/re-projection never re-toasts. In **both** branches the same batch is
+  passed to `onSpeak(items)` for voice read-back — so the spoken set equals the
+  surfaced set regardless of visibility (a hidden/background tab still reads the
+  reply aloud, audio engine permitting). -> See: Voice read-back below.
 - **Active-viewing guard** → `document.visibilityState === 'visible' &&
   document.hasFocus() && attached to the target`; when true the target's
-  interrupt **still surfaces** (toast + foreground read-back) like any other —
+  interrupt **still surfaces** (toast + read-back) like any other —
   it is not suppressed. The guard only drives auto-ack, **`group==='ready'`
   only** — a viewed REVIEW acks (so the bell clears on engage), but a viewed ACT
   (crash/block) is never auto-dismissed (it requires an explicit ✕). Live dot
