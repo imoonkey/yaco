@@ -111,7 +111,7 @@ test.describe('Attention surfaces', () => {
     await expect(page.getByText(crashed).first()).toBeVisible({ timeout: 15_000 })
 
     // Open the bell (top-bar, desktop). The badge count is non-zero (2 actionable).
-    const bell = page.getByRole('button', { name: 'Notifications' })
+    const bell = page.getByRole('button', { name: 'Notifications', exact: true })
     await expect(bell).toBeVisible()
     await bell.click()
 
@@ -169,7 +169,7 @@ test.describe('Attention surfaces', () => {
     await loadProject(page, project)
     await expect(page.getByText(handle).first()).toBeVisible({ timeout: 15_000 })
 
-    const bell = page.getByRole('button', { name: 'Notifications' })
+    const bell = page.getByRole('button', { name: 'Notifications', exact: true })
     await bell.click()
     await expect(page.getByText('Needs you', { exact: true })).toBeVisible({ timeout: 10_000 })
 
