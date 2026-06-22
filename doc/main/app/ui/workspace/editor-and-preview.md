@@ -122,6 +122,12 @@ The 3-icon Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle) appears in 
 
 On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 
+### Large files (over the content cap)
+
+`/content` caps file text at 1 MB and returns **413** above it (`FILE_SIZE_LIMIT`, see [routes.md](../../backend/routes.md)). A failed content fetch is recorded on `FileState.loadError` (set by the otherwise-swallowing `.catch`es in `useFileState`), which drops `activeFileLoading` so the pane shows a **`FileTooLarge`** notice instead of an infinite spinner. The error blanks a stale clean buffer only on a 413 — a transient (non-413) refetch failure never wipes an open file, and an unsaved draft is always kept.
+
+HTML over the cap **still previews**: `HtmlPreview` fetches `/raw` (20 MB) as **text** into the same srcdoc (`useRaw = tooLarge && no buffer`). Other oversize files (e.g. large JSON) show only the notice.
+
 ### Markdown rendering
 
 - Uses `marked` library for markdown → HTML
@@ -136,7 +142,7 @@ On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 
 ### HTML rendering
 
-`HtmlPreview` (`ui/src/workspace/HtmlPreview.tsx`) renders `.html`/`.htm` files inside an `<iframe>` with `sandbox="allow-scripts"` (no `allow-same-origin`) and `referrerpolicy="no-referrer"`. The frame gets an opaque origin so its scripts cannot reach the parent app, localStorage, cookies, or our APIs. The preview injects `<base href="about:srcdoc">` when the document does not already define a base tag, so fragment links like `#section` scroll inside the iframe instead of navigating to the Workflow app shell. Self-contained HTML (inline CSS/JS, data URIs, CDN-hosted assets) renders normally; relative asset URLs (`<img src="./logo.png">`) remain unsupported because they are pinned to `about:srcdoc` instead of a project file URL — to support those, a future change would need a path-segment file-serving endpoint plus a project-aware `<base href>`. There is no scroll sync for HTML (the cross-origin sandbox boundary blocks the source-line anchor trick used for markdown), so split mode shows two independently scrolling panes.
+`HtmlPreview` (`ui/src/workspace/HtmlPreview.tsx`) renders `.html`/`.htm` files inside an `<iframe>` with `sandbox="allow-scripts allow-modals allow-popups allow-forms"` (**no** `allow-same-origin`, `allow-top-navigation`, or popup sandbox-escape) and `referrerpolicy="no-referrer"`. The frame gets an opaque origin so its scripts cannot reach the parent app, localStorage, cookies, or our APIs — the load-bearing boundary for previewing untrusted (often agent-generated) HTML; the other flags only grant in-page interactivity. The preview injects `<base href="about:srcdoc">` when the document does not already define a base tag, so fragment links like `#section` scroll inside the iframe instead of navigating to the Workflow app shell. Self-contained HTML (inline CSS/JS, data URIs, CDN-hosted assets) renders normally; relative asset URLs (`<img src="./logo.png">`) remain unsupported because they are pinned to `about:srcdoc` instead of a project file URL — to support those, a future change would need a path-segment file-serving endpoint plus a project-aware `<base href>`. For large files the preview reads `/raw` **as text** and feeds it through the *same* srcdoc (never `<iframe src={rawUrl}>`); this — together with `.html` being deliberately absent from the raw MIME map (served `application/octet-stream`, see [routes.md](../../backend/routes.md)) — keeps the opaque-origin boundary intact and avoids a `GET /raw?path=…html` rendering attacker HTML on the app origin. There is no scroll sync for HTML (the cross-origin sandbox boundary blocks the source-line anchor trick used for markdown), so split mode shows two independently scrolling panes.
 
 ### Source-Line Anchored Sync (markdown only)
 

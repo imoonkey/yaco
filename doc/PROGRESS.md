@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-06-22: HTML preview works for large files; oversize editor shows a notice
+
+**What changed:**
+- Files over the `/content` 1 MB cap (HTTP 413) no longer spin forever: a failed
+  content fetch is recorded on `FileState.loadError` (the three `useFileState`
+  `.catch`es stopped swallowing it), so the editor pane shows a `FileTooLarge`
+  notice. The error blanks a stale buffer only on a clean 413 — transient errors
+  never wipe an open file, and drafts are always kept.
+- Large `.html` still previews: `HtmlPreview` fetches `/raw` (20 MB) **as text**
+  into the same sandboxed srcdoc iframe. Sandbox widened to
+  `allow-scripts allow-modals allow-popups allow-forms` (still no
+  `allow-same-origin`).
+
+**Why:**
+- The in-editor preview is for previewing source files; a 3 MB self-contained page
+  (e.g. a base64 audio gallery) exceeded the editor's text cap and hung. Routing the
+  preview through `/raw`-as-text lifts the limit without raising the editor cap.
+- Kept the iframe on `srcdoc` (not `src={rawUrl}`) and deliberately left `.html`
+  out of the raw MIME map (octet-stream), so the opaque-origin boundary holds and
+  `GET /raw?path=…html` can't render attacker HTML on the app origin.
+
+**Key files:** `app/ui/src/hooks/{workspaceTypes,fileStateMachine,useFileState}.ts`, `app/ui/src/workspace/{HtmlPreview,WorkspaceEditorArea,WorkspaceEditorColumn}.tsx`, `app/server` (test only), `doc/main/app/ui/workspace/editor-and-preview.md`, `doc/main/app/backend/routes.md`
+**Verification:** `app/ui` lint + `tsc -b` clean; `vitest src/` 1037 passed; `app/server` `files.test.ts` 24 passed (incl. 413-vs-raw + octet-stream guard); Playwright `html-preview.spec.ts` 2 passed (oversize: edit-notice + `/raw` 200 + rendered marker). Cross-provider codex review APPROVE after one fix round (`plan/all/html-preview-large-file/review.md`).
+**Commit:** d1bac184, bd93e7be
+**Next:** Optional — extend the raw-as-text fallback to large Markdown (out of scope here).
+**Blockers:** None
+
 ## 2026-06-22: voice read-back now fires for hidden/background tabs
 
 **What changed:**
