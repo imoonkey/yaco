@@ -80,6 +80,13 @@ Recompute triggers: session fs-watch, task fs-watch, pin change
 | `session_idle` | active→idle | `session_idle:…:<statusEnteredAt>` | handoff(owned)/fyi(deleg) | debounced session edge (`EDGE_DEBOUNCE_MS` = 1.5s) + fixed ≥`MIN_PROCESSING_MS` (1.5s) work span (`idleAt − activeSince`) |
 | `task_done` | task→done | `task_done:…:<stateEnteredAt>` | handoff | immediate |
 
+User-interrupted idles are deliberately **silent**. The CLI reconciler marks
+only interrupt-derived `idle` corrections with `idleReason:'interrupted'`; the
+engine skips live `session_idle` edge creation for that generation, boot
+reconciliation does not create a missing idle event for it, and the projector /
+legacy progress scanner defensively hide only the current interrupted idle
+generation. Older normal idle history for the same session remains visible.
+
 **Boot reconciliation.** An empty cache cannot mean "no edges happened" — a
 crash/block while the server was down must surface. On startup the engine treats
 the current snapshot as truth for open ACT + current REVIEW, derives each

@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-23: Agent interrupt status heals from transcripts
+
+**What changed:**
+- Replaced stale `processing` reconciliation's primary signal with provider transcript-tail classification: Claude interrupt markers / terminal turns and Codex `task_started` / `task_complete` / `turn_aborted(reason:"interrupted")`.
+- Lowered active-state recheck latency (`processing`/`blocked`) to ~15s, kept `starting` on the long startup threshold, and made app reconciliation adaptive (~8s while processing, 60s otherwise).
+- Added `idleReason:"interrupted"` and threaded it through CLI/app session projection so user-interrupted idle corrections suppress `session_idle` attention edges, boot reconciliation, Ready, Recent, and progress scanner surfaces for that exact generation.
+- Added a reconcile mtime/inode guard so an async stale correction cannot overwrite a fresh prompt.
+
+**Why:**
+- Claude and Codex do not fire terminating hooks when the user presses ESC, so hook-only status could stay stuck on `processing` or `blocked` until the old 5-minute PTY scrape fallback. Provider transcripts are the durable signal that records interrupts.
+
+**Key files:** `cli/src/lib/core/agent/providers/output.ts`, `cli/src/commands/agent/status.ts`, `cli/src/lib/core/agent/{model,session-state,projection}.ts`, `app/server/src/lib/{attention-engine,attention-projection,attention-runtime,scanner,session-reconciler}.ts`
+**Verification:** `cd cli && bun run test:unit` (1055 passed); `cd cli && bun run build && npx tsc -b`; `cd app/server && npm test` (730 passed); `cd app/ui && npm run lint`; QA CLI smoke for interrupt heal + trust-block exclusion passed; independent code review APPROVE. `cd app/server && npx tsc -b` still has pre-existing unrelated baseline errors outside this change.
+**Commit:** 1c20425b
+**Next:** Optional live manual smoke with real Claude/Codex ESC interrupts after reinstalling the CLI.
+**Blockers:** None for this change; app-server project typecheck has unrelated existing failures.
+
 ## 2026-06-23: Terminal grid clipped to its own panel box (overflow follow-up)
 
 **What changed:**

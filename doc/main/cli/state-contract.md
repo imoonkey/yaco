@@ -25,6 +25,7 @@ interface StateFile {
   statusEnteredAt?: string                    // ISO time the current status was entered (stamped on every transition)
   exitCode?: number                           // agent process exit code; present iff status === "crashed"
   blockReason?: "permission" | "question" | "trust"  // present iff status === "blocked"
+  idleReason?: "interrupted"                  // present iff status === "idle" from a user interrupt; silent attention edge
   createdAt: string                           // ISO 8601
   spawnedBy?: "user:web" | "user:terminal" | "agent"  // spawn source, captured once at start
   parentSession?: string                      // parent handle; present only when spawnedBy === "agent"
@@ -34,7 +35,10 @@ interface StateFile {
 `statusEnteredAt` is stamped by `setStatus` (`model.ts`) only on a real status
 *transition* — re-affirming the same status leaves it untouched. It is the
 durable **status-edge generation** key the app's attention engine derives its
-generation id from, so re-seeing the same edge never re-notifies.
+generation id from, so re-seeing the same edge never re-notifies. `setStatus`
+also clears transient edge fields (`notice`, `blockReason` when leaving blocked,
+and `idleReason` when leaving idle / entering a new edge) so an interrupt-derived
+silent idle can never bleed into a later normal idle.
 
 ### Session Lineage (`spawnedBy` / `parentSession`)
 
@@ -162,16 +166,18 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 State files are kept in sync with runtime status through two mechanisms:
 
 1. **Hooks (real-time)** — provider hooks fire on `UserPromptSubmit` (→processing), `Stop`/`StopFailure` (→idle), `SessionStart` (→idle, guarded). The hook handler (`applyHookEvent`) also drives the `blocked` status via `setStatus`: a `PreToolUse` on a question tool (`QUESTION_TOOLS = {AskUserQuestion, request_user_input}`) → `blocked(question)`, its `PostToolUse`/`PostToolUseFailure` → processing (answer received, cancelled, or failed); `PermissionRequest` → `blocked(question)` when its `tool_name` is a question tool, else `blocked(permission)`; `Notification(permission_prompt)` → `blocked(permission)` **unless already `blocked(question)`**. The last two guards exist because Claude fires `PermissionRequest`+`Notification(permission_prompt)` for `AskUserQuestion` too (the notification has no `tool_name`); both must classify as a question, never downgrade it to permission. `blocked` is cleared implicitly by the next processing/idle event (last-event-wins). The `SessionStart` guard is widened: it clears `starting`/`idle`/`blocked(trust)` → idle but never clobbers a mid-session-active state (`processing` or `blocked(permission|question)`). Updates are near-instant.
-2. **Reconcile correction (background)** — the app server's 60s loop runs `yaco agent list --reconcile --all --json`. When the reconcile pass detects a stale state file (mtime > 5min) and capture-based detection returns a different status, it writes the correction to disk and GCs confirmed-dead tombstones. This is the **only** place corrections and GC happen — read commands never write.
+2. **Reconcile correction (background)** — the app server runs `yaco agent list --reconcile --all --json` on an adaptive loop: 60s while idle, ~8s while any session is `processing`. When the reconcile pass detects a stale active state file, it writes the correction to disk and GCs confirmed-dead tombstones. This is the **only** place corrections and GC happen — read commands never write.
 
 Resolution splits into a pure read and a mutating wrapper:
 
 - **`resolveSession` (pure)** — backs `list` (default), `status`, `whoami`, and every polling caller. It resolves the current runtime status for **display** without ever writing or deleting:
   1. **Liveness check** — is the tmux session alive? A session counts as confirmed-dead only when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never marks a live session dead. Confirmed-dead sessions resolve to `null` (filtered from views) but their files are **not** touched.
   2. **State file read** — get persisted status.
-  3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
-  4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators (display only). The capture path can derive **only `idle`/`processing`** — it can never produce `blocked` — so the correction also strips any stale `blockReason` carried by the old state file.
-  5. **Metadata backfill** — resolve PID and sessionId from the process tree, in memory only.
+  3. **Staleness check** — `processing` and `blocked` recheck after ~15s; `starting` keeps the 5min startup threshold.
+  4. **Transcript classifier** — stale `processing` reads the provider transcript tail first: Claude recognizes assistant `end_turn` / `tool_use` and the user interrupt marker (`[Request interrupted by user…]`); Codex recognizes `task_complete`, `task_started`, and `turn_aborted(reason:"interrupted")`. Interrupt-derived idles persist `idleReason:"interrupted"` so the app suppresses the `session_idle` notification. Stale `blocked(permission|question)` clears only on a transcript terminal idle; `blocked(trust)` is never cleared by transcript or PTY fallback.
+  5. **Capture fallback** — when transcript classification is unavailable, stale `processing`/`starting` captures pane output and detects idle/processing from prompt patterns and busy indicators (display only). The capture path can derive **only `idle`/`processing`** — it can never produce `blocked` — so the correction also strips any stale `blockReason`/`idleReason` carried by the old state file.
+  6. **Metadata backfill** — resolve PID and sessionId from the process tree, in memory only.
 - **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone — except a `crashed` tombstone, which is retained (see Crash contract). The persist trigger fires on **status drift OR `blockReason` drift**, so a stale `blockReason` is dropped on disk even when the corrected status value is unchanged (e.g. stale `processing` + stray reason + busy capture → still `processing`, reason cleared).
+- **Race guard** — reconcile captures the state file's mtime/inode before async transcript reads and re-stats immediately before writing. If the stamp changed, it skips the stale write and returns a fresh read, so a new prompt cannot be clobbered by an old interrupt-derived idle correction.
 
 Consumers can read state files directly for both speed and correctness — files are kept accurate by hooks and the background reconcile loop. The pure CLI read commands (`list`, `status`) are equally safe and never mutate; reach for `--reconcile` only when you intend to drive GC + correction.

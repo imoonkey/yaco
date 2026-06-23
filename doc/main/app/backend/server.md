@@ -38,7 +38,7 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE attention p
 5. After the HTTP server is listening, start runtime services:
    - `ensureYacoHome()` — create `${YACO_HOME:-~/.yaco}/` if missing
    - `loadProjects()` — read project registry
-   - `startSessionReconciler()` — low-frequency session health/drift GC + safety pass
+   - `startSessionReconciler()` — session health/drift GC + safety pass; polls at 60s normally and ~8s while any agent is `processing`, so interrupt reconciliation converges quickly only during active turns
    - `startProjectWatchers()` — global session/project watchers (which wake the attention engine on session/task writes), then recursive project watchers
    - `startAttentionEngine()` — Facet B: boot reconciliation (id-scan `events.jsonl` for open ACT conditions) + change-driven edge detection + the 60s safety tick. Started **after** the watchers so their notify hooks reach a live engine
 6. Attach WebSocket server for terminal connections
