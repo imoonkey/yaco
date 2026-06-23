@@ -9,7 +9,12 @@ import { isResolvedSessionId, recordOriginIfResolved } from "./origin.ts";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
 import { clampNotice, PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
-import { claudeOutput, lastFinalFromTranscript } from "./providers/output.ts";
+import {
+  claudeOutput,
+  codexOutput,
+  lastFinalFromTranscript,
+  resolveCodexLogPath,
+} from "./providers/output.ts";
 
 export type { HookEvent } from "./model.ts";
 
@@ -289,18 +294,27 @@ export async function runHookEventForHandle(
 }
 
 /** Fill the idle ("Your turn") notice from the agent's closing message. Only on a
- *  real turn-end (`Stop`/`StopFailure`) that resolved to `idle`, for Claude, with
- *  a `transcript_path` in the hook stdin — so SessionStart/SessionEnd boot-idle
- *  (no transcript_path) and Codex (no reliable Stop hook) are naturally excluded.
- *  Impure (reads the transcript), so it lives in the wrapper, not applyHookEvent.
- *  Runs only on the writeState path: a stale Stop that backed off above never
- *  reaches here, so it writes no notice. */
+ *  real turn-end (`Stop`/`StopFailure`) that resolved to `idle`: Claude reads
+ *  the hook-provided transcript path; Codex resolves its rollout path from the
+ *  session id. Impure (reads provider logs), so it lives in the wrapper, not
+ *  applyHookEvent. Runs only on the writeState path: a stale Stop that backed
+ *  off above never reaches here, so it writes no notice. */
 async function fillIdleNotice(next: SessionState, eventName: string, input: HookInput): Promise<void> {
   if (eventName !== "Stop" && eventName !== "StopFailure") return;
   if (next.status !== "idle") return;
-  if (next.provider !== "claude" || !input.transcript_path) return;
-  const final = await lastFinalFromTranscript(input.transcript_path, claudeOutput().classifyLine);
+  const final = await idleFinalMessage(next, input);
   fillNotice(next, final ?? undefined);
+}
+
+async function idleFinalMessage(next: SessionState, input: HookInput): Promise<string | null> {
+  if (next.provider === "claude" && input.transcript_path) {
+    return lastFinalFromTranscript(input.transcript_path, claudeOutput().classifyLine);
+  }
+  if (next.provider === "codex") {
+    const path = await resolveCodexLogPath(next);
+    return path ? lastFinalFromTranscript(path, codexOutput().classifyLine) : null;
+  }
+  return null;
 }
 
 /** End-to-end: parse stdin JSON, look up the live handle, apply the event,

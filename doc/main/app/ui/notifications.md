@@ -153,12 +153,12 @@ and flowed through the existing session-state read — no app-side `~/.claude` /
 |---|---|
 | `Has a question` | hook `tool_input.questions[0].question` — Claude `AskUserQuestion` + Codex `request_user_input`, identical shape |
 | `Needs approval` | `${tool_name}: ${arg}` from the gating hook `tool_input` (`command` / `file_path` / `cmd`); bare tool name only when no arg |
-| `Your turn` (idle) | the agent's final-message opening — **Claude only**, from the `Stop` transcript tail (`lastFinalFromTranscript`). **Codex idle deferred to v1.1** (its `Stop` hook does not fire) |
+| `Your turn` (idle) | the agent's final-message opening on `Stop` / `StopFailure`: Claude reads the hook-provided transcript tail; Codex resolves the rollout log from `sessionId` and reads the last `final_answer` |
 | `Done` / `Blocked` (task) | the task title (`Task.title \|\| id`), set in `readTasks` |
 | `Crashed (exit N)` | — `notice` ignored; the exit code is already in the label |
 
 - **Capture (CLI).** Written in `applyHookEvent` (question/permission — pure) and
-  the hook wrapper (Claude idle — impure, reads the transcript). `setStatus`
+  the hook wrapper (idle — impure, reads the provider log). `setStatus`
   clears `notice` on every status/blocked-reason **edge** (the same predicate that
   re-stamps `statusEnteredAt`), so stale question/permission text never leaks into
   trust/idle/crash; a payload-bearing event then refills it (payload-less

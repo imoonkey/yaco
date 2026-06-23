@@ -7,9 +7,10 @@
 //   P7 (Claude rename verification) — already covered by agent-sync.integration.ts
 //     "renames Claude sessions across tmux, state, and Claude's own session metadata"
 //
-// Known limitation: Codex Stop hook does not fire. UserPromptSubmit works.
-// State stays "processing" after agent completes. Stale fallback (30 min) or
-// pane capture is the only reconciliation path. See G4 test comments.
+// Codex UserPromptSubmit and Stop hooks are both part of the lifecycle contract.
+// This live guard smokes prompt submission and rendered completion when a real
+// Codex environment is available; in-process hook-event tests cover the Stop
+// idle state + final-message notice path deterministically.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
 import { execSync } from "child_process";
@@ -130,9 +131,9 @@ describe("G3: SessionStart timing", () => {
 
 // ===========================================================================
 // G4: Codex hook cycle
-// Tests UserPromptSubmit hook fires (state → processing) and agent completes
-// (pane shows idle prompt). Codex Stop hook does NOT fire — state stays
-// "processing" after completion. This is a known Codex limitation.
+// Tests UserPromptSubmit hook fires (state → processing), the agent completes
+// (pane shows idle prompt). Stop idle/final-message notice is covered in
+// hook-event tests because real Codex hook startup can be environment-sensitive.
 // ===========================================================================
 
 describe("G4: Codex hook cycle", () => {
@@ -149,8 +150,6 @@ describe("G4: Codex hook cycle", () => {
       await waitFor(() => readState(handle)?.status === "processing", 15000);
 
       // Verify agent completes — pane shows idle prompt (›).
-      // NOTE: Codex Stop hook does not fire. State stays "processing" after
-      // agent completes. Pane-based idle detection is the only reliable signal.
       await waitFor(async () => isIdle(await capture(handle, { lines: 20 })), 30000);
 
       kill(handle);

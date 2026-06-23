@@ -594,17 +594,23 @@ describe("Stop debounce — runHookEventForHandle", () => {
   });
 });
 
-describe("Claude idle notice — Stop transcript tail", () => {
-  const ORIGINAL = process.env["YACO_AGENT_SESSIONS_DIR"];
+describe("Provider idle notice — Stop final message tail", () => {
+  const ORIGINAL_SESSIONS_DIR = process.env["YACO_AGENT_SESSIONS_DIR"];
+  const ORIGINAL_HOME = process.env["HOME"];
   let dir: string;
+  let home: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "yaco-idle-notice-"));
+    home = join(dir, "home");
     process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
+    process.env["HOME"] = home;
   });
   afterEach(() => {
-    if (ORIGINAL === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
-    else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL;
+    if (ORIGINAL_SESSIONS_DIR === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
+    else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL_SESSIONS_DIR;
+    if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIGINAL_HOME;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -615,6 +621,19 @@ describe("Claude idle notice — Stop transcript tail", () => {
       JSON.stringify({ type: "assistant", message: { stop_reason: null, content: [{ type: "text", text: "thinking out loud" }] } }),
       JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "go on" }] } }),
       JSON.stringify({ type: "assistant", message: { stop_reason: "end_turn", content: [{ type: "text", text: finalText }] } }),
+    ];
+    writeFileSync(path, lines.join("\n") + "\n");
+    return path;
+  }
+
+  /** Write a Codex rollout JSONL whose filename embeds the session id. */
+  function writeCodexRollout(sessionId: string, finalText: string): string {
+    const dayDir = join(home, ".codex", "sessions", "2026", "06", "22");
+    mkdirSync(dayDir, { recursive: true });
+    const path = join(dayDir, `rollout-${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({ type: "event_msg", payload: { type: "agent_message", phase: "commentary", message: "working" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "agent_message", phase: "final_answer", message: finalText } }),
     ];
     writeFileSync(path, lines.join("\n") + "\n");
     return path;
@@ -650,12 +669,29 @@ describe("Claude idle notice — Stop transcript tail", () => {
     expect(after?.notice).toBeUndefined();
   });
 
-  it("Codex idle gets no notice (no reliable turn-end hook in v1)", async () => {
+  it("fills Codex idle notice from the rollout final_answer on Stop", async () => {
     const handle = "idle-codex";
-    writeState(makeState({ handle, provider: "codex", status: "processing" }));
-    const transcript_path = writeTranscript("Codex closing message.");
+    const sessionId = "019e0000-0000-7000-8000-000000000001";
+    writeState(makeState({ handle, provider: "codex", status: "processing", sessionId }));
+    writeCodexRollout(sessionId, "Codex closing message.");
 
-    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+
+    const after = readState(handle);
+    expect(after?.status).toBe("idle");
+    expect(after?.notice).toBe("Codex closing message.");
+  });
+
+  it("Codex idle without a rollout log stays notice-free", async () => {
+    const handle = "idle-codex-no-log";
+    writeState(makeState({
+      handle,
+      provider: "codex",
+      status: "processing",
+      sessionId: "019e0000-0000-7000-8000-000000000002",
+    }));
+
+    await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
 
     const after = readState(handle);
     expect(after?.status).toBe("idle");

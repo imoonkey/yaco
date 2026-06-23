@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-06-22: Codex idle notifications carry final message text
+
+**What changed:**
+- Codex `Stop` now fills `SessionState.notice` for `session_idle` notifications by
+  resolving the session's rollout log from `sessionId` and reading the last
+  `final_answer`. Claude keeps its hook-provided transcript-tail path.
+- The existing attention pipeline is unchanged: server/app still consume the same
+  state-file `notice`, so toast, bell, OS notification, and read-back all get the
+  Codex final message through the stable message path.
+
+**Why:**
+- Notification message transport is now stable, and Codex already had a rollout-log
+  final parser for `agent output` / `wait`; the missing piece was wiring that parser
+  into the idle hook notice fill.
+
+**Key files:** `cli/src/lib/core/agent/hook-event.ts`, `cli/test/hook-event.test.ts`, `cli/test/integration/lifecycle-guards.integration.ts`, `doc/main/app/ui/notifications.md`, `doc/main/cli/providers.md`
+**Verification:** `cd cli && bun run test` (1038 passed); `python3 agent-config/global/skills/update-doc/scripts/check-docs.py doc`
+**Commit:** pending
+**Next:** None.
+**Blockers:** None
+
 ## 2026-06-22: HTML preview works for large files; oversize editor shows a notice
 
 **What changed:**
