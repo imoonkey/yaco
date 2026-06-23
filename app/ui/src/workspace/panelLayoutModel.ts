@@ -427,6 +427,44 @@ function scaleNodeAlongAxis(node: LayoutNode, axis: SplitAxis, fromBasis: number
   }
 }
 
+/** Multiply every fixed `basis` on `axis` by `ratio` — visible OR hidden —
+ *  recursing into all children. The viewport-relayout primitive: a viewport size
+ *  change scales every container on an axis by the same factor, so a flat
+ *  per-axis multiply preserves each fixed child's share exactly (the grow child
+ *  absorbs the constant handle term). Distinct from `scaleNodeAlongAxis`, which
+ *  skips hidden children and redistributes within one resized container (the
+ *  sidebar-toggle case) — a hidden sidebar must scale here so it is proportional
+ *  when revealed. */
+function scaleFixedBases(node: LayoutNode, axis: SplitAxis, ratio: number): LayoutNode {
+  if (node.kind !== 'split') return node
+  return {
+    ...node,
+    children: node.children.map((c) => {
+      const scaled = scaleFixedBases(c.node, axis, ratio)
+      const basis = c.basis
+      if (node.axis === axis && c.grow !== true && typeof basis === 'number' && Number.isFinite(basis)) {
+        return { ...c, node: scaled, basis: Math.max(basis * ratio, minForChild(c.node, axis)) }
+      }
+      return { ...c, node: scaled }
+    }),
+  }
+}
+
+/** Rescale the layout so its bases match viewport `(w, h)`, preserving every
+ *  region's relative share. `refSize` records the viewport the current bases were
+ *  sized for; the first call with no `refSize` adopts `(w, h)` without scaling.
+ *  Identity no-op when the size is unchanged or invalid. */
+export function relayoutToViewport(layout: WorkspacePanelLayout, w: number, h: number): WorkspacePanelLayout {
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return layout
+  const ref = layout.refSize
+  if (!ref) return { ...layout, refSize: { w, h } }
+  if (w === ref.w && h === ref.h) return layout
+  let tree = layout.desktop
+  if (w !== ref.w) tree = scaleFixedBases(tree, 'row', w / ref.w)
+  if (h !== ref.h) tree = scaleFixedBases(tree, 'col', h / ref.h)
+  return { ...layout, desktop: tree, refSize: { w, h } }
+}
+
 function clampBasis(raw: unknown, node: LayoutNode, axis: SplitAxis): number | undefined {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
   return Math.max(raw, minForChild(node, axis))
@@ -783,16 +821,29 @@ function normalizePanelState(input: unknown): PanelState {
   return state
 }
 
+/** Validate a persisted `refSize` — both dimensions finite and positive. */
+function normalizeRefSize(raw: unknown): { w: number; h: number } | undefined {
+  const r = asRecord(raw)
+  const { w, h } = r
+  if (typeof w === 'number' && typeof h === 'number' && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    return { w, h }
+  }
+  return undefined
+}
+
 /** Repair a whole persisted layout. */
 export function normalizeLayout(input: unknown): WorkspacePanelLayout {
   const raw = asRecord(input)
   const mobile = asRecord(raw.mobile)
-  return {
+  const layout: WorkspacePanelLayout = {
     version: 1,
     desktop: normalizeDesktopTree(raw.desktop),
     mobile: { activeDock: isMobileDock(mobile.activeDock) ? mobile.activeDock : DEFAULT_MOBILE_DOCK },
     panelState: normalizePanelState(raw.panelState),
   }
+  const refSize = normalizeRefSize(raw.refSize)
+  if (refSize) layout.refSize = refSize
+  return layout
 }
 
 // --- Layout commands --------------------------------------------------------

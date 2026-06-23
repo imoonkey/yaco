@@ -269,4 +269,8 @@ export type WorkspacePanelLayout = {
   desktop: LayoutNode
   mobile: { activeDock: MobileDock }
   panelState: PanelState
+  /** Viewport size (px) the current `basis` values were sized for. Lets a load /
+   *  resize proportionally rescale the tree to a different viewport (VS Code's
+   *  serialized width/height). Absent on fresh/pre-change layouts → adopt-as-is. */
+  refSize?: { w: number; h: number }
 }

@@ -528,6 +528,11 @@ describe('resetLayout', () => {
     expect(reset.panelState.editor.autocompleteEnabled).toBe(true)
     expect(reset.panelState.files.mode).toBe('search')
   })
+
+  it('clears refSize so a reset re-adopts the current viewport', () => {
+    const withRef = { ...defaultWorkspacePanelLayout(), refSize: { w: 2000, h: 1200 } }
+    expect(resetLayout(withRef).refSize).toBeUndefined()
+  })
 })
 
 // --- leafPanelsInOrder (the panel menu's relocation-target source) ----------

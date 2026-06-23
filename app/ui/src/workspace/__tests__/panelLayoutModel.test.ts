@@ -15,6 +15,7 @@ import {
   normalizeDesktopTree,
   normalizeRegions,
   normalizeLayout,
+  relayoutToViewport,
   firstGroupId,
   regionsOf,
   centerOf,
@@ -809,5 +810,106 @@ describe('moveLeaf — basis preservation on reorder (FIX 1)', () => {
     // `files` is the grow child (no basis); moving it gives it the default strip.
     const out = moveLeaf(sidebarTree(), 'files', { targetId: 'projects', side: 'above' })
     expect(basisOf(out.desktop, 'files')).toBe(DEFAULT_SPLIT_BASIS.col)
+  })
+})
+
+describe('relayoutToViewport — proportional viewport rescale', () => {
+  // Default tree bases: root row [left dock 220, center grow, right sessions 280];
+  // dock col [projects 120, files grow, changes 150].
+  const withRef = (w: number, h: number): WorkspacePanelLayout =>
+    ({ ...defaultWorkspacePanelLayout(), refSize: { w, h } })
+  const root = (l: WorkspacePanelLayout) => asSplit(l.desktop)
+  const dock = (l: WorkspacePanelLayout) => asSplit(asSplit(l.desktop).children[0].node)
+
+  it('scales every row-axis basis by the width ratio, leaving col bases untouched', () => {
+    const out = relayoutToViewport(withRef(1000, 800), 1500, 800) // ×1.5 width
+    expect(root(out).children[0].basis).toBe(330) // left 220 → 330
+    expect(root(out).children[2].basis).toBe(420) // right 280 → 420
+    expect(dock(out).children[0].basis).toBe(120) // projects (col) unchanged
+    expect(dock(out).children[2].basis).toBe(150) // changes (col) unchanged
+    expect(out.refSize).toEqual({ w: 1500, h: 800 })
+  })
+
+  it('scales every col-axis basis by the height ratio, leaving row bases untouched', () => {
+    const out = relayoutToViewport(withRef(1000, 800), 1000, 1200) // ×1.5 height
+    expect(dock(out).children[0].basis).toBe(180) // projects 120 → 180
+    expect(dock(out).children[2].basis).toBe(225) // changes 150 → 225
+    expect(root(out).children[0].basis).toBe(220) // left (row) unchanged
+    expect(root(out).children[2].basis).toBe(280) // right (row) unchanged
+  })
+
+  it('scales a HIDDEN fixed child too, so it is proportional when revealed', () => {
+    const base = withRef(1000, 800)
+    const tree = asSplit(base.desktop)
+    const hidden: SplitChild = { ...tree.children[0], hidden: true } // hide left, keep basis 220
+    const layout: WorkspacePanelLayout = { ...base, desktop: { ...tree, children: [hidden, tree.children[1], tree.children[2]] } }
+    const out = relayoutToViewport(layout, 1500, 800) // ×1.5
+    expect(root(out).children[0].basis).toBe(330)
+    expect(root(out).children[0].hidden).toBe(true)
+  })
+
+  it('clamps a shrunk fixed child to its min size', () => {
+    const out = relayoutToViewport(withRef(1000, 800), 400, 800) // ×0.4 → 220*0.4=88 < min 120
+    expect(root(out).children[0].basis).toBe(120) // left dock (split) → DEFAULT_MIN_SIZE.width
+    expect(root(out).children[2].basis).toBe(250) // sessions (leaf) → registry min 250 > 280*0.4=112
+  })
+
+  it('adopts the live size without scaling when no refSize is set', () => {
+    const noRef = defaultWorkspacePanelLayout()
+    const out = relayoutToViewport(noRef, 500, 400)
+    expect(out.refSize).toEqual({ w: 500, h: 400 })
+    expect(out.desktop).toBe(noRef.desktop) // tree untouched (identity)
+  })
+
+  it('is an identity no-op when the size equals refSize or is invalid', () => {
+    const l = withRef(1000, 800)
+    expect(relayoutToViewport(l, 1000, 800)).toBe(l)
+    expect(relayoutToViewport(l, 0, 800)).toBe(l)
+    expect(relayoutToViewport(l, Number.NaN, 800)).toBe(l)
+    expect(relayoutToViewport(l, 800, -5)).toBe(l)
+  })
+
+  it('composes: R→A→B equals R→B when no min floor is hit', () => {
+    const l = withRef(1000, 800)
+    const viaSteps = relayoutToViewport(relayoutToViewport(l, 800, 800), 600, 800)
+    const direct = relayoutToViewport(l, 600, 800)
+    expect(root(viaSteps).children[0].basis).toBe(root(direct).children[0].basis) // 220×0.8×0.75 == 220×0.6 == 132
+    expect(root(direct).children[0].basis).toBe(132)
+  })
+
+  it('scales an implicit absorber basis (last child, no grow) — harmless, ignored at render', () => {
+    const split: SplitNode = {
+      kind: 'split', id: 'r', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'p', panel: 'projects' }, basis: 100 },
+        { node: { kind: 'leaf', id: 'c', panel: 'changes' }, basis: 200 }, // implicit absorber
+      ],
+    }
+    const layout: WorkspacePanelLayout = { ...defaultWorkspacePanelLayout(), desktop: split, refSize: { w: 1000, h: 800 } }
+    const out = asSplit(relayoutToViewport(layout, 2000, 800).desktop) // ×2
+    expect(out.children[0].basis).toBe(200)
+    expect(out.children[1].basis).toBe(400)
+  })
+})
+
+describe('normalizeLayout — refSize passthrough', () => {
+  const valid = (refSize: unknown) => ({ ...defaultWorkspacePanelLayout(), refSize }) as unknown
+
+  it('keeps a valid refSize', () => {
+    expect(normalizeLayout(valid({ w: 100, h: 200 })).refSize).toEqual({ w: 100, h: 200 })
+  })
+
+  it('drops a malformed or partial refSize', () => {
+    expect(normalizeLayout(valid({ w: 0, h: 200 })).refSize).toBeUndefined()
+    expect(normalizeLayout(valid({ w: 'x', h: 2 })).refSize).toBeUndefined()
+    expect(normalizeLayout(valid({ w: 100 })).refSize).toBeUndefined()
+    expect(normalizeLayout(valid(null)).refSize).toBeUndefined()
+    expect(normalizeLayout(defaultWorkspacePanelLayout()).refSize).toBeUndefined()
+  })
+
+  it('survives a JSON round-trip', () => {
+    const adopted = relayoutToViewport(defaultWorkspacePanelLayout(), 500, 400)
+    const round = normalizeLayout(JSON.parse(JSON.stringify(adopted)))
+    expect(round.refSize).toEqual({ w: 500, h: 400 })
   })
 })
