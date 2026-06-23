@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-06-05 (tui-provider-install-doctor)
+> Last updated: 2026-06-22 (integration tests reinstall installed hook binary)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
@@ -23,6 +23,16 @@ bootstrap by design:
    symlinks, then runs `yaco doctor`.
 
 Idempotent: re-running `yaco install` is a no-op (snapshot diff is empty).
+
+## Installed Binary Boundary
+
+`bun build cli/src/main.ts --compile --outfile cli/yaco` is only a local build
+artifact. Provider hooks never call it; installed hook commands point at
+`$BIN_DIR/yaco agent hook-event <Event>` (default `$HOME/.local/bin/yaco`).
+Therefore any change to hook handling, provider adapters, tmux lifecycle, or
+wrapper behavior must be installed with `tools/install.sh --cli-only` before
+running live Claude/Codex checks. `cli/package.json#test:integration` enforces
+this by running `bun run reinstall` before the tmux-backed integration suite.
 
 ## CLI surface
 

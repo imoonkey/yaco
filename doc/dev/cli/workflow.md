@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-06-06 (tui-provider-docs)
+> Last updated: 2026-06-22 (installed-binary guard for live agent tests)
 
 ## Prerequisites
 
@@ -34,6 +34,10 @@ yaco claude --json -- --output-format json    # everything after `--` → claude
 bun build src/main.ts --compile --outfile yaco
 ```
 
+This only writes `cli/yaco`. Provider hooks and normal `yaco ...` commands use
+the installed binary (`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source build
+does **not** update live Claude/Codex hook behavior.
+
 ## Installing / Updating
 
 ```bash
@@ -58,6 +62,20 @@ Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
 0 / 1 carrying the pass/fail signal.
 
+### Installed-binary rule for agent runtime changes
+
+If a change touches hook execution, provider adapters, tmux lifecycle, wrapper
+behavior, or anything validated by real-agent tests, run:
+
+```bash
+tools/install.sh --cli-only
+```
+
+before starting a live Claude/Codex session or interpreting an integration-test
+failure. Hooks in `~/.claude/settings.json` and `~/.codex/hooks.json` call the
+installed `yaco agent hook-event ...`; running only `bun run build` leaves those
+hooks on the old binary.
+
 -> See: [install.md](../../main/cli/install.md), [doctor.md](../../main/cli/doctor.md)
 
 The agent runtime skill source of truth is
@@ -68,12 +86,19 @@ The agent runtime skill source of truth is
 
 ```bash
 bun run test              # unit tests, no tmux required
-bun run test:integration  # tmux-backed integration tests
+bun run test:integration  # reinstalls CLI, then tmux-backed integration tests
 ```
 
 Test split:
 - `bun run test` / `bun run test:unit`: pure unit tests (model, state, providers, lifecycle, hook-event, hooks-install, agent-wrapper.sh content+exec, agent-dispatch parseStartArgs / send --stdin / capture envelope, dispatcher + envelope, task validation / graph / store / archive / lock, worktree slug validation), no tmux required.
-- `bun run test:integration`: tmux-backed integration tests (path-scoped, real-agent lifecycle/sync, lifecycle guards), task CLI integration (`task-cli.integration.ts`), and the worktree lifecycle suite (`worktree.integration.ts` — tmpdir git repo + fake `gh` on PATH, no network). The script runs the integration files sequentially so real-agent cases do not overlap in tmux.
+- `bun run test:integration`: first runs `bun run reinstall`
+  (`../tools/install.sh --cli-only`) so provider hooks execute the current
+  binary, then runs tmux-backed integration tests (path-scoped, real-agent
+  lifecycle/sync, lifecycle guards), task CLI integration
+  (`task-cli.integration.ts`), and the worktree lifecycle suite
+  (`worktree.integration.ts` — tmpdir git repo + fake `gh` on PATH, no network).
+  The script runs the integration files sequentially so real-agent cases do not
+  overlap in tmux.
 
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
@@ -110,8 +135,9 @@ tsc --noEmit
 ```
 
 Real-agent / tmux behavior (startup, resume, OSC color responder, install
-bootstrap) is covered by `bun run test:integration`. App-side consumers of the
-CLI JSON/stream surfaces have their own suites under `app/server` (e.g.
+bootstrap) is covered by `bun run test:integration`, which reinstalls first.
+App-side consumers of the CLI JSON/stream surfaces have their own suites under
+`app/server` (e.g.
 `npx vitest run agent-output history session-summary`); changing a CLI surface
 shape should re-run those too.
 

@@ -15,8 +15,14 @@ runtime.
 ```bash
 cd cli && bun run test
 cd cli && bun run test:integration
+cd cli && bun run reinstall
 cd cli && bun build src/main.ts --compile --outfile yaco
 ```
+
+`bun run build` only writes `cli/yaco`. Real provider hooks call the installed
+binary (`~/.local/bin/yaco` by default), so run `bun run reinstall` before live
+Claude/Codex lifecycle checks or after hook/runtime changes. `bun run
+test:integration` does this automatically.
 
 Installed form:
 

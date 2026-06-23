@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-06-22: CLI integration tests reinstall the hook binary first
+
+**What changed:**
+- Added `cd cli && bun run reinstall` as the explicit CLI reinstall shortcut
+  (`../tools/install.sh --cli-only`), and made `bun run test:integration` run it
+  before any live tmux/agent tests.
+- Documented the installed-binary boundary in CLI dev docs, install SOTA docs,
+  README, and `cli/CLAUDE.md`: `bun run build` writes only `cli/yaco`; provider
+  hooks call the installed `${YACO_BIN_DIR:-~/.local/bin}/yaco`.
+
+**Why:**
+- Live Claude/Codex hooks can silently keep running an old installed binary after
+  a local source build. The Codex idle-notice smoke exposed this exact failure
+  mode; integration tests now converge the installed binary before exercising
+  hook-driven behavior.
+
+**Key files:** `cli/package.json`, `doc/dev/cli/workflow.md`, `doc/main/cli/install.md`, `cli/CLAUDE.md`, `README.md`
+**Verification:** `cd cli && bun run reinstall`; `cd cli && bun test ./test/integration/lifecycle-guards.integration.ts --test-name-pattern "Codex hook cycle"`; `python3 agent-config/global/skills/update-doc/scripts/check-docs.py doc`
+**Commit:** pending
+**Next:** None.
+**Blockers:** None
+
 ## 2026-06-22: Codex idle notifications carry final message text
 
 **What changed:**

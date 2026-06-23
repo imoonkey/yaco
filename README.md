@@ -22,6 +22,7 @@ npm run start:app
 cd app/server && npm test
 cd app/ui && npm run lint
 cd cli && bun run test
+cd cli && bun run test:integration   # reinstalls CLI first for live hooks
 tools/install.sh --cli-only
 yaco doctor
 ```
@@ -49,6 +50,9 @@ hook + wrapper install, global symlinks into `~/.claude` / `~/.codex` /
 `yaco doctor` validates the local install (12 checks: binary, version,
 yaco-home, registry, skills-link, claude-md-link, agent-hook-config,
 agent-wrapper, tmux, git, providers, task-graph).
+
+Provider hooks call the installed binary, not `cli/yaco`; after changing CLI
+hook/runtime code, run `tools/install.sh --cli-only` before live agent checks.
 
 ## History
 
