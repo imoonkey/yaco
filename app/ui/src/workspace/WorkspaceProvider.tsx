@@ -32,6 +32,7 @@ import {
   movePanel as modelMovePanel,
   splitPanel as modelSplitPanel,
   resetLayout as modelResetLayout,
+  relayoutToViewport as modelRelayoutToViewport,
 } from './panelLayoutModel'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
@@ -374,19 +375,49 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // visibility) so the visibility mirror can scale the center interior
   // proportionally across a show/hide — the toggle analogue of the drag path's
   // `containerBasis`. Read from the committed DOM; 0 when unmounted → no scaling.
-  const measureRootWidth = useCallback((): number => {
-    if (typeof document === 'undefined') return 0
+  const rootElement = useCallback((): HTMLElement | null => {
+    if (typeof document === 'undefined') return null
     const id = latestRef.current.panelLayout.desktop.id
     const escaped = window.CSS?.escape ? window.CSS.escape(id) : id
     const el = document.querySelector(`[data-node-id="${escaped}"]`)
-    return el instanceof HTMLElement ? el.clientWidth : 0
+    return el instanceof HTMLElement ? el : null
   }, [])
+  const measureRootWidth = useCallback((): number => rootElement()?.clientWidth ?? 0, [rootElement])
   useLayoutEffect(() => {
     setPanelLayout((prev) => modelSetDockVisible(prev, layout.showSidebar, measureRootWidth()))
   }, [layout.showSidebar, setPanelLayout, measureRootWidth])
   useLayoutEffect(() => {
     setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel, measureRootWidth()))
   }, [layout.showRightPanel, setPanelLayout, measureRootWidth])
+
+  // Proportional viewport relayout: keep every region's share of the viewport
+  // constant when the window/display changes size (e.g. an external monitor is
+  // disconnected). The root split is flex-sized by the viewport, so the tree's
+  // fixed `basis` values must be rescaled to the live size — done from the layout's
+  // `refSize` (the size those bases were last sized for). The synchronous pre-paint
+  // `apply()` corrects a project switch before it can flash stale fixed px
+  // (Workspace remounts per project/worktree, so this effect re-runs then); the
+  // rAF-coalesced ResizeObserver handles subsequent live resizes. `isMobile` is a
+  // dep because the mobile/desktop breakpoint swaps the desktop root in place (no
+  // remount), so the effect must re-run to (re)attach the observer to the live
+  // root — and skip entirely on mobile, which has no sized desktop tree. Provider-
+  // private — only this observer drives it. No loop: relayout changes child bases,
+  // never the observed root's own (viewport-driven) size.
+  useLayoutEffect(() => {
+    if (isMobile) return
+    const el = rootElement()
+    if (!el) return
+    let raf: number | null = null
+    const apply = () => {
+      raf = null
+      setPanelLayout((prev) => modelRelayoutToViewport(prev, el.clientWidth, el.clientHeight))
+    }
+    apply()
+    const schedule = () => { if (raf == null) raf = requestAnimationFrame(apply) }
+    const observer = new ResizeObserver(schedule)
+    observer.observe(el)
+    return () => { observer.disconnect(); if (raf != null) cancelAnimationFrame(raf) }
+  }, [isMobile, rootElement, setPanelLayout])
 
   // The reverse reconcile: sidebar/edge DnD mutates the TREE directly (an edge
   // reveal adds a sidebar; dragging out the last dock empties one), so the flat

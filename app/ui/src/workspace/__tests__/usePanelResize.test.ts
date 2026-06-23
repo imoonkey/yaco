@@ -4,8 +4,8 @@
 // lives on a split child (committed through resizeSplitChild) instead of local
 // state, so each test drives a *controlled* split that applies the commit and
 // asserts the resulting basis. Coverage: basis/grow drag math, min clamp,
-// viewport-relative max (grow past the old cap + clamp + re-clamp on shrink),
-// the nearest-fixed-neighbor rule (fixed↔grow, grow↔fixed, fixed↔fixed
+// viewport-relative max (grow past the old cap + clamp), the nearest-fixed-
+// neighbor rule (fixed↔grow, grow↔fixed, fixed↔fixed
 // transfer), hidden-child skipping, and out-of-range no-op.
 import { describe, it, expect, afterEach } from 'vitest'
 import { renderHook, act, cleanup } from '@testing-library/react'
@@ -45,7 +45,7 @@ type RenderOpts = {
 
 /** Render the hook over a controlled split: resizeSplitChild rewrites the
  *  matching child's basis immutably, mirroring the real renderer so chained
- *  edits and re-clamps see the updated tree. */
+ *  drag edits see the updated tree. */
 function renderResize(initial: SplitNode, opts: RenderOpts) {
   return renderHook(() => {
     const [node, setNode] = useState(initial)
@@ -151,31 +151,6 @@ describe('usePanelResize — right panel (re-authored sidebar cases)', () => {
     const { result } = renderResize(rootSplit(), { handleIndex: 1, minBasis: rightMin, maxBasis: rightMax })
     act(() => result.current.handle.setBasis(100))
     expect(basisOf(result.current.node, 'activity')).toBe(250)
-  })
-
-  it('re-clamps the activity child when the viewport shrinks via window resize', () => {
-    setViewport(2400)
-    const { result } = renderResize(rootSplit(), { handleIndex: 1, minBasis: rightMin, maxBasis: rightMax })
-    act(() => result.current.handle.setBasis(1500))
-    expect(basisOf(result.current.node, 'activity')).toBe(1500)
-
-    act(() => {
-      setViewport(1000)
-      window.dispatchEvent(new Event('resize'))
-    })
-    // 1000 - 240 dock - 200 reserve = 560
-    expect(basisOf(result.current.node, 'activity')).toBe(560)
-  })
-
-  it('does not re-clamp a child already within the (grown) max', () => {
-    setViewport(2400)
-    const { result } = renderResize(rootSplit(), { handleIndex: 1, minBasis: rightMin, maxBasis: rightMax })
-    act(() => result.current.handle.setBasis(500))
-    act(() => {
-      setViewport(1200) // max becomes 760, 500 is still within it
-      window.dispatchEvent(new Event('resize'))
-    })
-    expect(basisOf(result.current.node, 'activity')).toBe(500)
   })
 })
 

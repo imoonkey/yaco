@@ -16,9 +16,9 @@
 //     neither collapses (a pure transfer that leaves the rest of the split
 //     untouched).
 //   - The resized child is clamped to [min, max]: min from the registry (with a
-//     DEFAULT_MIN_SIZE fallback), max from a container/viewport resolver. When a
-//     max resolver is supplied the child is also re-clamped on window resize, so
-//     a shrinking viewport pulls an over-wide panel back in (today's behavior).
+//     DEFAULT_MIN_SIZE fallback), max from a container/viewport resolver. The max
+//     bounds an active drag; viewport resizes are handled by the provider's
+//     proportional relayout (`relayoutToViewport` in WorkspaceProvider), not here.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getPanelMeta } from './panelMeta'
 import { DEFAULT_MIN_SIZE } from './panelLayoutModel'
@@ -45,8 +45,8 @@ export interface UsePanelResizeOptions {
   /** Min basis along the axis. Defaults to the registry min size (with a
    *  DEFAULT_MIN_SIZE fallback). */
   minBasis?: BasisResolver
-  /** Max basis for the resized fixed child. Defaults to no cap. Supplying a
-   *  resolver also enables window-resize re-clamping. */
+  /** Max basis for the resized fixed child. Defaults to no cap. Bounds the
+   *  active drag only; viewport resizes are handled by the provider relayout. */
   maxBasis?: BasisResolver
 }
 
@@ -57,9 +57,9 @@ export interface PanelResizeHandle {
    *  (`handleIndex` out of range, or both adjacent children flex). `min`/`max`
    *  are its resolved clamp bounds. */
   target: { childId: string; min: number; max: number } | null
-  /** Clamp `basis` to the target's bounds and commit it (keyboard nudge, resize
-   *  re-clamp, tests). For a fixed↔fixed handle the following child compensates
-   *  so both stay ≥ their min. No-op when there is no target. */
+  /** Clamp `basis` to the target's bounds and commit it (keyboard nudge, tests).
+   *  For a fixed↔fixed handle the following child compensates so both stay ≥ their
+   *  min. No-op when there is no target. */
   setBasis: (basis: number) => void
 }
 
@@ -183,7 +183,6 @@ export function usePanelResize(opts: UsePanelResizeOptions): PanelResizeHandle {
   const minBasis = opts.minBasis ?? registryMin
   const maxBasis = opts.maxBasis ?? noMax
   const containerBasis = opts.containerBasis
-  const hasMax = opts.maxBasis != null
 
   const [isDragging, setIsDragging] = useState(false)
 
@@ -220,20 +219,6 @@ export function usePanelResize(opts: UsePanelResizeOptions): PanelResizeHandle {
       document.removeEventListener('mouseup', onUp)
     }
   }, [])
-
-  // A shrinking viewport pulls an over-wide fixed child back within its max.
-  useEffect(() => {
-    if (!hasMax) return
-    const onResize = () => {
-      const cfg = cfgRef.current
-      const plan = resolvePlan(cfg)
-      if (!plan) return
-      const max = cfg.maxBasis(plan.target, plan.axis)
-      if (plan.targetStart > max) commit(cfg, plan, max)
-    }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [hasMax])
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     const plan = resolvePlan(cfgRef.current)
