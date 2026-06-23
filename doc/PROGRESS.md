@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-23: Panel layout keeps relative proportions across viewport changes
+
+**What changed:**
+- `WorkspacePanelLayout` gains `refSize:{w,h}` (the viewport its fixed `basis` px were sized for). New pure model fn `relayoutToViewport(layout,w,h)` rescales the tree to a new viewport via `scaleFixedBases` — a uniform per-axis multiply of every fixed `basis` (visible OR hidden, min-clamped).
+- A provider `useLayoutEffect` drives it: a rAF-coalesced `ResizeObserver` on the root split applies it pre-paint on mount/project-switch and on every live resize; re-attaches across the mobile/desktop breakpoint (`isMobile` dep) and skips on mobile.
+- Removed the per-handle window-resize re-clamp in `usePanelResize` (`maxBasis` still clamps an active drag).
+
+**Why:**
+- Sidebars stored absolute px and nothing rescaled on viewport change, so disconnecting an external monitor (or any window shrink) nearly doubled the sidebars' *share* of the screen and collapsed the center (measured left 9.5%→16.8%). Mainstream IDEs are proportional (JetBrains stores 0..1 `weight`; VS Code stores px + reference size and restores proportionally). Adopted the VS Code shape because it reuses absolute `basis` and adds one field.
+
+**Key files:** `app/ui/src/workspace/panelLayoutModel.ts`, `app/ui/src/hooks/workspaceTypes.ts`, `app/ui/src/workspace/WorkspaceProvider.tsx`, `app/ui/src/workspace/usePanelResize.ts`
+**Verification:** `tsc -b` + eslint clean; vitest 1047 src tests; Playwright /qa — region shares held 15.3%/19.4% across 2327↔1309 resize, cross-size reopen, mobile↔desktop re-attach, drag-resize. Codex review GO (design + both phases) under `plan/all/20260623_layout-proportions/`.
+**Commit:** 69ec03c5, 19f03f46
+**Next:** Adjacent (not done): terminal content overflows the SESSIONS panel after a cross-display/DPR change (xterm cols not re-narrowing + no overflow clip) — separate root cause, gated on a hardware discriminating test before designing the fix.
+**Blockers:** None
+
 ## 2026-06-22: CLI integration tests reinstall the hook binary first
 
 **What changed:**

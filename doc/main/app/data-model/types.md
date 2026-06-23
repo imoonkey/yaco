@@ -182,6 +182,7 @@ type WorkspacePanelLayout = {
   desktop: LayoutNode
   mobile: { activeDock: MobileDock }
   panelState: PanelState                       // files mode + editor prefs (previewMode/splitDirection/splitSize/autocomplete)
+  refSize?: { w: number; h: number }           // viewport the fixed `basis` px were sized for; bases rescale proportionally to a new viewport (see frontend/state.md)
 }
 ```
 
