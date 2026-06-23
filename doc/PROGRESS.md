@@ -1,5 +1,18 @@
 # Progress
 
+## 2026-06-23: Terminal grid clipped to its own panel box (overflow follow-up)
+
+**What changed:**
+- Added `overflow-hidden` on the terminal's private wrapper (`Terminal.tsx`) so the xterm grid can't paint over a neighbouring panel.
+
+**Why:**
+- The "terminal text spilling into SESSIONS" symptom was **not** a separate stale-fit bug (the earlier entry's `Next:` guess). Hardware testing (monitor unplug; drag sidebar narrow) showed no overflow — the terminal re-fits every animation frame, so it tracks continuous resizes. The screenshot caught a **single-frame transient** on a one-shot viewport jump (old wide cols for the one frame before the next-rAF re-fit), made large by the then-uncorrected proportions. The proportions fix already removed the visible spill; this clip is belt-and-suspenders for a big one-shot jump / distorted layout. Placed on the terminal wrapper (not the shared group body → would clip panel popovers; not xterm rows → would re-break the right-edge glyph cushion); the fit reserves the per-row cushion so the clip can never eat a glyph.
+
+**Key files:** `app/ui/src/components/Terminal.tsx`
+**Verification:** `tsc -b` + eslint clean; glyph-clip safety proven structurally (content ends ≥1 cell inside the wrapper); right-edge eyeball left to the user on live terminals.
+**Commit:** 42520e4f
+**Blockers:** None
+
 ## 2026-06-23: Panel layout keeps relative proportions across viewport changes
 
 **What changed:**
