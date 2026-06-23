@@ -16,8 +16,8 @@
   into the idle hook notice fill.
 
 **Key files:** `cli/src/lib/core/agent/hook-event.ts`, `cli/test/hook-event.test.ts`, `cli/test/integration/lifecycle-guards.integration.ts`, `doc/main/app/ui/notifications.md`, `doc/main/cli/providers.md`
-**Verification:** `cd cli && bun run test` (1038 passed); `python3 agent-config/global/skills/update-doc/scripts/check-docs.py doc`
-**Commit:** pending
+**Verification:** `cd cli && bun run test` (1038 passed); `python3 agent-config/global/skills/update-doc/scripts/check-docs.py doc`; QA recorded in `plan/all/codex-idle-notice/qa.md`
+**Commit:** 20f19529
 **Next:** None.
 **Blockers:** None
 
