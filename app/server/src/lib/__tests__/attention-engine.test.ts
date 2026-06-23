@@ -183,6 +183,30 @@ describe('engine — change-driven edge detection', () => {
     expect(state.lastSnapshot?.ready.some((i) => i.type === 'session_idle')).toBe(true)
   })
 
+  it('interrupt-derived idle produces no live session_idle edge', async () => {
+    const { state, engine } = harness()
+    await engine.start()
+    const t0 = state.nowMs
+    state.sessions = [sess({ name: 's', status: 'processing', statusEnteredAt: ISO(t0), spawnedBy: 'user:web' })]
+    await engine.recompute()
+    const idleAt = t0 + MIN_PROCESSING_MS + 1_000
+    state.nowMs = idleAt + EDGE_DEBOUNCE_MS + 1
+    state.sessions = [
+      sess({
+        name: 's',
+        status: 'idle',
+        statusEnteredAt: ISO(idleAt),
+        spawnedBy: 'user:web',
+        idleReason: 'interrupted',
+      }),
+    ]
+
+    await engine.recompute()
+
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+    expect(state.lastSnapshot?.ready.some((i) => i.type === 'session_idle')).toBe(false)
+  })
+
   it('trivial idle (< MIN_PROCESSING work) produces no idle edge, even past a later tick', async () => {
     const { state, engine } = harness()
     await engine.start()
@@ -404,6 +428,18 @@ describe('engine — boot reconciliation', () => {
     expect(state.lastSnapshot?.needsYou).toHaveLength(1)
     // ...but does NOT toast (boot-discovered predates this run).
     expect(state.lastSnapshot?.needsYou[0].interrupt).toBe(false)
+  })
+
+  it('server starts with interrupt-derived idle → no boot session_idle event', async () => {
+    const enteredAt = ISO(900_000)
+    const { state, engine } = harness({
+      sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: enteredAt, spawnedBy: 'user:web', idleReason: 'interrupted' })],
+    })
+
+    await engine.start()
+
+    expect((state.events.get('proj') ?? []).some((e) => e.kind === 'session_idle')).toBe(false)
+    expect(state.lastSnapshot?.ready.some((i) => i.type === 'session_idle')).toBe(false)
   })
 
   it('restart with a still-open blocked generation that already has an event → surfaces, no re-toast', async () => {

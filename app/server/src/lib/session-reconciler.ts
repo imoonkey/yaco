@@ -2,7 +2,8 @@ import { loadProjects } from './projects'
 import { fetchAllSessionsFromCli } from './agent'
 import { emitRefresh } from './notify'
 
-const RECONCILE_INTERVAL = 60_000
+const IDLE_RECONCILE_INTERVAL = 60_000
+const PROCESSING_RECONCILE_INTERVAL = 8_000
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let reconcileInFlight = false
@@ -18,8 +19,8 @@ export function stopSessionReconciler(): void {
   if (reconcileTimer) { clearTimeout(reconcileTimer); reconcileTimer = null }
 }
 
-function scheduleReconcile(): void {
-  reconcileTimer = setTimeout(reconcile, RECONCILE_INTERVAL)
+function scheduleReconcile(delayMs = IDLE_RECONCILE_INTERVAL): void {
+  reconcileTimer = setTimeout(reconcile, delayMs)
 }
 
 /** 60s liveness GC + safety net. `fetchAllSessionsFromCli` is the app's single
@@ -34,10 +35,12 @@ function scheduleReconcile(): void {
 async function reconcile(): Promise<void> {
   if (reconcileInFlight) return
   reconcileInFlight = true
+  let nextDelay = IDLE_RECONCILE_INTERVAL
 
   try {
     const projects = await loadProjects()
     const allSessions = await fetchAllSessionsFromCli(projects)
+    if (allSessions.some(s => s.status === 'processing')) nextDelay = PROCESSING_RECONCILE_INTERVAL
 
     // Emit refresh only if the snapshot drifted (covers missed watcher events).
     const snapshot = JSON.stringify(allSessions)
@@ -49,6 +52,6 @@ async function reconcile(): Promise<void> {
     console.error('[session-reconciler] reconcile failed:', err)
   } finally {
     reconcileInFlight = false
-    scheduleReconcile()
+    scheduleReconcile(nextDelay)
   }
 }

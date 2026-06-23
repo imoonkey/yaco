@@ -8,7 +8,7 @@
  */
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import { clampNotice } from "./model.ts";
-import type { BlockReason, SessionStatus, SpawnedBy } from "./model.ts";
+import type { BlockReason, IdleReason, SessionStatus, SpawnedBy } from "./model.ts";
 
 /** A minimal project reference (name + absolute path). */
 export interface ProjectRef {
@@ -27,6 +27,8 @@ export interface AgentSessionRow {
   exitCode?: number;
   /** Block sub-reason. Present iff status === "blocked". */
   blockReason?: BlockReason;
+  /** Idle sub-reason. Present iff status === "idle" and user-interrupted. */
+  idleReason?: IdleReason;
   project: string;
   projectPath: string;
   sessionPath: string;
@@ -50,6 +52,7 @@ export interface ProjectableSessionState {
   statusEnteredAt?: string;
   exitCode?: number;
   blockReason?: string;
+  idleReason?: string;
   spawnedBy?: string;
   parentSession?: string;
   notice?: string;
@@ -128,6 +131,9 @@ export function toSessionRow(
     VALID_BLOCK_REASONS.has(state.blockReason)
   ) {
     row.blockReason = state.blockReason as BlockReason;
+  }
+  if (state.status === "idle" && state.idleReason === "interrupted") {
+    row.idleReason = state.idleReason;
   }
   if (typeof state.parentSession === "string" && state.parentSession) {
     row.parentSession = state.parentSession;

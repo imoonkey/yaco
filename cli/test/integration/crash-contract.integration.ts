@@ -128,11 +128,11 @@ describe("crash contract (real tmux)", () => {
     expect(readState(h)).toBeNull();
   });
 
-  itt("list --reconcile preserves a crashed tombstone (dead pid, no tmux session)", () => {
+  itt("list --reconcile preserves a crashed tombstone (dead pid, no tmux session)", async () => {
     const h = uniq("recon");
     writeState(makeState(h, { status: "crashed", exitCode: 7, statusEnteredAt: CREATED_AT, pid: DEAD_PID }));
 
-    list({ reconcile: true });
+    await list({ reconcile: true });
 
     const s = readState(h);
     expect(s).not.toBeNull();

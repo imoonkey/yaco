@@ -188,6 +188,43 @@ export function claudeOutput(): ProviderOutput {
   };
 }
 
+export interface TranscriptTurnState {
+  status: "idle" | "processing";
+  idleReason?: "interrupted";
+}
+
+async function tailLines(path: string, tailBytes = 256 * 1024): Promise<string[] | null> {
+  let size: number;
+  try {
+    size = (await stat(path)).size;
+  } catch {
+    return null;
+  }
+
+  const from = size > tailBytes ? size - tailBytes : 0;
+  let text: string;
+  try {
+    text = (await readRange(path, from, size)).toString("utf-8");
+  } catch {
+    return null;
+  }
+
+  if (from > 0) {
+    let boundaryClean = false;
+    try {
+      boundaryClean = (await readRange(path, from - 1, from))[0] === NEWLINE;
+    } catch {
+      /* unreadable preceding byte — treat as mid-record */
+    }
+    if (!boundaryClean) {
+      const nl = text.indexOf("\n");
+      text = nl >= 0 ? text.slice(nl + 1) : "";
+    }
+  }
+
+  return text.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
 /** Read the tail of a provider transcript and return the text of its LAST `final`
  *  event, or null when there is none / the file is unreadable. Used by the hook
  *  handler to fill the idle ("Your turn") notice from the agent's closing
@@ -201,43 +238,62 @@ export async function lastFinalFromTranscript(
   classify: (line: string) => AgentOutputEvent | null,
   tailBytes = 256 * 1024,
 ): Promise<string | null> {
-  let size: number;
-  try {
-    size = (await stat(path)).size;
-  } catch {
-    return null;
-  }
-  const from = size > tailBytes ? size - tailBytes : 0;
-  let text: string;
-  try {
-    text = (await readRange(path, from, size)).toString("utf-8");
-  } catch {
-    return null;
-  }
-  if (from > 0) {
-    // The tail may begin mid-record. Drop the first (partial) line UNLESS `from`
-    // already sits on a record boundary — i.e. the byte just before it is a
-    // newline — so a final answer that starts exactly at the tail boundary is
-    // not silently discarded.
-    let boundaryClean = false;
-    try {
-      boundaryClean = (await readRange(path, from - 1, from))[0] === NEWLINE;
-    } catch {
-      /* unreadable preceding byte — treat as mid-record */
-    }
-    if (!boundaryClean) {
-      const nl = text.indexOf("\n");
-      text = nl >= 0 ? text.slice(nl + 1) : "";
-    }
-  }
+  const lines = await tailLines(path, tailBytes);
+  if (!lines) return null;
   let last: string | null = null;
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const event = classify(trimmed);
+  for (const line of lines) {
+    const event = classify(line);
     if (event?.kind === "final") last = event.text;
   }
   return last;
+}
+
+function claudeUserInterrupt(content: unknown): boolean {
+  if (typeof content === "string") return content.startsWith("[Request interrupted by user");
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => {
+    if (!block || typeof block !== "object") return false;
+    const b = block as { type?: unknown; text?: unknown };
+    return b.type === "text" && typeof b.text === "string" && b.text.startsWith("[Request interrupted by user");
+  });
+}
+
+function parseClaudeTurnLine(line: string): TranscriptTurnState | null {
+  let entry: unknown;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as {
+    type?: unknown;
+    isSidechain?: unknown;
+    isMeta?: unknown;
+    message?: { stop_reason?: unknown; content?: unknown };
+  };
+  if (e.isSidechain === true || e.isMeta === true) return null;
+  if (e.type === "assistant") {
+    if (e.message?.stop_reason === "end_turn") return { status: "idle" };
+    if (e.message?.stop_reason === "tool_use") return { status: "processing" };
+    return null;
+  }
+  if (e.type === "user") {
+    return claudeUserInterrupt(e.message?.content)
+      ? { status: "idle", idleReason: "interrupted" }
+      : { status: "processing" };
+  }
+  return null;
+}
+
+async function claudeTurnStateFromTranscript(session: SessionState): Promise<TranscriptTurnState | null> {
+  const lines = await tailLines(claudeLogPath(session));
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const state = parseClaudeTurnLine(lines[i]!);
+    if (state) return state;
+  }
+  return null;
 }
 
 // -- Codex output --
@@ -321,6 +377,44 @@ export function resolveClaudeLogPath(session: SessionState): string | null {
  *  and a rollout file exists. */
 export async function resolveCodexLogPath(session: SessionState): Promise<string | null> {
   return hasResolvedId(session) ? codexLogPath(session.sessionId) : null;
+}
+
+function parseCodexTurnLine(line: string): TranscriptTurnState | null {
+  let entry: unknown;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const e = entry as { type?: unknown; payload?: { type?: unknown; reason?: unknown } };
+  if (e.type !== "event_msg") return null;
+  if (e.payload?.type === "turn_aborted") {
+    return e.payload.reason === "interrupted"
+      ? { status: "idle", idleReason: "interrupted" }
+      : { status: "idle" };
+  }
+  if (e.payload?.type === "task_complete") return { status: "idle" };
+  if (e.payload?.type === "task_started") return { status: "processing" };
+  return null;
+}
+
+async function codexTurnStateFromTranscript(session: SessionState): Promise<TranscriptTurnState | null> {
+  const path = await resolveCodexLogPath(session);
+  if (!path) return null;
+  const lines = await tailLines(path);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const state = parseCodexTurnLine(lines[i]!);
+    if (state) return state;
+  }
+  return null;
+}
+
+export async function turnStateFromTranscript(session: SessionState): Promise<TranscriptTurnState | null> {
+  if (!hasResolvedId(session)) return null;
+  if (session.provider === "claude") return claudeTurnStateFromTranscript(session);
+  if (session.provider === "codex") return codexTurnStateFromTranscript(session);
+  return null;
 }
 
 // -- Shared output follower --

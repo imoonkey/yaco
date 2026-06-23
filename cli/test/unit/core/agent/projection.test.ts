@@ -129,6 +129,14 @@ describe("toSessionRow", () => {
     expect(row?.sessionId).toBe("");
   });
 
+  it("passes through interrupt idleReason only for idle sessions", () => {
+    const interrupted = toSessionRow(state({ status: "idle", idleReason: "interrupted" }), proj);
+    expect(interrupted?.idleReason).toBe("interrupted");
+
+    const stray = toSessionRow(state({ status: "processing", idleReason: "interrupted" }), proj);
+    expect(stray).not.toHaveProperty("idleReason");
+  });
+
   it("carries notice through, clamped defensively (F3)", () => {
     const row = toSessionRow(state({ status: "blocked", blockReason: "question", notice: "Ship v1 or wait?" }), proj);
     expect(row?.notice).toBe("Ship v1 or wait?");

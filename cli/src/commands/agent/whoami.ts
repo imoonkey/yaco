@@ -6,12 +6,12 @@ export interface CurrentAgentIdentity extends RuntimeSessionState {
   source: WhoamiSource;
 }
 
-export function whoami(): CurrentAgentIdentity | null {
+export async function whoami(): Promise<CurrentAgentIdentity | null> {
   const match = resolveWhoamiMatch();
   if (!match) return null;
 
   // Pure read — whoami inspects the current session, it must never mutate.
-  const state = resolveSession(match.handle);
+  const state = await resolveSession(match.handle);
   if (!state) return null;
 
   return { ...state, source: match.source };

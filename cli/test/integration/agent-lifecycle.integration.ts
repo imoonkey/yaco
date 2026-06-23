@@ -268,10 +268,10 @@ describe("status detection", () => {
       expect(processCommand(stateAfterStart?.pid)).toBe("claude");
       expect(readClaudeSessionFile(stateAfterStart?.pid)?.name).toBe(handle);
 
-      const statusResult = status(handle);
+      const statusResult = await status(handle);
       expect(statusResult).toMatch(/^status:\s+idle$/m);
 
-      const jsonResult = JSON.parse(status(handle, { json: true }));
+      const jsonResult = JSON.parse(await status(handle, { json: true }));
       expect(jsonResult.status).toBe("idle");
       expect(jsonResult.pid).toBeGreaterThan(0);
       expect(jsonResult.handle).toBe(handle);
@@ -282,7 +282,7 @@ describe("status detection", () => {
       const old = new Date(Date.now() - 31 * 60 * 1000);
       utimesSync(statePath(handle), old, old);
 
-      expect(status(handle)).toMatch(/^status:\s+idle$/m);
+      expect(await status(handle)).toMatch(/^status:\s+idle$/m);
 
       kill(handle);
     },

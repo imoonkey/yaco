@@ -54,4 +54,30 @@ describe('scanProgress with events.jsonl', () => {
       'alpha:bundle-a:event-id:event is visible',
     ])
   })
+
+  it('filters session_idle progress for interrupt-derived live idle sessions', async () => {
+    await appendEvent('alpha', {
+      id: 'session_idle:alpha::w-a:T2',
+      ts: '2026-05-27T10:00:00.000Z',
+      kind: 'session_idle',
+      taskId: 'bundle-a',
+      sessionId: 'w-a',
+      payload: { agent: 'claude', message: 'must stay hidden', sessionName: 'w-a' },
+    })
+    await appendEvent('alpha', {
+      id: 'session_idle:alpha::w-a:T1',
+      ts: '2026-05-27T09:00:00.000Z',
+      kind: 'session_idle',
+      taskId: 'bundle-a',
+      sessionId: 'w-a',
+      payload: { agent: 'claude', message: 'older normal idle stays visible', sessionName: 'w-a' },
+    })
+
+    const projects: Project[] = [{ name: 'alpha', path: repoRoot }]
+    const entries = await scanProgress(projects, [
+      { project: 'alpha', name: 'w-a', status: 'idle', statusEnteredAt: 'T2', idleReason: 'interrupted' },
+    ])
+
+    expect(entries.map(e => e.message)).toEqual(['older normal idle stays visible'])
+  })
 })

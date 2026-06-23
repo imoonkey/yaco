@@ -100,22 +100,22 @@ describe("markCrashed", () => {
 });
 
 describe("crashed tombstone is dead-but-retained (resolve/reconcile)", () => {
-  it("resolveSession returns a crashed tombstone even with tmux dead + dead pid", () => {
+  it("resolveSession returns a crashed tombstone even with tmux dead + dead pid", async () => {
     writeState(makeState("h", { status: "crashed", exitCode: 7, statusEnteredAt: CREATED_AT }));
-    const resolved = resolveSession("h", /* cachedAlive */ false);
+    const resolved = await resolveSession("h", /* cachedAlive */ false);
     expect(resolved).not.toBeNull();
     expect(resolved!.status).toBe("crashed");
     expect(resolved!.exitCode).toBe(7);
   });
 
-  it("a non-crashed dead session resolves to null (GC candidate) — control", () => {
+  it("a non-crashed dead session resolves to null (GC candidate) — control", async () => {
     writeState(makeState("h", { status: "processing" }));
-    expect(resolveSession("h", false)).toBeNull();
+    expect(await resolveSession("h", false)).toBeNull();
   });
 
-  it("reconcileSession never deletes a crashed tombstone", () => {
+  it("reconcileSession never deletes a crashed tombstone", async () => {
     writeState(makeState("h", { status: "crashed", exitCode: 7, statusEnteredAt: CREATED_AT }));
-    const resolved = reconcileSession("h", false);
+    const resolved = await reconcileSession("h", false);
     expect(resolved).not.toBeNull();
     expect(resolved!.status).toBe("crashed");
     expect(existsSync(join(dir, "h.json"))).toBe(true); // not GC'd

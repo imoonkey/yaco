@@ -119,6 +119,19 @@ describe('readSessionsFromStateFiles', () => {
     expect(all[0]?.notice).toBe('Ship v1 or wait for review?')
   })
 
+  it('carries interrupt idleReason from the state file onto the row', async () => {
+    writeStateFile(mockedSessionsDir, 'interrupted', {
+      status: 'idle',
+      sessionPath: tmpDir,
+      idleReason: 'interrupted',
+    })
+
+    const single = await readSessionsFromStateFiles(project())
+    expect(single[0]?.idleReason).toBe('interrupted')
+    const all = await readAllSessionsFromStateFiles([project()])
+    expect(all[0]?.idleReason).toBe('interrupted')
+  })
+
   it('re-clamps an oversized state-file notice at the read boundary', async () => {
     writeStateFile(mockedSessionsDir, 'verbose', { status: 'blocked', blockReason: 'question', sessionPath: tmpDir, notice: 'z'.repeat(NOTICE_MAX + 300) })
     const sessions = await readSessionsFromStateFiles(project())

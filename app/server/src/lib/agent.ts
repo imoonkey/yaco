@@ -26,6 +26,7 @@ export { isPathDescendantOrEqual } from '@yaco/cli/core/agent'
 /** Why a session is `blocked` (waiting on the user). Present iff status is
  *  `blocked`; written together with status by the CLI projection. */
 export type BlockReason = 'permission' | 'question' | 'trust'
+export type IdleReason = 'interrupted'
 
 export interface AgentSession {
   name: string
@@ -33,6 +34,8 @@ export interface AgentSession {
   status: 'starting' | 'idle' | 'processing' | 'blocked' | 'crashed'
   /** Set iff status is `blocked`. Sanitized by the shared projection. */
   blockReason?: BlockReason
+  /** Set iff status is `idle` due to a user interrupt. */
+  idleReason?: IdleReason
   /** ISO time the current status was entered — the status-edge generation key. */
   statusEnteredAt?: string
   /** Agent process exit code. Present iff status is `crashed`. */
@@ -107,6 +110,8 @@ export interface AgentSessionState {
   status: 'starting' | 'idle' | 'processing' | 'blocked' | 'crashed'
   /** Set iff status is `blocked`. */
   blockReason?: BlockReason
+  /** Set iff status is `idle` due to a user interrupt. */
+  idleReason?: IdleReason
   /** ISO time the current status was entered — the status-edge generation key. */
   statusEnteredAt?: string
   /** Agent process exit code. Present iff status is `crashed`. */
@@ -438,7 +443,7 @@ export async function startAgentSession(
   // whatever launched this daemon (deriveSessionLineage checks YACO_AGENT_HANDLE
   // before the user:web marker; the var leaks in when the server itself was
   // started from inside an agent session).
-  const childEnv = { ...buildChildProcessEnv(), YACO_AGENT_SPAWNED_BY: 'user:web' }
+  const childEnv: NodeJS.ProcessEnv = { ...buildChildProcessEnv(), YACO_AGENT_SPAWNED_BY: 'user:web' }
   delete childEnv.YACO_AGENT_HANDLE
   const proc = spawn(YACO_PATH, args, {
     stdio: ['ignore', 'ignore', 'pipe'],

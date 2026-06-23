@@ -1,14 +1,16 @@
 import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid, isProcessAlive } from "../../lib/core/agent/tmux.ts";
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
+import { turnStateFromTranscript, type TranscriptTurnState } from "../../lib/core/agent/providers/output.ts";
 import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
 import { isResolvedSessionId, recordOriginIfResolved } from "../../lib/core/agent/origin.ts";
-import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
+import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath, statePath } from "../../lib/core/agent/session-state.ts";
 import { validateName, setStatus, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
 import { readProjects } from "../../lib/core/paths/index.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { basename } from "node:path";
 import { execSync } from "child_process";
+import { statSync } from "node:fs";
 
 export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
 
@@ -21,6 +23,24 @@ type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not 
 interface BackfillResult {
   state: SessionState;
   changed: boolean;
+}
+
+interface StateStamp {
+  mtimeMs: number;
+  ino: number;
+}
+
+function readStateStamp(handle: string): StateStamp | null {
+  try {
+    const st = statSync(statePath(handle));
+    return { mtimeMs: st.mtimeMs, ino: st.ino };
+  } catch {
+    return null;
+  }
+}
+
+function sameStamp(a: StateStamp | null, b: StateStamp | null): boolean {
+  return !!a && !!b && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
 }
 
 /** Backfill PID/sessionId from the live process tree and local provider files.
@@ -102,6 +122,23 @@ interface ResolveDetail {
   dead: boolean;
   state: RuntimeSessionState | null;
   persist: SessionState | null;
+  stamp: StateStamp | null;
+}
+
+function applyTranscriptState(state: SessionState, ts: TranscriptTurnState): SessionState {
+  const corrected: SessionState = { ...state };
+  setStatus(corrected, ts.status);
+  if (ts.idleReason) corrected.idleReason = ts.idleReason;
+  return corrected;
+}
+
+function stateDrifted(from: SessionState, to: SessionState, changed: boolean): boolean {
+  return changed
+    || from.status !== to.status
+    || from.blockReason !== to.blockReason
+    || from.idleReason !== to.idleReason
+    || from.statusEnteredAt !== to.statusEnteredAt
+    || from.notice !== to.notice;
 }
 
 /** Pure core of resolution — NO writes, NO deletes. Reads the state file, checks
@@ -109,30 +146,58 @@ interface ResolveDetail {
  *  stale or missing status) captures the pane to derive a display status. The
  *  returned `persist` describes what a mutating caller could write; the pure
  *  callers ignore it. */
-function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDetail {
+async function resolveDetail(handle: string, cachedAlive?: boolean | null): Promise<ResolveDetail> {
   // Liveness. tmux has-session is socket-scoped, so a session is only dead when
   // tmux says gone AND the recorded process is gone (see confirmedDead).
   const tmuxAlive = cachedAlive === undefined ? checkSessionAlive(handle) : cachedAlive;
+  const initialStamp = readStateStamp(handle);
   const state = readState(handle);
+  const stamp = state ? initialStamp ?? readStateStamp(handle) : null;
   // A `crashed` tombstone is dead-but-retained: the app must observe the crash
   // and the user must act before it can be cleared. Short-circuit BEFORE the
   // confirmedDead GC verdict so `list --reconcile` / `status --reconcile` never
   // erase it. Only an explicit `yaco agent kill` deletes it.
   if (state?.status === "crashed") {
-    return { dead: false, state, persist: null };
+    return { dead: false, state, persist: null, stamp };
   }
   if (confirmedDead(tmuxAlive, state?.pid)) {
-    return { dead: true, state: null, persist: null };
+    return { dead: true, state: null, persist: null, stamp };
   }
   // tmuxAlive === null, or process still alive on another socket → continue.
 
   if (state) {
-    const stale = (state.status === "processing" || state.status === "starting") && isStale(handle);
+    const stale = isStale(handle);
     const invalidStatus = (state.status as string) === "stopped";
     if (!stale && !invalidStatus) {
       // Valid non-stale state — backfill metadata in memory and return.
       const { state: backfilled, changed } = backfillStateMetadata(state, handle);
-      return { dead: false, state: backfilled, persist: changed ? backfilled : null };
+      return { dead: false, state: backfilled, persist: changed ? backfilled : null, stamp };
+    }
+
+    const { state: backfilled, changed } = backfillStateMetadata(state, handle);
+
+    if (stale && state.status === "blocked") {
+      if (state.blockReason === "permission" || state.blockReason === "question") {
+        const ts = await turnStateFromTranscript(backfilled);
+        if (ts?.status === "idle") {
+          const corrected = applyTranscriptState(backfilled, ts);
+          return { dead: false, state: corrected, persist: corrected, stamp };
+        }
+      }
+      return { dead: false, state: backfilled, persist: changed ? backfilled : null, stamp };
+    }
+
+    if (stale && state.status === "processing") {
+      const ts = await turnStateFromTranscript(backfilled);
+      if (ts) {
+        const corrected = applyTranscriptState(backfilled, ts);
+        return {
+          dead: false,
+          state: corrected,
+          persist: stateDrifted(backfilled, corrected, changed) ? corrected : null,
+          stamp,
+        };
+      }
     }
   }
 
@@ -155,17 +220,18 @@ function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDet
       // when the status value itself is unchanged.
       const drift = changed
         || backfilled.status !== capturedStatus
-        || backfilled.blockReason !== corrected.blockReason;
-      return { dead: false, state: corrected, persist: drift ? corrected : null };
+        || backfilled.blockReason !== corrected.blockReason
+        || backfilled.idleReason !== corrected.idleReason;
+      return { dead: false, state: corrected, persist: drift ? corrected : null, stamp };
     }
-    return { dead: false, state: { ...synthesizeState(handle), status: capturedStatus }, persist: null };
+    return { dead: false, state: { ...synthesizeState(handle), status: capturedStatus }, persist: null, stamp };
   } catch {
     // Can't capture — return whatever state we have.
     if (state) {
       const { state: backfilled, changed } = backfillStateMetadata(state, handle);
-      return { dead: false, state: backfilled, persist: changed ? backfilled : null };
+      return { dead: false, state: backfilled, persist: changed ? backfilled : null, stamp };
     }
-    return { dead: false, state: synthesizeState(handle), persist: null };
+    return { dead: false, state: synthesizeState(handle), persist: null, stamp };
   }
 }
 
@@ -175,8 +241,8 @@ function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDet
  *  dead/not found. Performs NO writes and NO deletes: it never persists status
  *  corrections nor GCs tombstones. `cachedAlive` skips the per-session tmux
  *  has-session call when the caller already checked liveness. */
-export function resolveSession(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
-  return resolveDetail(handle, cachedAlive).state;
+export async function resolveSession(handle: string, cachedAlive?: boolean | null): Promise<RuntimeSessionState | null> {
+  return (await resolveDetail(handle, cachedAlive)).state;
 }
 
 /** MUTATING reconcile wrapper — the only resolver that writes. It runs the pure
@@ -184,14 +250,17 @@ export function resolveSession(handle: string, cachedAlive?: boolean | null): Ru
  *  `confirmedDead` inside resolveDetail), and persists any backfill / stale
  *  status correction the pure pass computed. Used by `list --reconcile` and the
  *  app server's 60s reconcile loop. */
-export function reconcileSession(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
+export async function reconcileSession(handle: string, cachedAlive?: boolean | null): Promise<RuntimeSessionState | null> {
   const before = readState(handle);
-  const detail = resolveDetail(handle, cachedAlive);
+  const detail = await resolveDetail(handle, cachedAlive);
   if (detail.dead) {
     if (isTmuxAvailable()) deleteState(handle);
     return null;
   }
   if (detail.persist) {
+    if (detail.stamp && !sameStamp(detail.stamp, readStateStamp(handle))) {
+      return resolveSession(handle, cachedAlive);
+    }
     writeState(detail.persist);
     if (!isResolvedSessionId(before?.sessionId) && isResolvedSessionId(detail.persist.sessionId)) {
       recordOriginIfResolved(detail.persist);
@@ -245,13 +314,13 @@ function renderStatusText(resolved: RuntimeSessionState): string {
  *
  *  `--json` returns the resolved runtime session state verbatim (pinned by
  *  test); text mode renders a labeled detail block. */
-export function status(name: string, jsonOrOptions?: boolean | StatusOptions): string {
+export async function status(name: string, jsonOrOptions?: boolean | StatusOptions): Promise<string> {
   const opts: StatusOptions = typeof jsonOrOptions === "boolean"
     ? { json: jsonOrOptions }
     : (jsonOrOptions ?? {});
 
   validateName(name);
-  const resolved = opts.reconcile ? reconcileSession(name) : resolveSession(name);
+  const resolved = opts.reconcile ? await reconcileSession(name) : await resolveSession(name);
   if (!resolved) {
     throw new CliError(ErrCode.NOT_FOUND, `no agent session: ${name}`);
   }
@@ -287,7 +356,7 @@ function deriveProject(sessionPath: string, projects: ProjectRef[]): ProjectRef 
  *  `--reconcile` is the single mutation point: it GCs confirmed-dead tombstones,
  *  cleans orphan breadcrumbs, and persists stale-status / backfill corrections
  *  via `reconcileSession`. The app server's 60s loop is the intended caller. */
-export function list(options: ListOptions = {}): string {
+export async function list(options: ListOptions = {}): Promise<string> {
   const filterPath = options.path ?? (options.all ? undefined : process.cwd());
   const sessions = filterPath
     ? listByPath(filterPath)
@@ -327,8 +396,8 @@ export function list(options: ListOptions = {}): string {
   for (const session of liveSessions) {
     const alive = aliveCache.get(session.handle);
     const resolved = options.reconcile
-      ? reconcileSession(session.handle, alive)
-      : resolveSession(session.handle, alive);
+      ? await reconcileSession(session.handle, alive)
+      : await resolveSession(session.handle, alive);
     if (!resolved) continue;
     const row = toSessionRow(resolved, deriveProject(resolved.sessionPath, projects));
     if (row) rows.push(row);

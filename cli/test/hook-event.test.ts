@@ -221,6 +221,19 @@ describe("applyHookEvent — blocked transitions", () => {
     expect(next?.blockReason).toBeUndefined();
   });
 
+  it("setStatus clears a prior interrupt idleReason on every status edge", () => {
+    const state = makeState({
+      status: "idle",
+      idleReason: "interrupted",
+      statusEnteredAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    setStatus(state, "processing");
+
+    expect(state.status).toBe("processing");
+    expect(state.idleReason).toBeUndefined();
+  });
+
   it("SessionStart does NOT clear blocked(permission)", () => {
     const next = applyHookEvent(
       makeState({ status: "blocked", blockReason: "permission" }), "SessionStart", "x", true,

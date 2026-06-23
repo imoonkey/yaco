@@ -16,6 +16,7 @@ function sessionsRoot(): string {
 }
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const PROCESSING_RECHECK_MS = 15 * 1000;
 
 export function stateDir(): string {
   return sessionsRoot();
@@ -173,15 +174,20 @@ export function rewriteChildParentSessions(
   return rewritten;
 }
 
-/** Check if state file's status is stale (mtime too old for "processing" or "starting") */
+/** Check if state file's status is stale enough to recheck. */
 export function isStale(handle: string): boolean {
   const path = statePath(handle);
   if (!existsSync(path)) return false;
   try {
     const state = readState(handle);
-    if (!state || (state.status !== "processing" && state.status !== "starting")) return false;
+    if (!state) return false;
+    const threshold =
+      state.status === "starting" ? STALE_THRESHOLD_MS
+      : state.status === "processing" || state.status === "blocked" ? PROCESSING_RECHECK_MS
+      : null;
+    if (threshold === null) return false;
     const mtime = statSync(path).mtimeMs;
-    return Date.now() - mtime > STALE_THRESHOLD_MS;
+    return Date.now() - mtime > threshold;
   } catch {
     return false;
   }

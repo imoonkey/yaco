@@ -33,6 +33,11 @@ describe('session-reconciler — reduced to GC + safety', () => {
     expect(source).toMatch(/emitRefresh\(['"]sessions['"]\)/)
   })
 
+  it('uses an adaptive fast interval while a session is processing', () => {
+    expect(source).toMatch(/PROCESSING_RECONCILE_INTERVAL/)
+    expect(source).toMatch(/some\(s => s\.status === ['"]processing['"]\)/)
+  })
+
   it('no longer produces attention edges (detectIdleTransitions / emitSessionIdle removed)', () => {
     expect(source).not.toMatch(/detectIdleTransitions/)
     expect(source).not.toMatch(/emitSessionIdle/)

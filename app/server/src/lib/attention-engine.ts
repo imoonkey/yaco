@@ -27,6 +27,7 @@ import { broadcastAttention as defaultBroadcast } from './notify'
 import {
   projectAttention,
   openAndReviewGenerations,
+  idleNotifiable,
   ownerClass,
   sessionGenerationId,
   taskGenerationId,
@@ -319,7 +320,7 @@ export class AttentionEngine {
       // ≥MIN_PROCESSING work span (idle entry − active span start).
       const debounced: 'session_blocked' | 'session_idle' | null =
         s.status === 'blocked' ? 'session_blocked'
-        : s.status === 'idle' && idleIsRealWork(s, activeSince) ? 'session_idle'
+        : s.status === 'idle' && idleNotifiable(s) && idleIsRealWork(s, activeSince) ? 'session_idle'
         : null
       if (debounced && s.statusEnteredAt) await this.evaluateDebouncedEdge(key, debounced, s, now)
       else this.clearWakeTimer(key)
@@ -416,6 +417,7 @@ export class AttentionEngine {
     s: LiveSession,
     nowMs: number,
   ): Promise<void> {
+    if (type === 'session_idle' && !idleNotifiable(s)) return
     const generation = sessionGenerationId(type, s.project, s.name, s.statusEnteredAt!)
     // Record the edge-time owner for FYI history fallback; the projector
     // recomputes owner with LIVE pins, so a later pin still reclassifies.

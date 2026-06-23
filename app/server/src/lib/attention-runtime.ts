@@ -74,6 +74,7 @@ async function readSessions(): Promise<LiveSession[]> {
     statusEnteredAt: r.statusEnteredAt,
     exitCode: r.exitCode,
     blockReason: r.blockReason,
+    idleReason: r.idleReason,
     spawnedBy: r.spawnedBy,
     parentSession: r.parentSession,
     notice: r.notice,

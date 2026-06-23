@@ -2,22 +2,26 @@
 // Uses mock.module to replace tmux/hooks/session-id for pure unit testing.
 
 import { mock, describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, readFileSync, existsSync, rmSync, utimesSync } from "fs";
+import { mkdtempSync, readFileSync, existsSync, rmSync, utimesSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { stateDir } from "../src/lib/core/agent/session-state.ts";
+import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 
 // Redirect the session-state dir to a tmp fixture for this suite so a clean
 // CI box (no YACO_AGENT_SESSIONS_DIR / YACO_HOME set) doesn't drop test state into
 // the real ~/.yaco/sessions root. Mirrors state.test.ts.
 const ORIGINAL_YACO_AGENT_SESSIONS_DIR = process.env.YACO_AGENT_SESSIONS_DIR;
 const ORIGINAL_YACO_HOME = process.env.YACO_HOME;
+const ORIGINAL_HOME = process.env.HOME;
 let testStateDir: string;
 
 beforeAll(() => {
   testStateDir = mkdtempSync(join(tmpdir(), "multmux-guards-test-"));
   process.env.YACO_AGENT_SESSIONS_DIR = testStateDir;
   process.env.YACO_HOME = join(testStateDir, "home");
+  process.env.HOME = join(testStateDir, "user-home");
+  mkdirSync(process.env.HOME, { recursive: true });
 });
 
 afterAll(() => {
@@ -25,6 +29,8 @@ afterAll(() => {
   else process.env.YACO_AGENT_SESSIONS_DIR = ORIGINAL_YACO_AGENT_SESSIONS_DIR;
   if (ORIGINAL_YACO_HOME === undefined) delete process.env.YACO_HOME;
   else process.env.YACO_HOME = ORIGINAL_YACO_HOME;
+  if (ORIGINAL_HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = ORIGINAL_HOME;
   rmSync(testStateDir, { recursive: true, force: true });
 });
 
@@ -177,6 +183,35 @@ function trackHandle(handle: string): void {
   if (!createdHandles.includes(handle)) createdHandles.push(handle);
 }
 
+function writeClaudeTranscript(state: SessionState, lines: string[]): void {
+  const home = process.env.HOME!;
+  const dir = join(home, ".claude", "projects", encodeClaudeCwd(state.sessionPath));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${state.sessionId}.jsonl`), `${lines.join("\n")}\n`);
+}
+
+function writeCodexTranscript(state: SessionState, lines: string[]): void {
+  const home = process.env.HOME!;
+  const dir = join(home, ".codex", "sessions", "2026", "06", "23");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `rollout-2026-06-23T00-00-00-${state.sessionId}.jsonl`), `${lines.join("\n")}\n`);
+}
+
+function claudeAssistantLine(stopReason: "end_turn" | "tool_use"): string {
+  return JSON.stringify({
+    type: "assistant",
+    message: { stop_reason: stopReason, content: [{ type: "text", text: "ok" }] },
+  });
+}
+
+function claudeInterruptLine(): string {
+  return JSON.stringify({ type: "user", message: { content: "[Request interrupted by user]" } });
+}
+
+function codexEventLine(type: "task_started" | "task_complete" | "turn_aborted"): string {
+  return JSON.stringify({ type: "event_msg", payload: { type, reason: type === "turn_aborted" ? "interrupted" : undefined } });
+}
+
 /** Run `fn` with HOME pointed at a fresh dir that has NO `.codex`, so the Codex
  *  startup trust gate (`codexHooksAllYacoOwned`) finds no foreign hooks and is
  *  vacuously true. Keeps these interstitial tests hermetic regardless of the
@@ -219,17 +254,70 @@ afterEach(() => {
 // ===========================================================================
 
 describe("G8: reconcile stale-detection consistency", () => {
-  it("returns processing for fresh processing state", () => {
+  it("returns processing for fresh processing state", async () => {
     const handle = `${TEST_PREFIX}-g8-fresh`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("processing");
   });
 
-  it("falls back to capture-idle for stale processing state", () => {
+  it("uses a Claude interrupt transcript to heal stale processing silently", async () => {
+    const handle = `${TEST_PREFIX}-g8-claude-interrupt`;
+    trackHandle(handle);
+    const state = makeState({ handle, status: "processing", sessionId: "claude-interrupt-id" });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeInterruptLine()]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "still busy"; // would be processing if PTY fallback won
+
+    const result = await reconcileSession(handle);
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("idle");
+    expect(result!.idleReason).toBe("interrupted");
+    expect(readState(handle)).toMatchObject({ status: "idle", idleReason: "interrupted" });
+  });
+
+  it("uses a Codex turn_aborted transcript to heal stale processing silently", async () => {
+    const handle = `${TEST_PREFIX}-g8-codex-interrupt`;
+    trackHandle(handle);
+    const state = makeState({ handle, provider: "codex", status: "processing", sessionId: "codex-interrupt-id" });
+    writeState(state);
+    writeCodexTranscript(state, [codexEventLine("turn_aborted")]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "still busy";
+
+    const result = await reconcileSession(handle);
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("idle");
+    expect(result!.idleReason).toBe("interrupted");
+    expect(readState(handle)).toMatchObject({ status: "idle", idleReason: "interrupted" });
+  });
+
+  it("keeps stale processing active when the transcript says a turn is still running", async () => {
+    const handle = `${TEST_PREFIX}-g8-transcript-active`;
+    trackHandle(handle);
+    const state = makeState({ handle, status: "processing", sessionId: "claude-active-id" });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeAssistantLine("tool_use")]);
+    const past = new Date(Date.now() - 35 * 60 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "❯ "; // would be idle if PTY fallback won
+
+    const result = await reconcileSession(handle);
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("processing");
+    expect(readState(handle)?.status).toBe("processing");
+  });
+
+  it("falls back to capture-idle for stale processing state", async () => {
     const handle = `${TEST_PREFIX}-g8-stale`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
@@ -240,12 +328,106 @@ describe("G8: reconcile stale-detection consistency", () => {
 
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("idle");
   });
 
-  it("falls back to capture-processing for stale starting state", () => {
+  it("does not let a stale transcript correction clobber a fresh turn", async () => {
+    const handle = `${TEST_PREFIX}-g8-race`;
+    trackHandle(handle);
+    const oldState = makeState({
+      handle,
+      status: "processing",
+      sessionId: "claude-race-id",
+      statusEnteredAt: "2026-06-01T00:00:00.000Z",
+    });
+    writeState(oldState);
+    writeClaudeTranscript(oldState, [claudeInterruptLine()]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+
+    const pending = reconcileSession(handle);
+    const freshState = makeState({
+      handle,
+      status: "processing",
+      sessionId: "claude-race-id",
+      statusEnteredAt: "2026-06-01T00:01:00.000Z",
+      notice: "fresh turn",
+    });
+    writeState(freshState);
+
+    const result = await pending;
+
+    expect(result).toMatchObject({ status: "processing", statusEnteredAt: "2026-06-01T00:01:00.000Z", notice: "fresh turn" });
+    expect(readState(handle)).toMatchObject({ status: "processing", statusEnteredAt: "2026-06-01T00:01:00.000Z", notice: "fresh turn" });
+  });
+
+  it("heals stale blocked(permission) only from a transcript terminal marker", async () => {
+    const handle = `${TEST_PREFIX}-g8-blocked-interrupt`;
+    trackHandle(handle);
+    const state = makeState({
+      handle,
+      status: "blocked",
+      blockReason: "permission",
+      sessionId: "claude-blocked-interrupt-id",
+    });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeInterruptLine()]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "still busy";
+
+    const result = await reconcileSession(handle);
+
+    expect(result).toMatchObject({ status: "idle", idleReason: "interrupted" });
+    expect(readState(handle)).toMatchObject({ status: "idle", idleReason: "interrupted" });
+    expect(readState(handle)?.blockReason).toBeUndefined();
+  });
+
+  it("leaves stale blocked(permission) unchanged while a tool is still pending", async () => {
+    const handle = `${TEST_PREFIX}-g8-blocked-pending`;
+    trackHandle(handle);
+    const state = makeState({
+      handle,
+      status: "blocked",
+      blockReason: "permission",
+      sessionId: "claude-blocked-pending-id",
+    });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeAssistantLine("tool_use")]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "❯ ";
+
+    const result = await reconcileSession(handle);
+
+    expect(result).toMatchObject({ status: "blocked", blockReason: "permission" });
+    expect(readState(handle)).toMatchObject({ status: "blocked", blockReason: "permission" });
+  });
+
+  it("never clears blocked(trust) from a transcript terminal marker", async () => {
+    const handle = `${TEST_PREFIX}-g8-blocked-trust`;
+    trackHandle(handle);
+    const state = makeState({
+      handle,
+      status: "blocked",
+      blockReason: "trust",
+      sessionId: "claude-blocked-trust-id",
+    });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeAssistantLine("end_turn")]);
+    const past = new Date(Date.now() - 20 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "❯ ";
+
+    const result = await reconcileSession(handle);
+
+    expect(result).toMatchObject({ status: "blocked", blockReason: "trust" });
+    expect(readState(handle)).toMatchObject({ status: "blocked", blockReason: "trust" });
+  });
+
+  it("falls back to capture-processing for stale starting state", async () => {
     const handle = `${TEST_PREFIX}-g8-stale-start`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "starting" }));
@@ -255,19 +437,36 @@ describe("G8: reconcile stale-detection consistency", () => {
 
     mockConfig.captureOutput = "Thinking..."; // busy indicator
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("processing");
   });
 
-  it("returns null and cleans up dead session", () => {
+  it("does not heal stale starting from an old transcript terminal marker", async () => {
+    const handle = `${TEST_PREFIX}-g8-starting-old-transcript`;
+    trackHandle(handle);
+    const state = makeState({ handle, status: "starting", sessionId: "claude-starting-old-id" });
+    writeState(state);
+    writeClaudeTranscript(state, [claudeAssistantLine("end_turn")]);
+    const past = new Date(Date.now() - 35 * 60 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "Thinking...";
+
+    const result = await reconcileSession(handle);
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("processing");
+    expect(readState(handle)?.status).toBe("processing");
+  });
+
+  it("returns null and cleans up dead session", async () => {
     const handle = `${TEST_PREFIX}-g8-dead`;
     trackHandle(handle);
     writeState(makeState({ handle }));
 
     mockConfig.checkSessionAlive = [false];
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).toBeNull();
     expect(readState(handle)).toBeNull();
   });
@@ -278,7 +477,7 @@ describe("G8: reconcile stale-detection consistency", () => {
 // ===========================================================================
 
 describe("G9: start throws when session dies during bootstrap", () => {
-  it("throws Error and cleans up state file", () => {
+  it("throws Error and cleans up state file", async () => {
     const handle = `${TEST_PREFIX}-g9`;
     trackHandle(handle);
 
@@ -301,7 +500,7 @@ describe("G9: start throws when session dies during bootstrap", () => {
 // ===========================================================================
 
 describe("G10: send optimistic processing hint", () => {
-  it("state file has status=processing before sendKeys is called", () => {
+  it("state file has status=processing before sendKeys is called", async () => {
     const handle = `${TEST_PREFIX}-g10-opt`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "idle" }));
@@ -313,7 +512,7 @@ describe("G10: send optimistic processing hint", () => {
     expect(captured.status).toBe("processing");
   });
 
-  it("does not downgrade already-processing state", () => {
+  it("does not downgrade already-processing state", async () => {
     const handle = `${TEST_PREFIX}-g10-noop`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
@@ -327,7 +526,7 @@ describe("G10: send optimistic processing hint", () => {
     expect(readState(handle)?.status).toBe("processing");
   });
 
-  it("reverts optimistic hint on sendKeys failure", () => {
+  it("reverts optimistic hint on sendKeys failure", async () => {
     const handle = `${TEST_PREFIX}-g10-revert`;
     trackHandle(handle);
     const createdAt = new Date().toISOString();
@@ -345,7 +544,7 @@ describe("G10: send optimistic processing hint", () => {
     expect(readState(handle)?.status).toBe("idle");
   });
 
-  it("answers blocked(question) → flips to processing and clears blockReason", () => {
+  it("answers blocked(question) → flips to processing and clears blockReason", async () => {
     const handle = `${TEST_PREFIX}-g10-question`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "blocked", blockReason: "question" }));
@@ -361,7 +560,7 @@ describe("G10: send optimistic processing hint", () => {
     expect(persisted?.blockReason).toBeUndefined();
   });
 
-  it("leaves blocked(trust) untouched on send", () => {
+  it("leaves blocked(trust) untouched on send", async () => {
     const handle = `${TEST_PREFIX}-g10-trust`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "blocked", blockReason: "trust" }));
@@ -378,7 +577,7 @@ describe("G10: send optimistic processing hint", () => {
     expect(persisted?.blockReason).toBe("trust");
   });
 
-  it("leaves blocked(permission) untouched on send", () => {
+  it("leaves blocked(permission) untouched on send", async () => {
     const handle = `${TEST_PREFIX}-g10-permission`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
@@ -400,7 +599,7 @@ describe("G10: send optimistic processing hint", () => {
 // ===========================================================================
 
 describe("G11: dead handle reclaim allows name reuse", () => {
-  it("deletes stale state for dead handle and creates new session with same name", () => {
+  it("deletes stale state for dead handle and creates new session with same name", async () => {
     const handle = `${TEST_PREFIX}-g11`;
     trackHandle(handle);
 
@@ -424,7 +623,7 @@ describe("G11: dead handle reclaim allows name reuse", () => {
     expect(newState!.status).toBe("idle");
   });
 
-  it("rejects invalid handle before any reclaim I/O (shell injection regression)", () => {
+  it("rejects invalid handle before any reclaim I/O (shell injection regression)", async () => {
     // An invalid --name with path separators or shell metacharacters must be
     // rejected by validateName() BEFORE readState/checkSessionAlive touch it.
     expect(() => {
@@ -442,7 +641,7 @@ describe("G11: dead handle reclaim allows name reuse", () => {
 // ===========================================================================
 
 describe("reconcile capture status is runtime-only", () => {
-  it("persists capture-derived status to stale state files", () => {
+  it("persists capture-derived status to stale state files", async () => {
     const handle = `${TEST_PREFIX}-reconcile-clone`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
@@ -453,7 +652,7 @@ describe("reconcile capture status is runtime-only", () => {
 
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("idle"); // runtime view shows idle
 
@@ -470,7 +669,7 @@ describe("reconcile capture status is runtime-only", () => {
 // ===========================================================================
 
 describe("resolveSession is a pure read", () => {
-  it("refines stale status for display but does NOT persist the correction", () => {
+  it("refines stale status for display but does NOT persist the correction", async () => {
     const handle = `${TEST_PREFIX}-resolve-pure`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
@@ -481,7 +680,7 @@ describe("resolveSession is a pure read", () => {
 
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const result = resolveSession(handle);
+    const result = await resolveSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("idle"); // runtime view shows idle
 
@@ -489,7 +688,7 @@ describe("resolveSession is a pure read", () => {
     expect(readState(handle)?.status).toBe("processing");
   });
 
-  it("filters a confirmed-dead session (null) without deleting its state file", () => {
+  it("filters a confirmed-dead session (null) without deleting its state file", async () => {
     const handle = `${TEST_PREFIX}-resolve-dead`;
     trackHandle(handle);
     // pid 0 → isProcessAlive false, so tmux-gone makes it confirmed dead.
@@ -497,20 +696,20 @@ describe("resolveSession is a pure read", () => {
 
     mockConfig.checkSessionAlive = [false];
 
-    const result = resolveSession(handle);
+    const result = await resolveSession(handle);
     expect(result).toBeNull();
     // Pure read does NOT GC — the state file must still exist.
     expect(readState(handle)).not.toBeNull();
   });
 
-  it("never reports dead on an uncertain liveness reading, even pid-less", () => {
+  it("never reports dead on an uncertain liveness reading, even pid-less", async () => {
     const handle = `${TEST_PREFIX}-resolve-uncertain`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0, status: "idle" }));
 
     mockConfig.checkSessionAlive = [null]; // tmux timeout / wrong socket
 
-    const result = resolveSession(handle);
+    const result = await resolveSession(handle);
     expect(result).not.toBeNull(); // uncertain → keep the session
     expect(readState(handle)).not.toBeNull();
   });
@@ -521,19 +720,19 @@ describe("resolveSession is a pure read", () => {
 // ===========================================================================
 
 describe("reconcileSession GC is pid-guarded", () => {
-  it("deletes the state file when tmux is gone AND the pid is dead", () => {
+  it("deletes the state file when tmux is gone AND the pid is dead", async () => {
     const handle = `${TEST_PREFIX}-recon-dead`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 }));
 
     mockConfig.checkSessionAlive = [false];
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).toBeNull();
     expect(readState(handle)).toBeNull(); // GC'd
   });
 
-  it("does NOT delete when tmux is gone but the recorded pid is alive", () => {
+  it("does NOT delete when tmux is gone but the recorded pid is alive", async () => {
     const handle = `${TEST_PREFIX}-recon-live-pid`;
     trackHandle(handle);
     // The running test process is a guaranteed-live pid.
@@ -541,19 +740,19 @@ describe("reconcileSession GC is pid-guarded", () => {
 
     mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull(); // live pid vetoes deletion
     expect(readState(handle)).not.toBeNull();
   });
 
-  it("does NOT delete on an uncertain (null) liveness reading", () => {
+  it("does NOT delete on an uncertain (null) liveness reading", async () => {
     const handle = `${TEST_PREFIX}-recon-uncertain`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0, status: "idle" }));
 
     mockConfig.checkSessionAlive = [null];
 
-    const result = reconcileSession(handle);
+    const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(readState(handle)).not.toBeNull();
   });
@@ -565,53 +764,53 @@ describe("reconcileSession GC is pid-guarded", () => {
 // ===========================================================================
 
 describe("list/status command surface — read vs --reconcile mutation", () => {
-  it("default `list` filters a confirmed-dead session out of the view WITHOUT deleting it", () => {
+  it("default `list` filters a confirmed-dead session out of the view WITHOUT deleting it", async () => {
     const handle = `${TEST_PREFIX}-list-pure-dead`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 })); // pid dead
     mockConfig.checkSessionAlive = [false];     // tmux gone → confirmed dead
 
-    const rows = JSON.parse(list({ all: true, json: true }));
+    const rows = JSON.parse(await list({ all: true, json: true }));
     expect(rows.find((r: any) => r.name === handle)).toBeUndefined(); // hidden
     expect(readState(handle)).not.toBeNull();                          // not GC'd
   });
 
-  it("`list --reconcile` GCs a confirmed-dead session (tmux gone AND pid dead)", () => {
+  it("`list --reconcile` GCs a confirmed-dead session (tmux gone AND pid dead)", async () => {
     const handle = `${TEST_PREFIX}-list-recon-dead`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 }));
     mockConfig.checkSessionAlive = [false];
 
-    JSON.parse(list({ all: true, reconcile: true, json: true }));
+    JSON.parse(await list({ all: true, reconcile: true, json: true }));
     expect(readState(handle)).toBeNull(); // GC'd
   });
 
-  it("`list --reconcile` preserves a live-pid session even when tmux reports it gone (wrong socket)", () => {
+  it("`list --reconcile` preserves a live-pid session even when tmux reports it gone (wrong socket)", async () => {
     const handle = `${TEST_PREFIX}-list-recon-livepid`;
     trackHandle(handle);
     // The running test process is a guaranteed-live pid.
     writeState(makeState({ handle, pid: process.pid, status: "idle" }));
     mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
 
-    const rows = JSON.parse(list({ all: true, reconcile: true, json: true }));
+    const rows = JSON.parse(await list({ all: true, reconcile: true, json: true }));
     expect(readState(handle)).not.toBeNull();                        // live pid vetoes GC
     expect(rows.find((r: any) => r.name === handle)).toBeDefined();  // still listed
   });
 
-  it("`status --reconcile --json` returns the resolved session as a parseable object", () => {
+  it("`status --reconcile --json` returns the resolved session as a parseable object", async () => {
     const handle = `${TEST_PREFIX}-status-recon`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "idle" }));
     mockConfig.checkSessionAlive = [true]; // alive
 
-    const obj = JSON.parse(status(handle, { json: true, reconcile: true }));
+    const obj = JSON.parse(await status(handle, { json: true, reconcile: true }));
     expect(obj.handle).toBe(handle);
     expect(obj.status).toBe("idle");
   });
 
   // render-foundation: the text sweep must not silently shift the status JSON
   // contract. Pin the resolved runtime-state fields a consumer relies on.
-  it("`status --json` pins the resolved runtime-state fields", () => {
+  it("`status --json` pins the resolved runtime-state fields", async () => {
     const handle = `${TEST_PREFIX}-status-json-pin`;
     trackHandle(handle);
     writeState(makeState({
@@ -626,7 +825,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     }));
     mockConfig.checkSessionAlive = [true];
 
-    const obj = JSON.parse(status(handle, { json: true }));
+    const obj = JSON.parse(await status(handle, { json: true }));
     expect(obj).toMatchObject({
       handle,
       provider: "claude",
@@ -642,13 +841,13 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
 
   // render-foundation: text mode is a multi-line labeled detail block, not the
   // one-word status it used to print.
-  it("`status` text mode renders a multi-line labeled block", () => {
+  it("`status` text mode renders a multi-line labeled block", async () => {
     const handle = `${TEST_PREFIX}-status-text-block`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "idle", sessionId: "test-session-id" }));
     mockConfig.checkSessionAlive = [true];
 
-    const text = status(handle);
+    const text = await status(handle);
     expect(text.split("\n").length).toBeGreaterThan(1);
     expect(text).not.toBe("idle");
     expect(text).toContain(`handle:`);
@@ -660,7 +859,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
   });
 
   // blocked-state: a fresh blocked session renders its status verbatim.
-  it("`status` text mode renders a blocked status", () => {
+  it("`status` text mode renders a blocked status", async () => {
     // Neutral handle (no "blocked" substring) so the assertion can't pass on
     // the handle line alone — it must match the status line itself.
     const handle = `${TEST_PREFIX}-needs-review`;
@@ -668,14 +867,14 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
     mockConfig.checkSessionAlive = [true];
 
-    const text = status(handle);
+    const text = await status(handle);
     expect(text).toMatch(/^status:\s+blocked$/m);
   });
 
   // blocked-state: the capture fallback can only derive idle|processing — it
   // must never emit blocked, and a stale blockReason must not survive the
   // correction to a non-blocked status.
-  it("capture-correction drops a stale blockReason and never derives blocked", () => {
+  it("capture-correction drops a stale blockReason and never derives blocked", async () => {
     const handle = `${TEST_PREFIX}-status-stale-blocked`;
     trackHandle(handle);
     // Defensive: a stale processing state still carrying a blockReason.
@@ -684,7 +883,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     utimesSync(statePath(handle), past, past);
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const resolved = reconcileSession(handle);
+    const resolved = await reconcileSession(handle);
     expect(resolved!.status).toBe("idle");
     expect(resolved!.blockReason).toBeUndefined();
 
@@ -696,7 +895,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
   // blocked-state (Medium regression): even when the captured status MATCHES the
   // persisted status (no status drift), a stale blockReason must be persisted as
   // dropped — the blockReason drift alone has to trigger the write-back.
-  it("reconcile clears a stale blockReason on disk when status is unchanged", () => {
+  it("reconcile clears a stale blockReason on disk when status is unchanged", async () => {
     const handle = `${TEST_PREFIX}-status-reason-drift`;
     trackHandle(handle);
     // Stale processing state carrying a stray reason; capture also reads busy,
@@ -706,7 +905,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     utimesSync(statePath(handle), past, past);
     mockConfig.captureOutput = "Thinking..."; // busy → capturedStatus "processing"
 
-    const resolved = reconcileSession(handle);
+    const resolved = await reconcileSession(handle);
     expect(resolved!.status).toBe("processing");
     expect(resolved!.blockReason).toBeUndefined();
 
@@ -722,7 +921,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
 // ===========================================================================
 
 describe("start --json contract guarantees", () => {
-  it("starts Codex OSC responder before pid and queues title sync after ready", () => {
+  it("starts Codex OSC responder before pid and queues title sync after ready", async () => {
     const handle = `${TEST_PREFIX}-codex-responder`;
     trackHandle(handle);
 
@@ -749,7 +948,7 @@ describe("start --json contract guarantees", () => {
     expect(resolveSessionIdCalls).toBe(0);
   });
 
-  it("does not replay Codex hook-review keys when the slash prompt is already active", () => {
+  it("does not replay Codex hook-review keys when the slash prompt is already active", async () => {
     const handle = `${TEST_PREFIX}-codex-slash-prompt`;
     trackHandle(handle);
 
@@ -771,7 +970,7 @@ describe("start --json contract guarantees", () => {
     expect(rawKeyCaptures).toEqual([]);
   });
 
-  it("still answers the active Codex hook-review menu", () => {
+  it("still answers the active Codex hook-review menu", async () => {
     const handle = `${TEST_PREFIX}-codex-hook-review`;
     trackHandle(handle);
 
@@ -794,7 +993,7 @@ describe("start --json contract guarantees", () => {
     ]);
   });
 
-  it("returns state with pid > 0 and non-empty sessionId", () => {
+  it("returns state with pid > 0 and non-empty sessionId", async () => {
     const handle = `${TEST_PREFIX}-json-contract`;
     trackHandle(handle);
 
@@ -811,7 +1010,7 @@ describe("start --json contract guarantees", () => {
     expect(state.sessionId.length).toBeGreaterThan(0);
   });
 
-  it("records origin when startup sync resolves a real sessionId", () => {
+  it("records origin when startup sync resolves a real sessionId", async () => {
     const handle = `${TEST_PREFIX}-origin-start`;
     trackHandle(handle);
 
@@ -840,7 +1039,7 @@ describe("start --json contract guarantees", () => {
     });
   });
 
-  it("does not record origin for --resume starts", () => {
+  it("does not record origin for --resume starts", async () => {
     const handle = `${TEST_PREFIX}-origin-resume`;
     trackHandle(handle);
 
@@ -856,7 +1055,7 @@ describe("start --json contract guarantees", () => {
     expect(readOriginForSessionId("resume-thread-id")).toBeNull();
   });
 
-  it("returns pending sentinel when sessionId cannot be resolved", () => {
+  it("returns pending sentinel when sessionId cannot be resolved", async () => {
     const handle = `${TEST_PREFIX}-json-pending`;
     trackHandle(handle);
 
@@ -877,7 +1076,7 @@ describe("start --json contract guarantees", () => {
 // ===========================================================================
 
 describe("Codex sessionId resolution strategy", () => {
-  it("status backfill resolves a pending Codex sessionId from provider storage", () => {
+  it("status backfill resolves a pending Codex sessionId from provider storage", async () => {
     const handle = `${TEST_PREFIX}-codex-backfill`;
     trackHandle(handle);
     // A live Codex session whose start-time sessionId is still pending.
@@ -895,7 +1094,7 @@ describe("Codex sessionId resolution strategy", () => {
     mockConfig.agentPid = 43100;
     mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-xyz" };
 
-    const resolved = reconcileSession(handle);
+    const resolved = await reconcileSession(handle);
 
     // Backfill consults the adapter resolver and persists the real thread id.
     expect(resolved).not.toBeNull();
@@ -916,7 +1115,7 @@ describe("Codex sessionId resolution strategy", () => {
 // ===========================================================================
 
 describe("send rollback guard", () => {
-  it("does not revert status when optimistic hint was never written", () => {
+  it("does not revert status when optimistic hint was never written", async () => {
     const handle = `${TEST_PREFIX}-send-norev`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "starting" }));

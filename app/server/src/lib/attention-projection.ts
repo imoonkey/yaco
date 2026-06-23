@@ -94,6 +94,7 @@ export interface LiveSession {
   statusEnteredAt?: string
   exitCode?: number
   blockReason?: string
+  idleReason?: 'interrupted'
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
   /** Transient line-2 content for the current attention state (CLI-captured). */
@@ -190,6 +191,15 @@ export function ownerClass(session: { spawnedBy?: string }, pinned: boolean): Ow
 
 function isPinned(pins: Record<string, Set<string>>, project: string, name: string): boolean {
   return pins[project]?.has(name) ?? false
+}
+
+export function idleNotifiable(session: { idleReason?: string } | null | undefined): boolean {
+  return session?.idleReason !== 'interrupted'
+}
+
+function interruptedIdleGeneration(session: LiveSession): string | null {
+  if (session.status !== 'idle' || session.idleReason !== 'interrupted' || !session.statusEnteredAt) return null
+  return sessionGenerationId('session_idle', session.project, session.name, session.statusEnteredAt)
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -482,6 +492,7 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
     // live Ready item — it stays in Recent (buildHistory); the matching event
     // surfaces it once appended.
     if (liveSession?.status !== 'idle' || !liveSession.statusEnteredAt) continue
+    if (!idleNotifiable(liveSession)) continue
     if (ev.id !== sessionGenerationId('session_idle', ev.projectId, name, liveSession.statusEnteredAt)) continue
     const pinned = isPinned(input.pins, ev.projectId, name)
     // Owner is computed at projection time (pin reclassifies).
@@ -569,6 +580,10 @@ function buildHistory(
     } else {
       if (!m.taskId) continue
       subject = { kind: 'task', project: ev.projectId, taskId: m.taskId, sessionNames: m.agents ?? [] }
+    }
+    if (type === 'session_idle' && subject.kind === 'session') {
+      const liveSession = live.sessionByKey.get(liveKey(ev.projectId, subject.sessionName))
+      if (liveSession && interruptedIdleGeneration(liveSession) === generation) continue
     }
 
     // Live NEEDS_YOU/SUPPRESSED ACT and unacked REVIEW are NOT history rows
@@ -765,6 +780,7 @@ export function openAndReviewGenerations(input: ProjectionInput): {
   // snapshot (so a crash/idle present at boot ensures its event exists).
   for (const s of input.sessions) {
     if (s.status !== 'idle' || !s.statusEnteredAt) continue
+    if (!idleNotifiable(s)) continue
     const pinned = isPinned(input.pins, s.project, s.name)
     const owner = ownerClass(s, pinned)
     const type: AttentionType = 'session_idle'

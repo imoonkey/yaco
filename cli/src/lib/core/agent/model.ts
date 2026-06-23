@@ -14,6 +14,9 @@ export type SessionStatus = "starting" | "idle" | "processing" | "blocked" | "cr
 /** Sub-reason for a `blocked` status. Presentation-only tag for the UI badge. */
 export type BlockReason = "permission" | "question" | "trust";
 
+/** Why an `idle` status was derived. Interrupt idles are user-initiated and silent. */
+export type IdleReason = "interrupted";
+
 /** How a session was spawned. Captured once at start; never mutated after. */
 export type SpawnedBy = "user:web" | "user:terminal" | "agent";
 
@@ -33,6 +36,8 @@ export interface SessionState {
   exitCode?: number;
   /** Block sub-reason. Present iff status === "blocked". */
   blockReason?: BlockReason;
+  /** Idle sub-reason. Present iff status === "idle" and the user interrupted the turn. */
+  idleReason?: IdleReason;
   /** Spawn source. New starts always write it; legacy files may omit it. */
   spawnedBy?: SpawnedBy;
   /** Parent session handle. Present only when spawnedBy === "agent". */
@@ -55,6 +60,7 @@ export type RuntimeSessionState = Omit<SessionState, "status"> & {
 type StatusWritable = {
   status: string;
   blockReason?: BlockReason;
+  idleReason?: IdleReason;
   statusEnteredAt?: string;
   notice?: string;
 };
@@ -81,6 +87,7 @@ export function setStatus<T extends StatusWritable>(
   if (state.status !== status || reasonChanged) {
     state.statusEnteredAt = new Date().toISOString();
     delete state.notice;
+    delete state.idleReason;
   }
   state.status = status;
   if (status === "blocked" && reason) {
@@ -88,6 +95,7 @@ export function setStatus<T extends StatusWritable>(
   } else {
     delete state.blockReason;
   }
+  if (status !== "idle") delete state.idleReason;
 }
 
 /** Sentinel sessionId written before the hook reports the real one. */

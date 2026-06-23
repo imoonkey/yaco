@@ -536,6 +536,34 @@ describe('REVIEW — session_idle owner routing', () => {
     expect(snap.ready[0]).toMatchObject({ type: 'session_idle', tier: 'handoff', title: 'Your turn' })
   })
 
+  it('interrupt-derived idle is not Ready and not Recent even with a stale durable event', () => {
+    const snap = projectAttention(
+      input({
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
+        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web', idleReason: 'interrupted' })],
+      }),
+    )
+    expect(snap.ready).toHaveLength(0)
+    expect(snap.recent.some((r) => r.type === 'session_idle')).toBe(false)
+    expect(snap.global).toEqual({ count: 0, color: null })
+  })
+
+  it('interrupt-derived idle suppression keeps older normal idle history visible', () => {
+    const snap = projectAttention(
+      input({
+        events: [
+          idleEvent('T1', '2026-06-10T00:00:01.000Z'),
+          idleEvent('T2', '2026-06-10T00:00:05.000Z'),
+        ],
+        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T2', spawnedBy: 'user:web', idleReason: 'interrupted' })],
+      }),
+    )
+
+    expect(snap.ready).toHaveLength(0)
+    expect(snap.recent.some((r) => r.generation === sessionGenerationId('session_idle', 'proj', 's', 'T1'))).toBe(true)
+    expect(snap.recent.some((r) => r.generation === sessionGenerationId('session_idle', 'proj', 's', 'T2'))).toBe(false)
+  })
+
   it('delegated idle (agent-spawned, unpinned) → FYI: never Ready, only history', () => {
     const snap = projectAttention(
       input({
@@ -857,6 +885,18 @@ describe('openAndReviewGenerations — boot reconciliation surface', () => {
     expect(byGen.has('task_done:proj::d:Td')).toBe(true)
     expect(byGen.has('task_blocked:proj::bl:Tb')).toBe(true)
     expect(byGen.get('session_crashed:proj::c:Tc')?.meta.exitCode).toBe(2)
+  })
+
+  it('skips interrupt-derived idle sessions during boot reconciliation', () => {
+    const gens = openAndReviewGenerations(
+      input({
+        sessions: [
+          sess({ name: 'i', status: 'idle', statusEnteredAt: 'Ti', spawnedBy: 'user:web', idleReason: 'interrupted' }),
+        ],
+      }),
+    )
+
+    expect(gens.some((g) => g.type === 'session_idle')).toBe(false)
   })
 })
 

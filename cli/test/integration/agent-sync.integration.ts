@@ -134,7 +134,7 @@ describe("runtime metadata repair", () => {
       const live = readState(handle)!;
       writeState({ ...live, pid: 0, sessionId: "" });
 
-      const repaired = JSON.parse(status(handle, { json: true }));
+      const repaired = JSON.parse(await status(handle, { json: true }));
       expect(repaired.pid).toBe(live.pid);
       expect(repaired.sessionId).toBe(live.sessionId);
       expect(processCommand(repaired.pid)).toBe("claude");
@@ -158,7 +158,7 @@ describe("runtime metadata repair", () => {
       const live = readState(handle)!;
       writeState({ ...live, pid: 0, sessionId: "" });
 
-      const repaired = JSON.parse(status(handle, { json: true }));
+      const repaired = JSON.parse(await status(handle, { json: true }));
       expect(repaired.pid).toBe(live.pid);
       if (live.sessionId && live.sessionId !== PENDING_SESSION_ID) {
         expect(repaired.sessionId).toBe(live.sessionId);
@@ -269,9 +269,9 @@ describe("session resume", () => {
       send(first, `Remember this token exactly: ${token}. Reply with exactly: stored`);
       await waitFor(() => readState(first)?.status === "processing", 15000);
       try {
-        await waitFor(() => {
+        await waitFor(async () => {
           try {
-            const state = JSON.parse(status(first, { json: true, reconcile: true }));
+            const state = JSON.parse(await status(first, { json: true, reconcile: true }));
             return !!state.sessionId && state.sessionId !== PENDING_SESSION_ID;
           } catch {
             return false;

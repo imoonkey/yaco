@@ -129,7 +129,7 @@ describe("state", () => {
   });
 
   describe("isStale", () => {
-    it("returns false for non-processing status", () => {
+    it("returns false for idle status", () => {
       const handle = `${testPrefix}-stale-idle`;
       writeState(makeState({ handle, status: "idle" }));
       expect(isStale(handle)).toBe(false);
@@ -143,14 +143,38 @@ describe("state", () => {
       deleteState(handle);
     });
 
-    it("returns true for old processing status", () => {
+    it("returns true for processing status after the short recheck window", () => {
       const handle = `${testPrefix}-stale-old`;
       writeState(makeState({ handle, status: "processing" }));
-      // Backdate file mtime by 35 minutes
       const path = statePath(handle);
-      const past = new Date(Date.now() - 35 * 60 * 1000);
+      const past = new Date(Date.now() - 20 * 1000);
       utimesSync(path, past, past);
 
+      expect(isStale(handle)).toBe(true);
+      deleteState(handle);
+    });
+
+    it("returns true for blocked status after the short recheck window", () => {
+      const handle = `${testPrefix}-stale-blocked`;
+      writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
+      const path = statePath(handle);
+      const past = new Date(Date.now() - 20 * 1000);
+      utimesSync(path, past, past);
+
+      expect(isStale(handle)).toBe(true);
+      deleteState(handle);
+    });
+
+    it("keeps starting on the longer startup stale threshold", () => {
+      const handle = `${testPrefix}-stale-starting-short`;
+      writeState(makeState({ handle, status: "starting" }));
+      const path = statePath(handle);
+      const twentySecondsAgo = new Date(Date.now() - 20 * 1000);
+      utimesSync(path, twentySecondsAgo, twentySecondsAgo);
+      expect(isStale(handle)).toBe(false);
+
+      const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+      utimesSync(path, sixMinutesAgo, sixMinutesAgo);
       expect(isStale(handle)).toBe(true);
       deleteState(handle);
     });

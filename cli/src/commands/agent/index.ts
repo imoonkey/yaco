@@ -438,7 +438,7 @@ export async function handleAgent(
         );
       }
       const json = parsed.options.json || opts.json;
-      const output = list({
+      const output = await list({
         json,
         all: parsed.options.all,
         path: parsed.options.path,
@@ -462,7 +462,7 @@ export async function handleAgent(
         );
       }
       const json = parsed.options.json || opts.json;
-      const output = status(name, { json, reconcile: parsed.options.reconcile });
+      const output = await status(name, { json, reconcile: parsed.options.reconcile });
       // status() returns a string (JSON or the text detail block). Pre-parse for
       // the JSON envelope; text mode carries the block raw via `{text}`.
       if (json) {
@@ -477,7 +477,7 @@ export async function handleAgent(
         throw new CliError(ErrCode.USAGE, "yaco agent whoami [--json]");
       }
 
-      const identity = whoami();
+      const identity = await whoami();
       if (!identity) {
         throw new CliError(
           ErrCode.NOT_FOUND,

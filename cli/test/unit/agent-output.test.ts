@@ -19,6 +19,7 @@ import {
   decodeCursorToken,
   encodeCursorToken,
   followOutput,
+  turnStateFromTranscript,
   type FollowFrame,
 } from "../../src/lib/core/agent/providers/output.ts";
 import {
@@ -51,6 +52,31 @@ function tmpFile(name = "log.jsonl"): { dir: string; path: string } {
   return { dir, path: join(dir, name) };
 }
 
+async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const prevHome = process.env.HOME;
+  const home = mkdtempSync(join(tmpdir(), "yaco-home-"));
+  process.env.HOME = home;
+  try {
+    return await fn(home);
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function writeClaudeTranscript(home: string, session: SessionState, lines: string[]): void {
+  const dir = join(home, ".claude", "projects", encodeClaudeCwd(session.sessionPath));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${session.sessionId}.jsonl`), `${lines.join("\n")}\n`);
+}
+
+function writeCodexTranscript(home: string, sessionId: string, lines: string[]): void {
+  const dir = join(home, ".codex", "sessions", "2026", "06", "23");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `rollout-2026-06-23T00-00-00-${sessionId}.jsonl`), `${lines.join("\n")}\n`);
+}
+
 /** A fake clock + sleep: each sleep advances the clock by `step` and runs an
  *  optional side effect (e.g. growing the log between polls). */
 function fakeTimer(step: number, onSleep?: () => void) {
@@ -76,6 +102,99 @@ function makeState(over: Partial<SessionState>): SessionState {
     ...over,
   };
 }
+
+describe("turnStateFromTranscript", () => {
+  it("classifies Claude normal end, tool use, prompt, and interrupt markers", async () => {
+    await withTempHome(async (home) => {
+      const session = makeState({ provider: "claude", sessionId: "claude-session" });
+
+      writeClaudeTranscript(home, session, [claudeLine("done", true)]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle" });
+
+      writeClaudeTranscript(home, session, [claudeLine("using a tool", false)]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "processing" });
+
+      writeClaudeTranscript(home, session, [
+        JSON.stringify({ type: "user", message: { content: "continue the task" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "processing" });
+
+      writeClaudeTranscript(home, session, [
+        JSON.stringify({ type: "user", message: { content: "[Request interrupted by user]" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle", idleReason: "interrupted" });
+
+      writeClaudeTranscript(home, session, [
+        JSON.stringify({
+          type: "user",
+          message: { content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] },
+        }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle", idleReason: "interrupted" });
+    });
+  });
+
+  it("does not treat Claude tool_result text as an interrupt marker", async () => {
+    await withTempHome(async (home) => {
+      const session = makeState({ provider: "claude", sessionId: "claude-session" });
+      writeClaudeTranscript(home, session, [
+        JSON.stringify({
+          type: "user",
+          message: { content: [{ type: "tool_result", content: "[Request interrupted by user]" }] },
+        }),
+      ]);
+
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "processing" });
+    });
+  });
+
+  it("skips Claude sidechain/meta entries when finding the latest turn state", async () => {
+    await withTempHome(async (home) => {
+      const session = makeState({ provider: "claude", sessionId: "claude-session" });
+      writeClaudeTranscript(home, session, [
+        claudeLine("done", true),
+        JSON.stringify({ type: "user", isSidechain: true, message: { content: "[Request interrupted by user]" } }),
+        JSON.stringify({ type: "user", isMeta: true, message: { content: "[Request interrupted by user]" } }),
+      ]);
+
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle" });
+    });
+  });
+
+  it("classifies Codex task events", async () => {
+    await withTempHome(async (home) => {
+      const session = makeState({ provider: "codex", sessionId: "codex-session" });
+
+      writeCodexTranscript(home, session.sessionId, [
+        JSON.stringify({ type: "event_msg", payload: { type: "task_complete" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle" });
+
+      writeCodexTranscript(home, session.sessionId, [
+        JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "processing" });
+
+      writeCodexTranscript(home, session.sessionId, [
+        JSON.stringify({ type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle", idleReason: "interrupted" });
+
+      writeCodexTranscript(home, session.sessionId, [
+        JSON.stringify({ type: "event_msg", payload: { type: "turn_aborted", reason: "error" } }),
+      ]);
+      expect(await turnStateFromTranscript(session)).toEqual({ status: "idle" });
+    });
+  });
+
+  it("returns null for unresolved or missing transcript files", async () => {
+    await withTempHome(async () => {
+      expect(await turnStateFromTranscript(makeState({ sessionId: PENDING_SESSION_ID }))).toBeNull();
+      expect(await turnStateFromTranscript(makeState({ provider: "claude", sessionId: "missing" }))).toBeNull();
+      expect(await turnStateFromTranscript(makeState({ provider: "codex", sessionId: "missing" }))).toBeNull();
+    });
+  });
+});
 
 describe("followOutput", () => {
   it("emits monotonic nextOffset event frames and ends on final", async () => {
