@@ -722,8 +722,15 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     // textarea + key-bar paste textarea) so useKeyboardViewport only shrinks
     // #root when the terminal — not a normal input — opened the keyboard.
     <div data-terminal-surface className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+      {/* overflow-hidden clips the xterm grid to the terminal's own panel box: on a
+          one-shot viewport jump (e.g. unplugging a monitor) the grid keeps its old
+          wide cols for the single frame before the ResizeObserver re-fit lands, and
+          would otherwise paint over the neighbouring panel. This is ABOVE the row-
+          level right-edge cushion (`.xterm-rows > div` padding in index.css) and the
+          fit reserves that cushion, so a row's last glyph always ends inside this box
+          — the clip never eats characters. */}
       <div
-        className="relative flex-1 min-h-0 w-full select-text"
+        className="relative flex-1 min-h-0 w-full select-text overflow-hidden"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         onMouseDown={onInteract}
         onFocusCapture={onFocus}
