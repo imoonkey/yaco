@@ -56,8 +56,9 @@ only the orchestration layer `/implement` has no concept of: selecting ready lea
 isolated in its own worktree), parallelizing, **gatekeeping** their output, **merging each
 passed leaf up its worktree/branch DAG, and marking done only after that merge lands**. The
 worker runs the full recipe but defers its "done" decision — orchestrate is the external
-gatekeeper that, by **reading the evidence** the worker produced (acceptCriteria, the
-independent-review artifact, `/verify`, `/qa`), decides the work is *ready to merge*, never by
+gatekeeper that, by **reading one `yaco gate` result** (the floor checks the diff owes —
+verify/doc/review/qa — plus `dirty`) and the two overlays the diff-only gate can't see
+(acceptCriteria, review independence), decides the work is *ready to merge*, never by
 redoing it: a not-yet-met criterion (missing *or* failed) bounces back to the worker to keep
 finishing its recipe, and only non-convergence (or a human-gate) blocks. This split is why a
 change to leaf execution touches one file, not two. (Non-implementation leaves —

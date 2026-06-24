@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-24: Gate skill-wiring — point /implement, /verify, /qa, /orchestrate at the built gate (codify-process-gate v1 · T4, final leaf)
+
+**What changed:**
+- **/verify**: execution entry is the repo's single `scripts/verify.sh` (source of truth — `/verify`, `yaco gate`, and any hook run the identical checks); the Stack Detection + Verification Phases are reframed as a *guide* to the dimensions verification covers, not a per-stack copy of build/lint/test commands.
+- **/implement**: the *Finish* section runs `yaco gate` as the self-check and finishes only all-green (a red check → keep going); the *Code Review* artifact path moved off "design-doc folder or project root" onto the `/yaco-paths`-resolved bundle home and its header now also carries the **reviewed sha** (HEAD) the gate keys freshness on; Usage + Step 1 record the convention that a manual /implement opens a task into the **active** set (its contract/visibility home), auto-archived on completion.
+- **/qa**: emits a **sha-stamped artifact** (`reviewed_sha = <exercised tree sha>`) to the `/yaco-paths` bundle home, not just stdout — closing the one floor-evidence gap the gate couldn't read (review artifacts already self-stamp; qa didn't).
+- **/orchestrate**: the *Gatekeep* step collapses the former multi-path evidence read (re-run `/verify`, hunt the review artifact, re-derive qa flows) into reading **one `yaco gate` result** (`data.checks` + `data.dirty`). The two things a diff-only gate can't see stay orchestrate's own overlays — acceptCriteria (gate never reads the task) and review **independence** (v1 gate `review` check is existence-only, so a self-authored review would otherwise pass). Merge-up / worktree model unchanged.
+- SOTA sync: `doc/main/agent-config/architecture.md` (orchestrate gatekeep now "one `yaco gate` result + two overlays"), `doc/dev/README.md` (gate verb + skill wiring now landed, not "later tasks").
+
+**Why:**
+- Final leaf of codify-process-gate v1: the mechanism (`scripts/{verify,gate}.sh`, `yaco gate`, the set-done guard) shipped in T1–T3; T4 makes the skills *call* it, so the "silent skipped-step" failure mode is wired shut from the prose side too. Pure SKILL.md prose — no runtime change. Per the no-rationale-in-artifact rule, the "why" lives here, not in the skills.
+
+**Key files:** `agent-config/global/skills/{implement,verify,qa,orchestrate}/SKILL.md`, `doc/main/agent-config/architecture.md`, `doc/dev/README.md`, `plan/all/codify-some-process/{gate-skill-wiring-plan,review_codex_gate-skill-wiring}.md`.
+**Verification:** Prose-only diff touching `agent-config/` + `plan/` — no `(src|cli|app)/` paths, so the repo gate's `verify`/`review`/`qa` checks skip and only `doc` applies (satisfied by these `docs(...)` commits); no build/lint/test surface affected. Acceptance re-confirmed by reading the edited files: `/implement` Finish references `yaco gate` and finishes all-green + review path uses `/yaco-paths`; `/verify` points at `scripts/verify.sh`; `/qa` writes a sha-stamped artifact; `/orchestrate` Gatekeep reads one `yaco gate` result. Independent cross-provider review (Codex, handle `w-review-gsw`): initial verdict fail / 0 critical / 3 high — two HIGH (verify phases overstated the script's steps; implement review header lacked reviewed_sha) + one MEDIUM (path under-specified) fixed at `2c2ddd2`; one HIGH (drop the orchestrate independence overlay) rebutted as a design-sanctioned non-goal (`tasks.md` §非目标) whose removal would let self-authored reviews pass. Review artifact: `plan/all/codify-some-process/review_codex_gate-skill-wiring.md` (reviewed_sha `2c2ddd2`, 0 unresolved).
+**Commit:** `b585728` (wiring) + `2c2ddd2` (review fixes) + this docs commit
+**Next:** v1 complete (T1–T4). v2 (T5 sha-cache, T6 Stop-hook loop) adds the teeth; v3 (T7–T8) makes review/qa verdict sections parseable.
+**Blockers:** None.
+
+
 ## 2026-06-24: Set-done gate guard — leaf-→-done runs the exit gate (codify-process-gate v1 · T3)
 
 **What changed:**

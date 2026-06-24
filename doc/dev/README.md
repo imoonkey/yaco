@@ -24,6 +24,8 @@ convention as `scripts/worktree-provision.sh`):
 `gate.sh` derives the check set from the diff, not from which task is in flight —
 the work can't dodge a gate by misclassifying itself. v1 is stateless and
 existence-only for `review`/`qa` artifacts (a `plan/` file referencing the
-current HEAD sha); the `yaco gate` verb and skill wiring land in later tasks.
-`scripts/gate.test.sh` is a hermetic test of the floor mapping.
+current HEAD sha). The thin `yaco gate` verb wraps these scripts
+([`main/cli/gate.md`](../main/cli/gate.md)), and the skills call them: `/verify` runs
+`scripts/verify.sh`, `/implement` self-checks with `yaco gate`, and `/orchestrate`
+gatekeeps on its result. `scripts/gate.test.sh` is a hermetic test of the floor mapping.
 
