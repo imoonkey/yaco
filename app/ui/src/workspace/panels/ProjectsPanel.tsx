@@ -14,7 +14,8 @@ import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
 // Body: render `ProjectList` from env inputs + project-management callbacks.
-// This is byte-identical to the former inline `projectListBody`.
+// ProjectList shows projects only; the worktree selector lives in the Files
+// header (design: §P2).
 //
 // This module co-locates its body/header components with the `PanelDefinition`
 // object it exports. That object is a non-component export, so fast refresh
@@ -26,12 +27,9 @@ function ProjectsPanelBody() {
     <ProjectList
       projects={env.projects}
       activeProject={env.activeProject}
-      activeWorktree={env.activeWorktree}
-      worktrees={env.worktrees}
       badgesByProject={env.badgesByProject}
       projectSessionCounts={env.projectSessionCounts}
       onSelect={env.selectProject}
-      onWorktreeSelect={env.selectWorktree}
       onReorder={env.reorderProjects}
       onRemove={env.removeProject}
       onMarkAllRead={env.markAllRead}

@@ -12,7 +12,7 @@
 //
 // The mock provider + helpers are inlined and FilesPanel-prefixed so the 7 panel
 // workers sharing panels/__tests__/ never collide on merge.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PanelFrame } from '../../PanelFrame'
 import { resolvePanelTitle } from '../../panelMeta'
@@ -26,6 +26,7 @@ import type {
   WorkspaceEnv, WorkspaceData, WorkspaceSelection, WorkspaceLayoutContextValue,
   WorkspaceCommands, WorkspaceControllerRegistry, WorkspaceControllers, FileRevealIntent,
 } from '../../context'
+import type { WorktreeInfo } from '../../../hooks/useProjectWorktrees'
 
 // Text search is lazy in the panel; stub it so search mode renders a sync marker
 // instead of pulling the ripgrep stream UI and its fetches.
@@ -76,14 +77,25 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-type RenderOpts = { showTextSearch?: boolean; revealIntent?: FileRevealIntent | null }
+type RenderOpts = {
+  showTextSearch?: boolean
+  revealIntent?: FileRevealIntent | null
+  worktrees?: WorktreeInfo[]
+  activeWorktree?: string | null
+}
 
 function renderFilesPanel(opts: RenderOpts = {}) {
   const showTextSearch = opts.showTextSearch ?? false
+  const worktrees = opts.worktrees ?? []
+  const activeWorktree = opts.activeWorktree ?? null
+  const selectWorktree = vi.fn()
 
   const env = {
-    project: { name: 'demo', path: '/demo', worktree: null, effectivePath: '/demo' },
+    project: { name: 'demo', path: '/demo', worktree: activeWorktree, effectivePath: activeWorktree ?? '/demo' },
     viewport: { isMobile: false, isLandscape: false, isTouch: false },
+    worktrees,
+    activeWorktree,
+    selectWorktree,
   } as unknown as WorkspaceEnv
 
   const data = {
@@ -156,7 +168,7 @@ function renderFilesPanel(opts: RenderOpts = {}) {
     </WorkspaceEnvContext.Provider>,
   )
 
-  return { ...view, setFilesMode, showQuickOpen, updateLayout, controllers, initialControllers, onSessionChange }
+  return { ...view, setFilesMode, showQuickOpen, updateLayout, controllers, initialControllers, onSessionChange, selectWorktree }
 }
 
 describe('FilesPanel — chrome is framed (project-name title + explorer toolbar)', () => {
@@ -281,5 +293,67 @@ describe('FilesPanel — file-reveal controller', () => {
     await waitFor(() => {
       expect(updateLayout).toHaveBeenCalledWith({ showSidebar: true, showExplorer: true })
     })
+  })
+})
+
+describe('FilesPanel — worktree picker (the header dropdown the user clicks)', () => {
+  const WORKTREES: WorktreeInfo[] = [
+    { id: '/demo', name: 'demo (primary)', branch: 'main', head: 'aaa1111', isPrimary: true, dirty: false, ahead: 0, behind: 0 },
+    { id: '/abs/wt/feature-x', name: 'feature-x', branch: 'task/feature-x', head: 'bbb2222', isPrimary: false, dirty: true, ahead: 2, behind: 1 },
+  ]
+
+  it('renders no picker when the project has no worktrees', async () => {
+    renderFilesPanel({ worktrees: [] })
+    await screen.findByLabelText('Search in files')
+    expect(screen.queryByLabelText('Select worktree')).toBeNull()
+  })
+
+  it('the trigger shows the current branch (primary when nothing is selected)', async () => {
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    const trigger = await screen.findByLabelText('Select worktree')
+    expect(within(trigger).getByText('main')).toBeTruthy()
+  })
+
+  it('falls back to the primary branch when the selected id is gone (not the first row)', async () => {
+    // Linked worktree ordered BEFORE primary; the selection points at a worktree
+    // that is no longer registered. The trigger must show primary, not worktrees[0].
+    const linkedFirst: WorktreeInfo[] = [WORKTREES[1], WORKTREES[0]]
+    renderFilesPanel({ worktrees: linkedFirst, activeWorktree: '/abs/wt/gone' })
+    const trigger = await screen.findByLabelText('Select worktree')
+    expect(within(trigger).getByText('main')).toBeTruthy()
+  })
+
+  it('opening the dropdown lists every worktree by branch + a primary chip', async () => {
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+
+    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
+    expect(within(list).getByText('main')).toBeTruthy()
+    expect(within(list).getByText('task/feature-x')).toBeTruthy()
+    expect(within(list).getByText('primary')).toBeTruthy()
+  })
+
+  it('clicking a linked worktree row binds it by its absolute-path id', async () => {
+    const { selectWorktree } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+
+    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
+    const row = list.querySelector('[data-worktree-id="/abs/wt/feature-x"]') as HTMLElement
+    expect(row).toBeTruthy()
+    fireEvent.click(row)
+    expect(selectWorktree).toHaveBeenCalledWith('/abs/wt/feature-x')
+  })
+
+  it('clicking the primary row binds null (returns to the main working tree)', async () => {
+    const { selectWorktree } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
+    // While a linked worktree is selected, the trigger reflects its branch.
+    const trigger = await screen.findByLabelText('Select worktree')
+    expect(within(trigger).getByText('task/feature-x')).toBeTruthy()
+
+    fireEvent.click(trigger)
+    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
+    const primaryRow = list.querySelector('[data-worktree-id="/demo"]') as HTMLElement
+    fireEvent.click(primaryRow)
+    expect(selectWorktree).toHaveBeenCalledWith(null)
   })
 })

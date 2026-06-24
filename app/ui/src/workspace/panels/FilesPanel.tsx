@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useFileTree } from '../../hooks/useApi'
 import { FileExplorer, type FileExplorerHandle } from '../../components/FileExplorer'
+import { WorktreePicker } from '../../components/WorktreePicker'
 import { SectionRefreshButton } from '../SectionHeader'
 import { useWorkspaceNavigation } from '../useWorkspaceNavigation'
 import {
@@ -255,6 +256,11 @@ function useFilesHeader(): PanelHeaderSlots {
     </div>
   ) : (
     <div className="flex gap-0.5 items-center">
+      <WorktreePicker
+        worktrees={env.worktrees}
+        activeWorktree={env.activeWorktree}
+        onSelect={env.selectWorktree}
+      />
       <button
         type="button"
         onClick={() => commands.setFilesMode('search')}
