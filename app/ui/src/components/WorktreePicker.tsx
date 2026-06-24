@@ -97,9 +97,10 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect, open, onOp
           }}
         >
           <div className="flex items-center h-[24px] mx-1 my-1 gap-1">
-            <div
-              role="button"
+            <button
+              type="button"
               aria-label={`Worktree: ${current!.branch}`}
+              aria-expanded={open}
               className="flex flex-1 min-w-0 items-center h-full cursor-pointer rounded-sm px-1 gap-1.5"
               style={{ transition: 'background-color 120ms' }}
               onClick={() => onOpenChange(!open)}
@@ -111,7 +112,7 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect, open, onOp
                 style={{ color: 'var(--sol-text)' }}
               >worktree</span>
               <span
-                className="flex-1 text-ui-md truncate font-medium"
+                className="flex-1 text-ui-md truncate font-medium text-left"
                 style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
               >{current!.branch}</span>
               <WorktreeMeta wt={current!} />
@@ -124,7 +125,7 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect, open, onOp
                   transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
                 }}
               />
-            </div>
+            </button>
             <button
               type="button"
               aria-label="Remove worktree (return to primary)"
@@ -178,6 +179,11 @@ function WorktreeDropdown({ open, anchorRef, worktrees, activeWorktree, onSelect
   const activeIdx = Math.max(0, worktrees.findIndex(wt =>
     wt.isPrimary ? activeWorktree === null : wt.id === activeWorktree))
   const [focusIdx, setFocusIdx] = useState(activeIdx)
+  // On open, DialogShell focuses this ref — moving focus INTO the dropdown (onto the
+  // active option) rather than leaving it on the trigger button. Together with
+  // restoreFocus={false}, this keeps the trigger from being left focused-and-armed (the
+  // stray-Enter reopen), and gives keyboard users a sensible landing row.
+  const activeOptionRef = useRef<HTMLButtonElement>(null)
 
   if (!open) return null
 
@@ -186,6 +192,7 @@ function WorktreeDropdown({ open, anchorRef, worktrees, activeWorktree, onSelect
       onClose={onClose}
       overlay={false}
       animation="panel"
+      autoFocusRef={activeOptionRef}
       // Do NOT restore focus to the trigger on close. The picker can be opened from the
       // header GitBranch *button*; a worktree switch does NOT remount the workspace, so
       // restoring focus would leave that button focused after a selection — and a later
@@ -202,6 +209,7 @@ function WorktreeDropdown({ open, anchorRef, worktrees, activeWorktree, onSelect
           return (
             <button
               key={wt.id}
+              ref={idx === activeIdx ? activeOptionRef : undefined}
               type="button"
               role="option"
               aria-selected={isActive}

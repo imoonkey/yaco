@@ -453,4 +453,24 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(within(list).getByText('main')).toBeTruthy()
     expect(within(list).getByText('task/feature-x')).toBeTruthy()
   })
+
+  it('the indicator is a real <button> (keyboard-accessible without a mouse)', async () => {
+    // In search mode the header toggle is absent, so the indicator is the keyboard path
+    // to the picker — it must be a genuine button, not a static role=button div.
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
+    const region = await screen.findByRole('button', { name: 'Worktree: task/feature-x' })
+    expect(region.tagName).toBe('BUTTON')
+  })
+
+  it('opening the dropdown moves focus ONTO the active option (not left on the trigger)', async () => {
+    // Guards the stray-Enter reopen regression: the dropdown autofocuses its active row,
+    // so the header toggle is not left focused-and-armed after opening (a focused toggle
+    // + a later Enter would otherwise re-activate it). Pairs with restoreFocus={false}.
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    const toggle = await screen.findByLabelText('Select worktree')
+    fireEvent.click(toggle)
+    const activeOption = worktreeList().querySelector('[data-worktree-id="/demo"]') as HTMLElement
+    expect(document.activeElement).toBe(activeOption)
+    expect(document.activeElement).not.toBe(toggle)
+  })
 })
