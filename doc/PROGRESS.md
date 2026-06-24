@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-24: Worktree picker in the Files header; drop the ProjectList sub-list (worktree-explorer-view P2 frontend)
+
+**What changed:**
+- New `app/ui/src/components/WorktreePicker.tsx`: the worktree selector now lives in the File Explorer header. Trigger = `GitBranch` + the current branch, composed INSIDE `useFilesHeader`'s existing `flex items-center` actions row (the header-actions-one-row constraint — appending after the actions div wraps a control into the resize-handle hit zone). Body-anchored, fixed-position dropdown (the `RefSearchDropdown`/`DialogShell` technique — anchor ref + `position:fixed`, so it escapes the header) lists every git-sourced worktree by **branch**, tags the main working tree with a `primary` chip, and shows a dirty dot + ahead/behind per row. Select → `env.selectWorktree(id | null)`; the primary maps to `null`. Current-entry resolution is active-match → primary → first (so a stale selection never shows a linked branch).
+- `components/ProjectList.tsx`: renders **projects only**. The worktree sub-list and the active-click worktree reset are gone; `activeWorktree`/`worktrees`/`onWorktreeSelect` props removed; `isMainActive` collapses to `isActive` (the active project always gets the full highlight). `ProjectsPanel.tsx` drops the three props at the one call site.
+- `components/FileExplorer.tsx`: unchanged — copy/reveal/mutations already thread the selected worktree **abspath** (`worktree ?? projectPath`) from P1; now covered by the e2e re-root flow.
+
+**Why:**
+- P2 of the worktree-as-explorer-view design (§P2): a worktree is "which working directory am I looking at", so its selector belongs in the file-view header next to Compare-refs, not as a workspace-identity sub-list under the project. Git-sourced (P1) means manual/external worktrees now appear. The decouple (no remount, per-worktree editor content/drafts, persistence schema) stays **P3** — P2 changes only where the selector lives and what ProjectList renders.
+
+**Key files:** `app/ui/src/components/WorktreePicker.tsx` (new), `workspace/panels/FilesPanel.tsx`, `components/ProjectList.tsx`, `workspace/panels/ProjectsPanel.tsx`.
+**Verification:** `cd app/ui && npx tsc -b && npm run lint && npm test` → 82 files, 1056 tests pass (incl. new FilesPanel picker tests that click the real trigger/dropdown and assert the bound id, and ProjectList "projects only" tests). e2e `worktree.spec.ts` rewritten to the header picker: 4/4 pass (lists worktrees by branch + primary chip; selecting one re-roots the explorer to its tree; primary returns to main). Cross-provider review (Codex, independent context): APPROVE, 0 critical/high; 1 LOW (stale-selection fallback order) fixed in `c5ba6d6`. Artifacts: `plan/all/worktree-explorer-view/{code-review_p2-frontend,qa_p2-frontend}.md`.
+**Commit:** `62ab000a` (feat) · `c5ba6d6e` (LOW fix) · `37e9ff88` (e2e) (+ docs).
+**Next:** P3 — filestate projection, session decouple, persistence schema (abspath `:wt:` keys + migration; `worktree-persist.spec.ts` rewrite rides here), drop-remount.
+**Blockers:** None.
+
 ## 2026-06-24: Frontend worktrees — git-sourced list + abspath identity (worktree-explorer-view P1 frontend)
 
 **What changed:**
