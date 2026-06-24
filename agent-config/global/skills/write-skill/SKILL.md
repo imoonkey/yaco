@@ -21,7 +21,7 @@ The test is **surprisal**: keep a line only if a capable agent wouldn't already 
   - Bad: `Previously this ran three phases; we merged phase 2 into 1, so now there are two. The old --legacy flag is gone.`
   - Good: `Run two phases: 1) … 2) …`
 
-- **Lead with the shape, not prose.** A skill encodes a process, a set of gates, or a handful of principles — whichever it is, state it in its densest faithful form (a numbered list, a phase sequence, a table, a state machine) and reserve prose for the rationale that no structure can hold. The shape carries the *what*; words carry only the *why*.
+- **Lead with the shape, not prose.** A skill encodes a process, a set of gates, or a handful of principles — whichever it is, state it in its densest faithful form (a numbered list, a phase sequence, a table, a mermaid diagram, a state machine) and reserve prose for the rationale that no structure can hold. The shape carries the *what*; words carry only the *why*.
 
 - **Deep skill, progressive disclosure.** The SKILL.md body is the interface; `references/` and `scripts/` are the implementation behind it. Keep the always-loaded surface small and push depth down a layer, read on demand. Apply the **deletion test** to anything below the top: a `references/` file read on *every* trigger isn't a reference, it's the body — inline it; a three-line "script" the prose could just state is a shallow extraction — cut it. Bundle a script only for deterministic logic repeated across runs, so the behavior has one home instead of being re-derived each time.
 
