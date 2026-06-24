@@ -21,6 +21,7 @@ import { handleAlign } from "./commands/align/index.ts";
 import { handleInit } from "./commands/init.ts";
 import { handleInstall } from "./commands/install.ts";
 import { handleDoctor } from "./commands/doctor.ts";
+import { handleGate } from "./commands/gate.ts";
 import { handleProject } from "./commands/project/index.ts";
 import { handlePlan } from "./commands/plan/index.ts";
 import { PROVIDERS } from "./lib/core/agent/providers.ts";
@@ -36,6 +37,7 @@ const AREAS = [
   "paths",
   "project",
   "plan",
+  "gate",
 ] as const;
 type Area = (typeof AREAS)[number];
 
@@ -50,6 +52,7 @@ const AREA_HELP: Record<Area, string> = {
   paths: "Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)",
   project: "Operate on registered YACO projects (move metadata, ...)",
   plan: "Promote the plan directory into a private, colocated git repo",
+  gate: "Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff",
 };
 
 function helpText(): string {
@@ -93,6 +96,7 @@ const HANDLERS: Record<Area, AreaHandler> = {
   paths: handlePaths,
   project: handleProject,
   plan: handlePlan,
+  gate: handleGate,
 };
 
 function isArea(value: string): value is Area {

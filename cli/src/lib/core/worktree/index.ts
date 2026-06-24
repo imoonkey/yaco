@@ -9,6 +9,7 @@ export { validateSlug } from "./slug.ts";
 export { worktreePath, worktreeBranch } from "./convention.ts";
 export {
   branchExists,
+  getMergeBase,
   isDirty,
   isWorktreeRegistered,
   resolveRepoRoot,

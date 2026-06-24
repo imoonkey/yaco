@@ -51,6 +51,21 @@ export function resolveRepoRoot(cwd: string = process.cwd()): string {
   return gitCommonDir.replace(/\/?\.git$/, "");
 }
 
+/** Resolve the merge-base of two refs — `git merge-base <head> <base>`.
+ *  Thin wrapper over runGit; throws IO when git can't compute one (e.g. an
+ *  unknown ref, or two histories with no common ancestor). Returned sha is the
+ *  diff baseline the gate computes its floor against (design.md §6.1). */
+export function getMergeBase(repoRoot: string, head: string, base: string): string {
+  const r = runGit(["merge-base", head, base], repoRoot);
+  if (r.status !== 0) {
+    throw new CliError(
+      ErrCode.IO,
+      `git merge-base ${head} ${base} failed: ${r.stderr.trim() || `exit ${r.status}`}`,
+    );
+  }
+  return r.stdout.trim();
+}
+
 export function branchExists(repoRoot: string, branch: string): boolean {
   const r = runGit(["rev-parse", "--verify", "--quiet", branch], repoRoot);
   return r.status === 0;
