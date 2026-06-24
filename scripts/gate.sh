@@ -41,7 +41,10 @@ if ! git rev-parse --verify "$base^{commit}" >/dev/null 2>&1; then
 fi
 
 head_sha="$(git rev-parse --short=7 HEAD)"
-diff_files="$(git diff "$base"..HEAD --name-only)"
+# --no-renames so a rename exposes BOTH paths: `git mv cli/x.ts plan/x.md` must
+# not hide the code source (rename detection reports only the destination),
+# which would let relocated code skip the verify/review floor.
+diff_files="$(git diff "$base"..HEAD --name-only --no-renames)"
 
 # --- floor from the diff -----------------------------------------------------
 touched_any=0

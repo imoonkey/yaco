@@ -152,6 +152,19 @@ commit_file "$r" plan/note.md "add note"
 expect "mixed non-doc+plan, no evidence -> doc fail" "$r" "$b" \
   '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
+# 3f. a code file RENAMED into a doc path must NOT be classified doc_only: git's
+# rename detection reports only the destination, hiding the cli/ source. gate.sh
+# uses --no-renames so both sides show -> touched_code stays on, verify+review owed.
+r="$(mk 0)"
+commit_file "$r" cli/foo.ts "feat: code"
+b="$(head_sha "$r")"
+in_root "$r"
+mkdir -p "$r/plan"
+git -C "$r" mv cli/foo.ts plan/foo.md
+git -C "$r" commit -qm "refactor: relocate"
+expect "renamed code->plan is not doc_only -> verify+review owed" "$r" "$b" \
+  '{"verify":"pass","doc":"fail","review":"fail","qa":"skip"}' 1
+
 # 4. code + verify pass + doc + review present -> all green, qa skip
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
