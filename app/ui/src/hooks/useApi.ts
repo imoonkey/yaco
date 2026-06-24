@@ -6,7 +6,9 @@ import { ApiError } from '../lib/apiError'
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
 
-/** Append ?worktree=slug (or &worktree=slug) to a URL when worktree is active */
+/** Append ?worktree=<abspath> (or &worktree=…) to a URL when a worktree is selected.
+ *  The value is the worktree's absolute path (git-registered, realpath-validated
+ *  server-side); url-encoded so the path separators survive the query string. */
 export function appendWorktree(url: string, worktree?: string | null): string {
   if (!worktree) return url
   const sep = url.includes('?') ? '&' : '?'

@@ -79,7 +79,8 @@ export type WorkspaceEnv = {
   notificationBell?: ReactNode
   // Project-management callbacks (not panel layout state).
   selectProject: (name: string) => void
-  selectWorktree: (slug: string | null) => void
+  // id = the worktree's absolute path; null = the primary checkout.
+  selectWorktree: (id: string | null) => void
   reorderProjects: (fromName: string, toName: string) => void
   removeProject: (project: Project) => void
   addProject: () => void

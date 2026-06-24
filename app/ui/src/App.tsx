@@ -185,10 +185,10 @@ function App() {
     setActiveWorktree(loadWorktree(activeProject))
   }, [activeProject])
 
-  // Validate activeWorktree is still in the worktree list
+  // Validate activeWorktree (an abspath) is still a registered worktree
   useEffect(() => {
     if (!activeWorktree) return
-    if (!worktrees.some(w => w.slug === activeWorktree)) {
+    if (!worktrees.some(w => w.id === activeWorktree)) {
       setActiveWorktree(null)
     }
   }, [activeWorktree, worktrees])
@@ -313,8 +313,8 @@ function App() {
     setProjectName(name)
   }, [])
 
-  const handleWorktreeSelect = useCallback((slug: string | null) => {
-    setActiveWorktree(slug)
+  const handleWorktreeSelect = useCallback((id: string | null) => {
+    setActiveWorktree(id)
   }, [])
 
   const handleAddProject = useCallback(() => {

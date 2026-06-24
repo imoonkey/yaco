@@ -263,7 +263,8 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
 
   const handleCopyAbsolutePath = useCallback((path: string) => {
     menu.close()
-    const root = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
+    // worktree is the selected worktree's absolute path (null → the project root).
+    const root = worktree ?? projectPath
     void writeTextToClipboard(`${root}/${path}`)
   }, [menu, projectPath, worktree])
 

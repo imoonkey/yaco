@@ -28,7 +28,7 @@ export function ProjectList({
   badgesByProject: Record<string, AttentionBadge>
   projectSessionCounts: Record<string, { active: number; total: number }>
   onSelect: (name: string) => void
-  onWorktreeSelect: (slug: string | null) => void
+  onWorktreeSelect: (id: string | null) => void
   onReorder: (fromName: string, toName: string) => void
   onRemove: (project: Project) => void
   onMarkAllRead: (projectName: string) => void
@@ -75,6 +75,11 @@ export function ProjectList({
       onSelect(name)
     }
   }, [activeProject, onSelect, onWorktreeSelect])
+
+  // The git-sourced list now includes the primary checkout; the sub-list shows only
+  // the linked (non-primary) worktrees, as it always did (selecting primary is the
+  // header dropdown's concern in P2).
+  const linkedWorktrees = worktrees.filter(wt => !wt.isPrimary)
 
   return (
     <div className="flex flex-col gap-0.5 px-1 py-1">
@@ -136,14 +141,14 @@ export function ProjectList({
             </button>
 
             {/* Worktree sub-items under active project */}
-            {isActive && worktrees.length > 0 && (
+            {isActive && linkedWorktrees.length > 0 && (
               <div className="flex flex-col gap-0.5 mt-0.5">
-                {worktrees.map(wt => {
-                  const isWtActive = activeWorktree === wt.slug
+                {linkedWorktrees.map(wt => {
+                  const isWtActive = activeWorktree === wt.id
                   return (
                     <button
-                      key={wt.slug}
-                      onClick={() => onWorktreeSelect(wt.slug)}
+                      key={wt.id}
+                      onClick={() => onWorktreeSelect(wt.id)}
                       className={`w-full text-left pl-5 pr-2 py-0.5 rounded text-ui-sm cursor-pointer flex items-center gap-1.5 ${
                         isWtActive
                           ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)] font-medium'
@@ -156,7 +161,7 @@ export function ProjectList({
                       title={`${wt.branch}${wt.dirty ? ' (modified)' : ''}${wt.ahead > 0 ? ` +${wt.ahead}` : ''}${wt.behind > 0 ? ` -${wt.behind}` : ''}`}
                     >
                       <GitBranch size={11} className="shrink-0 opacity-60" />
-                      <span className="truncate flex-1">{wt.slug}</span>
+                      <span className="truncate flex-1">{wt.name}</span>
                       {wt.dirty && (
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-warning)' }} />
                       )}

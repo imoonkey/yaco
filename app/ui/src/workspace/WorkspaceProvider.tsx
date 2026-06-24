@@ -58,7 +58,7 @@ export type WorkspaceProviderProps = {
   worktree?: string | null
   worktrees: WorktreeInfo[]
   activeWorktree: string | null
-  onWorktreeSelect: (slug: string | null) => void
+  onWorktreeSelect: (id: string | null) => void
   projects: Project[]
   activeProject: string
   badgesByProject: Record<string, AttentionBadge>
@@ -121,7 +121,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const isMobile = useIsMobile()
   const isLandscape = useIsLandscape()
   const isTouch = useIsTouch()
-  const effectivePath = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
+  // The worktree id IS its absolute path, so effectivePath is the selected
+  // worktree's path (null → the project root). It scopes only the file/git views.
+  const effectivePath = activeWorktree ?? projectPath
 
   // Centralized tab/layout/file state.
   const ws = useWorkspaceState(projectName, worktree)

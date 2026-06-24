@@ -1,17 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSSERefresh } from './useSSE'
 
+/** One git-registered worktree of a project (mirrors the server's WorktreeInfo).
+ *  `id` is the worktree's absolute path — the stable identity that replaces the
+ *  old `.worktrees/<slug>` slug. */
 export interface WorktreeInfo {
-  slug: string
+  id: string         // absolute path — stable identifier
+  name: string       // display label ("<repo> (primary)" | basename)
+  branch: string     // "task/foo" | "(detached)" | "(bare)"
+  head: string       // short sha
+  isPrimary: boolean // the main working tree
   dirty: boolean
-  branch: string
   ahead: number
   behind: number
 }
 
 /**
- * Derive active worktrees for a project from the task API response.
- * Tasks with worktreeStatus.active === true are collected and deduplicated by slug.
+ * Enumerate every git-registered worktree of a project (primary + linked) from
+ * `GET /api/worktrees/:project`. The source of truth is `git worktree list`, so
+ * manually-created and task-less worktrees appear — unlike the old task-derived
+ * list, which only surfaced worktrees referenced by an active task.
  */
 export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
@@ -21,32 +29,11 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
     if (!projectName) return
     const project = projectName
     try {
-      const res = await fetch(`/api/tasks/${encodeURIComponent(project)}`, { signal })
+      const res = await fetch(`/api/worktrees/${encodeURIComponent(project)}`, { signal })
       if (!res.ok || currentProject.current !== project) return
-      const data = await res.json() as {
-        tasks: Record<string, {
-          worktree?: string | null
-          worktreeStatus?: { active: boolean; dirty: boolean; branch: string; ahead: number; behind: number }
-        }>
-      }
+      const data = await res.json() as { worktrees: WorktreeInfo[] }
       if (currentProject.current !== project) return
-
-      const seen = new Set<string>()
-      const result: WorktreeInfo[] = []
-      for (const task of Object.values(data.tasks)) {
-        if (!task.worktree || !task.worktreeStatus?.active) continue
-        if (seen.has(task.worktree)) continue
-        seen.add(task.worktree)
-        result.push({
-          slug: task.worktree,
-          dirty: task.worktreeStatus.dirty,
-          branch: task.worktreeStatus.branch,
-          ahead: task.worktreeStatus.ahead,
-          behind: task.worktreeStatus.behind,
-        })
-      }
-      result.sort((a, b) => a.slug.localeCompare(b.slug))
-      setWorktrees(result)
+      setWorktrees(data.worktrees ?? [])
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
     }

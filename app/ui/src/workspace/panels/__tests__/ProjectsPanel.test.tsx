@@ -17,7 +17,7 @@ import { projectsPanelDef } from '../ProjectsPanel'
 afterEach(cleanup)
 
 const projectsTestWorktrees: WorktreeInfo[] = [
-  { slug: 'feature-x', dirty: true, branch: 'feat/x', ahead: 2, behind: 0 },
+  { id: '/alpha/.worktrees/feature-x', name: 'feature-x', branch: 'feat/x', head: 'abc1234', isPrimary: false, dirty: true, ahead: 2, behind: 0 },
 ]
 
 // A full env so the body renders its rich DOM (active project, worktree
