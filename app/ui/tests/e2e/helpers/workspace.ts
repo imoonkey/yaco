@@ -498,6 +498,80 @@ export async function createBinaryFixture(request: APIRequestContext): Promise<B
   }
 }
 
+export interface ExternalWorktreeFixture extends FixtureProject {
+  /** Absolute path of the external worktree checkout (OUTSIDE `.worktrees/`). */
+  worktreePath: string
+  /** The external worktree's branch, as shown in the Files-header picker. */
+  branch: string
+  /** Unique token present only in the worktree's untracked `wip.txt`. */
+  token: string
+}
+
+/**
+ * Provision an isolated git project with a worktree registered at an **external**
+ * path (a sibling temp dir, NOT under `.worktrees/`). This exercises the P1 path
+ * identity that replaced the `.worktrees/<slug>` prefix assumption: git is the
+ * allowlist, so an arbitrary-location worktree is a first-class view.
+ *
+ * The shape the end-to-end spec pins, relative to the main checkout:
+ *  - `src/index.js`  — a COMMITTED extra line (`export const external = true`), so
+ *    an open editor shows different bytes per worktree.
+ *  - `README.md`     — MODIFIED but uncommitted, so it is a tracked diff in Changes.
+ *  - `wip.txt`       — untracked, carrying a unique token (explorer / quick-open /
+ *    text-search target; absent from main).
+ *  - `asset.png`     — untracked binary (binary/raw preview target; worktree-only,
+ *    so the `/raw?worktree=` thread is load-bearing).
+ *
+ * The external checkout's PARENT temp dir carries the cleanup marker (so a leaked
+ * run is swept by global cleanup), while the checkout itself stays marker-free so
+ * its own `git status` is clean save for the seeded changes above.
+ */
+export async function createExternalWorktreeFixture(
+  request: APIRequestContext,
+): Promise<ExternalWorktreeFixture> {
+  const name = `wt-fixture-${runTag()}`
+  const root = initRepo('yaco-e2e-wt-')
+
+  mkdirSync(join(root, 'src'), { recursive: true })
+  writeFileSync(join(root, 'src/index.js'), 'export const main = 1\n')
+  writeFileSync(join(root, 'README.md'), '# external worktree fixture\n')
+  git(root, ['add', '-A'])
+  git(root, ['commit', '-q', '-m', 'init external worktree fixture'])
+
+  // The worktree lives OUTSIDE the repo (a sibling temp dir). `git worktree add`
+  // creates the leaf checkout; its marker-bearing parent is what cleanup sweeps.
+  const extParent = realpathSync(mkdtempSync(join(tmpdir(), 'yaco-e2e-wt-')))
+  writeFileSync(join(extParent, FIXTURE_MARKER), '')
+  const branch = 'task/external-feature'
+  const worktreePath = join(extParent, 'external-feature')
+  git(root, ['worktree', 'add', '-q', '-b', branch, worktreePath])
+
+  // src/index.js: one committed line that main does not have → open-editor bytes differ.
+  writeFileSync(join(worktreePath, 'src/index.js'), 'export const main = 1\nexport const external = true\n')
+  git(worktreePath, ['commit', '-q', '-am', 'external feature'])
+  // README.md: a tracked, uncommitted modification → a diff in the worktree's Changes.
+  appendFileSync(join(worktreePath, 'README.md'), 'external worktree edit\n')
+  // wip.txt: untracked, token-carrying → explorer / quick-open / text-search target.
+  const token = `EXTWT_${runTag().replace(/-/g, '_')}`
+  writeFileSync(join(worktreePath, 'wip.txt'), `work in progress ${token}\n`)
+  // asset.png: untracked binary → binary/raw preview target (worktree-only).
+  writeFileSync(join(worktreePath, 'asset.png'), PNG_1x1)
+
+  await registerProject(request, name, root)
+  return {
+    name,
+    path: root,
+    worktreePath,
+    branch,
+    token,
+    dispose: async () => {
+      await request.delete(`/api/projects/${encodeURIComponent(name)}`).catch(() => undefined)
+      rmSync(extParent, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
+
 // --- Attention-surface seeding (Facet B) -------------------------------------
 //
 // The attention engine (app/server) projects from THREE on-disk sources under

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-24: External-worktree end-to-end capstone (worktree-explorer-view P3 e2e-verify, the final leaf)
+
+**What changed:**
+- `app/ui/tests/e2e/worktree-external.spec.ts` (new): ONE integration test that registers a git worktree at an **external** path (OUTSIDE `.worktrees/` — the P1 path-identity dimension), selects it in the Files-header picker, and proves the whole worktree-as-view contract in a single live session. **File views FOLLOW** the selected worktree — explorer tree, Changes/diff (the diff body carries the worktree-only edit), open-editor content (the same open tab re-fetches the worktree's bytes), unsaved-draft round-trip (proven from **both** the primary and the worktree bucket across three switches), binary/raw preview (a worktree-only PNG whose `/raw?worktree=` resolves), text search (ripgrep in the worktree root), quick-open. **The shell HOLDS STILL** across each switch — the open-tab set is identical, the terminal does **not** remount (its `/ws/terminal/<s>` socket stays `{opens:1, closes:0}` and the xterm node keeps its identity), and the session-list row count is unchanged. Selecting primary returns to the main tree.
+- `app/ui/tests/e2e/helpers/workspace.ts`: added `createExternalWorktreeFixture` (+ `ExternalWorktreeFixture`) — git-inits a repo, `git worktree add`s an external sibling temp dir, seeds the worktree-only shape (committed `src/index.js` divergence, an uncommitted README diff, an untracked token-carrying `wip.txt`, an untracked `asset.png`), registers the project, and disposes both dirs. The external checkout's marker-bearing parent is swept by global cleanup while the checkout itself stays git-clean.
+- `doc/dev/app/workflow.md`: documented the new fixture in the e2e self-provision list.
+
+**Why:**
+- P1+P2+P3 were verified per-task; this leaf is the integration capstone the design's §7.3 calls for — the one flow that exercises an *external* worktree (the path-identity P1 unlocked) and asserts the shell-holds-still invariant (the P3 drop-remount payoff) end to end, driving the real affordances (header picker, session row, the tab the user clicks) and asserting user-observable bytes, not selector presence.
+
+**Key files:** `app/ui/tests/e2e/worktree-external.spec.ts`, `app/ui/tests/e2e/helpers/workspace.ts`, `doc/dev/app/workflow.md`.
+**Verification:** isolated static-build e2e — `worktree-external.spec.ts` green (stable across `--repeat-each`), and the full worktree trio `worktree.spec.ts` + `worktree-persist.spec.ts` + `worktree-external.spec.ts` → **9 passed**. Gate: `cd app/server && npm test` (751) · `app/ui` `npx tsc -b` (clean) + `npm run lint` (clean) + `npm test` (1085). Cross-provider Codex review (`codex-wt-e2e-reviewer`): **APPROVE, 0 critical/high**; 2 MEDIUM (worktree-bucket draft round-trip, session-list count identity) + 2 LOW (diff content, untracked-file commit reminder) all folded into the spec. Artifacts under `plan/all/worktree-explorer-view/{plan,REVIEW_REQUEST,code-review,qa}_p3-e2e-verify.md`.
+**Design:** [plan/all/worktree-explorer-view/design.md](../plan/all/worktree-explorer-view/design.md) §7 Verification plan.
+**Next:** worktree-explorer-view is fully implemented and verified end to end. Design Non-goals remain as follow-ups: external-path session labels; an optional "open terminal in this worktree" affordance.
+**Blockers:** None.
+
 ## 2026-06-24: Drop the worktree remount — switching worktree re-points views, holds the shell (worktree-explorer-view P3 drop-remount, THE FLIP)
 
 **What changed:**

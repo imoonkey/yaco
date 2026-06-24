@@ -180,9 +180,12 @@ holds for the **main checkout too**, not just worktrees.
   disabled (`WHATSAPP_ENABLED/WECHAT_ENABLED=0`) so no orphan puppeteer Chromes.
 - **Self-provisioned fixtures.** `tests/e2e/helpers/workspace.ts`:
   `provisionWorkspace(page, request, { files?, tasks? })` / `createFixtureProject`
-  / `createWorktreeFixture` / `createBinaryFixture` / `createBrowseFixture`
-  register temp git projects (each carrying a `.yaco-e2e-fixture` marker) and
-  `dispose()` them in `afterEach`; `uniqueFileName()` namespaces created artifacts.
+  / `createWorktreeFixture` / `createExternalWorktreeFixture` / `createBinaryFixture`
+  / `createBrowseFixture` register temp git projects (each carrying a
+  `.yaco-e2e-fixture` marker) and `dispose()` them in `afterEach`; `uniqueFileName()`
+  namespaces created artifacts. `createExternalWorktreeFixture` registers a worktree
+  at an **external** path (a sibling temp dir, OUTSIDE `.worktrees/`); its
+  marker-bearing parent is swept while the checkout stays clean.
   `global-setup`/`global-teardown` (+ `helpers/cleanup.ts`) sweep leftovers and —
   gated on the marker — never delete real data, even under `E2E_REUSE`.
 - **Runtime-registered projects are watched.** `POST /api/projects` now starts a
