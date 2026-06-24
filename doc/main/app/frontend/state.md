@@ -118,7 +118,7 @@ Persisted on every view/project/order change. Restored on mount with fallback de
 
 ### Workspace Layout
 
-Key: `yaco-workspace:<project>` (or `yaco-workspace:<project>:wt:<slug>` when a worktree is active — state is independent per worktree).
+Key: `yaco-workspace:<project>` — **project-global** (a worktree has no layout meaning; pre-decouple `:wt:<slug>` keys are ignored on load).
 
 `PersistedState` carries the panel tree (`panelLayout`, which holds the group order, per-group `activeTab`, and editor-tab payload) plus the per-instance maps `terminalBindings` / `editorMru` / `terminalMru`, the explicit `activeGroupId`, the flat `layout` visibility/sizes, `mobilePane`, and `recentFiles`. `usePersistence` is two-phase (synchronous initial load, then debounced 300ms saves + beforeunload/unmount flush).
 
@@ -126,9 +126,9 @@ Key: `yaco-workspace:<project>` (or `yaco-workspace:<project>:wt:<slug>` when a 
 
 ### Workspace Drafts
 
-Key: `yaco-drafts:<project>` (or `…:wt:<slug>`).
+Key: `yaco-drafts:<project>` — one per-project record, an outer map keyed by `worktreeKey` (worktree abspath; primary = project root path), each bucket holding that worktree's path-keyed drafts. The flush serializes every live bucket; legacy `:wt:<slug>` / primary blobs migrate in on first load. See [persistence.md](../data-model/persistence.md#localstorage-yaco-draftsprojectname).
 
-Only dirty drafts are persisted (with `baseRevision` as the save token for reconciliation on reload). On quota exceeded, oldest drafts are evicted. Clean files are re-fetched from server on mount.
+Only dirty drafts are persisted (with `baseRevision` as the save token for reconciliation on reload). On quota exceeded, the oldest `(bucket, path)` entries are evicted. Clean files are re-fetched from server on mount.
 
 ## In-Memory State
 

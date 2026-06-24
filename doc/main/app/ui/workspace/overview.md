@@ -96,7 +96,7 @@ Mobile projects one editor + one terminal from the active instances across the w
 
 ## State Persistence
 
-Per-(project, worktree) state in localStorage (`yaco-workspace:<project>[:wt:<slug>]` and `yaco-drafts:<project>[:wt:<slug>]`):
+Per-project state in localStorage. Layout is **project-global** (`yaco-workspace:<project>`); drafts are one per-project record (`yaco-drafts:<project>`) bucketed by worktree abspath inside — see [persistence.md](../../data-model/persistence.md):
 - Panel tree (`panelLayout`) — the group tree carries the editor-tab payload (`tabId`/`preview`/`pinned`) and the instance ids
 - Per-instance terminal bindings (`terminalBindings`) keyed by `instanceId`
 - Editor/terminal MRU (`editorMru` / `terminalMru`) and the active target group (`activeGroupId`)

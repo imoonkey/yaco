@@ -145,9 +145,9 @@ App-level state persisted by `App.tsx`:
 }
 ```
 
-### localStorage: `yaco-workspace:<projectName>` (or `yaco-workspace:<projectName>:wt:<slug>`)
+### localStorage: `yaco-workspace:<projectName>`
 
-Per-project (or per-worktree) workspace layout state persisted by `usePersistence` (`useLayoutState` snapshot). When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree. The working area is a **grid of tab groups**, so the group tree carries the editor-tab payload and the aux maps key by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#localstorage-persistence).
+Per-project workspace layout state persisted by `usePersistence` (`useLayoutState` snapshot). Layout is **project-global** — a worktree has no layout meaning (design: worktree-explorer-view §P3), so the open-tab grid, sizes, and visibility are one durable shell shared across the project's worktree views. (Pre-decouple builds wrote a separate `:wt:<slug>` key; those are ignored on load — the `(project)` layout wins.) The working area is a **grid of tab groups**, so the group tree carries the editor-tab payload and the aux maps key by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#localstorage-persistence).
 
 - `panelLayout` — the desktop panel tree (`{ version, desktop, mobile, panelState, refSize? }`); its `tabs` (group) nodes carry the editor-tab payload (`tabId`/`preview`/`pinned`) and the instance ids the maps key on (editor tabs `editor`/`editor:2…`, terminal tabs `terminal`/`terminal:2…`, groups `group:1…`). `desktop` is canonicalized into `left? · center · right?` regions on every edit (`normalizeRegions`); `panelState.separateKinds` (off by default) persists the kind-affinity open-routing toggle; `refSize:{w,h}` records the viewport the tree's fixed `basis` px were sized for, so a load/resize at a different viewport rescales them proportionally (-> See: [../frontend/state.md](../frontend/state.md))
 - `terminalBindings` — `Record<instanceId, sessionName>`
@@ -164,24 +164,24 @@ Per-project (or per-worktree) workspace layout state persisted by `usePersistenc
 
 **Migration on load** (pure, idempotent, no version bump): a stored **group blob** (a tree whose `tabs` nodes carry a `tabs[]` array) is normalized as-is, restoring `activeGroupId` if it still names a live group. An **old blob** (a `panels[]`/leaf tree, or the oldest flat `{openTabs,activeTab,previewTab}` blob) runs through `migrateTreeToGroups`: each old editor's `openTabs` expands into one editor tab per file (an old-editor-id → new active-tab `instanceId` map re-points `editorMru`/focus), terminal leaves become terminal tabs (ids + dirty buffers preserved), and the old `tasks` tab is dropped (Tasks is reopened with Cmd+Shift+T — no migration of its open-state). The tree is then normalized, the maps GC'd against the tree's instance ids, terminal bindings deduped one-per-session, and invalid saved sizes sanitized to visible defaults. The flat `showSidebar`/`showRightPanel` flags are then **recomputed from the canonical tree** (`sidebarVisibility`) — they and the tree are persisted independently, so trusting a stale/mismatched flag would let the provider's flag↔tree visibility mirrors fight one render out of phase on mount (React "Maximum update depth" → white screen).
 
-### localStorage: `yaco-drafts:<projectName>` (or `yaco-drafts:<projectName>:wt:<slug>`)
+### localStorage: `yaco-drafts:<projectName>`
 
-Per-project (or per-worktree) dirty file drafts persisted by `useFileState`. Buffers are keyed by **path** (shared across all editor instances showing that file):
+Dirty file drafts persisted by `usePersistence`, snapshotted from `useFileState`. One record per project, an outer map **keyed by `worktreeKey`** (the worktree's absolute path; the primary checkout's key is the project root path) — each bucket holds that worktree's drafts keyed by **path** (shared across all editor instances showing that file in that worktree, design: worktree-explorer-view §P3 "File-content keying"):
 
 ```json
 {
-  "files": {
-    "path/to/file.ts": {
-      "draft": "file content...",
-      "baseRevision": 3,
-      "viewportLine": 42,
-      "updatedAt": 1710936000000
-    }
+  "/abs/project/root": {
+    "path/to/file.ts": { "draft": "file content...", "baseRevision": 3, "viewportLine": 42, "updatedAt": 1710936000000 }
+  },
+  "/abs/project/root/.worktrees/feature": {
+    "other/file.ts": { "draft": "...", "baseRevision": 1, "viewportLine": 1, "updatedAt": 1710936000123 }
   }
 }
 ```
 
-Only dirty drafts are persisted. On localStorage quota exceeded, oldest drafts are evicted first.
+The flush serializes **every** live worktree bucket (not just the active one), overlaid onto the migrated base, so a dirty draft in a background worktree is never lost. Only dirty drafts (or a non-default viewport) are persisted; empty buckets are pruned; on quota exceeded the oldest `(bucket, path)` entries across all worktrees are evicted first.
+
+**Migration on load** (`loadDraftsByWorktree`, runs once at mount before any save): legacy single-bucket blobs fold into the abspath-keyed record — the legacy primary `yaco-drafts:<project>` `{ files }` blob into the project-root bucket, and each legacy `yaco-drafts:<project>:wt:<suffix>` into its worktree's abspath bucket (a post-P1 abspath suffix verbatim, a pre-P1 slug under `.worktrees/<slug>`). A newer multi-bucket bucket wins over a stale legacy fold; duplicate legacy keys for one worktree merge newer-`updatedAt`-per-path. `commitDraftMigration` then retires the legacy `:wt:` keys (after persisting the merged record) so a cleared draft can't resurrect.
 
 ### In-Memory Only (not persisted)
 
