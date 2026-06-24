@@ -59,23 +59,25 @@ test.describe('Worktree features', () => {
 
   // Worktree selection moved from the ProjectList sub-list to a HEADER-TOGGLED picker
   // inside the File Explorer panel, mirroring the Changes "Compare ref" mode (design
-  // §P2/§P2b/§P2c): a GitBranch toggle in the Files header reveals an in-panel list
-  // (HIDDEN by default); selecting re-roots the explorer AND closes the picker; an X
-  // in the header exits. These specs drive those REAL affordances — the toggle, the X,
-  // and the rows the user clicks — and assert the observable outcome (the listed
-  // worktrees, the explorer re-rooting, the picker opening/closing).
+  // §P2/§P2b/§P2c/§P2d): a GitBranch toggle in the Files header opens a FLOATING DROPDOWN
+  // (not an inline list); selecting re-roots the explorer AND closes; when a NON-DEFAULT
+  // worktree is active a persistent indicator box shows it at all times, with an X that
+  // REMOVES it (→ primary). These specs drive those REAL affordances — the toggle, the
+  // dropdown rows, the indicator, and its X — and assert the observable outcome (the
+  // listed worktrees, the explorer re-rooting, the indicator appearing/clearing).
   const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
   const worktreeList = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
+  const worktreeIndicator = (page: Page) => page.getByRole('button', { name: /^Worktree: / })
   async function openWorktreePicker(page: Page) {
     await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
     await worktreeToggle(page).click()
     await expect(worktreeList(page)).toBeVisible({ timeout: 5_000 })
   }
 
-  test('the Files header toggle reveals an in-panel list of every git worktree (hidden by default)', async ({ page }) => {
+  test('the Files header toggle reveals a floating dropdown of every git worktree (hidden by default)', async ({ page }) => {
     await selectProject(page, fixture.name)
 
-    // HIDDEN by default: the toggle is in the header, but the list is not rendered
+    // HIDDEN by default: the toggle is in the header, but the dropdown is not rendered
     // until it is clicked.
     await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
     await expect(worktreeList(page)).toHaveCount(0)
@@ -87,8 +89,9 @@ test.describe('Worktree features', () => {
     await expect(list.getByText('task/perf-cache', { exact: true })).toBeVisible()
     await expect(list.getByText('primary', { exact: true })).toBeVisible()
 
-    // The header X exits without selecting — the list closes, the toggle resets.
-    await page.getByLabel('Close worktree picker').click()
+    // The relabeled toggle closes the dropdown without selecting — the list closes, the
+    // toggle resets (there is no separate header X; removal lives on the body indicator).
+    await page.getByLabel('Hide worktree picker').click()
     await expect(worktreeList(page)).toHaveCount(0)
     await expect(worktreeToggle(page)).toBeVisible()
   })
@@ -113,6 +116,30 @@ test.describe('Worktree features', () => {
     await expect(worktreeList(page)).toHaveCount(0)
 
     // The worktree-only file is gone; the main tree (still has src/) is back.
+    await expect(fileTree.getByText('wip.txt', { exact: true })).toHaveCount(0)
+    await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
+  })
+
+  test('a non-default worktree shows a persistent indicator whose X returns to primary', async ({ page }) => {
+    await selectProject(page, fixture.name)
+
+    // PRIMARY by default → no indicator (main == primary needs no reminder).
+    await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
+    await expect(worktreeIndicator(page)).toHaveCount(0)
+
+    // Select auth-v2 → the persistent indicator appears (the reminder) and the explorer
+    // re-roots (worktree-only wip.txt shows). The dropdown closed on select.
+    await openWorktreePicker(page)
+    await worktreeList(page).getByRole('option').filter({ hasText: 'task/auth-v2' }).click()
+    await expect(worktreeList(page)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Worktree: task/auth-v2' })).toBeVisible({ timeout: 10_000 })
+    const fileTree = page.locator('[role="tree"]')
+    await expect(fileTree.getByText('wip.txt', { exact: true })).toBeVisible({ timeout: 5_000 })
+
+    // The indicator's X REMOVES the worktree → back to primary: the indicator clears and
+    // the main tree (no wip.txt, has src/) returns. (Compare ref's exit-to-default.)
+    await page.getByLabel('Remove worktree (return to primary)').click()
+    await expect(worktreeIndicator(page)).toHaveCount(0)
     await expect(fileTree.getByText('wip.txt', { exact: true })).toHaveCount(0)
     await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
   })

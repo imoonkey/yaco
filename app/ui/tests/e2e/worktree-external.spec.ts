@@ -75,9 +75,9 @@ const editorTab = (page: Page, relpath: string) =>
 const changeItem = (page: Page, relpath: string) =>
   page.locator(`[data-testid="git-change-item"][data-change-path="${relpath}"]`)
 
-// The Files header worktree toggle reveals an in-panel list (HIDDEN by default,
-// mirrors Changes' Compare-ref mode — design §P2c); selecting a row re-roots the
-// views AND closes the picker.
+// The Files header worktree toggle opens a FLOATING DROPDOWN (HIDDEN by default,
+// mirrors Changes' Compare-ref mode — design §P2d); selecting a row re-roots the
+// views AND closes the dropdown.
 const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
 const worktreeListbox = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
 async function openWorktreePicker(page: Page): Promise<void> {
@@ -88,7 +88,7 @@ async function openWorktreePicker(page: Page): Promise<void> {
 async function selectWorktreeRow(page: Page, rowText: string): Promise<void> {
   await openWorktreePicker(page)
   await worktreeListbox(page).getByRole('option').filter({ hasText: rowText }).click()
-  // Selecting closes the picker (the header X disappears) — mirrors Compare ref.
+  // Selecting closes the dropdown — mirrors Compare ref's exit on choose.
   await expect(worktreeListbox(page)).toHaveCount(0)
 }
 
