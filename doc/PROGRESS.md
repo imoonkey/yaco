@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-06-24: gate.sh — a doc-only diff no longer false-fails the `doc` check (codify-process-gate v1 follow-up)
+
+**What changed:**
+- `scripts/gate.sh`: the `doc` check is owed on *any* change, and previously passed only via a `doc/**`/`PROGRESS.md` path or a `docs:`-prefixed commit. A pure-documentation diff — a design doc or task-graph under `plan/` — committed with a natural non-`docs:` prefix (`design:`, `plan:`, `chore:`) wrongly reported `doc=fail`, blocking `yaco task set <leaf> done` / the `/implement` self-check on work that *is* documentation.
+- Fix: a `doc_only` floor — a diff with no code (`src|cli|app`), no `app/ui`, and *every* changed file under the `doc/` or `plan/` trees — short-circuits `doc=pass`. A diff confined to those trees is its own doc-sync. Any path outside them flips `doc_only` off, so a mixed diff still owes `doc/PROGRESS` or a `docs:` commit exactly as before.
+- Two leaks closed during independent review (below): the floor now uses `git diff --name-only --no-renames` so a `git mv cli/x.ts plan/x.md` can't hide the code source behind the doc destination; and `doc_only` is scoped to the `doc/`/`plan/` trees (not a bare `*.md` match), so behavior-bearing markdown — agent-config skill prompts, `CLAUDE.md`/`AGENTS.md` — still owes doc evidence rather than being auto-passed.
+
+**Why:**
+- The `doc` check conflated "a code change is accompanied by docs" with "this change *is* docs." For a diff confined to the doc trees there is no separate code to record, so requiring `doc/`/`PROGRESS`/`docs:` evidence was a false positive on design/planning tasks. Edge case turned canonical (a doc-tree-only change owes no separate doc evidence) rather than special-cased — while keeping behavior-bearing markdown and relocated code on the hook.
+
+**Key files:** `scripts/gate.sh`, `scripts/gate.test.sh`.
+**Verification:** `scripts/gate.test.sh` 15/15 — case 2 flipped to `doc-only plan/ -> doc pass`; new cases: `behavior .md outside doc trees not doc_only -> doc fail` (skill prompt), `mixed non-doc+plan, no evidence -> doc fail` (anti-leak guard), `renamed code->plan is not doc_only -> verify+review owed` (rename guard); case 3c reworked to a mixed diff so the `docs:`-subject detection (and its pipefail/SIGPIPE guard) stays covered. Independent cross-provider review (Codex), three rounds, each a real catch: R1 rename leak → `--no-renames`; R2 bare-`*.md` admitting behavior markdown → scoped to `doc/`/`plan/`; R3 clean. `gate.sh` is interpreted by path, so the fix is live on merge with no re-install.
+
+
 ## 2026-06-24: Gate skill-wiring — point /implement, /verify, /qa, /orchestrate at the built gate (codify-process-gate v1 · T4, final leaf)
 
 **What changed:**
