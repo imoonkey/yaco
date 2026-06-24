@@ -111,21 +111,19 @@ describe('loadDraftsByWorktree — legacy migration', () => {
   })
 })
 
-describe('usePersistence — active-bucket projection', () => {
-  it('projects the active worktree bucket as initialDrafts', () => {
+describe('usePersistence — full multi-bucket seed', () => {
+  it('returns the whole migrated record as initialDraftsByWorktree (the seed useFileState restores every bucket from)', () => {
     const wtB = `${PROJECT_PATH}/.worktrees/B`
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({
       [PROJECT_PATH]: { 'a.ts': entry('primary') },
       [wtB]: { 'b.ts': entry('bbb') },
     }))
 
-    const { result: primary } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH, null))
-    expect(primary.current.initialDrafts.files['a.ts'].draft).toBe('primary')
-    expect(primary.current.initialDrafts.files['b.ts']).toBeUndefined()
-
-    const { result: bView } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH, wtB))
-    expect(bView.current.initialDrafts.files['b.ts'].draft).toBe('bbb')
-    expect(bView.current.initialDrafts.files['a.ts']).toBeUndefined()
+    // No worktree arg: the record is project-global; useFileState selects the active
+    // bucket from it. Every bucket is present so a worktree switch restores live.
+    const { result } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH))
+    expect(result.current.initialDraftsByWorktree[PROJECT_PATH]['a.ts'].draft).toBe('primary')
+    expect(result.current.initialDraftsByWorktree[wtB]['b.ts'].draft).toBe('bbb')
   })
 })
 
@@ -189,23 +187,61 @@ describe('all-bucket flush via useWorkspaceState', () => {
     expect(readSaved()[PROJECT_PATH]).toBeUndefined()
   })
 
-  it('does NOT clobber a persisted draft for a worktree absent from the live store (review finding 2)', () => {
+  it('a worktree switch is a prop update, not a remount: shell layout holds still while the file view re-points (#3b restore)', () => {
+    const wtA = `${PROJECT_PATH}/.worktrees/A`
+    // Distinct drafts per worktree so we can SEE the file view follow the selection.
+    localStorage.setItem(draftsKey(PROJECT), JSON.stringify({
+      [PROJECT_PATH]: { 'a.ts': entry('primary-draft') },
+      [wtA]: { 'a.ts': entry('A-draft') },
+    }))
+
+    const { result, rerender } = mount(null)
+    const layoutBefore = result.current.panelLayout
+    expect(result.current.files['a.ts'].draft).toBe('primary-draft')
+
+    rerender({ wt: wtA })
+    // SHELL held still — the SAME panelLayout object (no remount, no reset).
+    expect(result.current.panelLayout).toBe(layoutBefore)
+    // FILE VIEW followed — A's seeded bucket projects LIVE, no reload needed (#3b).
+    expect(result.current.files['a.ts'].draft).toBe('A-draft')
+
+    rerender({ wt: null })
+    expect(result.current.panelLayout).toBe(layoutBefore)
+    expect(result.current.files['a.ts'].draft).toBe('primary-draft')
+  })
+
+  it('restores a switched-to worktree draft and never prunes it (#3b — no remount to reload it)', () => {
     const wtB = `${PROJECT_PATH}/.worktrees/B`
-    // B has a persisted draft but the session mounts on primary and never materializes
-    // B's bucket, so it is absent from useFileState's store. An absent bucket must
-    // leave the base untouched. (A partially-hydrated background bucket under a future
-    // no-remount model is the decouple task's concern — see snapshotDrafts' boundary.)
+    // B has a persisted draft. The session mounts on primary; useFileState seeds ALL
+    // buckets up front, so switching to B restores its draft LIVE (no remount/reload),
+    // and the flush re-serializes it rather than pruning it.
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({ [wtB]: { 'b.ts': entry('persisted-B') } }))
 
     const { result, rerender, unmount } = mount(null)
     act(() => { result.current.updateFileDraft('a.ts', 'edit-A') })
-    rerender({ wt: wtB })                                  // select B (no open tabs → not materialized)
-    expect(result.current.files['b.ts']).toBeUndefined()
+    rerender({ wt: wtB })                                  // select B → its seeded draft is live
+    expect(result.current.files['b.ts'].draft).toBe('persisted-B')
     unmount()
 
     const saved = readSaved()
-    expect(saved[wtB]['b.ts'].draft).toBe('persisted-B')  // B's persisted draft survived
+    expect(saved[wtB]['b.ts'].draft).toBe('persisted-B')  // B's draft survived (not pruned)
     expect(saved[PROJECT_PATH]['a.ts'].draft).toBe('edit-A')
+  })
+
+  it('a file opened in a switched-to worktree never prunes that worktree\'s unopened-path base draft (#3b partial hydration)', async () => {
+    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    // B has a draft for an UNOPENED path. The user switches to B and opens a DIFFERENT
+    // file (clean on disk), partially hydrating B's bucket with a clean entry. The
+    // unopened-path draft must NOT be pruned — under the old remount model the reload
+    // masked this; with all-bucket seeding the draft is live and survives the flush.
+    localStorage.setItem(draftsKey(PROJECT), JSON.stringify({ [wtB]: { 'unopened.ts': entry('keep-me') } }))
+
+    const { result, rerender, unmount } = mount(null)
+    rerender({ wt: wtB })
+    await act(async () => { result.current.openFileInGroup(result.current.activeGroupId, 'open.ts') })
+    unmount()
+
+    expect(readSaved()[wtB]['unopened.ts'].draft).toBe('keep-me')
   })
 
   it('reflects a background-worktree save on flush — a draft cleared by a save after switching is not written back stale (review r2 finding)', async () => {
@@ -236,6 +272,43 @@ describe('all-bucket flush via useWorkspaceState', () => {
     // The flush serializes A's CURRENT (cleared) bucket, not a stale captured draft.
     expect(readSaved()[wtA]?.['a.ts']).toBeUndefined()
   })
+
+  it('persists a background-worktree save via the DEBOUNCE, without unmount (durable #3a / HIGH-2)', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolvePut: (() => void) | null = null
+      vi.stubGlobal('fetch', vi.fn((_url: string, opts?: { method?: string }) => {
+        if (opts?.method === 'PUT') {
+          return new Promise(res => { resolvePut = () => res({ ok: true, status: 200, json: () => Promise.resolve({ revision: 2 }) }) })
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ content: '', revision: 1 }) })
+      }))
+
+      const wtA = `${PROJECT_PATH}/.worktrees/A`
+      const wtB = `${PROJECT_PATH}/.worktrees/B`
+      const { result, rerender } = mount(wtA)
+
+      act(() => { result.current.updateFileDraft('a.ts', 'draft-A') })
+      let savePromise!: Promise<unknown>
+      act(() => { savePromise = result.current.saveFile('a.ts', 'draft-A') })
+      rerender({ wt: wtB })
+      // Drain EVERY pending debounce before the save resolves, so the only thing that
+      // can re-arm the drafts flush afterward is the background save's all-bucket
+      // mutation — A's draft-A is on disk at this point.
+      await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+      expect(readSaved()[wtA]['a.ts'].draft).toBe('draft-A')
+
+      // The save resolves into A's now-BACKGROUND bucket → its draft clears. No active
+      // edit follows; only an all-bucket-keyed schedule (not the active `files` one)
+      // can persist this. Keying on `files` alone would leave draft-A on disk.
+      await act(async () => { resolvePut!(); await savePromise })
+      await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+
+      expect(readSaved()[wtA]?.['a.ts']).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('migration commit — legacy keys retired, no resurrection (review finding 1)', () => {
@@ -244,7 +317,7 @@ describe('migration commit — legacy keys retired, no resurrection (review find
     const abspath = `${PROJECT_PATH}/.worktrees/feature`
     localStorage.setItem(wtKey, JSON.stringify({ files: { 'b.ts': entry('legacy') } }))
 
-    const { unmount } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH, null))
+    const { unmount } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH))
     // The mount effect persisted the merged record and retired the legacy key.
     expect(localStorage.getItem(wtKey)).toBeNull()
     expect(readSaved()[abspath]['b.ts'].draft).toBe('legacy')
@@ -272,7 +345,7 @@ describe('migration commit — legacy keys retired, no resurrection (review find
       realSet.call(this, k, v)
     })
     try {
-      renderHook(() => usePersistence(PROJECT, PROJECT_PATH, null)).unmount()
+      renderHook(() => usePersistence(PROJECT, PROJECT_PATH)).unmount()
     } finally {
       spy.mockRestore()
     }

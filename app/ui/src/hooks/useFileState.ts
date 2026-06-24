@@ -4,7 +4,7 @@ import { API, appendWorktree } from './useApi'
 import { ApiError } from '../lib/apiError'
 import {
   type FileState,
-  type PersistedDrafts,
+  type PersistedDraftsByWorktree,
   isFileTab,
   defaultFileState,
 } from './workspaceTypes'
@@ -43,32 +43,43 @@ async function fetchContent(
 
 export function useFileState(
   projectName: string,
+  projectPath: string,
   worktree: string | null | undefined,
-  initialDrafts: PersistedDrafts,
+  initialDraftsByWorktree: PersistedDraftsByWorktree,
   initialOpenTabs: string[],
   openTabsRef: { readonly current: string[] },
 ) {
   // The per-worktree dimension lives INSIDE the hook (design §P3 file-content
-  // keying): one bucket per `worktreeKey = activeWorktree ?? projectName` (the
-  // hook holds only `projectName`, which stands in for the design's projectPath
-  // as the primary key — both are this project's stable primary identity). The
-  // public relpath contract is unchanged: consumers read the ACTIVE bucket.
-  const worktreeKey = worktree ?? projectName
+  // keying): one bucket per `worktreeKey = worktree ?? projectPath` — the worktree's
+  // absolute path, with the primary checkout keyed by the project root path. This
+  // matches the persisted record's keys exactly, so buckets seed and flush with no
+  // remap. The public relpath contract is unchanged: consumers read the ACTIVE bucket.
+  const worktreeKey = worktree ?? projectPath
 
+  // Seed EVERY persisted bucket up front (design §P3 — the no-remount flip): with the
+  // per-worktree remount gone, switching to a worktree must restore its drafts without
+  // a reload, so a partially-hydrated bucket can never serialize `{}` and prune an
+  // unopened-path base draft (#3b). Each bucket restores its drafts with serverContent
+  // unfetched — the hydration effect fetches the active worktree's bytes on mount and
+  // on every switch.
   const [filesByWorktree, setFilesByWorktree] = useState<Record<string, Files>>(() => {
-    const restored: Files = {}
-    for (const [path, entry] of Object.entries(initialDrafts.files)) {
-      restored[path] = {
-        serverContent: null,
-        draft: entry.draft,
-        baseRevision: entry.baseRevision,
-        viewportLine: entry.viewportLine,
-        status: entry.draft != null ? 'dirty' : 'clean',
-        editedAt: entry.updatedAt,
-        loadError: null,
+    const out: Record<string, Files> = {}
+    for (const [key, bucket] of Object.entries(initialDraftsByWorktree)) {
+      const restored: Files = {}
+      for (const [path, entry] of Object.entries(bucket)) {
+        restored[path] = {
+          serverContent: null,
+          draft: entry.draft,
+          baseRevision: entry.baseRevision,
+          viewportLine: entry.viewportLine,
+          status: entry.draft != null ? 'dirty' : 'clean',
+          editedAt: entry.updatedAt,
+          loadError: null,
+        }
       }
+      out[key] = restored
     }
-    return { [worktreeKey]: restored }
+    return out
   })
 
   // Active projection: the selected worktree's bucket. `files` AND `filesRef`
@@ -115,10 +126,18 @@ export function useFileState(
 
   const refetchAbortRef = useRef<AbortController | null>(null)
   // Per-worktree-epoch abort: a switch aborts every in-flight fetch issued for the
-  // previous worktree — hydration, per-tab open, and accept-disk all carry its
-  // signal, so a superseded read is cancelled (and, if it resolved first, dropped
-  // by the captured-key check below).
+  // previous worktree — hydration, per-tab open all carry its signal, so a superseded
+  // read is cancelled (and, if it resolved first, dropped by the captured-key check
+  // below).
   const wtAbortRef = useRef<AbortController | null>(null)
+  // Mount-lifetime abort for DETACHED operations that must outlive a worktree switch:
+  // accept-disk is an explicit action on a captured (worktree, path) and must complete
+  // into that bucket even after the user switches worktrees (#3a — no remount means no
+  // reload to recover a dropped accept). Aborted only on unmount; a project switch
+  // remounts the provider, so it is correctly torn down then.
+  const lifeAbortRef = useRef<AbortController | null>(null)
+  if (lifeAbortRef.current == null) lifeAbortRef.current = new AbortController()
+  useEffect(() => () => lifeAbortRef.current?.abort(), [])
 
   // Record a failed content fetch (e.g. 413 "file too large") onto the path's
   // state so the editor pane can show why, instead of spinning forever.
@@ -141,7 +160,7 @@ export function useFileState(
   // the live open-tab set.
   const firstHydrate = useRef(true)
   useEffect(() => {
-    const key = worktree ?? projectName
+    const key = worktree ?? projectPath
     // The epoch controller for THIS worktree — stored so fetchForTab / acceptDisk
     // ride the same abort, and cleanup cancels every read when the worktree changes.
     const ac = new AbortController()
@@ -333,7 +352,7 @@ export function useFileState(
     // transition (start → success/conflict/error) lands in its bucket, so a switch
     // mid-save never strands 'saving' state nor leaks the result into another view.
     const wt = worktreeRef.current
-    const key = wt ?? project
+    const key = wt ?? projectPath
     let baseRevision: number | undefined
     setFilesIn(key, prev => {
       const s = prev[path]
@@ -372,12 +391,12 @@ export function useFileState(
       })
       return { conflict: false }
     }
-  }, [setFilesIn])
+  }, [setFilesIn, projectPath])
 
   const forceSave = useCallback(async (path: string, content: string) => {
     const project = projectRef.current
     const wt = worktreeRef.current
-    const key = wt ?? project
+    const key = wt ?? projectPath
     setFilesIn(key, prev => {
       const s = prev[path]
       return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_START' }) } : prev
@@ -402,25 +421,31 @@ export function useFileState(
         return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_ERROR' }) } : prev
       })
     }
-  }, [setFilesIn])
+  }, [setFilesIn, projectPath])
 
   const acceptDisk = useCallback((path: string) => {
     const project = projectRef.current
+    // Capture the worktree once: accept-disk targets THIS worktree's bytes and lands
+    // the ACCEPT_DISK transition in its bucket. It rides the mount-lifetime signal, NOT
+    // the per-worktree epoch — an explicit accept must complete into the captured bucket
+    // even after the user switches worktrees (#3a: no remount means no reload to recover
+    // a dropped accept; the keyed bucket is correct regardless of the current view).
     const wt = worktreeRef.current
-    const key = wt ?? project
-    const signal = wtAbortRef.current?.signal
+    const key = wt ?? projectPath
+    const signal = lifeAbortRef.current?.signal
     fetchContent(project, path, wt, signal).then(result => {
-      if (!result || signal?.aborted || worktreeKeyRef.current !== key) return
+      if (!result || signal?.aborted) return
       setFilesIn(key, prev => {
         const existing = prev[path] ?? defaultFileState()
         return { ...prev, [path]: fileTransition(existing, { type: 'ACCEPT_DISK', content: result.content, revision: result.revision }) }
       })
     }).catch(() => {/* network/server error — keep conflict state */})
-  }, [setFilesIn])
+  }, [setFilesIn, projectPath])
 
   return {
     files,
     filesRef,
+    filesByWorktree,
     filesByWorktreeRef,
     dirtyTabs,
     conflictTabs,

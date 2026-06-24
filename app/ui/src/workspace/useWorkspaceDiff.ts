@@ -44,9 +44,11 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
   const [cache, setCache] = useState<Record<string, DiffState>>({})
   const [baselineCache, setBaselineCache] = useState<Record<string, BaselineState>>({})
 
-  // Cache key: include refs when present so switching refs triggers re-fetch
+  // Cache key: include the worktree (so a switch re-points to that worktree's diff
+  // instead of showing the previous one — and never collides across worktrees on the
+  // same path) and the refs when present (so switching refs triggers a re-fetch).
   const activeDiffCacheKey = activeDiffPath
-    ? (compareBase && compareHead ? `${compareBase}:${compareHead}:${activeDiffPath}` : activeDiffPath)
+    ? `${worktree ?? ''}:${compareBase && compareHead ? `${compareBase}:${compareHead}:` : ''}${activeDiffPath}`
     : null
 
   const editorBaselineKey = activeFilePath

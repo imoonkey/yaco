@@ -156,14 +156,23 @@ export function useFileTree(projectName: string | null, worktree?: string | null
     }
   }, [projectName, worktree])
 
-  // Initial load + project/worktree change. The cleanup aborts the previous
-  // worktree's in-flight loads (root + any expandDir children sharing the epoch
-  // signal) so none resolve into the new worktree's tree.
-  // loadRoot() sets state only after its await — no synchronous cascading render.
-  useEffect(() => {
+  // Initial load + project/worktree change. With the workspace no longer remounting
+  // per worktree (P3 drop-remount), the previous worktree's tree + loaded-dir tracking
+  // must be dropped BEFORE the next paint on a switch: otherwise the explorer commits a
+  // frame of the old worktree's rows while the new root loads, and a destructive op
+  // (delete / move / rename) armed on one of those rows would execute against the NEWLY
+  // selected worktree. useLayoutEffect clears synchronously pre-paint so no stale frame
+  // is ever shown or interactable. The cleanup aborts the previous worktree's in-flight
+  // loads (root + expandDir children sharing the epoch signal) so none resolve into the
+  // new tree. loadRoot() sets state only after its await — no synchronous cascade.
+  useLayoutEffect(() => {
     const ac = new AbortController()
     wtAbortRef.current = ac
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setData(null)
+    setError(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    loadedDirsRef.current.clear()
     void loadRoot(ac.signal)
     return () => ac.abort()
   }, [loadRoot])

@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type PersistedState,
-  type PersistedDrafts,
   type PersistedDraftsByWorktree,
   type PersistedDraftEntry,
   type WorkspaceLayout,
@@ -12,7 +11,6 @@ import {
   isFileTab,
   layoutKey,
   draftsKey,
-  worktreeDraftKey,
   loadStoredSize,
   dedupeTabs,
 } from './workspaceTypes'
@@ -387,16 +385,6 @@ export function loadDraftsByWorktree(project: string, projectPath: string): Pers
   return record
 }
 
-/** Project the active worktree's bucket as the single-bucket `PersistedDrafts`
- *  `useFileState` restores. */
-function activeDraftsProjection(
-  record: PersistedDraftsByWorktree,
-  projectPath: string,
-  worktree?: string | null,
-): PersistedDrafts {
-  return { files: record[worktreeDraftKey(projectPath, worktree)] ?? {} }
-}
-
 // --- Save helpers ---
 
 export function saveLayout(project: string, state: PersistedState): void {
@@ -473,25 +461,27 @@ export function commitDraftMigration(project: string, base: PersistedDraftsByWor
 
 /**
  * Two-phase persistence hook.
- * Phase 1: returns initialLayout + initialDrafts synchronously at mount.
+ * Phase 1: returns initialLayout + initialDraftsByWorktree synchronously at mount.
  * Phase 2: call bindSnapshots() after state hooks are created to enable
  *          debounced saves and synchronous beforeunload/unmount flush.
  *
  * `projectPath` is the project root's absolute path — the primary worktree's bucket
  * key and the base for resolving legacy `:wt:<slug>` → abspath during migration.
- * `worktree` (abspath id, or null for primary) selects which bucket to project as
- * the active `initialDrafts`. Layout is project-global; only drafts carry buckets.
+ * Drafts persist as a multi-bucket record (one bucket per worktree abspath); layout
+ * is project-global. The full migrated record is returned so `useFileState` seeds
+ * EVERY bucket up front — under the no-remount flip a worktree switch restores its
+ * drafts without a reload.
  */
-export function usePersistence(projectName: string, projectPath: string, worktree?: string | null) {
+export function usePersistence(projectName: string, projectPath: string) {
   const [initialLayout] = useState(() => loadPersistedState(projectName))
 
-  // Migrate-on-mount: the full drafts record (legacy keys folded in) is the BASE
-  // every flush overlays its live buckets onto — so a background or migrated-but-
-  // unvisited bucket is never clobbered by an active-only save. Computed once,
-  // synchronously, before any save can run: the r2 first-save data-loss gate.
-  const [draftsBase] = useState(() => loadDraftsByWorktree(projectName, projectPath))
-  const draftsBaseRef = useRef(draftsBase)
-  const [initialDrafts] = useState(() => activeDraftsProjection(draftsBase, projectPath, worktree))
+  // Migrate-on-mount: the full drafts record (legacy keys folded in) is BOTH the seed
+  // `useFileState` restores every bucket from AND the base every flush overlays its
+  // live buckets onto — so a background or migrated-but-unvisited bucket is never
+  // clobbered by an active-only save. Computed once, synchronously, before any save
+  // can run: the r2 first-save data-loss gate.
+  const [initialDraftsByWorktree] = useState(() => loadDraftsByWorktree(projectName, projectPath))
+  const draftsBaseRef = useRef(initialDraftsByWorktree)
 
   // Commit the migration once at mount: persist the merged base and retire the legacy
   // per-worktree keys so an emptied-then-pruned bucket can never resurrect from them.
@@ -564,5 +554,5 @@ export function usePersistence(projectName: string, projectPath: string, worktre
     draftsSnapshotRef.current = snapshots.draftsRef
   }, [])
 
-  return { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave }
+  return { initialLayout, initialDraftsByWorktree, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave }
 }

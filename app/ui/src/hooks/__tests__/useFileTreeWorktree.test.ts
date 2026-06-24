@@ -103,6 +103,29 @@ describe('useFileTree worktree race guard', () => {
     expect(srcOnB.children).toEqual([file('src/real.ts')])
   })
 
+  it('clears the previous worktree tree synchronously on switch (no stale rows arm a destructive op against the new worktree)', async () => {
+    const { result, rerender } = renderHook(
+      ({ wt }: { wt: string | null }) => useFileTree('proj', wt),
+      { initialProps: { wt: null as string | null } },
+    )
+
+    // Primary root resolves with a tree.
+    await waitFor(() => expect(pending.some(p => isRoot(p) && !hasWt(p))).toBe(true))
+    await act(async () => { take(p => isRoot(p) && !hasWt(p)).resolve([dir('primary-only')]) })
+    expect(result.current.data).toEqual([dir('primary-only')])
+
+    // Switch to B: the previous tree must be dropped IMMEDIATELY — before B's root
+    // resolves — so the explorer never renders primary's rows under worktree B (no
+    // remount now reloads it). Without the sync clear, data would still be primary's.
+    rerender({ wt: '/wt/B' })
+    expect(result.current.data).toBeNull()
+
+    // B's root resolves → B's tree shows.
+    await waitFor(() => expect(pending.some(p => isRoot(p) && hasWt(p))).toBe(true))
+    await act(async () => { take(p => isRoot(p) && hasWt(p)).resolve([dir('b-only')]) })
+    expect(result.current.data).toEqual([dir('b-only')])
+  })
+
   it('does not surface a stale loadRoot FAILURE on the new worktree', async () => {
     const { result, rerender } = renderHook(
       ({ wt }: { wt: string | null }) => useFileTree('proj', wt),

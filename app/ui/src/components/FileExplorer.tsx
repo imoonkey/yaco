@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react'
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react'
 import { Tree } from 'react-arborist'
 import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder } from '../hooks/useApi'
 import { writeTextToClipboard } from '../lib/clipboard'
@@ -137,6 +137,22 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
   const pendingRef = useRef(pendingCreate)
   pendingRef.current = pendingCreate
+
+  // P3 drop-remount: the workspace no longer remounts per worktree, so a worktree
+  // switch re-roots the explorer to a different working directory IN PLACE. Drop any
+  // armed interaction carried from the previous worktree — an open context menu, a
+  // pending create input, a delete confirmation — BEFORE the next paint: confirming it
+  // would run a destructive op (delete / move / rename / create) against the NEWLY
+  // selected worktree's tree, and the callbacks already close over the new worktree.
+  // useLayoutEffect resets pre-paint so no stale armed dialog is ever interactable.
+  useLayoutEffect(() => {
+    setMenuTarget(null)
+    setConfirmDelete(null)
+    setPendingCreate(null)
+    pendingRef.current = null
+    menu.close()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worktree])
 
   const cancelCreate = useCallback(() => {
     pendingRef.current = null

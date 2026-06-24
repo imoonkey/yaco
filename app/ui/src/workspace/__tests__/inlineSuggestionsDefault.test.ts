@@ -13,7 +13,7 @@ describe('inline suggestions default', () => {
   })
 
   it('keeps the disabled default when no layout is persisted', () => {
-    const { result } = renderHook(() => usePersistence('proj', '/repo/proj', null))
+    const { result } = renderHook(() => usePersistence('proj', '/repo/proj'))
     expect(result.current.initialLayout.layout.autocompleteEnabled).toBe(false)
   })
 
@@ -22,7 +22,7 @@ describe('inline suggestions default', () => {
       layoutKey('proj'),
       JSON.stringify({ layout: { ...DEFAULT_LAYOUT, autocompleteEnabled: true } }),
     )
-    const { result } = renderHook(() => usePersistence('proj', '/repo/proj', null))
+    const { result } = renderHook(() => usePersistence('proj', '/repo/proj'))
     expect(result.current.initialLayout.layout.autocompleteEnabled).toBe(true)
   })
 })

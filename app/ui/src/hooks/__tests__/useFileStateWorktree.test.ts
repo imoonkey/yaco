@@ -20,9 +20,10 @@ vi.mock('../useSSE', () => ({
 }))
 
 import { useFileState } from '../useFileState'
-import type { PersistedDrafts } from '../workspaceTypes'
+import type { PersistedDraftsByWorktree } from '../workspaceTypes'
 
-const NO_DRAFTS: PersistedDrafts = { files: {} }
+const PROJECT_PATH = '/repo/proj'
+const NO_DRAFTS: PersistedDraftsByWorktree = {}
 
 beforeEach(() => {
   // Default: nothing in flight. Individual tests that need deferred control re-stub.
@@ -33,7 +34,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); sseCallback = null })
 function mount(openTabs: string[]) {
   const openTabsRef = { current: openTabs }
   return renderHook(
-    ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+    ({ wt }: { wt: string | null }) => useFileState('proj', PROJECT_PATH, wt, NO_DRAFTS, openTabs, openTabsRef),
     { initialProps: { wt: null as string | null } },
   )
 }
@@ -78,7 +79,7 @@ describe('useFileState active-worktree projection', () => {
     const openTabs = ['a.ts']
     const openTabsRef = { current: openTabs }
     const { result, rerender } = renderHook(
-      ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+      ({ wt }: { wt: string | null }) => useFileState('proj', PROJECT_PATH, wt, NO_DRAFTS, openTabs, openTabsRef),
       { initialProps: { wt: null as string | null } },
     )
 
@@ -121,7 +122,7 @@ describe('useFileState active-worktree projection', () => {
     const openTabs = ['a.ts']
     const openTabsRef = { current: openTabs }
     const { result, rerender } = renderHook(
-      ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+      ({ wt }: { wt: string | null }) => useFileState('proj', PROJECT_PATH, wt, NO_DRAFTS, openTabs, openTabsRef),
       { initialProps: { wt: null as string | null } },
     )
 
@@ -145,5 +146,43 @@ describe('useFileState active-worktree projection', () => {
     // aborted by the switch, so ONLY the captured worktree-key check can drop it.
     await act(async () => { staleSseRefetch.resolve({ content: 'STALE-primary', revision: 2 }) })
     expect(result.current.files['a.ts'].serverContent).toBe('B-bytes')
+  })
+
+  // #3a (design code-review_p3-persistence-schema #3a): accept-disk is an explicit
+  // action on a captured (worktree, path). Under the no-remount flip there is no reload
+  // to recover a dropped accept, so it must complete into the CAPTURED bucket even when
+  // the user switches worktrees before the disk read resolves. It rides a mount-lifetime
+  // controller, not the per-worktree epoch — the switch neither aborts it nor fails a
+  // captured-key guard.
+  it('lands acceptDisk in the captured worktree bucket even after a switch (#3a)', async () => {
+    type Pending = { url: string; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise(res => {
+      pending.push({ url: String(url), resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+
+    const openTabsRef = { current: [] as string[] }
+    const { result, rerender } = renderHook(
+      ({ wt }: { wt: string | null }) => useFileState('proj', PROJECT_PATH, wt, NO_DRAFTS, [], openTabsRef),
+      { initialProps: { wt: null as string | null } },
+    )
+
+    // A local edit on the primary view, then accept-disk it (captures the primary key).
+    act(() => { result.current.updateDraft('a.ts', 'local-edit') })
+    expect(result.current.files['a.ts'].draft).toBe('local-edit')
+    act(() => { result.current.acceptDisk('a.ts') })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content') && !p.url.includes('worktree='))).toBe(true))
+    const acceptFetch = pending.find(p => p.url.includes('/content') && !p.url.includes('worktree='))!
+
+    // Switch to worktree B BEFORE the disk read resolves — the old code aborted it on
+    // the epoch controller and/or failed its captured-key guard, dropping the accept.
+    rerender({ wt: '/wt/B' })
+    await act(async () => { acceptFetch.resolve({ content: 'disk-bytes', revision: 7 }) })
+
+    // Back on primary: the accept landed — draft cleared, disk bytes applied, clean.
+    rerender({ wt: null })
+    expect(result.current.files['a.ts'].draft).toBeNull()
+    expect(result.current.files['a.ts'].serverContent).toBe('disk-bytes')
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(false)
   })
 })

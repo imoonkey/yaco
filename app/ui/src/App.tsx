@@ -410,7 +410,7 @@ function App() {
       <main className="flex-1 overflow-hidden">
         {activeProject && (
           <Workspace
-            key={`${activeProject}:${activeWorktree ?? ''}`}
+            key={activeProject}
             projectName={activeProject}
             projectPath={currentProjectPath}
             worktree={activeWorktree}

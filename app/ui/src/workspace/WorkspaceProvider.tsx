@@ -404,8 +404,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // fixed `basis` values must be rescaled to the live size — done from the layout's
   // `refSize` (the size those bases were last sized for). The synchronous pre-paint
   // `apply()` corrects a project switch before it can flash stale fixed px
-  // (Workspace remounts per project/worktree, so this effect re-runs then); the
-  // rAF-coalesced ResizeObserver handles subsequent live resizes. `isMobile` is a
+  // (Workspace remounts per project — not per worktree — so this effect re-runs then);
+  // the rAF-coalesced ResizeObserver handles subsequent live resizes. `isMobile` is a
   // dep because the mobile/desktop breakpoint swaps the desktop root in place (no
   // remount), so the effect must re-run to (re)attach the observer to the live
   // root — and skip entirely on mobile, which has no sized desktop tree. Provider-

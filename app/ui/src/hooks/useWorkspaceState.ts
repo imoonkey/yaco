@@ -53,7 +53,7 @@ function serializeBucket(files: Record<string, FileState>): Record<string, Persi
 
 export function useWorkspaceState(projectName: string, projectPath: string, worktree?: string | null) {
   // Phase 1: load persisted state
-  const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, projectPath, worktree)
+  const { initialLayout, initialDraftsByWorktree, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, projectPath)
 
   // Union of file-tab paths across the restored group tree — what useFileState
   // hydrates on mount and refetches on SSE. Computed once from the migrated tree.
@@ -64,12 +64,12 @@ export function useWorkspaceState(projectName: string, projectPath: string, work
 
   // Phase 2: create domain hooks
   const {
-    files, filesRef, filesByWorktreeRef, dirtyTabs, conflictTabs,
+    files, filesRef, filesByWorktree, filesByWorktreeRef, dirtyTabs, conflictTabs,
     gcBuffers,
     fetchForTab, retargetFile, removeFilesUnder,
     updateDraft, updateViewport,
     save, forceSave, acceptDisk,
-  } = useFileState(projectName, worktree, initialDrafts, initialOpenTabs, openTabsRef)
+  } = useFileState(projectName, projectPath, worktree, initialDraftsByWorktree, initialOpenTabs, openTabsRef)
 
   // The dirty set, mirrored into a ref so the reducer's preview-drop decision
   // (keep a dirty old preview pinned) reads it without re-creating callbacks.
@@ -107,26 +107,23 @@ export function useWorkspaceState(projectName: string, projectPath: string, work
   // The drafts flush snapshot (design §P3 all-bucket flush). Serialize EVERY live
   // worktree bucket from useFileState's whole store — not just the active projection —
   // so a dirty draft in a background worktree is flushed, and a background save that
-  // cleared a draft after a switch is reflected (never written back stale).
-  // useFileState keys its primary bucket by `projectName`; persistence keys it by
-  // `projectPath` (abspath, uniform with worktree keys), so remap that one key. A
-  // present-but-empty bucket is kept as `{}` — that is how a fully-cleared bucket
-  // tells the overlay to prune it (vs an unvisited worktree, absent from the store,
-  // whose persisted draft the base must keep).
+  // cleared a draft after a switch is reflected (never written back stale). useFileState
+  // keys buckets by worktree abspath (primary = projectPath), matching the persisted
+  // record, so no remap is needed.
   //
-  // Scope boundary: this is exhaustive under the CURRENT remount model — App.tsx
-  // remounts the workspace on a worktree switch, so useFileState restores the whole
-  // entering bucket from persistence and the flush serializes a COMPLETE bucket. Full
-  // no-remount fidelity (useFileState restoring ALL buckets up front + hydrating a
-  // switched-to worktree, so a partially-hydrated bucket can't serialize `{}` and
-  // prune a base draft) belongs to the decouple task that removes the remount.
+  // No-remount fidelity (this IS the decouple task that dropped App.tsx's remount key):
+  // useFileState now seeds ALL persisted buckets up front, so every worktree's drafts
+  // are live from mount. A switched-to worktree therefore can never serialize a
+  // partially-hydrated `{}` and prune an unopened-path base draft (#3b) — the bucket
+  // already carries its restored drafts. A present-but-empty bucket is still kept as
+  // `{}` so a fully-cleared bucket prunes (vs. a bucket the user never cleared).
   const snapshotDrafts = useCallback((): PersistedDraftsByWorktree => {
     const out: PersistedDraftsByWorktree = {}
     for (const [key, bucket] of Object.entries(filesByWorktreeRef.current)) {
-      out[key === projectName ? projectPath : key] = serializeBucket(bucket)
+      out[key] = serializeBucket(bucket)
     }
     return out
-  }, [filesByWorktreeRef, projectName, projectPath])
+  }, [filesByWorktreeRef])
 
   // The open-file-tab union, derived from the live group tree; identity is stable
   // across edits that don't change the union (a JSON signature) so the buffer-GC
@@ -164,9 +161,15 @@ export function useWorkspaceState(projectName: string, projectPath: string, work
     scheduleLayoutSave()
   }, [ls.terminalBindings, ls.editorMru, ls.terminalMru, ls.activeGroupId, ls.mobilePane, ls.layout, ls.panelLayout, ls.recentFiles, scheduleLayoutSave])
 
+  // Schedule a drafts save on EVERY all-bucket mutation — keyed on the whole
+  // `filesByWorktree` store, not just the active projection. A save/accept that lands
+  // in a now-BACKGROUND worktree after a switch changes a background bucket but leaves
+  // the active `files` reference intact; keying on `files` would skip the debounce and
+  // leave localStorage stale until an unrelated active edit or unmount (a crash would
+  // then resurrect a draft the user saved or accepted away — the durable side of #3a).
   useEffect(() => {
     scheduleDraftsSave()
-  }, [files, scheduleDraftsSave])
+  }, [filesByWorktree, scheduleDraftsSave])
 
   // Phase 4: composed file-open helpers (group-targeted). A file open also loads
   // its shared-by-path buffer; a diff open does not (diff bodies fetch their own).

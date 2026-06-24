@@ -23,7 +23,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function mountFileState() {
   const openTabsRef = { current: [] as string[] }
-  return renderHook(() => useFileState('proj', null, { files: {} }, [], openTabsRef))
+  return renderHook(() => useFileState('proj', '/repo/proj', null, {}, [], openTabsRef))
 }
 
 describe('gcBuffers keep rule', () => {

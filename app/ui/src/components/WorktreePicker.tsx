@@ -100,6 +100,12 @@ function WorktreeDropdown({ anchorRef, worktrees, activeWorktree, onSelect, onCl
       onClose={onClose}
       overlay={false}
       animation="panel"
+      // A popover selector that re-roots the view on selection — don't return focus to
+      // the trigger on close. With the workspace no longer remounting per worktree
+      // (P3 drop-remount), the trigger button survives the switch, so restoring focus
+      // to it leaves a focused toggle that a later stray Enter (e.g. confirming
+      // quick-open) re-activates, reopening the dropdown unexpectedly.
+      restoreFocus={false}
       className="rounded-lg overflow-hidden z-50 py-1"
       style={posStyle}
     >
