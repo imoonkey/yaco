@@ -55,8 +55,10 @@ cost. `--json` returns the structured record; text returns the rendered block.
 **Streaming / process-owning commands are explicit exceptions** and never go
 through `dual` or the `{text}` rule — they own stdout directly and exit before
 the dispatcher renders an envelope: `agent output-follow` (NDJSON stream),
-`align wait` (status words + own exit codes), `doctor` (own `renderText` +
-`process.exit`).
+`align wait` (status words + own exit codes), `doctor` and `gate` (own
+`renderText` + `process.exit`; the `--json` `{ok,data}` line carries a status
+whose exit code is the pass/fail signal, so a red/failing result is not mapped
+to the error envelope).
 
 **Guarded fallback.** After the text sweep, `render()` treats any ordinary
 ok-result that reaches text mode without a `{text}`/`{help}` envelope as an
@@ -66,8 +68,11 @@ compact JSON blob — the old behavior the read-surface pass removed.
 
 ## Area inventory (today)
 
-Ten top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
-`init` · `install` · `doctor` · `paths` · `plan`. A follow-up `surface-hygiene` design
+Eleven top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
+`init` · `install` · `doctor` · `paths` · `plan` · `gate`. `gate` (the thin verb
+over `scripts/gate.sh`; see [gate.md](gate.md)) is a status command outside the
+CRUD grid, shaped like `doctor` — it owns stdout and its exit code is the
+pass/fail signal. A follow-up `surface-hygiene` design
 proposes consolidating these to six (folding `init links` + `agent hooks
 install` into `install`, relocating `align` under `agent`, and merging
 `doctor` + `paths` into a read-only `env` area) — **not shipped**; tracked

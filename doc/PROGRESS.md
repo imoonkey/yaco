@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-06-24: Thin `yaco gate` verb over scripts/gate.sh (codify-process-gate v1 · T2)
+
+**What changed:**
+- Added `yaco gate [--base <ref>] [--json]` — a thin verb wrapping the repo's `scripts/gate.sh` (T1). `runGate(cwd,{base?})` resolves the session's working-tree root (`git rev-parse --show-toplevel`), computes the default base as `merge-base(HEAD, main)`, runs `<root>/scripts/gate.sh <base>`, parses its last stdout line as the `{verify,doc,review,qa}` checks JSON, detects a dirty worktree, and returns `{ok, data:{base, sha, checks, dirty}}`. `ok=false` iff some check is `fail`.
+- Added `getMergeBase(repoRoot, head, base)` to `cli/src/lib/core/worktree/git.ts` (thin `git merge-base` wrapper; exported + re-exported from the worktree index).
+- Registered the `gate` area in `cli/src/main.ts` (AREAS + help + handler), and added `cli/test/gate.test.ts` to the `test:unit` allowlist.
+
+**Why:**
+- v1 of codify-process-gate keeps the mechanism in the CLI and the checks in `scripts/*.sh`. The verb is the ~10-line shell-wrapper agents call as `yaco gate --json` to self-check; the SAME `runGate` is what the later set-done guard (T3) and Stop hook (T6) call directly, so the lib is the contract and the command is one caller.
+- **Root = `show-toplevel`, not the common-dir primary:** `gate.sh` self-locates and diffs its own tree, so a linked worktree must run its own checked-out `scripts/gate.sh` to gate its own diff (design pillar: "gate sees the session's diff").
+- **Doctor-style status envelope:** a red gate is a status, not a CLI error — `{ok,data}` on stdout, exit 0/1 by verdict; `dirty` is a separate signal (does not flip `ok`) so a set-done guard can refuse on it. Hard "couldn't run" conditions still throw → `{ok:false,error}` on stderr, exit 3.
+- **Stateless in v1:** no sha-cache (that lands when a loop re-running verify makes it earn its keep).
+
+**Key files:** `cli/src/commands/gate.ts`, `cli/src/lib/core/gate/index.ts`, `cli/src/lib/core/worktree/git.ts`, `cli/src/main.ts`, `cli/test/gate.test.ts`, `cli/package.json`; docs `doc/main/cli/gate.md` (+ README/command-surface).
+**Verification:** `cd cli && bun run test` → 1072 pass / 0 fail (incl. 17 gate tests, confirmed in the allowlist); `bunx tsc --noEmit` clean. QA — compiled `yaco gate` real-binary sweep (21 assertions): clean→`{ok:true}` all-skip exit 0; verify-red→`{ok:false}` exit 1; dirty→`dirty:true`; default base==`merge-base(HEAD,main)`; usage→exit 2; non-git/missing-script→`ENV` exit 3. Independent cross-provider review (Codex) found one HIGH (spawnSync buffered gate.sh stderr → ENOBUFS on verify-heavy runs); fixed by inheriting/streaming stderr + a multi-MB regression test; re-review verdict pass / 0 unresolved.
+**Commit:** b496a383 (verb) + 668a7f70 (review fix) + this docs commit
+**Next:** T3 set-done-gate-guard (call `runGate` before a leaf flips to done), then T4 skill wiring.
+**Blockers:** None.
+
+
 ## 2026-06-23: Per-repo verify + floor-from-diff gate scripts (codify-process-gate v1 · T1)
 
 **What changed:**

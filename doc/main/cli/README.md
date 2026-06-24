@@ -17,6 +17,7 @@
 11. **[install.md](install.md)** — `yaco install` surface and `cli/src/commands/install.ts`: two-stage bootstrap (`tools/install.sh` → `yaco install`), canonical hook command (`<BIN>/yaco agent hook-event <Event>`), idempotent merge, registry safety, `--json` stderr discipline.
 12. **[doctor.md](doctor.md)** — `yaco doctor` surface and `cli/src/commands/doctor.ts`: twelve required checks, always-Ok `--json` envelope contract, `--repo` wire-through.
 13. **[plan.md](plan.md)** — `yaco plan init` surface and `cli/src/commands/plan/`: promote the `[paths] plan` dir into a private colocated git repo (in-place `git init`, `/<plan>/` in the git-resolved `info/exclude`, idempotent, `--remote` adds origin but never pushes). CLI side of the app's [colocated-repos](../app/backend/routes.md#colocated-repos) mechanism.
+14. **[gate.md](gate.md)** — `yaco gate` surface and `cli/src/lib/core/gate/`: the thin verb over `scripts/gate.sh` (floor-from-diff exit gate). Session-worktree root via `show-toplevel`, default base `merge-base(HEAD,main)`, doctor-style `{ok,data}` status envelope (red gate ≠ CLI error), `dirty` as a separate signal, streamed (not buffered) stderr. `codify-process-gate` v1, stateless.
 
 ## Dev
 
