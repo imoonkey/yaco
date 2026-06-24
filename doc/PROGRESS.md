@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-24: Worktree picker becomes a floating dropdown + persistent non-default indicator, mirroring Compare-ref (worktree-explorer-view P2d)
+
+**What changed:**
+- `app/ui/src/components/WorktreePicker.tsx`: reworked from the P2c inline list into the faithful Compare-ref analogue. The non-default state is APP state (`activeWorktree`), not a UI mode: **PRIMARY active → nothing persistent renders** (a zero-height anchor host); **a NON-PRIMARY worktree active → a persistent indicator box** renders atop the Files body AT ALL TIMES (tree AND search mode), showing the branch + dirty/ahead-behind, with an `X` button that REMOVES the worktree (`onSelect(null)` → primary, like Compare ref's exit-to-default). The picker itself is now a real floating **`DialogShell` dropdown** (`WorktreeDropdown`, position:fixed, anchored to the indicator box / the primary anchor host; RefSearchDropdown idiom rows — git-sourced worktrees by branch, `primary` chip, dirty dot, ahead/behind, `Check` on active; no search input). The indicator's clickable region is a real `<button aria-expanded>`; the dropdown `autoFocus`es the active option and sets **`restoreFocus={false}`**. `currentWorktreeEntry` moved here (exported) so the indicator and the header title agree.
+- `app/ui/src/workspace/panels/FilesPanel.tsx`: the header `GitBranch` toggle now opens/closes the floating dropdown (module store `worktreePickerOpen` unchanged, still bridging the PanelFrame header/body split); the header `X` is removed; `<WorktreePicker>` renders ABOVE the tree/search swap so the indicator persists in BOTH modes; the close-on-search-entry effect is dropped (the dropdown is transient/self-closing and the indicator must survive a mode switch).
+- Tests: `FilesPanel.test.tsx` rewritten to the new model — primary→no indicator; toggle opens a floating dropdown (listbox in body DOM); select binds id/null + closes; toggle relabels + closes (no header X); non-primary→indicator visible in tree AND search; indicator X→`selectWorktree(null)`; indicator click opens the dropdown; the indicator is a real `<button>`; opening autofocuses the active option (not the trigger). `worktree.spec.ts` gains a non-default-indicator + X-returns-to-primary flow and closes via the relabeled toggle; `worktree-external` / `worktree-persist` comments updated to §P2d.
+- `doc/main/app/frontend/components.md`: WorktreePicker row + §P2 references updated to §P2d.
+
+**Why:**
+- The user asked for two things, read from their own words: (1) the in-panel SHORT LIST should be a real DROPDOWN; (2) mirror Changes' Compare-ref — main/primary needs no display, a non-default worktree must be shown in the panel at all times to remind, and removing it returns to main/primary. The P2c inline list satisfied neither cleanly. P2d makes the picker a floating dropdown and adds a persistent non-default indicator whose X is the exit-to-default, so the worktree selector now behaves as the precise analogue of compare-ref. `restoreFocus={false}` + autofocus fix a real reopen bug: a worktree switch does NOT remount the workspace, so the dropdown was restoring focus to the header *button* after a select, and a later quick-open Enter re-activated it (caught by `worktree-persist.spec.ts`).
+
+**Key files:** `app/ui/src/components/WorktreePicker.tsx`, `app/ui/src/workspace/panels/FilesPanel.tsx`, `app/ui/src/workspace/panels/__tests__/FilesPanel.test.tsx`, `app/ui/tests/e2e/worktree{,-external,-persist}.spec.ts`, `doc/main/app/frontend/components.md`.
+**Verification:** `scripts/verify.sh` green (cli test · server test · ui lint · root build = `tsc -b` + vite build). `app/ui` `npm test` **1095 passed** (25 FilesPanel). Isolated static-build e2e — the full worktree trio → **10 passed**. Cross-provider Codex review (2 rounds: REQUEST CHANGES → APPROVE) + `/qa` artifacts under `plan/all/worktree-explorer-view/` (reviewed_sha 821f4515).
+**Commit:** 8bc4ce7b (feat) · 821f4515 (review fix) + docs tail.
+**Design:** [plan/all/worktree-explorer-view/plan_p2d-picker-dropdown.md](../plan/all/worktree-explorer-view/plan_p2d-picker-dropdown.md).
+**Next:** None — picker refinement complete; do not mark the task done or merge (per the contract).
+
 ## 2026-06-24: Worktree picker becomes a header-toggled in-panel dropdown, mirroring Compare-ref mode (worktree-explorer-view P2c)
 
 **What changed:**
