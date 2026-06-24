@@ -112,7 +112,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       // (so the transition is already legal) and before saveTaskStore (so a red
       // gate persists nothing). A milestone reaching `done` via rollup is NOT
       // gated here — see guardLeafSetDone.
-      guardLeafSetDone(tasks, id, oldState);
+      guardLeafSetDone(tasks, id, oldState, opts.json);
       resultTasksFile = sourceForTask(store, id);
       saveTaskStore(store);
       resultTask = tasks[id]!;
@@ -213,15 +213,25 @@ function nowIso(): string {
  *
  *  Gates `process.cwd()` (the session's tree, like `yaco gate`). Dormant when
  *  the worktree has no `scripts/gate.sh` — gating is opt-in (see findGateScript),
- *  so non-adopting projects keep marking leaves done. */
-function guardLeafSetDone(tasks: TaskGraph, id: string, oldState: State | undefined): void {
+ *  so non-adopting projects keep marking leaves done.
+ *
+ *  Under `--json` we DISCARD gate.sh's stderr (`stderr:"ignore"`): a red gate
+ *  must leave the task-set process's stderr as exactly the one-line
+ *  `{ok:false,error}` envelope (app/server reads the whole stderr and JSON.parses
+ *  it). In text mode we stream it so a human watches verify progress live. */
+function guardLeafSetDone(
+  tasks: TaskGraph,
+  id: string,
+  oldState: State | undefined,
+  json: boolean,
+): void {
   if (tasks[id]?.state !== "done" || oldState === "done") return;
   if (hasChildren(tasks, id)) return;
 
   const cwd = process.cwd();
   if (!findGateScript(cwd)) return; // project hasn't adopted the gate → dormant
 
-  const { data } = runGate(cwd);
+  const { data } = runGate(cwd, { stderr: json ? "ignore" : "inherit" });
   const failed = (Object.keys(data.checks) as (keyof typeof data.checks)[]).filter(
     (name) => data.checks[name] === "fail",
   );

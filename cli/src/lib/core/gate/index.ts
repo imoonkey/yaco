@@ -66,6 +66,13 @@ export interface GateResult {
 export interface RunGateOptions {
   /** Explicit diff base; defaults to merge-base(HEAD, main). */
   base?: string;
+  /** How gate.sh's (verify-heavy) stderr is disposed. `"inherit"` (default)
+   *  streams it live to the parent — right for the explicit `yaco gate` verb.
+   *  `"ignore"` discards it — the set-done guard uses this under `--json` so a
+   *  red gate's progress can't precede the one-line `{ok:false,error}` envelope
+   *  on the task-set process's stderr (which app/server parses as a whole).
+   *  Both avoid the spawnSync maxBuffer overflow that capturing would cause. */
+  stderr?: "inherit" | "ignore";
 }
 
 /** Resolve the top-level of the working tree containing `cwd`. Unlike
@@ -147,14 +154,15 @@ export function runGate(cwd: string, opts: RunGateOptions = {}): GateResult {
 
   // gate.sh routes ALL progress (the full verify.sh / test / build output) to
   // stderr and emits ONLY the one-line checks JSON on stdout. We capture stdout
-  // (tiny, never overflows) but INHERIT stderr — buffering it under spawnSync's
-  // default maxBuffer would ENOBUFS-kill a verify-heavy run and turn a valid
-  // green/red gate into a spurious IO failure. Streaming it also lets the caller
-  // watch verify progress live.
+  // (tiny, never overflows) and either stream stderr (`inherit`, default — lets
+  // the caller watch verify progress live) or discard it (`ignore` — the
+  // set-done guard under --json, to keep the CLI envelope clean). NEVER `pipe`:
+  // buffering it under spawnSync's default maxBuffer would ENOBUFS-kill a
+  // verify-heavy run and turn a valid green/red gate into a spurious IO failure.
   const r = spawnSync(script, [base], {
     cwd: root,
     encoding: "utf-8",
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ["ignore", "pipe", opts.stderr ?? "inherit"],
   });
   if (r.error) {
     throw new CliError(ErrCode.IO, `failed to run ${script}: ${r.error.message}`);

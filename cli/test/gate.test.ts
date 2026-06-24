@@ -417,17 +417,15 @@ describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
     return JSON.parse(readFileSync(join(repo, "plan", "tasks", "tasks.json"), "utf-8"));
   }
 
-  /** The error envelope lands on stderr, but runGate INHERITS gate.sh's stderr,
-   *  so the stub's progress line ("stub gate: …") precedes it. Take the last
-   *  JSON-looking line. */
+  /** Parse the `--json` failure envelope the way app/server's runYacoTask does:
+   *  JSON.parse the WHOLE trimmed stderr. The guard runs runGate with
+   *  `stderr:"ignore"` under --json, so gate.sh's progress is discarded and
+   *  stderr is exactly the one-line `{ok:false,error}` envelope. If progress
+   *  ever leaked back onto stderr, this parse would throw — locking the contract. */
   function errEnvelope(stderr: string): { ok: boolean; error: { code: string; message: string } } {
-    const line = stderr
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith("{"))
-      .pop();
-    if (!line) throw new Error(`no JSON envelope in stderr:\n${stderr}`);
-    return JSON.parse(line);
+    const raw = stderr.trim();
+    if (!raw) throw new Error("empty stderr; expected a {ok:false,error} envelope");
+    return JSON.parse(raw);
   }
 
   it("RED gate → refuses the done transition, names the failing check, exit 1", () => {
