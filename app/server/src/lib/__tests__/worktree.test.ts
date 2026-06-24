@@ -7,7 +7,13 @@ const realpathSyncMock = vi.hoisted(() => vi.fn())
 vi.mock('child_process', () => ({ execFile: execFileMock }))
 vi.mock('fs', () => ({ existsSync: existsSyncMock, realpathSync: realpathSyncMock }))
 
-import { extractWorktreeSlug, getWorktreeStatus, getWorktreeStatuses } from '../worktree'
+import {
+  extractWorktreeSlug,
+  getWorktreeStatus,
+  getWorktreeStatuses,
+  listRegisteredWorktrees,
+  worktreeStatus,
+} from '../worktree'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -207,6 +213,99 @@ describe('getWorktreeStatus', () => {
       ahead: 0,
       behind: 0,
     })
+  })
+})
+
+// --- listRegisteredWorktrees ---
+
+describe('listRegisteredWorktrees', () => {
+  it('parses primary + linked worktrees, marking the first as primary', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(null, [
+        'worktree /repo',
+        'HEAD aaaaaaa0000000000000000000000000000000',
+        'branch refs/heads/main',
+        '',
+        'worktree /repo/.worktrees/feat',
+        'HEAD bbbbbbb1111111111111111111111111111111',
+        'branch refs/heads/task/feat',
+        '',
+      ].join('\n'), '')
+    })
+
+    const entries = await listRegisteredWorktrees('/repo')
+
+    expect(entries).toEqual([
+      { path: '/repo', head: 'aaaaaaa', branch: 'main', isPrimary: true },
+      { path: '/repo/.worktrees/feat', head: 'bbbbbbb', branch: 'task/feat', isPrimary: false },
+    ])
+    expect(execFileMock.mock.calls[0][1]).toEqual(['worktree', 'list', '--porcelain'])
+    expect(execFileMock.mock.calls[0][2].cwd).toBe('/repo')
+  })
+
+  it('labels detached HEAD and bare entries', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(null, [
+        'worktree /repo',
+        'HEAD ccccccc2222222222222222222222222222222',
+        'detached',
+        '',
+        'worktree /repo/bare',
+        'bare',
+        '',
+      ].join('\n'), '')
+    })
+
+    const entries = await listRegisteredWorktrees('/repo')
+
+    expect(entries[0].branch).toBe('(detached)')
+    expect(entries[1].branch).toBe('(bare)')
+    expect(entries[1].head).toBe('')
+  })
+
+  it('returns [] when git fails (not a repo)', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(new Error('not a git repository'))
+    })
+
+    expect(await listRegisteredWorktrees('/nope')).toEqual([])
+  })
+})
+
+// --- worktreeStatus ---
+
+describe('worktreeStatus', () => {
+  it('reports dirty + ahead/behind from git status and rev-list', async () => {
+    execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+      if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
+      else if (args[0] === 'rev-list') cb(null, '3\t4\n', '')
+    })
+
+    const result = await worktreeStatus('/repo/.worktrees/x', 'task/x')
+
+    expect(result).toEqual({ active: true, dirty: true, branch: 'task/x', ahead: 4, behind: 3 })
+  })
+
+  it('defaults to clean 0/0 when both git calls fail', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(new Error('git failed'))
+    })
+
+    const result = await worktreeStatus('/x', 'task/x')
+
+    expect(result).toEqual({ active: true, dirty: false, branch: 'task/x', ahead: 0, behind: 0 })
+  })
+
+  it('runs git in the worktree path', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(null, '', '')
+    })
+
+    await worktreeStatus('/repo/.worktrees/x', 'task/x')
+
+    for (const call of execFileMock.mock.calls) {
+      expect(call[2].cwd).toBe('/repo/.worktrees/x')
+    }
   })
 })
 

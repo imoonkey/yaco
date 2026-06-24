@@ -10,6 +10,14 @@ export interface WorktreeStatus {
   behind: number
 }
 
+/** One entry from `git worktree list --porcelain`, with display-ready identity. */
+export interface WorktreeEntry {
+  path: string       // absolute path git reports for the worktree (stable id)
+  branch: string     // "task/foo" | "(detached)" | "(bare)"
+  head: string       // short sha ("" for a bare entry)
+  isPrimary: boolean // the main working tree (git always lists it first)
+}
+
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd, timeout: 5000 }, (err, stdout) => {
@@ -27,20 +35,50 @@ function parseAheadBehind(output: string): { ahead: number; behind: number } {
   }
 }
 
-/** Parse `git worktree list --porcelain` into a Set of canonical worktree paths */
-function parseWorktreeList(output: string): Set<string> {
-  const set = new Set<string>()
-  for (const line of output.split('\n')) {
-    if (line.startsWith('worktree ')) set.add(line.slice('worktree '.length))
+/** Parse `git worktree list --porcelain` into structured entries. Each entry is
+ *  blank-line separated; the main working tree is the first one git emits. */
+function parseWorktreeList(output: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = []
+  let path: string | null = null
+  let head = ''
+  let branch = ''
+  let detached = false
+  let bare = false
+
+  const flush = () => {
+    if (path === null) return
+    entries.push({
+      path,
+      head: head.slice(0, 7),
+      branch: bare ? '(bare)' : detached ? '(detached)' : branch.replace(/^refs\/heads\//, '') || '(detached)',
+      isPrimary: entries.length === 0,
+    })
   }
-  return set
+
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      flush()
+      path = line.slice('worktree '.length)
+      head = ''
+      branch = ''
+      detached = false
+      bare = false
+    } else if (line.startsWith('HEAD ')) head = line.slice('HEAD '.length)
+    else if (line.startsWith('branch ')) branch = line.slice('branch '.length)
+    else if (line === 'detached') detached = true
+    else if (line === 'bare') bare = true
+  }
+  flush()
+  return entries
 }
 
-async function listRegistered(projectPath: string): Promise<Set<string>> {
+/** List every worktree registered with the repo at `primaryRoot`, including the
+ *  primary checkout. Returns [] if git fails (not a repo, etc.). */
+export async function listRegisteredWorktrees(primaryRoot: string): Promise<WorktreeEntry[]> {
   try {
-    return parseWorktreeList(await git(projectPath, ['worktree', 'list', '--porcelain']))
+    return parseWorktreeList(await git(primaryRoot, ['worktree', 'list', '--porcelain']))
   } catch {
-    return new Set()
+    return []
   }
 }
 
@@ -56,12 +94,14 @@ function inactive(branch: string): WorktreeStatus {
   return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
 }
 
-async function resolveActive(dir: string, branch: string): Promise<WorktreeStatus> {
+/** Resolve the working-tree status (dirty + ahead/behind vs main) of a single
+ *  registered worktree. The caller guarantees `absPath` is a live worktree. */
+export async function worktreeStatus(absPath: string, branch: string): Promise<WorktreeStatus> {
   const [dirty, aheadBehind] = await Promise.all([
-    git(dir, ['status', '--porcelain'])
+    git(absPath, ['status', '--porcelain'])
       .then(out => out.trim().length > 0)
       .catch(() => false),
-    git(dir, ['rev-list', '--count', '--left-right', `main...HEAD`])
+    git(absPath, ['rev-list', '--count', '--left-right', `main...HEAD`])
       .then(parseAheadBehind)
       .catch(() => ({ ahead: 0, behind: 0 })),
   ])
@@ -74,15 +114,19 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
   const branch = worktreeBranch(slug)
   if (!existsSync(dir)) return inactive(branch)
 
-  const registered = await listRegistered(projectPath)
+  const registered = registeredPaths(await listRegisteredWorktrees(projectPath))
   if (!isRegistered(dir, registered)) return inactive(branch)
-  return resolveActive(dir, branch)
+  return worktreeStatus(dir, branch)
 }
 
 /** Extract worktree slug from a session path, if it's inside a .worktrees directory */
 export function extractWorktreeSlug(sessionPath: string): string | undefined {
   const match = sessionPath.match(/[/\\]\.worktrees[/\\]([^/\\]+)/)
   return match?.[1]
+}
+
+function registeredPaths(entries: WorktreeEntry[]): Set<string> {
+  return new Set(entries.map(e => e.path))
 }
 
 /** Batch-resolve worktree statuses for all unique slugs found in tasks.
@@ -99,7 +143,7 @@ export async function getWorktreeStatuses(
   const results = new Map<string, WorktreeStatus>()
   if (slugs.size === 0) return results
 
-  const registered = await listRegistered(projectPath)
+  const registered = registeredPaths(await listRegisteredWorktrees(projectPath))
 
   await Promise.all(
     [...slugs].map(async (slug) => {
@@ -109,7 +153,7 @@ export async function getWorktreeStatuses(
         results.set(slug, inactive(branch))
         return
       }
-      results.set(slug, await resolveActive(dir, branch))
+      results.set(slug, await worktreeStatus(dir, branch))
     }),
   )
   return results
