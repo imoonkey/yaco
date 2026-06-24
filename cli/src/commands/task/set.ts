@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
+import { findGateScript, runGate } from "../../lib/core/gate/index.ts";
 import {
   checkCycles,
   hasChildren,
@@ -106,6 +107,12 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       for (const [tid, t] of Object.entries(tasks)) {
         if (t.state !== beforeStates.get(tid)) t.stateEnteredAt = now;
       }
+      // Set-done gate guard (T3): a *leaf* may only enter `done` if the repo's
+      // exit gate passes on the session's working tree. Runs after validateState
+      // (so the transition is already legal) and before saveTaskStore (so a red
+      // gate persists nothing). A milestone reaching `done` via rollup is NOT
+      // gated here — see guardLeafSetDone.
+      guardLeafSetDone(tasks, id, oldState);
       resultTasksFile = sourceForTask(store, id);
       saveTaskStore(store);
       resultTask = tasks[id]!;
@@ -191,6 +198,44 @@ function readPayloadFile(path: string): string {
  *  parity tests differ only in the second they were sampled. */
 function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** Set-done gate guard (T3): refuse a write that makes a *leaf* enter `done`
+ *  when the repo's exit gate is red or the session's worktree is dirty.
+ *
+ *  Only an explicit leaf→done transition is gated:
+ *   - `tasks[id].state === "done"` is always the explicit `Object.assign(data)`
+ *     result — `rollup()` only rewrites *ancestors*, never the edited task — so
+ *     a milestone reaching `done` by rollup is a different id this never sees
+ *     (and validateState already forbids setting a milestone's state directly).
+ *   - `oldState !== "done"` skips an idempotent re-set of an already-done leaf,
+ *     so editing a finished task doesn't re-run a multi-minute gate.
+ *
+ *  Gates `process.cwd()` (the session's tree, like `yaco gate`). Dormant when
+ *  the worktree has no `scripts/gate.sh` — gating is opt-in (see findGateScript),
+ *  so non-adopting projects keep marking leaves done. */
+function guardLeafSetDone(tasks: TaskGraph, id: string, oldState: State | undefined): void {
+  if (tasks[id]?.state !== "done" || oldState === "done") return;
+  if (hasChildren(tasks, id)) return;
+
+  const cwd = process.cwd();
+  if (!findGateScript(cwd)) return; // project hasn't adopted the gate → dormant
+
+  const { data } = runGate(cwd);
+  const failed = (Object.keys(data.checks) as (keyof typeof data.checks)[]).filter(
+    (name) => data.checks[name] === "fail",
+  );
+  if (failed.length === 0 && !data.dirty) return;
+
+  const gaps: string[] = [];
+  if (failed.length > 0) gaps.push(`failing checks: ${failed.join(", ")}`);
+  if (data.dirty) gaps.push("worktree has uncommitted changes — commit them first");
+  throw new CliError(
+    ErrCode.INVALID,
+    `refusing to mark leaf '${id}' done — gate is red:\n` +
+      gaps.map((g) => `  - ${g}`).join("\n") +
+      "\nrun `yaco gate` to inspect; resolve the gaps, then retry.",
+  );
 }
 
 /** Advisory: if multiple tasks share a worktree slug but their scope

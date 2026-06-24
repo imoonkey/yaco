@@ -114,6 +114,20 @@ function parseChecks(stdout: string): GateChecks {
   return { verify: pick("verify"), doc: pick("doc"), review: pick("review"), qa: pick("qa") };
 }
 
+/** Resolve the repo's gate script for `cwd`, or `null` when the gate does not
+ *  apply here — `cwd` is not a git repo, or the worktree has no
+ *  `scripts/gate.sh` (the project hasn't adopted the gate). The set-done guard
+ *  (T3) uses `null` to stay DORMANT: gating is opt-in by the script's presence,
+ *  so marking a leaf done never hard-requires a git repo + gate script in
+ *  projects that haven't adopted it. `runGate`, by contrast, treats a missing
+ *  script as a hard ENV error — invoking it is an EXPLICIT request to gate. */
+export function findGateScript(cwd: string): string | null {
+  const r = runGit(["rev-parse", "--show-toplevel"], cwd);
+  if (r.status !== 0) return null;
+  const script = join(r.stdout.trim(), "scripts", "gate.sh");
+  return existsSync(script) ? script : null;
+}
+
 /** Run the repo's gate against the session's working tree.
  *
  *  Throws CliError for hard "couldn't run" conditions (not a git repo, no

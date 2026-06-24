@@ -10,6 +10,10 @@ test-results/
 .env
 .worktrees/
 .tasks.json.lock
+# yaco task-store lock (mkdir-based, holds owner.json) — a transient runtime
+# artifact, never committed; keeping it out of git also means a held lock can't
+# register as a dirty tree to the set-done gate guard.
+*.lock.d/
 .wwebjs_cache/
 .wwebjs_auth/
 .playwright-mcp/

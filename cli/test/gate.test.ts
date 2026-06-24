@@ -21,6 +21,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -359,5 +360,138 @@ describe("runGate (linked worktree — gates its OWN tree)", () => {
     expect(r.data.dirty).toBe(true);
     // Primary remains clean — the dirty signal is the worktree's, not the repo's.
     expect(git(primary, "status", "--porcelain").stdout.trim()).toBe("");
+  });
+});
+
+/** T3 set-done gate guard: `yaco task set` refuses to mark a *leaf* `done` when
+ *  the session's gate is red or its worktree is dirty. Driven end-to-end through
+ *  the CLI (real exit codes + error envelope) against a STUB scripts/gate.sh —
+ *  the stub returns the checks JSON instantly, so no real heavy verify runs.
+ *
+ *  Fixtures mirror a gate-adopting repo: a committed stub gate.sh, a committed
+ *  `.gitignore` ignoring the task lock (`*.lock.d/` — else the lock dir held
+ *  during the mutation would itself read as a dirty tree), and a seeded
+ *  `plan/tasks/tasks.json` (the default task store layout). */
+describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
+  let repos: string[] = [];
+  afterEach(() => {
+    for (const r of repos) rmSync(r, { recursive: true, force: true });
+    repos = [];
+  });
+
+  /** A leaf that is one `set {state:done}` away from terminal. */
+  const LEAF_GRAPH = {
+    leaf: {
+      parent: null, depends: [], state: "ready", workset: "active",
+      title: "L", description: "d", acceptCriteria: "x",
+    },
+  };
+
+  /** Build a gate-adopting fixture repo (tracked + cleaned up via `repos`).
+   *  Omit `gate` to leave the repo WITHOUT scripts/gate.sh (opt-out path). */
+  function mkGuardRepo(opts: {
+    gate?: { json: string; exit: number };
+    tasks: Record<string, unknown>;
+  }): string {
+    const repo = mkRepo("guard-");
+    repos.push(repo);
+    if (opts.gate) writeStubGate(repo, opts.gate); // commits scripts/gate.sh
+    writeFileSync(join(repo, ".gitignore"), "*.lock.d/\n");
+    mkdirSync(join(repo, "plan", "tasks"), { recursive: true });
+    writeFileSync(
+      join(repo, "plan", "tasks", "tasks.json"),
+      JSON.stringify(opts.tasks, null, 2) + "\n",
+    );
+    expect(git(repo, "add", "-A").status).toBe(0);
+    expect(git(repo, "commit", "-m", "guard fixture").status).toBe(0);
+    // Clean tree: the guard's dirty signal must isolate later changes.
+    expect(git(repo, "status", "--porcelain").stdout.trim()).toBe("");
+    return repo;
+  }
+
+  function setState(repo: string, id: string, state: string): RunResult {
+    return runYaco(repo, ["task", "set", id, "--data", JSON.stringify({ state }), "--json"]);
+  }
+
+  function readTasks(repo: string): Record<string, { state: string }> {
+    return JSON.parse(readFileSync(join(repo, "plan", "tasks", "tasks.json"), "utf-8"));
+  }
+
+  /** The error envelope lands on stderr, but runGate INHERITS gate.sh's stderr,
+   *  so the stub's progress line ("stub gate: …") precedes it. Take the last
+   *  JSON-looking line. */
+  function errEnvelope(stderr: string): { ok: boolean; error: { code: string; message: string } } {
+    const line = stderr
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("{"))
+      .pop();
+    if (!line) throw new Error(`no JSON envelope in stderr:\n${stderr}`);
+    return JSON.parse(line);
+  }
+
+  it("RED gate → refuses the done transition, names the failing check, exit 1", () => {
+    const repo = mkGuardRepo({
+      gate: { json: '{"verify":"fail","doc":"pass","review":"skip","qa":"skip"}', exit: 1 },
+      tasks: LEAF_GRAPH,
+    });
+    const r = setState(repo, "leaf", "done");
+    expect(r.status).toBe(1);
+    const env = errEnvelope(r.stderr);
+    expect(env.ok).toBe(false);
+    expect(env.error.code).toBe("INVALID");
+    expect(env.error.message).toContain("verify"); // lists which check failed
+    // The refused write is NOT persisted.
+    expect(readTasks(repo).leaf!.state).toBe("ready");
+  });
+
+  it("GREEN gate + clean tree → allows; leaf becomes done, exit 0", () => {
+    // Also proves the `*.lock.d/` gitignore works: without it, the lock dir
+    // held during the mutation would read as dirty and this would be refused.
+    const repo = mkGuardRepo({ gate: { json: ALL_SKIP, exit: 0 }, tasks: LEAF_GRAPH });
+    const r = setState(repo, "leaf", "done");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout.trim()).ok).toBe(true);
+    expect(readTasks(repo).leaf!.state).toBe("done");
+  });
+
+  it("GREEN gate but DIRTY tree → refuses (uncommitted changes), exit 1", () => {
+    const repo = mkGuardRepo({ gate: { json: ALL_SKIP, exit: 0 }, tasks: LEAF_GRAPH });
+    writeFileSync(join(repo, "scratch.txt"), "wip\n"); // untracked, not ignored → dirty
+    const r = setState(repo, "leaf", "done");
+    expect(r.status).toBe(1);
+    const env = errEnvelope(r.stderr);
+    expect(env.error.code).toBe("INVALID");
+    expect(env.error.message.toLowerCase()).toContain("uncommitted");
+    expect(readTasks(repo).leaf!.state).toBe("ready");
+  });
+
+  it("milestone reaching done via rollup is NOT gated (red gate, child → cancelled)", () => {
+    const repo = mkGuardRepo({
+      gate: { json: '{"verify":"fail","doc":"skip","review":"skip","qa":"skip"}', exit: 1 },
+      tasks: {
+        M: { parent: null, depends: [], state: "ready", workset: "active", title: "M", description: "d" },
+        A: {
+          parent: "M", depends: [], state: "ready", workset: "active",
+          title: "A", description: "d", acceptCriteria: "x",
+        },
+      },
+    });
+    // A → cancelled is terminal but NOT a set-done, so the guard never fires;
+    // M then rolls up to done from its now-all-terminal children — and a
+    // rollup-derived done is NOT gated either. A naive "any task that became
+    // done" guard would wrongly block here on the red gate.
+    const r = setState(repo, "A", "cancelled");
+    expect(r.status).toBe(0);
+    const after = readTasks(repo);
+    expect(after.A!.state).toBe("cancelled");
+    expect(after.M!.state).toBe("done"); // rolled up despite the red gate
+  });
+
+  it("dormant when the repo has no scripts/gate.sh (gate is opt-in)", () => {
+    const repo = mkGuardRepo({ tasks: LEAF_GRAPH }); // no gate stub
+    const r = setState(repo, "leaf", "done");
+    expect(r.status).toBe(0);
+    expect(readTasks(repo).leaf!.state).toBe("done");
   });
 });
