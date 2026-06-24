@@ -98,29 +98,34 @@ Then **wait** for the worker: `yaco agent wait w-<task-id> --from-start --json`.
 
 Orchestrate's core job: **decide done by reading evidence — never by redoing the work,
 never by trusting the worker's word.** The worker's `/implement` already produced the
-evidence; orchestrate confirms it exists and is clean.
+evidence; orchestrate confirms it by reading **one `yaco gate` result**, not by walking
+several ad-hoc paths. Run it against the worker's diff in the leaf's cwd:
 
-**Gate criteria** — read the evidence; a criterion passes only when present *and* clean:
+```bash
+yaco gate --base "$base" --json    # $base = the pre-work baseline recorded at Dispatch
+```
 
-| criterion | required | passes when |
-|-----------|----------|-------------|
-| acceptCriteria | always | every item independently checks out — file → `test -f`; command → run it, check exit; observable → read files / `git diff <base>..HEAD` |
-| independent review | impl leaf | reading `git diff $base..HEAD` yourself, you confirm a `/code-review` artifact from an **independent reviewer** (≠ the worker) covers that diff with **no unresolved critical/high**. A changed hunk no artifact covers = unreviewed → not a pass |
-| verify | impl leaf | `/verify` is green (re-run it, or read its result) |
-| qa | user-facing change | `/qa` exercised the affected flows |
+Its single envelope `{ ok, data:{ base, sha, checks, dirty } }` is the floor evidence,
+computed from the diff (not the worker's word): `data.checks` reports `verify · doc ·
+review · qa` (each pass/fail/skip) and `data.dirty` flags an uncommitted (stale)
+worktree. One read replaces re-running `/verify`, hunting the review artifact, and
+re-deriving qa flows by hand.
 
-Orchestrate does **not** re-review: the worker's reviewer was already independent (cross-provider).
-It checks the review **artifact** against the **diff it reads itself** (`$base..HEAD`) — the
-artifact's provenance (reviewer, base, scope) cross-checks coverage, so a stale or self-authored one
-can't pass. The artifact lands in the design-doc folder (`/yaco-paths`).
+The gate floors evidence from the **diff**, so two things stay orchestrate's own to
+confirm on top of it:
+
+| overlay | passes when |
+|---------|-------------|
+| acceptCriteria | every item independently checks out — file → `test -f`; command → run it, check exit; observable → read files / `git diff $base..HEAD`. (The gate never reads the task.) |
+| review independence | the review artifact the gate counted is from an **independent reviewer** (≠ the worker, cross-provider) and covers the diff you read — confirm via its provenance header (reviewer, base, scope). v1's gate checks the artifact *exists* and is sha-fresh; orchestrate vouches for *who* wrote it. The artifact lives in the project review folder (`/yaco-paths`). |
 
 **Outcome:**
 
-- **Evidence complete** (every criterion present + clean) → the leaf is **ready to merge, not yet `done`**. Proceed to **Merge up**; mark `done` only after the merge lands. (If `requireHumanReview: true` → `blocked` / `blockReason: "human-review"` instead; report and wait.)
-- **Not pass** (any criterion missing *or* failed — no review artifact, unresolved critical/high, `/verify` red, acceptCriteria unmet) → **bounce** the worker to keep going: `yaco agent send w-<task-id> "<what's missing or failing> — finish it" --wait --json`, then re-gate. This is the worker completing its own recipe, not orchestrate driving fixes — a worker can't claim done until the evidence is actually there.
-- **Not converging** — after ~3 bounces with no progress, or an unresolvable blocker (needs a human decision) → `blocked`, `blockReason: "verification-failed"`, note which criterion. Keep scanning other ready tasks.
+- **Pass** (`data.checks` all pass/skip, `data.dirty` false, acceptCriteria met, review independent) → the leaf is **ready to merge, not yet `done`**. Proceed to **Merge up**; mark `done` only after the merge lands. (If `requireHumanReview: true` → `blocked` / `blockReason: "human-review"` instead; report and wait.)
+- **Not pass** (any `data.checks` fail, `data.dirty` true, acceptCriteria unmet, or review not independent) → **bounce** the worker to keep going: `yaco agent send w-<task-id> "<what's missing or failing> — finish it" --wait --json`, then re-gate. This is the worker completing its own recipe, not orchestrate driving fixes — a worker can't claim done until the evidence is actually there.
+- **Not converging** — after ~3 bounces with no progress, or an unresolvable blocker (needs a human decision) → `blocked`, `blockReason: "verification-failed"`, note which check. Keep scanning other ready tasks.
 
-**Non-implementation leaf** → gate on acceptCriteria evidence only.
+**Non-implementation leaf** → no code diff, so the gate's code checks skip; gate on acceptCriteria evidence only.
 
 ## Merge up
 

@@ -12,9 +12,9 @@ Given a goal or task (system design, feature, refactor), drive it from plan to d
 `/implement [goal or task reference]`
 
 Accepts either a freeform **goal** or a **task reference** (a task id or design-doc
-path). A goal is taskless — write your plan to a file (Step 1) and go; you do not need a
-task-graph entry. A task reference already carries scope · acceptCriteria · depends —
-read it as your contract.
+path). A goal opens a fresh task into the **active** set as its contract/visibility
+home (Step 1) and you go — completing auto-archives it. A task reference already
+carries scope · acceptCriteria · depends — read it as your contract.
 
 ## Principles
 
@@ -60,6 +60,7 @@ Write a plan to a file — phases, affected files, key design decisions.
 
 - Large scope → multiple phases; reasonable scope → a single phase
 - Each phase must be independently committable
+- Open a task into the **active** set if there isn't one yet (a goal-driven manual run too) — the work's contract · acceptCriteria · visibility home; completing auto-archives it
 
 ## Step 2: Phased Execution
 
@@ -81,7 +82,7 @@ Run 2.1 → 2.5 for each phase.
     (start → wait → kill). Nested sub-sessions are supported (spawnedBy/parentSession),
     so a worker may spawn its own reviewer. A reviewer of the same provider but separate
     context is the fallback when cross-provider isn't available.
-- Write the review **artifact** to the same folder as the design doc (or project root), with a header that makes it verifiable evidence — not just prose: **reviewer** (handle / provider), the **base SHA and scope** it reviewed, **verdict**, and **unresolved critical/high count**. Anyone (or any gate) can then confirm the review covers the work and trust it by reading, without re-running it.
+- Write the review **artifact** to the project's review folder (resolved via `/yaco-paths`, not a per-skill path), with a header that makes it verifiable evidence — not just prose: **reviewer** (handle / provider), the **base SHA and scope** it reviewed, **verdict**, and **unresolved critical/high count**. Anyone (or any gate) can then confirm the review covers the work and trust it by reading, without re-running it.
 
 ### 2.4 Fix
 - Address `/verify` failures and `/code-review` issues (change the code, or in the next round persuade the reviewer the finding is wrong). Loop 2.1–2.4 until **both** gates are green.
@@ -106,9 +107,12 @@ Run `/update-doc` (**MUST USE**) to sync `doc/main/`, `doc/dev/`, project-local 
 
 ## Finish
 
-`/implement` is done when the targeted scope is fully implemented, verified, and
-documented, and you have stopped. Producing that finished state is the whole job;
-recording task-graph status is outside its scope.
+Run `yaco gate` as the self-check before finishing: it reads the session diff and
+reports which floor checks that diff owes — verify · doc · review · qa. `/implement`
+is done only when the gate is **all-green**; a red check means required evidence is
+missing, so keep going (fix it, re-run) instead of stopping. Once it's green and you
+have stopped, the targeted scope is implemented, verified, and documented; recording
+task-graph status is outside its scope.
 
 ## Context Management
 

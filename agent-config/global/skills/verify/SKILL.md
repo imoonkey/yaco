@@ -12,6 +12,18 @@ Pre-commit quality gates: build, lint, unit tests, security. For E2E/integration
 - `quick` — build + lint + unit tests
 - `full` — all checks (default)
 
+## Execution
+
+The single entry is the repo's **`scripts/verify.sh`** — run it and read its result.
+It chains this repo's build · lint · test · security in a fixed order, stops at the
+first failing step and names it, and is the **source of truth**: `/verify`, `yaco
+gate`, and any hook all run the identical checks. Don't re-copy per-stack commands
+here — defer to the script.
+
+The Stack Detection and Verification Phases below are a **guide** to what
+`scripts/verify.sh` covers. Use them to run the checks by hand only when a repo has
+no such script (and consider adding one).
+
 ## Stack Detection
 
 | Marker file | Stack | Reference |
@@ -19,19 +31,18 @@ Pre-commit quality gates: build, lint, unit tests, security. For E2E/integration
 | `build.gradle.kts` or `build.gradle` | Kotlin/Android | `references/kotlin-android.md` |
 | `package.json` | TypeScript/Node | `references/typescript-node.md` |
 
-Read the matching reference file from this skill's directory for stack-specific commands.
+The matching reference describes what each phase covers for that stack.
 
 ## Verification Phases
 
-Run these phases in order. If any phase fails, STOP and report errors.
+`scripts/verify.sh` runs these in order; if any fails it stops and reports the
+failing step. Without a script, run them yourself per the stack reference.
 
 1. **Build** — compile/typecheck
 2. **Lint** — static analysis; errors block, warnings are acceptable
 3. **Tests** — run test suite
 4. **Security Scan** — check for hardcoded keys/secrets
 5. **Git Status** — `git diff --stat`
-
-The reference file provides the exact commands for each phase.
 
 ## Output Format
 
