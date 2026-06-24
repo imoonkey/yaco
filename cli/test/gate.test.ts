@@ -50,6 +50,9 @@ function runYaco(cwd: string, args: string[]): RunResult {
     encoding: "utf-8",
     cwd,
     env: { ...process.env, NO_COLOR: "1" },
+    // gate.sh streams (inherits) its verify-heavy progress to stderr; capture
+    // it generously so a noisy run can't ENOBUFS the test harness itself.
+    maxBuffer: 64 * 1024 * 1024,
   });
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? -1 };
 }
@@ -75,17 +78,21 @@ function mkRepo(prefix = "repo-"): string {
 /** Write a stub scripts/gate.sh that emits `json` as its sole stdout line
  *  (progress to stderr, like the real script) and exits with `exit`. The script
  *  is committed so the tree stays clean — `dirty` then isolates real uncommitted
- *  changes. When `leadingNoise` is set, an extra stdout line precedes the JSON
- *  so the "parse the LAST stdout line" contract is exercised. */
+ *  changes. `leadingNoise` adds a stray stdout line before the JSON (exercises
+ *  "parse the LAST stdout line"); `bigStderr` floods stderr with ~3 MB before
+ *  the JSON (exercises the no-buffer-overflow contract). */
 function writeStubGate(
   repo: string,
-  opts: { json: string; exit: number; leadingNoise?: boolean },
+  opts: { json: string; exit: number; leadingNoise?: boolean; bigStderr?: boolean },
 ): void {
   mkdirSync(join(repo, "scripts"), { recursive: true });
   const noise = opts.leadingNoise ? "echo 'stray stdout line not json'\n" : "";
+  const flood = opts.bigStderr
+    ? "head -c 3000000 /dev/zero | tr '\\0' 'x' >&2; echo >&2\n"
+    : "";
   const script = `#!/usr/bin/env bash
 echo "stub gate: base=\${1:-none}" >&2
-${noise}printf '%s\\n' '${opts.json}'
+${flood}${noise}printf '%s\\n' '${opts.json}'
 exit ${opts.exit}
 `;
   const path = join(repo, "scripts", "gate.sh");
@@ -272,5 +279,85 @@ describe("yaco gate (CLI envelope)", () => {
     const r = runYaco(repo, ["gate", "--help"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("yaco gate");
+  });
+
+  it("tolerates multi-MB stderr from gate.sh (no ENOBUFS) — regression", () => {
+    // gate.sh routes the full verify output to stderr; buffering it would
+    // overflow spawnSync's default maxBuffer and ENOBUFS-kill a real run.
+    writeStubGate(repo, { json: ALL_SKIP, exit: 0, bigStderr: true });
+    const r = runYaco(repo, ["gate", "--json"]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout.trim());
+    expect(env.ok).toBe(true);
+    expect(env.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
+  });
+
+  it("hard error: not a git repo → {ok:false,error} on stderr, empty stdout, exit 3", () => {
+    const bare = mkdtempSync(TMP_PREFIX + "bare-");
+    try {
+      const r = runYaco(bare, ["gate", "--json"]);
+      expect(r.status).toBe(3); // ENV
+      expect(r.stdout).toBe("");
+      const env = JSON.parse(r.stderr.trim());
+      expect(env.ok).toBe(false);
+      expect(env.error.code).toBe("ENV");
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it("hard error: git repo with no scripts/gate.sh → {ok:false,error}, exit 3", () => {
+    // repo (from beforeEach) has no gate.sh.
+    const r = runYaco(repo, ["gate", "--base", "HEAD", "--json"]);
+    expect(r.status).toBe(3); // ENV
+    expect(r.stdout).toBe("");
+    const env = JSON.parse(r.stderr.trim());
+    expect(env.ok).toBe(false);
+    expect(env.error.code).toBe("ENV");
+  });
+});
+
+describe("runGate (linked worktree — gates its OWN tree)", () => {
+  let primary: string;
+  let wt: string;
+  beforeEach(() => {
+    primary = mkRepo("lw-");
+    wt = primary + "-wt"; // sibling, OUTSIDE primary's tree
+    // Primary's gate.sh emits ALL-PASS; if runGate ever resolved to the
+    // common-dir primary instead of the linked worktree, this is what would run.
+    writeStubGate(primary, {
+      json: '{"verify":"pass","doc":"pass","review":"pass","qa":"pass"}',
+      exit: 0,
+    });
+  });
+  afterEach(() => {
+    rmSync(primary, { recursive: true, force: true });
+    rmSync(wt, { recursive: true, force: true });
+  });
+
+  it("runs the linked worktree's checked-out gate.sh and reports its HEAD + dirty", () => {
+    expect(git(primary, "worktree", "add", "-b", "feat", wt).status).toBe(0);
+    // Diverge the linked worktree: its gate.sh emits ALL-SKIP (distinguishable
+    // from the primary's ALL-PASS), committed on the feat branch.
+    writeFileSync(
+      join(wt, "scripts", "gate.sh"),
+      `#!/usr/bin/env bash\necho "linked gate" >&2\nprintf '%s\\n' '${ALL_SKIP}'\n`,
+    );
+    chmodSync(join(wt, "scripts", "gate.sh"), 0o755);
+    expect(git(wt, "add", "scripts/gate.sh").status).toBe(0);
+    expect(git(wt, "commit", "-m", "linked gate").status).toBe(0);
+    const wtHead = git(wt, "rev-parse", "HEAD").stdout.trim();
+    const primaryHead = git(primary, "rev-parse", "HEAD").stdout.trim();
+    expect(wtHead).not.toBe(primaryHead);
+    // Make the linked worktree dirty (untracked) — primary stays clean.
+    writeFileSync(join(wt, "scratch.txt"), "wip\n");
+
+    const r = runGate(wt, { base: "HEAD" });
+    // ALL-SKIP proves the LINKED script ran, not the primary's ALL-PASS.
+    expect(r.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
+    expect(r.data.sha).toBe(wtHead);
+    expect(r.data.dirty).toBe(true);
+    // Primary remains clean — the dirty signal is the worktree's, not the repo's.
+    expect(git(primary, "status", "--porcelain").stdout.trim()).toBe("");
   });
 });

@@ -83,30 +83,33 @@ function worktreeRoot(cwd: string): string {
 }
 
 /** Parse gate.sh's machine contract: the LAST non-empty stdout line is the
- *  checks JSON (all progress goes to stderr). */
-function parseChecks(stdout: string, stderr: string): GateChecks {
+ *  checks JSON (all progress goes to stderr, which we stream — never buffer).
+ *  Diagnostics stay bounded so an error envelope can't echo a noisy/sensitive
+ *  blob from the child. */
+function parseChecks(stdout: string): GateChecks {
   const lines = stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   const last = lines[lines.length - 1];
   if (last === undefined) {
     throw new CliError(
       ErrCode.INTERNAL,
-      `gate.sh produced no stdout to parse${stderr.trim() ? `: ${stderr.trim()}` : ""}`,
+      "gate.sh produced no checks JSON on stdout (its progress goes to stderr)",
     );
   }
+  const snippet = last.length > 200 ? `${last.slice(0, 200)}…` : last;
   let parsed: unknown;
   try {
     parsed = JSON.parse(last);
   } catch {
-    throw new CliError(ErrCode.INTERNAL, `gate.sh stdout is not JSON: ${last}`);
+    throw new CliError(ErrCode.INTERNAL, `gate.sh last stdout line is not JSON: ${snippet}`);
   }
   if (typeof parsed !== "object" || parsed === null) {
-    throw new CliError(ErrCode.INTERNAL, `gate.sh JSON is not an object: ${last}`);
+    throw new CliError(ErrCode.INTERNAL, `gate.sh JSON is not an object: ${snippet}`);
   }
   const obj = parsed as Record<string, unknown>;
   const pick = (name: keyof GateChecks): GateStatus => {
     const v = obj[name];
     if (v === "pass" || v === "fail" || v === "skip") return v;
-    throw new CliError(ErrCode.INTERNAL, `gate.sh check '${name}' missing/invalid: ${last}`);
+    throw new CliError(ErrCode.INTERNAL, `gate.sh check '${name}' missing/invalid: ${snippet}`);
   };
   return { verify: pick("verify"), doc: pick("doc"), review: pick("review"), qa: pick("qa") };
 }
@@ -128,16 +131,22 @@ export function runGate(cwd: string, opts: RunGateOptions = {}): GateResult {
     );
   }
 
+  // gate.sh routes ALL progress (the full verify.sh / test / build output) to
+  // stderr and emits ONLY the one-line checks JSON on stdout. We capture stdout
+  // (tiny, never overflows) but INHERIT stderr — buffering it under spawnSync's
+  // default maxBuffer would ENOBUFS-kill a verify-heavy run and turn a valid
+  // green/red gate into a spurious IO failure. Streaming it also lets the caller
+  // watch verify progress live.
   const r = spawnSync(script, [base], {
     cwd: root,
     encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "inherit"],
   });
   if (r.error) {
     throw new CliError(ErrCode.IO, `failed to run ${script}: ${r.error.message}`);
   }
 
-  const checks = parseChecks(r.stdout ?? "", r.stderr ?? "");
+  const checks = parseChecks(r.stdout ?? "");
   const sha = runGit(["rev-parse", "HEAD"], root).stdout.trim();
   const dirty = isDirty(root);
   const ok = Object.values(checks).every((s) => s !== "fail");
