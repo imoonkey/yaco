@@ -203,15 +203,18 @@ Per-project filesystem watcher (chokidar) + global session/projects watchers.
 - `.gitignore` changes trigger pattern reload + filetree refresh
 - `startProjectWatchers()` is async (primes the agent session path cache and loads gitignore patterns at startup)
 
-### worktree.ts (76 lines)
+### worktree.ts (160 lines)
 
-Git worktree status resolution. Reads worktree state from the filesystem and git CLI for task enrichment.
+Git worktree enumeration + status resolution. Reads worktree state from the filesystem and git CLI, shared by the task-badge enrichment and the worktrees route.
 
-**Exports**: `WorktreeStatus`, `getWorktreeStatus()`, `getWorktreeStatuses()`, `extractWorktreeSlug()`
+**Exports**: `WorktreeStatus`, `WorktreeEntry`, `listRegisteredWorktrees()`, `worktreeStatus()`, `getWorktreeStatus()`, `getWorktreeStatuses()`, `extractWorktreeSlug()`
 
 - `WorktreeStatus` type: `{ active: boolean, dirty: boolean, branch: string, ahead: number, behind: number }`
-- `getWorktreeStatus(projectPath, slug)` — verifies `.worktrees/<slug>/` is a registered git worktree via `git worktree list --porcelain` (not just `existsSync` — prevents stale directories from appearing active). Runs `git status --porcelain` (dirty check) and `git rev-list --count --left-right main...HEAD` (ahead/behind) in parallel. Returns inactive status if not registered.
-- `getWorktreeStatuses(projectPath, tasks)` — batch-resolves all unique worktree slugs found in a task map. Used by the tasks route to enrich responses.
+- `WorktreeEntry` type: `{ path: string, branch: string, head: string, isPrimary: boolean }` — one parsed `git worktree list --porcelain` entry (`branch` is `task/foo`, `(detached)`, or `(bare)`; `head` is the short sha; the first entry git emits is the main working tree, so `isPrimary` is true for it).
+- `listRegisteredWorktrees(primaryRoot)` — runs `git worktree list --porcelain` once and parses every entry (primary + linked, including worktrees outside `.worktrees/`); returns `[]` if git fails. The shared lister behind both the worktrees route and the badge helpers.
+- `worktreeStatus(absPath, branch)` — runs `git status --porcelain` (dirty) and `git rev-list --count --left-right main...HEAD` (ahead/behind) in parallel for one live worktree; both default safely on git failure.
+- `getWorktreeStatus(projectPath, slug)` — verifies `.worktrees/<slug>/` is a registered git worktree via `listRegisteredWorktrees` (not just `existsSync` — prevents stale directories from appearing active), then resolves its `worktreeStatus`. Returns inactive status if not registered.
+- `getWorktreeStatuses(projectPath, tasks)` — batch-resolves all unique worktree slugs found in a task map on top of the same lister. Used by the tasks route to enrich responses.
 - `extractWorktreeSlug(sessionPath)` — regex extraction of slug from a path containing `/.worktrees/<slug>/`. Used by the sessions route to tag agent sessions with their worktree.
 
 ### gitignore.ts (41 lines)

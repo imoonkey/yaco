@@ -216,6 +216,12 @@ All task routes spawn `yaco task <sub> --json` (canonical CLI surface) and parse
 | POST | `/api/tasks/:project/:taskId/archive` | `yaco task archive <id> --json`; returns `{archived: true}` |
 | POST | `/api/tasks/:project/bulk` | Bulk update (`{ ids, patch }`) — sequential `yaco task set` per id; first failure short-circuits |
 
+### Worktrees
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/worktrees/:project` | `{ worktrees: WorktreeInfo[] }` — every entry of `git worktree list --porcelain` run in the project root, **including the primary checkout and worktrees created outside `.worktrees/`** (git is the source of truth, not `tasks.json`). Each `WorktreeInfo` = `{ id, name, branch, head, isPrimary, dirty, ahead, behind }`: `id` is the worktree's absolute path (stable identity); `name` is `"<repo> (primary)"` for the primary, else the directory basename; `branch` is `task/foo`/`(detached)`/`(bare)`; `head` is the short sha; `dirty`/`ahead`/`behind` come from `git status` + `git rev-list --left-right main...HEAD`. Shares `listRegisteredWorktrees()` + `worktreeStatus()` with the task-badge enrichment (see [libs.md § worktree.ts](libs.md#worktreets)) |
+
 ### Search
 
 | Method | Path | Description |
