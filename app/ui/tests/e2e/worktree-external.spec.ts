@@ -75,16 +75,21 @@ const editorTab = (page: Page, relpath: string) =>
 const changeItem = (page: Page, relpath: string) =>
   page.locator(`[data-testid="git-change-item"][data-change-path="${relpath}"]`)
 
-const worktreePicker = (page: Page) => page.getByLabel('Select worktree')
+// The Files header worktree toggle reveals an in-panel list (HIDDEN by default,
+// mirrors Changes' Compare-ref mode — design §P2c); selecting a row re-roots the
+// views AND closes the picker.
+const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
 const worktreeListbox = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
 async function openWorktreePicker(page: Page): Promise<void> {
-  await expect(worktreePicker(page)).toBeVisible({ timeout: 10_000 })
-  await worktreePicker(page).click()
+  await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
+  await worktreeToggle(page).click()
   await expect(worktreeListbox(page)).toBeVisible({ timeout: 5_000 })
 }
 async function selectWorktreeRow(page: Page, rowText: string): Promise<void> {
   await openWorktreePicker(page)
   await worktreeListbox(page).getByRole('option').filter({ hasText: rowText }).click()
+  // Selecting closes the picker (the header X disappears) — mirrors Compare ref.
+  await expect(worktreeListbox(page)).toHaveCount(0)
 }
 
 /** Every session row in the activity panel carries a "Kill session <name>" button,
@@ -149,7 +154,7 @@ test.describe('Worktree-as-view: external worktree end-to-end', () => {
     await page.goto('/')
     await waitForAppReady(page)
     await selectProject(page, fixture.name)
-    await expect(worktreePicker(page)).toBeVisible({ timeout: 15_000 })
+    await expect(worktreeToggle(page)).toBeVisible({ timeout: 15_000 })
 
     // --- Main scope: open two PINNED editor tabs; index.js ends active. ---
     await openAndPin(page, 'README.md', 'README.md')

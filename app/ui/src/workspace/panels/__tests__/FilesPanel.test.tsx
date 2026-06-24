@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PanelFrame } from '../../PanelFrame'
 import { resolvePanelTitle } from '../../panelMeta'
 import { defaultWorkspacePanelLayout } from '../../panelLayoutModel'
-import { filesPanelDef } from '../FilesPanel'
+import { filesPanelDef, resetWorktreePickerForTests } from '../FilesPanel'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
@@ -69,6 +69,9 @@ beforeEach(() => {
   }))
   // Run reveal's requestAnimationFrame callback synchronously for determinism.
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0 })
+  // The worktree-picker open store is module-scoped (it bridges the header/body
+  // split), so reset it to closed before each test.
+  resetWorktreePickerForTests()
 })
 
 afterEach(() => {
@@ -296,86 +299,111 @@ describe('FilesPanel — file-reveal controller', () => {
   })
 })
 
-describe('FilesPanel — worktree picker (the in-body dropdown the user clicks)', () => {
+describe('FilesPanel — worktree picker (header toggle reveals the in-body list)', () => {
   const WORKTREES: WorktreeInfo[] = [
     { id: '/demo', name: 'demo (primary)', branch: 'main', head: 'aaa1111', isPrimary: true, dirty: false, ahead: 0, behind: 0 },
     { id: '/abs/wt/feature-x', name: 'feature-x', branch: 'task/feature-x', head: 'bbb2222', isPrimary: false, dirty: true, ahead: 2, behind: 1 },
   ]
 
-  it('renders no picker when the project has no worktrees', async () => {
+  const worktreeList = () => screen.getByRole('listbox', { name: 'Worktrees' })
+
+  it('renders no toggle when the project has no worktrees', async () => {
     renderFilesPanel({ worktrees: [] })
     await screen.findByLabelText('Search in files')
     expect(screen.queryByLabelText('Select worktree')).toBeNull()
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
   })
 
-  it('renders the picker INSIDE the panel body (atop the explorer), not the header', async () => {
+  it('is HIDDEN by default: the header shows a GitBranch toggle, the list is absent', async () => {
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    expect(await screen.findByLabelText('Select worktree')).toBeTruthy()
+    // The in-body list does not render until the toggle is clicked.
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+  })
+
+  it('clicking the header toggle reveals the inline list INSIDE the panel body', async () => {
     const { container } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
-    const trigger = await screen.findByLabelText('Select worktree')
-    // The body is the flex column that also holds the explorer's flex-fill root;
-    // the picker is a sibling above it (it moved out of the framed header).
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+
+    const list = worktreeList()
+    // The body is the flex column that also holds the explorer's flex-fill root; the
+    // revealed list is a sibling above it. The header toolbar is a SEPARATE subtree.
     const explorerRoot = container.querySelector('.flex-1.min-h-0.min-w-0')
     const body = explorerRoot?.parentElement
     expect(body?.className).toContain('flex-col')
-    expect(body?.contains(trigger)).toBe(true)
-    // The header toolbar (Search/New File/...) is a SEPARATE subtree from the picker.
-    const searchBtn = screen.getByLabelText('Search in files')
-    expect(body?.contains(searchBtn)).toBe(false)
+    expect(body?.contains(list)).toBe(true)
+    expect(body?.contains(screen.getByLabelText('Search in files'))).toBe(false)
   })
 
-  it('the picker also scopes search mode (visible above the text-search body)', async () => {
-    // It moved to the body atop the tree/search swap, so unlike the old header chip
-    // (tree-mode only) it now shows in search mode too — both views are worktree-scoped.
+  it('the worktree toggle is tree-mode only (absent from the search-mode header)', async () => {
+    // The toggle lives in the tree-mode actions row, so search mode has no worktree
+    // affordance (the selected worktree still scopes search via the `worktree` param).
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null, showTextSearch: true })
     expect(await screen.findByText('text-search-body')).toBeTruthy()
-    expect(screen.getByLabelText('Select worktree')).toBeTruthy()
+    expect(screen.queryByLabelText('Select worktree')).toBeNull()
+    expect(screen.queryByLabelText('Hide worktree picker')).toBeNull()
   })
 
-  it('the trigger shows the current branch (primary when nothing is selected)', async () => {
+  it("the toggle title shows the current branch (primary when nothing is selected)", async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
-    const trigger = await screen.findByLabelText('Select worktree')
-    expect(within(trigger).getByText('main')).toBeTruthy()
+    const toggle = await screen.findByLabelText('Select worktree')
+    expect(toggle.getAttribute('title')).toContain('main')
   })
 
-  it('falls back to the primary branch when the selected id is gone (not the first row)', async () => {
-    // Linked worktree ordered BEFORE primary; the selection points at a worktree
-    // that is no longer registered. The trigger must show primary, not worktrees[0].
+  it('the title falls back to the primary branch when the selected id is gone (not the first row)', async () => {
+    // Linked worktree ordered BEFORE primary; the selection points at a worktree that
+    // is no longer registered. The toggle title must show primary, not worktrees[0].
     const linkedFirst: WorktreeInfo[] = [WORKTREES[1], WORKTREES[0]]
     renderFilesPanel({ worktrees: linkedFirst, activeWorktree: '/abs/wt/gone' })
-    const trigger = await screen.findByLabelText('Select worktree')
-    expect(within(trigger).getByText('main')).toBeTruthy()
+    const toggle = await screen.findByLabelText('Select worktree')
+    expect(toggle.getAttribute('title')).toContain('main')
   })
 
-  it('opening the dropdown lists every worktree by branch + a primary chip', async () => {
+  it('opening the list shows every worktree by branch + a primary chip', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
 
-    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
+    const list = worktreeList()
     expect(within(list).getByText('main')).toBeTruthy()
     expect(within(list).getByText('task/feature-x')).toBeTruthy()
     expect(within(list).getByText('primary')).toBeTruthy()
   })
 
-  it('clicking a linked worktree row binds it by its absolute-path id', async () => {
+  it('clicking a linked worktree row binds it by id AND closes the picker', async () => {
     const { selectWorktree } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
 
-    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
-    const row = list.querySelector('[data-worktree-id="/abs/wt/feature-x"]') as HTMLElement
+    const row = worktreeList().querySelector('[data-worktree-id="/abs/wt/feature-x"]') as HTMLElement
     expect(row).toBeTruthy()
     fireEvent.click(row)
     expect(selectWorktree).toHaveBeenCalledWith('/abs/wt/feature-x')
+    // Selecting closes the picker — the list is gone and the toggle resets to closed.
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+    expect(screen.getByLabelText('Select worktree')).toBeTruthy()
   })
 
-  it('clicking the primary row binds null (returns to the main working tree)', async () => {
+  it('clicking the primary row binds null (returns to the main working tree) AND closes', async () => {
     const { selectWorktree } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
-    // While a linked worktree is selected, the trigger reflects its branch.
-    const trigger = await screen.findByLabelText('Select worktree')
-    expect(within(trigger).getByText('task/feature-x')).toBeTruthy()
+    // While a linked worktree is selected, the toggle title reflects its branch.
+    const toggle = await screen.findByLabelText('Select worktree')
+    expect(toggle.getAttribute('title')).toContain('task/feature-x')
 
-    fireEvent.click(trigger)
-    const list = await screen.findByRole('listbox', { name: 'Worktrees' })
-    const primaryRow = list.querySelector('[data-worktree-id="/demo"]') as HTMLElement
+    fireEvent.click(toggle)
+    const primaryRow = worktreeList().querySelector('[data-worktree-id="/demo"]') as HTMLElement
     fireEvent.click(primaryRow)
     expect(selectWorktree).toHaveBeenCalledWith(null)
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+  })
+
+  it('the header X (and the toggle) closes the open picker', async () => {
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+    expect(worktreeList()).toBeTruthy()
+
+    // When open, the toggle relabels and an X exits — mirroring Compare ref exactly.
+    expect(screen.getByLabelText('Hide worktree picker')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Close worktree picker'))
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+    expect(screen.getByLabelText('Select worktree')).toBeTruthy()
   })
 })

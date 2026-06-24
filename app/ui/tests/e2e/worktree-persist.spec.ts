@@ -41,12 +41,13 @@ const searchInput = (page: Page) =>
   page.locator('input[placeholder="Search files..."], input[placeholder="Loading files..."]')
 const searchRows = (page: Page) => page.locator('[data-search-result-idx]')
 
-// The Files-panel worktree picker (the real affordance, mirrors worktree.spec.ts).
-const worktreePicker = (page: Page) => page.getByLabel('Select worktree')
+// The Files header worktree toggle reveals an in-panel list (HIDDEN by default;
+// mirrors worktree.spec.ts and Changes' Compare-ref mode, design §P2c).
+const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
 const worktreeList = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
 async function openWorktreePicker(page: Page): Promise<void> {
-  await expect(worktreePicker(page)).toBeVisible({ timeout: 10_000 })
-  await worktreePicker(page).click()
+  await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
+  await worktreeToggle(page).click()
   await expect(worktreeList(page)).toBeVisible({ timeout: 5_000 })
 }
 
@@ -60,28 +61,31 @@ function draftsBlobContains(page: Page, project: string, marker: string): Promis
   )
 }
 
-/** Load the app, select the fixture project, and wait for the Files-panel worktree
- *  picker to be available (the worktree selector moved into the panel body in §P2). */
+/** Load the app, select the fixture project, and wait for the Files-header worktree
+ *  toggle to be available (the worktree selector is header-toggled in §P2c). */
 async function openFixture(page: Page, name: string): Promise<void> {
   await page.goto('/')
   await waitForAppReady(page)
   await selectProject(page, name)
-  await expect(worktreePicker(page)).toBeVisible({ timeout: 15_000 })
+  await expect(worktreeToggle(page)).toBeVisible({ timeout: 15_000 })
 }
 
 /** Pick the auth-v2 worktree from the Files-panel dropdown; confirm the workspace
- *  re-rooted to it (the worktree-only `wip.txt` appears in the file tree). */
+ *  re-rooted to it (the worktree-only `wip.txt` appears in the file tree) and the
+ *  picker closed (mirrors Compare ref's exit-on-select). */
 async function switchToWorktree(page: Page): Promise<void> {
   await openWorktreePicker(page)
   await worktreeList(page).getByRole('option').filter({ hasText: AUTH_BRANCH }).click()
+  await expect(worktreeList(page)).toHaveCount(0)
   await expect(fileTree(page).getByText('wip.txt', { exact: true })).toBeVisible({ timeout: 10_000 })
 }
 
 /** Pick the primary row to return to the main checkout; confirm the tree re-rooted
- *  to main — the worktree-only file is gone. */
+ *  to main (the worktree-only file is gone) and the picker closed. */
 async function switchToMain(page: Page): Promise<void> {
   await openWorktreePicker(page)
   await worktreeList(page).getByRole('option').filter({ hasText: 'primary' }).click()
+  await expect(worktreeList(page)).toHaveCount(0)
   await expect(fileTree(page).getByText('wip.txt', { exact: true })).toHaveCount(0)
 }
 

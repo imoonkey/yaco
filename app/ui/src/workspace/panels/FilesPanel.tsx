@@ -15,14 +15,16 @@
 // `useHeader` contract from `panelRegistry`).
 import {
   lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState,
+  useSyncExternalStore,
 } from 'react'
 import {
   ChevronsDownUp, FilePlus, FileSearch as FileSearchIcon, FolderPlus,
-  Search, SearchCode, Undo2,
+  GitBranch, Search, SearchCode, Undo2, X,
 } from 'lucide-react'
 import { useFileTree } from '../../hooks/useApi'
 import { FileExplorer, type FileExplorerHandle } from '../../components/FileExplorer'
 import { WorktreePicker } from '../../components/WorktreePicker'
+import type { WorktreeInfo } from '../../hooks/useProjectWorktrees'
 import { SectionRefreshButton } from '../SectionHeader'
 import { useWorkspaceNavigation } from '../useWorkspaceNavigation'
 import {
@@ -72,6 +74,54 @@ const toolbarRef: { current: FilesToolbar } = { current: NOOP_TOOLBAR }
 const NOOP_REVEAL_PARENTS = async (): Promise<void> => {}
 const NOOP_DRAIN = (): void => {}
 
+// --- Worktree-picker open store ------------------------------------------
+//
+// The worktree picker toggles from the framed HEADER (`useFilesHeader`) but renders
+// its list in the BODY. PanelFrame draws those two as SIBLINGS, so they share no
+// React state — the open boolean lives in this module store instead (mirroring
+// ChangesPanel's `compareSlot`). KISS: one open flag per project, keyed by name, read
+// through `useSyncExternalStore`. A project with no slot reads the default (closed).
+const worktreePickerOpen = new Map<string, boolean>()
+const worktreePickerListeners = new Set<() => void>()
+
+function setWorktreePickerOpen(project: string, open: boolean): void {
+  if ((worktreePickerOpen.get(project) ?? false) === open) return
+  worktreePickerOpen.set(project, open)
+  worktreePickerListeners.forEach((listener) => listener())
+}
+
+function subscribeWorktreePicker(listener: () => void): () => void {
+  worktreePickerListeners.add(listener)
+  return () => { worktreePickerListeners.delete(listener) }
+}
+
+function useWorktreePickerOpen(project: string): boolean {
+  return useSyncExternalStore(
+    subscribeWorktreePicker,
+    () => worktreePickerOpen.get(project) ?? false,
+  )
+}
+
+// Test seam: the open store is module-scoped (it bridges the header/body split), so it
+// survives between tests in a file. Reset it so each unit test starts closed.
+// eslint-disable-next-line react-refresh/only-export-components
+export function resetWorktreePickerForTests(): void {
+  worktreePickerOpen.clear()
+  worktreePickerListeners.forEach((listener) => listener())
+}
+
+/** Resolve the currently-selected worktree: the one whose id matches the selection,
+ *  else the primary, else the first listed. The primary fallback runs even when
+ *  `activeWorktree` is a non-null id no longer registered (a stale selection App
+ *  clears on its next pass), so the header tooltip never names a worktree that has
+ *  gone away. Used only for the toggle's title (the inline list marks rows directly). */
+function currentWorktreeEntry(worktrees: WorktreeInfo[], activeWorktree: string | null): WorktreeInfo | null {
+  if (worktrees.length === 0) return null
+  return worktrees.find(wt => wt.id === activeWorktree)
+    ?? worktrees.find(wt => wt.isPrimary)
+    ?? worktrees[0]
+}
+
 // The panel body. Exported for direct mounting/tests; integration consumes the
 // `filesPanelDef` below.
 export function FilesPanel() {
@@ -84,6 +134,7 @@ export function FilesPanel() {
 
   const { name: projectName, path: projectPath, worktree } = env.project
   const showTextSearch = layout.showTextSearch
+  const pickerOpen = useWorktreePickerOpen(projectName)
   const changes = data.git.changes
   const actions = commands.actions
 
@@ -179,15 +230,18 @@ export function FilesPanel() {
   // (WorkspaceLayout.tsx). The framed header is supplied by PanelFrame.
   return (
     <div className="h-full min-h-0 flex flex-col">
-      {/* The worktree selector scopes BOTH the tree and the text-search views, so
-          it sits atop the body (above the tree/search swap) — mirroring how
-          CompareRefPicker sits atop the Changes body. Null-guards itself away when
-          the project has no git worktrees. */}
-      <WorktreePicker
-        worktrees={env.worktrees}
-        activeWorktree={env.activeWorktree}
-        onSelect={env.selectWorktree}
-      />
+      {/* The worktree selector is HIDDEN by default; the framed header's GitBranch
+          toggle reveals it (open store) — mirroring how Changes' "Compare ref" mode
+          shows `CompareRefPicker` only when on. It is a tree-mode affordance (the
+          toggle lives in the tree-mode header), so it renders only in tree mode; the
+          selected worktree still scopes the text-search view through `worktree`. */}
+      {pickerOpen && !showTextSearch && (
+        <WorktreePicker
+          worktrees={env.worktrees}
+          activeWorktree={env.activeWorktree}
+          onSelect={(id) => { env.selectWorktree(id); setWorktreePickerOpen(projectName, false) }}
+        />
+      )}
       {showTextSearch ? (
         <Suspense fallback={TextSearchFallback}>
           <LazyWorkspaceTextSearch
@@ -232,6 +286,39 @@ function useFilesHeader(): PanelHeaderSlots {
   const { layout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
   const showTextSearch = layout.showTextSearch
+  const projectName = env.project.name
+  const pickerOpen = useWorktreePickerOpen(projectName)
+
+  // Worktree toggle (tree mode only). Renders only when the project has git
+  // worktrees — like Compare ref's mode toggle: GitBranch flips the open store
+  // (aria-pressed), and when open an X exits. The title carries the active branch so
+  // hover still shows which worktree is selected.
+  const current = currentWorktreeEntry(env.worktrees, env.activeWorktree)
+  const worktreeToggle = current && (
+    <>
+      <button
+        type="button"
+        onClick={() => setWorktreePickerOpen(projectName, !pickerOpen)}
+        className="section-header-icon-btn"
+        title={pickerOpen ? 'Hide worktree picker' : `Select worktree (${current.branch})`}
+        aria-label={pickerOpen ? 'Hide worktree picker' : 'Select worktree'}
+        aria-pressed={pickerOpen}
+      >
+        <GitBranch />
+      </button>
+      {pickerOpen && (
+        <button
+          type="button"
+          onClick={() => setWorktreePickerOpen(projectName, false)}
+          className="section-header-icon-btn"
+          title="Close worktree picker"
+          aria-label="Close worktree picker"
+        >
+          <X />
+        </button>
+      )}
+    </>
+  )
 
   const actions = showTextSearch ? (
     <div className="flex gap-0.5 items-center">
@@ -265,6 +352,7 @@ function useFilesHeader(): PanelHeaderSlots {
     </div>
   ) : (
     <div className="flex gap-0.5 items-center">
+      {worktreeToggle}
       <button
         type="button"
         onClick={() => commands.setFilesMode('search')}

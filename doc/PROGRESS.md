@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-24: Worktree picker becomes a header-toggled in-panel dropdown, mirroring Compare-ref mode (worktree-explorer-view P2c)
+
+**What changed:**
+- `app/ui/src/workspace/panels/FilesPanel.tsx`: the worktree picker is now HIDDEN by default and revealed by a header toggle, EXACTLY mirroring ChangesPanel's "Compare ref" mode. A module-scoped open store (`worktreePickerOpen` Map keyed by project + listeners + `setWorktreePickerOpen` + `useWorktreePickerOpen` via `useSyncExternalStore`) bridges the header/body split (PanelFrame renders them as siblings, so they can't share `useState` — same reason as ChangesPanel's `compareSlot`). `useFilesHeader` (tree mode) gains a `GitBranch` `section-header-icon-btn` at the FRONT of the actions row (`aria-pressed`, aria-label "Select worktree"/"Hide worktree picker", title carries the active branch); when open, an `X` (aria-label "Close worktree picker") renders next to it. Both render only when `env.worktrees.length > 0`. The body renders `<WorktreePicker>` only when `pickerOpen && !showTextSearch`; its `onSelect` calls `env.selectWorktree(id)` AND closes the picker. `currentWorktreeEntry` (fall back to primary when the selected id is gone) lives here now, feeding the toggle's title tooltip. A `resetWorktreePickerForTests` seam clears the module store between unit tests.
+- `app/ui/src/components/WorktreePicker.tsx`: reworked from a trigger-row + floating `DialogShell` dropdown into the INLINE in-panel box. Same Compare-ref container (`mx-1 mt-1 rounded-md`, accent top-border, `color-mix` accent-3% bg) now renders the worktree LIST INLINE (rows directly, pushing the tree down) — no trigger, no overlay, no `ChevronDown`. Rows keep the RefSearchDropdown idiom (`h-[24px]`, blue-12% focus bg, mouseEnter focus, mono branch, primary chip, dirty dot, ahead/behind, `Check` on active), `role="listbox" aria-label="Worktrees"`, `data-worktree-id`, the `worktrees.length === 0` null guard. No search input. ~190 → ~95 lines.
+- Tests: `FilesPanel.test.tsx` rewritten to the toggle model (hidden by default; toggle reveals the in-body list; tree-mode-only; title shows the active branch with primary fallback; selecting binds id/null AND closes; the header X closes). `worktree.spec.ts` asserts hidden-by-default + the header X exit + close-on-select; `worktree-external.spec.ts` / `worktree-persist.spec.ts` drive the header toggle and assert close-on-select.
+- `doc/main/app/frontend/components.md`: WorktreePicker + ProjectList rows updated to the header-toggled model (§P2c).
+
+**Why:**
+- The always-visible picker box took permanent vertical space atop the Files body and read differently from Changes' Compare-ref selector, which is header-toggled. Giving the worktree picker the SAME interaction (a header toggle that reveals an in-panel box, an X to exit) makes the two ref/worktree selectors behave identically and reclaims the body space by default.
+
+**Key files:** `app/ui/src/workspace/panels/FilesPanel.tsx`, `app/ui/src/components/WorktreePicker.tsx`, `app/ui/src/workspace/panels/__tests__/FilesPanel.test.tsx`, `app/ui/tests/e2e/worktree{,-external,-persist}.spec.ts`, `doc/main/app/frontend/components.md`.
+**Verification:** `scripts/verify.sh` green (cli test · server test · ui lint · root build = `tsc -b` + vite build). `app/ui` `npm test` **1089 passed** (19 FilesPanel). Isolated static-build e2e — the full worktree trio → **9 passed**. Cross-provider Codex review + `/qa` artifacts under `plan/all/worktree-explorer-view/`.
+**Design:** [plan/all/worktree-explorer-view/plan_p2c-picker-toggle.md](../plan/all/worktree-explorer-view/plan_p2c-picker-toggle.md).
+**Next:** none for this change.
+**Blockers:** None.
+
 ## 2026-06-24: Worktree selector restyled to the Compare-ref box, moved into the Files panel body (worktree-explorer-view P2b)
 
 **What changed:**

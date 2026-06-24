@@ -46,7 +46,7 @@ App (384 lines)
         ├── FileExplorer (435 lines)
         │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon
         │   └── fileExplorerNode — git letter indicators (M/A/D/U)
-        ├── ProjectList (~146 lines) — project rows only (worktree selection moved to the Files-panel-body WorktreePicker, §P2/§P2b)
+        ├── ProjectList (~146 lines) — project rows only (worktree selection moved to the header-toggled Files-panel WorktreePicker, §P2/§P2b/§P2c)
         ├── Menu — compact shared context menu: keyboard nav (Arrow/Enter/Home/End), long-press (350ms), iOS native-callout suppression
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
@@ -251,7 +251,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceSidebar.tsx` | 26 | GitChangeItem component — status pill badges, active left accent border |
 | `CompareRefPicker.tsx` | ~120 | Vertical two-row ref selector (base/compare) with swap animation, opens RefSearchDropdown |
 | `RefSearchDropdown.tsx` | ~250 | Search-first ref picker dropdown — filter tabs (All/Branches/Tags/Commits), fuzzy search, grouped sections, keyboard nav, relative dates + author on commits |
-| `WorktreePicker.tsx` | ~190 | Worktree selector INSIDE the Files panel body, atop the tree/search swap (§P2/§P2b) — styled like the Changes "Compare ref" box: accent top-border + tinted container, a Compare-ref trigger row (`worktree` label · current branch in mono · rotating `ChevronDown`). Body-anchored fixed dropdown (RefSearchDropdown technique + row idiom: h-[24px], blue-12% focus bg, mouseEnter focus) lists every git-sourced worktree by branch, primary chip on the main working tree, dirty dot + ahead/behind per row, Check on the active. No search input (the list is short). Select → `env.selectWorktree(id \| null)` (primary → null). |
+| `WorktreePicker.tsx` | ~95 | Worktree selector INSIDE the Files panel body, HEADER-TOGGLED like the Changes "Compare ref" mode (§P2/§P2b/§P2c). A `GitBranch` toggle in the Files header (tree mode) reveals it; HIDDEN by default. Styled like the Compare-ref box (accent top-border + tinted container) but renders the worktree LIST INLINE — no trigger row, no floating dropdown. Rows follow the RefSearchDropdown idiom (h-[24px], blue-12% focus bg, mouseEnter focus): every git-sourced worktree by branch, primary chip on the main working tree, dirty dot + ahead/behind per row, Check on the active. No search input (the list is short). Select → `env.selectWorktree(id \| null)` (primary → null) AND closes the picker. Open/close state lives in a module store in `FilesPanel.tsx` (the header/body are PanelFrame siblings), mirroring ChangesPanel's `compareSlot`; the header X exits. |
 | `SectionHeader.tsx` | 17 | Shared collapsible section header (uppercase, ARIA expand) |
 
 ## FileExplorer

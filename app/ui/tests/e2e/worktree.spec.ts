@@ -57,39 +57,52 @@ test.describe('Worktree features', () => {
     expect(uiTask.worktreeStatus).toBeUndefined()
   })
 
-  // Worktree selection moved from the ProjectList sub-list to a picker INSIDE the
-  // File Explorer panel body, styled like the Changes "Compare ref" box (design
-  // §P2/§P2b). These two specs drive that REAL affordance — the trigger the user
-  // clicks — and assert the observable outcome: the listed worktrees, and the
-  // explorer re-rooting to the selected worktree's tree.
-  const worktreePicker = (page: Page) => page.getByLabel('Select worktree')
+  // Worktree selection moved from the ProjectList sub-list to a HEADER-TOGGLED picker
+  // inside the File Explorer panel, mirroring the Changes "Compare ref" mode (design
+  // §P2/§P2b/§P2c): a GitBranch toggle in the Files header reveals an in-panel list
+  // (HIDDEN by default); selecting re-roots the explorer AND closes the picker; an X
+  // in the header exits. These specs drive those REAL affordances — the toggle, the X,
+  // and the rows the user clicks — and assert the observable outcome (the listed
+  // worktrees, the explorer re-rooting, the picker opening/closing).
+  const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
   const worktreeList = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
   async function openWorktreePicker(page: Page) {
-    await expect(worktreePicker(page)).toBeVisible({ timeout: 10_000 })
-    await worktreePicker(page).click()
+    await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
+    await worktreeToggle(page).click()
     await expect(worktreeList(page)).toBeVisible({ timeout: 5_000 })
   }
 
-  test('the Files panel picker lists every git worktree by branch + a primary chip', async ({ page }) => {
+  test('the Files header toggle reveals an in-panel list of every git worktree (hidden by default)', async ({ page }) => {
     await selectProject(page, fixture.name)
-    await openWorktreePicker(page)
 
+    // HIDDEN by default: the toggle is in the header, but the list is not rendered
+    // until it is clicked.
+    await expect(worktreeToggle(page)).toBeVisible({ timeout: 10_000 })
+    await expect(worktreeList(page)).toHaveCount(0)
+
+    await openWorktreePicker(page)
     const list = worktreeList(page)
     // git-sourced list: both linked worktrees by branch, plus the primary chip.
     await expect(list.getByText('task/auth-v2', { exact: true })).toBeVisible({ timeout: 10_000 })
     await expect(list.getByText('task/perf-cache', { exact: true })).toBeVisible()
     await expect(list.getByText('primary', { exact: true })).toBeVisible()
+
+    // The header X exits without selecting — the list closes, the toggle resets.
+    await page.getByLabel('Close worktree picker').click()
+    await expect(worktreeList(page)).toHaveCount(0)
+    await expect(worktreeToggle(page)).toBeVisible()
   })
 
-  test('selecting a worktree in the Files panel re-roots the file explorer', async ({ page }) => {
+  test('selecting a worktree in the Files panel re-roots the file explorer AND closes the picker', async ({ page }) => {
     await selectProject(page, fixture.name)
     await openWorktreePicker(page)
 
     // Pick the auth-v2 worktree. Its tree contains `wip.txt` (untracked at the
     // worktree root) which exists ONLY in that worktree — asserting on it proves
     // the click actually re-rooted the explorer (a `src/` check would pass either
-    // way).
+    // way). Selecting also closes the picker (mirrors Compare ref's exit).
     await worktreeList(page).getByRole('option').filter({ hasText: 'task/auth-v2' }).click()
+    await expect(worktreeList(page)).toHaveCount(0)
     const fileTree = page.locator('[role="tree"]')
     await expect(fileTree).toBeVisible({ timeout: 5_000 })
     await expect(fileTree.getByText('wip.txt', { exact: true })).toBeVisible({ timeout: 5_000 })
@@ -97,6 +110,7 @@ test.describe('Worktree features', () => {
     // Switch back to the main working tree via the picker's primary row.
     await openWorktreePicker(page)
     await worktreeList(page).getByRole('option').filter({ hasText: 'primary' }).click()
+    await expect(worktreeList(page)).toHaveCount(0)
 
     // The worktree-only file is gone; the main tree (still has src/) is back.
     await expect(fileTree.getByText('wip.txt', { exact: true })).toHaveCount(0)
