@@ -185,9 +185,13 @@ function App() {
     setActiveWorktree(loadWorktree(activeProject))
   }, [activeProject])
 
-  // Validate activeWorktree (an abspath) is still a registered worktree
+  // Validate activeWorktree (an abspath) is still a registered worktree. Guard on a
+  // loaded list: `worktrees` is briefly [] while useProjectWorktrees refetches on a
+  // project switch, and clearing then would drop a valid restored selection. The
+  // git-sourced list always has >=1 entry (the primary) once loaded, so length>0
+  // distinguishes "loaded, selection gone" (clear) from "not loaded yet" (wait).
   useEffect(() => {
-    if (!activeWorktree) return
+    if (!activeWorktree || worktrees.length === 0) return
     if (!worktrees.some(w => w.id === activeWorktree)) {
       setActiveWorktree(null)
     }
