@@ -182,6 +182,13 @@ export function FilesPanel() {
     return () => { if (toolbarRef.current === toolbar) toolbarRef.current = NOOP_TOOLBAR }
   }, [contextFolder, clearLoadedDirs, refreshTree])
 
+  // The worktree picker is a tree-mode affordance (the toggle lives in the tree-mode
+  // header). Entering search mode by ANY path closes it, so returning to the tree
+  // never resurrects a picker the user had no search-mode affordance to dismiss.
+  useEffect(() => {
+    if (showTextSearch) setWorktreePickerOpen(projectName, false)
+  }, [showTextSearch, projectName])
+
   // Local file-reveal controller (design: File Reveal Controller). The provider
   // records the latest intent in `revealBuffer` and asks the registered
   // controller to drain it; the panel drains the latest unconsumed intent.

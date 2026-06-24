@@ -395,7 +395,7 @@ describe('FilesPanel — worktree picker (header toggle reveals the in-body list
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
   })
 
-  it('the header X (and the toggle) closes the open picker', async () => {
+  it('the header X AND the relabeled toggle each close the open picker', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
     expect(worktreeList()).toBeTruthy()
@@ -404,6 +404,30 @@ describe('FilesPanel — worktree picker (header toggle reveals the in-body list
     expect(screen.getByLabelText('Hide worktree picker')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Close worktree picker'))
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+
+    // Reopen, then close via the relabeled toggle itself (the other close path).
+    fireEvent.click(screen.getByLabelText('Select worktree'))
+    expect(worktreeList()).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Hide worktree picker'))
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
     expect(screen.getByLabelText('Select worktree')).toBeTruthy()
+  })
+
+  it('entering search mode closes the picker so the tree return is clean', async () => {
+    // Open in tree mode (module store now true)...
+    const first = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+    expect(worktreeList()).toBeTruthy()
+    first.unmount()
+
+    // ...visiting search mode runs the close effect on mount...
+    const second = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null, showTextSearch: true })
+    await screen.findByText('text-search-body')
+    second.unmount()
+
+    // ...so returning to the tree shows the picker closed (open state did not survive).
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    await screen.findByLabelText('Select worktree')
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
   })
 })
