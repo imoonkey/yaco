@@ -10,3 +10,20 @@ Root map for YACO development guides.
 
 Run root commands from the monorepo root unless a guide explicitly changes
 directory.
+
+## Repo-wide gates
+
+Two pure-shell scripts at the repo root, resolved by hardcoded path (same
+convention as `scripts/worktree-provision.sh`):
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs `cli` bun test → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. |
+| [`scripts/gate.sh <base>`](../../scripts/gate.sh) | Floor-from-diff aggregator. Computes `git diff <base>..HEAD`, maps touched paths to the checks they owe (code→`verify`+`review`, `app/ui`→`qa`, any change→`doc`), runs every owed check, and prints a one-line JSON summary `{verify,doc,review,qa: pass\|fail\|skip}` as the **last stdout line**. Any `fail` → non-zero exit. |
+
+`gate.sh` derives the check set from the diff, not from which task is in flight —
+the work can't dodge a gate by misclassifying itself. v1 is stateless and
+existence-only for `review`/`qa` artifacts (a `plan/` file referencing the
+current HEAD sha); the `yaco gate` verb and skill wiring land in later tasks.
+`scripts/gate.test.sh` is a hermetic test of the floor mapping.
+

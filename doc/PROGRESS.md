@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-23: Per-repo verify + floor-from-diff gate scripts (codify-process-gate v1 · T1)
+
+**What changed:**
+- Added `scripts/verify.sh` — the repo's single verify entry: `cli` bun test → `app/server` test → `app/ui` lint → root build, in fixed order; names the failing step; exits non-zero on the first failure, 0 when all pass.
+- Added `scripts/gate.sh <base>` — floor-from-diff aggregator. Computes `git diff <base>..HEAD` itself and maps touched paths to owed checks: code (`src|cli|app`)→`verify` (runs `verify.sh`)+`review`; `app/ui`→`qa`; any change→`doc`. Runs every owed check (no short-circuit), routes all progress to stderr, and prints `{"verify","doc","review","qa": pass|fail|skip}` as the sole/last stdout line. Any `fail` → non-zero exit; not-owed → `skip`.
+- `review`/`qa` are existence-only in v1: a `plan/` file (`*review*`/`*qa*`) referencing the current HEAD short sha. `doc` = a `doc/**`/`PROGRESS.md` change or a `docs:` commit since base. No verdict parsing (v3).
+- Added `scripts/gate.test.sh` — hermetic 12-case test of the floor mapping; builds throwaway git repos with a stub `verify.sh`, and hard-asserts every fixture op targets the temp root so it can never touch the real repo.
+- Documented both scripts in `doc/dev/README.md` (Repo-wide gates).
+
+**Why:**
+- v1 of codify-process-gate: make the verify floor a code-enforced exit gate keyed off the session diff, not a per-task declaration — pure shell with no CLI/TS dependency so it is independently testable and callable from a skill, a hook, or a human shell identically.
+
+**Key files:** `scripts/verify.sh`, `scripts/gate.sh`, `scripts/gate.test.sh`, `doc/dev/README.md`
+**Verification:** `bash scripts/gate.test.sh` → 12/12; `shellcheck` clean (0 findings); live acceptance — `verify.sh` exits 0 on the green repo (cli + 730 server tests + ui lint + build), non-zero naming `ui lint` on an injected lint error; `gate.sh HEAD` → all-skip JSON exit 0; a committed code change with failing tests → `{"verify":"fail",...}` exit 1. Independent cross-provider review (Codex) found one [high] doc-check SIGPIPE-under-pipefail bug; fixed (capture subjects, grep here-string); re-review verdict pass / 0 unresolved.
+**Commit:** 50f885f0 (scripts) + this docs commit
+**Next:** T2 `yaco gate` verb (stateless v1), then T3 set-done guard and T4 skill wiring.
+**Blockers:** None.
+
+
 ## 2026-06-23: Agent interrupt status heals from transcripts
 
 **What changed:**
