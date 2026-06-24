@@ -20,9 +20,10 @@ const projectsTestWorktrees: WorktreeInfo[] = [
   { id: '/alpha/.worktrees/feature-x', name: 'feature-x', branch: 'feat/x', head: 'abc1234', isPrimary: false, dirty: true, ahead: 2, behind: 0 },
 ]
 
-// A full env so the body renders its rich DOM (active project, worktree
-// sub-items, unread badge, session counts) — the same inputs the inline section
-// received. Project-management callbacks are spies so behavior can be asserted.
+// A full env so the body renders its rich DOM (active project, unread badge,
+// session counts). Worktrees are NOT shown here — the worktree selector moved to
+// the Files header (§P2) — but the env still carries them for the rest of the
+// workspace. Project-management callbacks are spies so behavior can be asserted.
 function makeProjectsTestEnv(overrides: Partial<WorkspaceEnv> = {}): WorkspaceEnv {
   return {
     project: { name: 'alpha', path: '/alpha', effectivePath: '/alpha' },
@@ -79,12 +80,9 @@ describe('ProjectsPanel body — same DOM as the inline projectListBody', () => 
       <ProjectList
         projects={env.projects}
         activeProject={env.activeProject}
-        activeWorktree={env.activeWorktree}
-        worktrees={env.worktrees}
         badgesByProject={env.badgesByProject}
         projectSessionCounts={env.projectSessionCounts}
         onSelect={env.selectProject}
-        onWorktreeSelect={env.selectWorktree}
         onReorder={env.reorderProjects}
         onRemove={env.removeProject}
         onMarkAllRead={env.markAllRead}
