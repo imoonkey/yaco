@@ -65,11 +65,11 @@ Re-verify **all** flows (not just fixed ones) to confirm no new breakage.
 
 ## Artifact
 
-Write the result to a **sha-stamped artifact** in the project's review folder
-(resolved via `/yaco-paths` — the qa area beside the code-review artifacts), not
-just stdout. Stamp the header with `reviewed_sha = <sha>`, the commit sha of the
-tree you exercised, so a gate can confirm the QA covers the current HEAD by reading.
-Name it so it's recognizably a qa artifact. The body is the Output Format below.
+Write the result to a **sha-stamped artifact** in the project's `/yaco-paths`-resolved
+bundle home (the same folder as the code-review artifacts), not just stdout. Stamp the
+header with `reviewed_sha = <sha>`, the commit sha of the tree you exercised, so a gate
+can confirm the QA covers the current HEAD by reading. Name it so it's recognizably a qa
+artifact. The body is the Output Format below.
 
 ## Output Format
 

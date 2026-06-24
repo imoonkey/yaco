@@ -117,7 +117,7 @@ confirm on top of it:
 | overlay | passes when |
 |---------|-------------|
 | acceptCriteria | every item independently checks out — file → `test -f`; command → run it, check exit; observable → read files / `git diff $base..HEAD`. (The gate never reads the task.) |
-| review independence | the review artifact the gate counted is from an **independent reviewer** (≠ the worker, cross-provider) and covers the diff you read — confirm via its provenance header (reviewer, base, scope). v1's gate checks the artifact *exists* and is sha-fresh; orchestrate vouches for *who* wrote it. The artifact lives in the project review folder (`/yaco-paths`). |
+| review independence | the same review artifact the gate already counted is from an **independent reviewer** (≠ the worker, cross-provider) and covers the diff you read — a single targeted read of its provenance header (reviewer, base, scope) in the `/yaco-paths` bundle home. This is the one authorship check the diff-only gate can't make in v1 (its `review` check is existence + sha-fresh only); without it a worker's self-authored review would pass. |
 
 **Outcome:**
 

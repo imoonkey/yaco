@@ -82,7 +82,7 @@ Run 2.1 → 2.5 for each phase.
     (start → wait → kill). Nested sub-sessions are supported (spawnedBy/parentSession),
     so a worker may spawn its own reviewer. A reviewer of the same provider but separate
     context is the fallback when cross-provider isn't available.
-- Write the review **artifact** to the project's review folder (resolved via `/yaco-paths`, not a per-skill path), with a header that makes it verifiable evidence — not just prose: **reviewer** (handle / provider), the **base SHA and scope** it reviewed, **verdict**, and **unresolved critical/high count**. Anyone (or any gate) can then confirm the review covers the work and trust it by reading, without re-running it.
+- Write the review **artifact** to the project's `/yaco-paths`-resolved bundle home (where the design doc and prior reviews live — not a per-skill path or hardcoded folder), with a header that makes it verifiable evidence — not just prose: **reviewer** (handle / provider), the **base SHA and scope** it reviewed, the **reviewed sha** (the HEAD commit under review — the gate keys review freshness on it), **verdict**, and **unresolved critical/high count**. Anyone (or any gate) can then confirm the review covers the work and trust it by reading, without re-running it.
 
 ### 2.4 Fix
 - Address `/verify` failures and `/code-review` issues (change the code, or in the next round persuade the reviewer the finding is wrong). Loop 2.1–2.4 until **both** gates are green.
