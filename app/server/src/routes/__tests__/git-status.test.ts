@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -176,17 +176,21 @@ describe('GET /:project/status — colocated repos', () => {
     const plan = await makeColocatedRepo('plan')
     await writeFile(join(plan, 'note.md'), 'n')
 
-    // A worktree checkout (no plan inside it — plan is info/excluded from the branch).
+    // Primary needs a commit before `git worktree add`.
+    await writeFile(join(testProjectPath, 'host.md'), 'h\n')
+    commitAll(testProjectPath)
+
+    // A real linked worktree, addressed by abspath (the new ?worktree= contract).
+    // `plan` is a colocated repo physically in the primary's working dir, so the
+    // worktree checkout doesn't contain it — that's the isolation under test.
     const wt = join(testProjectPath, '.worktrees', 'wt')
-    await mkdir(wt, { recursive: true })
-    gitInit(wt)
-    execFileSync('git', ['commit', '--allow-empty', '-qm', 'init'], { cwd: wt })
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'task/wt', wt], { cwd: testProjectPath })
     await writeFile(join(wt, 'wt-only.md'), 'w')
 
     const primary = await fetchStatus()
     expect(primary.changes.some(c => c.path === 'plan/note.md')).toBe(true)
 
-    const worktree = await fetchStatus('?worktree=wt')
+    const worktree = await fetchStatus(`?worktree=${encodeURIComponent(realpathSync(wt))}`)
     expect(worktree.changes.some(c => c.path === 'wt-only.md')).toBe(true)
     expect(worktree.changes.some(c => c.path.startsWith('plan/'))).toBe(false)
   })
