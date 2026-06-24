@@ -46,7 +46,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 ### Files
 
-All file routes support `?worktree=<slug>` query param — when present, `withProject` middleware redirects operations to `.worktrees/<slug>/` checkout.
+All file routes support a `?worktree=<abspath>` query param — when present, `withProject` resolves operations to that worktree's checkout. The value is an absolute path that must `realpath`-match a `git worktree list` entry of the project root (else 404); see [middleware/project.ts](libs.md).
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -65,7 +65,7 @@ All file routes support `?worktree=<slug>` query param — when present, `withPr
 
 ### Git
 
-All git routes support `?worktree=<slug>` query param via `withProject` middleware. `/status`, `/diff`, and `/baseline` are **colocated-repo aware** (-> See: [colocated repos](#colocated-repos)); the `/compare` ref-diff stays host-rooted.
+All git routes support the `?worktree=<abspath>` query param via `withProject` middleware (same realpath-allowlist contract as the file routes). `/status`, `/diff`, and `/baseline` are **colocated-repo aware** (-> See: [colocated repos](#colocated-repos)); the `/compare` ref-diff stays host-rooted.
 
 | Method | Path | Description |
 |--------|------|-------------|

@@ -51,15 +51,15 @@ Pure helpers for negotiating which precompressed sibling (`.br` / `.gz`) to serv
 - **Deliberate divergence 3** — when every candidate ends up at q=0, fall back to `identity` instead of 406 Not Acceptable. Matches nginx `gzip_static`. Safer for a single-user local app where serving any bytes beats a hard failure.
 - `appendVary` mutates a `Headers`-like target: unset Vary → set to field; existing `*` (alone or in a list) → collapse to `*`; field is `*` → set to `*`; otherwise comma-split, case-insensitive dedupe, append, re-join.
 
-### middleware/project.ts (25 lines)
+### middleware/project.ts (56 lines)
 
-Hono middleware for project-scoped routes. Resolves `:project` param via `loadProjects()`, returns 404 if not found, sets `c.var.project`. Supports worktree targeting via `?worktree=slug` query param.
+Hono middleware for project-scoped routes. Resolves `:project` param via `loadProjects()`, returns 404 if not found, sets `c.var.project`. Supports worktree targeting via `?worktree=<abspath>` query param.
 
 **Exports**: `withProject`, `ProjectEnv`
 
 - Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts, progress.ts
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
-- When `?worktree=slug` is present: validates slug format (lowercase alphanumeric + hyphens via regex), resolves path with `path.resolve()` and verifies it stays under `.worktrees/` (path traversal prevention), then rewrites `project.path` to the worktree checkout. Returns 400 for invalid slugs, 404 if directory doesn't exist.
+- `?worktree=` is an **absolute path**, not a slug. When present (gated on presence, so a bare/empty `?worktree` also validates), it must `realpath`-match a worktree that `git worktree list --porcelain` reports for the **configured project root** — git is the allowlist. Both the registered paths and the candidate are realpath-canonicalized; the candidate must exist and **exactly equal** an allowlisted realpath; git is never run inside the submitted path. Otherwise **404**. A passed-primary abspath collapses back to the base `project.path`, keeping the git-status/colocated caches on one identity per worktree. This closes the old prefix-check's traversal/symlink-escape hole and unlocks worktrees at arbitrary locations (outside `.worktrees/`).
 
 ### projects.ts
 

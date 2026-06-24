@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-24: `withProject` `?worktree=` — slug contract → realpath-allowlisted abspath (worktree-explorer-view P1 middleware)
+
+**What changed:**
+- `app/server/src/middleware/project.ts`: the `?worktree=` query param is now an **absolute path**, not a slug. Validation builds an allowlist from the configured project root's `git worktree list --porcelain` (reusing `listRegisteredWorktrees`), `realpath`-canonicalizes both the registered paths and the candidate, and requires the candidate to exist and **exactly equal** an allowlisted realpath — git is never run inside the submitted path. Anything else → **404** (replacing the old slug-regex 400 + `.worktrees/<slug>` prefix check). Gated on **presence**, not truthiness, so a bare/empty `?worktree` also 404s instead of silently resolving the primary. A passed-primary abspath collapses back to the base `project.path`.
+- Tests: new `middleware/__tests__/project.test.ts` (listed internal/external abspath resolve; primary collapse; unlisted / stale / raw-`..` traversal / symlink-escape / non-absolute / empty / bare → 404); `routes/__tests__/git-status.test.ts` worktree-isolation test rewritten onto a real `git worktree add` + abspath.
+
+**Why:**
+- The slug + string-prefix check assumed `.worktrees/<slug>` and could be defeated by a symlink under `.worktrees/` escaping the repo. Using git as the allowlist with realpath on both sides closes that hole and unlocks worktrees at arbitrary locations (the P1 source-of-truth change identifies worktrees by abspath). Edge → canonical: a passed-primary collapses to base so the git-status/colocated caches keep one identity per worktree (no cross-worktree stale state).
+
+**Key files:** `app/server/src/middleware/project.ts`, `app/server/src/middleware/__tests__/project.test.ts`, `app/server/src/routes/__tests__/git-status.test.ts`.
+**Verification:** `cd app/server && npm test` → 42 files, 751 tests pass. Cross-provider review (Codex, 2 rounds): R1 SEND_BACK (0 critical / 1 high — present-but-empty `?worktree` bypass + a false-green traversal test) fixed at `20df18dd`; R2 APPROVE (0/0). Artifacts: `plan/all/worktree-explorer-view/{code-review_p1-middleware,qa_p1-middleware}.md`.
+**Commit:** `3d1e511d`..`20df18dd` (+ docs).
+**Next:** P1 frontend (`appendWorktree`/`useProjectWorktrees`/`effectivePath` → abspath) and P2/P3, coordinated by the orchestrator. Frontend still sends slugs on this branch.
+**Blockers:** None.
+
 ## 2026-06-24: gate.sh — a doc-only diff no longer false-fails the `doc` check (codify-process-gate v1 follow-up)
 
 **What changed:**
