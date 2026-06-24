@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider, HistorySession } from '../types'
 import { useSSERefresh } from './useSSE'
 import { ApiError } from '../lib/apiError'
@@ -121,24 +121,52 @@ export function useFileTree(projectName: string | null, worktree?: string | null
   const [error, setError] = useState<Error | null>(null)
   const loadedDirsRef = useRef(new Set<string>())
   const refreshAbortRef = useRef<AbortController | null>(null)
+  // Current worktree mirrored for async child-load guards: a fetch issued for
+  // worktree A that resolves after a switch to B is dropped (captured != current)
+  // — never merged into B's tree (design §P3 race guards, r2 §C). useLayoutEffect
+  // (not passive) so the ref is current BEFORE any async fetch callback can run:
+  // commit→layout-effect is one synchronous task, so no fetch resolves in between.
+  // A passive effect would leave a post-commit/pre-flush window where a resolving
+  // A-fetch reads a stale ref and leaks into B.
+  const worktreeRef = useRef(worktree)
+  useLayoutEffect(() => { worktreeRef.current = worktree })
+  // Per-worktree-epoch abort: a worktree switch aborts every in-flight root + child
+  // load for the previous worktree. expandDir reads the live epoch signal at call
+  // time, so its child fetch is cancelled by the same switch that supersedes it.
+  const wtAbortRef = useRef<AbortController | null>(null)
 
   // Fetch root-level entries
-  const loadRoot = useCallback(async () => {
+  const loadRoot = useCallback(async (signal?: AbortSignal) => {
     if (!projectName) { setData([]); return }
+    const captured = worktree
     try {
-      const root = await fetchJson<FileNode[]>(appendWorktree(`/files/${encodeURIComponent(projectName)}`, worktree))
+      const root = await fetchJson<FileNode[]>(appendWorktree(`/files/${encodeURIComponent(projectName)}`, worktree), signal)
+      // Drop a root load that resolved after a worktree switch — the captured check
+      // closes the window the abort can't (a fetch that resolved just before its
+      // epoch was aborted). Mirrors expandDir / refreshExpanded.
+      if (worktreeRef.current !== captured) return
       setData(root)
       setError(null)
       loadedDirsRef.current.clear()
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      // A stale-worktree failure must not surface its error on the current view.
+      if (worktreeRef.current !== captured) return
       setError(e instanceof Error ? e : new Error(String(e)))
     }
   }, [projectName, worktree])
 
-  // Initial load + project change
+  // Initial load + project/worktree change. The cleanup aborts the previous
+  // worktree's in-flight loads (root + any expandDir children sharing the epoch
+  // signal) so none resolve into the new worktree's tree.
   // loadRoot() sets state only after its await — no synchronous cascading render.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRoot() }, [loadRoot])
+  useEffect(() => {
+    const ac = new AbortController()
+    wtAbortRef.current = ac
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadRoot(ac.signal)
+    return () => ac.abort()
+  }, [loadRoot])
 
   // Helper: merge children into tree at a given dir path
   const mergeChildren = useCallback((dirPath: string, children: FileNode[]) => {
@@ -152,12 +180,23 @@ export function useFileTree(projectName: string | null, worktree?: string | null
   const expandDir = useCallback(async (dirPath: string) => {
     if (!projectName || loadedDirsRef.current.has(dirPath)) return
     loadedDirsRef.current.add(dirPath)
+    const captured = worktree
     try {
       const children = await fetchJson<FileNode[]>(
-        appendWorktree(`/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`, worktree)
+        appendWorktree(`/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`, worktree),
+        wtAbortRef.current?.signal,
       )
+      // Drop a child load that resolved after a worktree switch — never merge
+      // worktree A's children into worktree B's tree. Leave loadedDirs untouched:
+      // loadRoot already cleared it for the new worktree, and a re-expand there must
+      // be free to re-fetch.
+      if (worktreeRef.current !== captured) return
       mergeChildren(dirPath, children)
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      // A stale-worktree failure must not delete the CURRENT worktree's loadedDirs
+      // tracking (it was cleared/repopulated for the new worktree by loadRoot).
+      if (worktreeRef.current !== captured) return
       console.warn(`useFileTree: failed to expand dir "${dirPath}"`, e)
       loadedDirsRef.current.delete(dirPath)
     }
@@ -171,6 +210,7 @@ export function useFileTree(projectName: string | null, worktree?: string | null
     refreshAbortRef.current?.abort()
     const ac = new AbortController()
     refreshAbortRef.current = ac
+    const captured = worktree
 
     try {
       const root = await fetchJson<FileNode[]>(
@@ -186,10 +226,17 @@ export function useFileTree(projectName: string | null, worktree?: string | null
           )}
         } catch (e) {
           if (e instanceof DOMException && e.name === 'AbortError') throw e
+          // Stale-worktree child failure: drop without touching the current
+          // worktree's loadedDirs (the outer captured-check discards the refresh).
+          if (worktreeRef.current !== captured) return null
           loadedDirsRef.current.delete(dirPath)
           return null
         }
       })
+      // Drop a refresh whose worktree was switched away mid-flight — never let
+      // worktree A's tree overwrite worktree B's root (the abort above catches the
+      // common case; this also covers a fetch that resolved just before the abort).
+      if (ac.signal.aborted || worktreeRef.current !== captured) return
       // Build the tree: start from root, merge in all expanded dirs
       let tree = root
       for (const r of results) {
@@ -199,6 +246,8 @@ export function useFileTree(projectName: string | null, worktree?: string | null
       setError(null)
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
+      // A stale-worktree failure must not surface its error on the current view.
+      if (worktreeRef.current !== captured) return
       setError(e instanceof Error ? e : new Error(String(e)))
     }
   }, [projectName, worktree])

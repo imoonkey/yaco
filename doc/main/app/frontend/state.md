@@ -91,7 +91,7 @@ Orthogonal state (`mobilePane`, the flat `layout` visibility/sizes, `recentFiles
 
 ## File Buffers — global by path (shared document model)
 
-`useFileState` keys `files`/`dirtyTabs`/`conflictTabs` by **path** (not by tab), so two editor tabs on the same file show the same buffer and the same dirty dot. Only the tab is duplicated; the buffer is one.
+`useFileState` keys `files`/`dirtyTabs`/`conflictTabs` by **path** (not by tab), so two editor tabs on the same file show the same buffer and the same dirty dot. Only the tab is duplicated; the buffer is one. Internally the state is stored **per worktree** (`filesByWorktree`, keyed by `activeWorktree ?? projectName`) and projected to the active worktree's bucket, so the path-keyed public surface is unchanged while switching worktree re-points editors to that worktree's bytes and keeps each worktree's drafts separate. -> See: [hooks.md](hooks.md#key-behaviors) for the projection + cross-worktree race guards.
 
 A **shared-buffer GC** runs inside the close transitions (`gcBuffers`): keep a buffer iff some open editor tab still references its path (the `allEditorTabPaths` keep-set) **or** it is dirty. Closing one tab never drops a buffer another shows, and no structural close (close tab / close group / reset) ever silently loses unsaved work — a dirty buffer lingers (recoverable from `draftsKey`) until explicitly discarded ("Close Without Saving" clears the draft first, then the next GC drops the now-clean buffer).
 

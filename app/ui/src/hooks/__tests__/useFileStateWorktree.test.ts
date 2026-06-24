@@ -1,0 +1,149 @@
+// @vitest-environment jsdom
+//
+// Per-worktree file-state projection (design §P3 file-content keying). These pin
+// the load-bearing contract directly on useFileState:
+//   1. `files` / `filesRef.current` project the ACTIVE worktree's bucket, so every
+//      relpath consumer sees the selected worktree transparently; a draft is kept
+//      per worktree and restored on return.
+//   2. a content fetch that resolves AFTER a worktree switch is dropped — worktree
+//      A's bytes never leak into worktree B's view (the captured-worktree + abort
+//      race guard is the whole point).
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { renderHook, act, cleanup, waitFor } from '@testing-library/react'
+
+// useFileState wires useSSERefresh (opens an EventSource jsdom lacks). Stub it and
+// capture the 'filetree' callback so a test can drive an SSE refetch manually.
+let sseCallback: (() => void) | null = null
+vi.mock('../useSSE', () => ({
+  useSSERefresh: (_channel: string, cb: () => void) => { sseCallback = cb },
+  addSSEListener: () => () => {},
+}))
+
+import { useFileState } from '../useFileState'
+import type { PersistedDrafts } from '../workspaceTypes'
+
+const NO_DRAFTS: PersistedDrafts = { files: {} }
+
+beforeEach(() => {
+  // Default: nothing in flight. Individual tests that need deferred control re-stub.
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) })))
+})
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); sseCallback = null })
+
+function mount(openTabs: string[]) {
+  const openTabsRef = { current: openTabs }
+  return renderHook(
+    ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+    { initialProps: { wt: null as string | null } },
+  )
+}
+
+describe('useFileState active-worktree projection', () => {
+  it('projects the active bucket via files + filesRef; drafts are per-worktree and restored on return', () => {
+    const { result, rerender } = mount([])
+
+    // Edit on the primary view (worktree = null).
+    act(() => { result.current.updateDraft('a.ts', 'primary-edit') })
+    expect(result.current.files['a.ts'].draft).toBe('primary-edit')
+    // filesRef.current is the SAME projection object every relpath consumer reads.
+    expect(result.current.filesRef.current).toBe(result.current.files)
+    expect(result.current.filesRef.current['a.ts'].draft).toBe('primary-edit')
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(true)
+
+    // Switch to worktree B: its bucket is empty — A's draft is NOT visible here.
+    rerender({ wt: '/wt/B' })
+    expect(result.current.files['a.ts']).toBeUndefined()
+    expect(result.current.filesRef.current).toBe(result.current.files)
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(false)
+
+    // Edit a different path on B — it lands in B's bucket only.
+    act(() => { result.current.updateDraft('b.ts', 'b-edit') })
+    expect(result.current.files['b.ts'].draft).toBe('b-edit')
+    expect(result.current.files['a.ts']).toBeUndefined()
+
+    // Return to primary: A's draft is restored; B's draft is not visible.
+    rerender({ wt: null })
+    expect(result.current.files['a.ts'].draft).toBe('primary-edit')
+    expect(result.current.files['b.ts']).toBeUndefined()
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(true)
+  })
+
+  it('drops a content fetch that resolves after a worktree switch (no cross-worktree leak)', async () => {
+    type Pending = { url: string; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise(res => {
+      pending.push({ url: String(url), resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result, rerender } = renderHook(
+      ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+      { initialProps: { wt: null as string | null } },
+    )
+
+    // Mount hydration issued a content fetch for the primary view (no ?worktree=).
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content') && !p.url.includes('worktree='))).toBe(true))
+    const primaryFetch = pending.find(p => p.url.includes('/content') && !p.url.includes('worktree='))!
+
+    // Switch to worktree B before the primary fetch resolves — re-fetches for B.
+    rerender({ wt: '/wt/B' })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content') && p.url.includes('worktree='))).toBe(true))
+    const bFetch = pending.find(p => p.url.includes('/content') && p.url.includes('worktree='))!
+
+    // B resolves first → its bytes are shown.
+    await act(async () => { bFetch.resolve({ content: 'B-bytes', revision: 2 }) })
+    expect(result.current.files['a.ts'].serverContent).toBe('B-bytes')
+
+    // The stale primary fetch resolves LAST — it must be dropped, not leaked into B.
+    await act(async () => { primaryFetch.resolve({ content: 'PRIMARY-bytes', revision: 1 }) })
+    expect(result.current.files['a.ts'].serverContent).toBe('B-bytes')
+
+    // Returning to primary re-fetches (re-entry), proving the drop didn't strand it.
+    rerender({ wt: null })
+    await waitFor(() =>
+      expect(pending.filter(p => p.url.includes('/content') && !p.url.includes('worktree=')).length).toBe(2),
+    )
+  })
+
+  it('drops a stale SSE refetch via the captured-key check alone (its controller is not aborted by the switch)', async () => {
+    type Pending = { url: string; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise(res => {
+      pending.push({ url: String(url), resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+    const grab = (pred: (u: string) => boolean): Pending => {
+      const i = pending.findIndex(p => pred(p.url))
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result, rerender } = renderHook(
+      ({ wt }: { wt: string | null }) => useFileState('proj', wt, NO_DRAFTS, openTabs, openTabsRef),
+      { initialProps: { wt: null as string | null } },
+    )
+
+    // Settle the primary mount hydration so it isn't confused with the SSE refetch.
+    await waitFor(() => expect(pending.some(p => !p.url.includes('worktree='))).toBe(true))
+    await act(async () => { grab(u => !u.includes('worktree=')).resolve({ content: 'P0', revision: 1 }) })
+
+    // Fire an SSE refetch on the PRIMARY view — this uses the SSE controller, which a
+    // worktree switch does NOT abort (only the next SSE cycle would). Hold it open.
+    act(() => { sseCallback?.() })
+    await waitFor(() => expect(pending.some(p => !p.url.includes('worktree='))).toBe(true))
+    const staleSseRefetch = grab(u => !u.includes('worktree='))
+
+    // Switch to B and resolve B's hydration → B's bytes are shown.
+    rerender({ wt: '/wt/B' })
+    await waitFor(() => expect(pending.some(p => p.url.includes('worktree='))).toBe(true))
+    await act(async () => { grab(u => u.includes('worktree=')).resolve({ content: 'B-bytes', revision: 9 }) })
+    expect(result.current.files['a.ts'].serverContent).toBe('B-bytes')
+
+    // The stale primary SSE refetch resolves LAST. Its AbortController was never
+    // aborted by the switch, so ONLY the captured worktree-key check can drop it.
+    await act(async () => { staleSseRefetch.resolve({ content: 'STALE-primary', revision: 2 }) })
+    expect(result.current.files['a.ts'].serverContent).toBe('B-bytes')
+  })
+})

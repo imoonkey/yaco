@@ -11,6 +11,14 @@ import {
 import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import { fileTransition, reconcileFile } from './fileStateMachine'
 
+// The per-relpath file map for ONE worktree. The hook stores one of these per
+// worktree key; the active one is projected as the public `files`.
+type Files = Record<string, FileState>
+
+// Stable empty bucket so an unselected worktree projects the same reference every
+// render (no spurious editor re-render before its bytes hydrate).
+const EMPTY_FILES: Files = {}
+
 // --- Fetch helper ---
 
 async function fetchContent(
@@ -40,8 +48,15 @@ export function useFileState(
   initialOpenTabs: string[],
   openTabsRef: { readonly current: string[] },
 ) {
-  const [files, setFiles] = useState<Record<string, FileState>>(() => {
-    const restored: Record<string, FileState> = {}
+  // The per-worktree dimension lives INSIDE the hook (design §P3 file-content
+  // keying): one bucket per `worktreeKey = activeWorktree ?? projectName` (the
+  // hook holds only `projectName`, which stands in for the design's projectPath
+  // as the primary key — both are this project's stable primary identity). The
+  // public relpath contract is unchanged: consumers read the ACTIVE bucket.
+  const worktreeKey = worktree ?? projectName
+
+  const [filesByWorktree, setFilesByWorktree] = useState<Record<string, Files>>(() => {
+    const restored: Files = {}
     for (const [path, entry] of Object.entries(initialDrafts.files)) {
       restored[path] = {
         serverContent: null,
@@ -53,11 +68,19 @@ export function useFileState(
         loadError: null,
       }
     }
-    return restored
+    return { [worktreeKey]: restored }
   })
+
+  // Active projection: the selected worktree's bucket. `files` AND `filesRef`
+  // expose it, so EditorPanel/WorkspaceEditorColumn/GroupTabBar/PanelGroup/
+  // MobilePanelProjection/useWorkspaceState see the active worktree transparently
+  // by plain relpath. A background bucket mutating gives `filesByWorktree` a new
+  // identity but the active bucket reference is unchanged → `files` keeps identity.
+  const files = useMemo(() => filesByWorktree[worktreeKey] ?? EMPTY_FILES, [filesByWorktree, worktreeKey])
 
   const projectRef = useRef(projectName)
   const worktreeRef = useRef(worktree)
+  const worktreeKeyRef = useRef(worktreeKey)
   const filesRef = useRef(files)
   // Mirror latest values for async fetch/SSE callbacks that read without re-subscribing.
   // useLayoutEffect (not passive) so a tab-bar Save handler reading `filesRef.current`
@@ -65,52 +88,85 @@ export function useFileState(
   useLayoutEffect(() => {
     projectRef.current = projectName
     worktreeRef.current = worktree
+    worktreeKeyRef.current = worktreeKey
     filesRef.current = files
   })
 
+  // Mutate one worktree's bucket; returns the prior whole map when the updater is
+  // a no-op so identity stays stable.
+  const setFilesIn = useCallback((key: string, updater: (prev: Files) => Files) => {
+    setFilesByWorktree(prev => {
+      const bucket = prev[key] ?? EMPTY_FILES
+      const next = updater(bucket)
+      return next === bucket ? prev : { ...prev, [key]: next }
+    })
+  }, [])
+  // Mutate the CURRENTLY active bucket — synchronous user edits target the view.
+  const setActiveFiles = useCallback((updater: (prev: Files) => Files) => {
+    setFilesIn(worktreeKeyRef.current, updater)
+  }, [setFilesIn])
+
   const refetchAbortRef = useRef<AbortController | null>(null)
+  // Per-worktree-epoch abort: a switch aborts every in-flight fetch issued for the
+  // previous worktree — hydration, per-tab open, and accept-disk all carry its
+  // signal, so a superseded read is cancelled (and, if it resolved first, dropped
+  // by the captured-key check below).
+  const wtAbortRef = useRef<AbortController | null>(null)
 
   // Record a failed content fetch (e.g. 413 "file too large") onto the path's
   // state so the editor pane can show why, instead of spinning forever.
   const recordLoadError = useCallback((path: string, err: unknown) => {
     const status = err instanceof ApiError ? err.status : 0
     const message = err instanceof ApiError ? err.message : 'Failed to load file'
-    setFiles(prev => {
+    setActiveFiles(prev => {
       const existing = prev[path] ?? defaultFileState()
       return { ...prev, [path]: fileTransition(existing, { type: 'LOAD_ERROR', status, message }) }
     })
-  }, [])
+  }, [setActiveFiles])
 
-  // --- Hydration: fetch server truth for open file tabs on mount ---
-  const hydrated = useRef(false)
+  // --- Hydration: fetch the active worktree's bytes for open file tabs ---
+  // Runs on mount AND on every worktree switch (the editor must show the selected
+  // worktree's version of each open path — design §P3 "switching re-points open
+  // editors"). Captured-worktree key + AbortController guard: a fetch issued for
+  // worktree A that resolves after a switch to B is aborted on cleanup, and if it
+  // still resolved it is dropped — never reconciled into B's bucket (no cross-
+  // worktree leak). First run uses the mount snapshot; a later switch re-fetches
+  // the live open-tab set.
+  const firstHydrate = useRef(true)
   useEffect(() => {
-    if (hydrated.current) return
-    hydrated.current = true
+    const key = worktree ?? projectName
+    // The epoch controller for THIS worktree — stored so fetchForTab / acceptDisk
+    // ride the same abort, and cleanup cancels every read when the worktree changes.
+    const ac = new AbortController()
+    wtAbortRef.current = ac
+    const source = firstHydrate.current ? initialOpenTabs : openTabsRef.current
+    firstHydrate.current = false
 
-    const fileTabs = initialOpenTabs.filter(t => isFileTab(t) && !isBinaryPreviewFile(t))
-    if (fileTabs.length === 0) return
-
+    const fileTabs = source.filter(t => isFileTab(t) && !isBinaryPreviewFile(t))
     for (const path of fileTabs) {
-      fetchContent(projectName, path, worktree).then(result => {
-        if (projectRef.current !== projectName) return
-        setFiles(prev => {
+      fetchContent(projectName, path, worktree, ac.signal).then(result => {
+        if (ac.signal.aborted || projectRef.current !== projectName || worktreeKeyRef.current !== key) return
+        setActiveFiles(prev => {
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
       }).catch(err => {
-        if (projectRef.current !== projectName) return
+        if (err?.name === 'AbortError' || ac.signal.aborted || projectRef.current !== projectName || worktreeKeyRef.current !== key) return
         recordLoadError(path, err)
       })
     }
+    return () => ac.abort()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectName])
+  }, [worktree])
 
-  // Abort in-flight refetches on unmount
+  // Abort in-flight SSE refetches on unmount
   useEffect(() => () => { refetchAbortRef.current?.abort() }, [])
 
   // --- SSE: refetch open file tabs on filetree or git changes ---
   const refetchOpenFiles = useCallback(() => {
     const project = projectRef.current
+    const key = worktreeKeyRef.current
+    const wt = worktreeRef.current
     const tabs = openTabsRef.current.filter(t => isFileTab(t) && !isBinaryPreviewFile(t))
     if (tabs.length === 0) return
 
@@ -119,19 +175,19 @@ export function useFileState(
     refetchAbortRef.current = ac
 
     for (const path of tabs) {
-      fetchContent(project, path, worktreeRef.current, ac.signal).then(result => {
-        if (ac.signal.aborted || projectRef.current !== project) return
-        setFiles(prev => {
+      fetchContent(project, path, wt, ac.signal).then(result => {
+        if (ac.signal.aborted || projectRef.current !== project || worktreeKeyRef.current !== key) return
+        setActiveFiles(prev => {
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
       }).catch(err => {
-        if (err?.name === 'AbortError' || ac.signal.aborted || projectRef.current !== project) return
+        if (err?.name === 'AbortError' || ac.signal.aborted || projectRef.current !== project || worktreeKeyRef.current !== key) return
         recordLoadError(path, err)
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [recordLoadError, setActiveFiles])
 
   // Working-tree file content changes always arrive on the 'filetree' channel
   // (the watcher emits 'git' in addition, but only for .git-internal writes that
@@ -139,10 +195,12 @@ export function useFileState(
   // refetch of every open tab per disk change; 'filetree' alone is sufficient.
   useSSERefresh('filetree', refetchOpenFiles)
 
-  // --- Derived: dirty/conflict tab sets ---
-  // Key each Set on a content signature so its identity only changes when membership
-  // changes — not on unrelated file-state updates (e.g. viewport scroll) — which keeps
-  // memoized consumers (tab bar, editor column) from re-rendering needlessly.
+  // --- Derived: dirty/conflict tab sets (for the ACTIVE worktree) ---
+  // Signatures are JSON of the sorted path list (not a char-join): a filename-legal
+  // separator can never split one path into two — the same collision-free encoding
+  // keepPathsSignature uses. Each Set's identity changes only when membership does
+  // (not on unrelated file-state updates like viewport scroll), keeping memoized
+  // consumers (tab bar, editor column) from re-rendering needlessly.
   const { dirtySig, conflictSig } = useMemo(() => {
     const dirty: string[] = []
     const conflict: string[] = []
@@ -154,20 +212,24 @@ export function useFileState(
     }
     dirty.sort()
     conflict.sort()
-    return { dirtySig: dirty.join('\u0000'), conflictSig: conflict.join('\u0000') }
+    return { dirtySig: JSON.stringify(dirty), conflictSig: JSON.stringify(conflict) }
   }, [files])
 
-  const dirtyTabs = useMemo(() => new Set(dirtySig ? dirtySig.split('\u0000') : []), [dirtySig])
-  const conflictTabs = useMemo(() => new Set(conflictSig ? conflictSig.split('\u0000') : []), [conflictSig])
+  const dirtyTabs = useMemo(() => new Set<string>(JSON.parse(dirtySig) as string[]), [dirtySig])
+  const conflictTabs = useMemo(() => new Set<string>(JSON.parse(conflictSig) as string[]), [conflictSig])
 
   // --- File actions ---
 
   /** Fetch content for a newly opened tab (gentle — won't clobber drafts) */
   const fetchForTab = useCallback((path: string) => {
     const project = projectRef.current
-    fetchContent(project, path, worktreeRef.current).then(result => {
-      if (projectRef.current !== project) return
-      setFiles(prev => {
+    const key = worktreeKeyRef.current
+    const signal = wtAbortRef.current?.signal
+    fetchContent(project, path, worktreeRef.current, signal).then(result => {
+      // Drop a result that resolved after a project/worktree switch (aborted by the
+      // epoch controller and/or superseded worktree key).
+      if (signal?.aborted || projectRef.current !== project || worktreeKeyRef.current !== key) return
+      setActiveFiles(prev => {
         const existing = prev[path]
         // If user already started editing before fetch returned, gently fill revision
         if (existing?.draft != null) {
@@ -179,19 +241,21 @@ export function useFileState(
         return next === existing ? prev : { ...prev, [path]: next }
       })
     }).catch(err => {
-      if (projectRef.current !== project) return
+      if (err?.name === 'AbortError' || signal?.aborted || projectRef.current !== project || worktreeKeyRef.current !== key) return
       recordLoadError(path, err)
     })
-  }, [recordLoadError])
+  }, [recordLoadError, setActiveFiles])
 
   /** Shared-buffer GC (design: §B). Keep a buffer iff some open editor view still
    *  references its path OR it is dirty — so closing one view never drops a buffer
    *  another shows, and no structural close (close tab / close pane / reset) ever
-   *  silently loses unsaved work. Run in an effect over the POST-mutation union. */
+   *  silently loses unsaved work. Run in an effect over the POST-mutation union.
+   *  GC the ACTIVE bucket only; background worktrees keep their drafts (switch away
+   *  and back never loses an edit). */
   const gcBuffers = useCallback((keepPaths: ReadonlySet<string>) => {
-    setFiles(prev => {
+    setActiveFiles(prev => {
       let changed = false
-      const next: Record<string, FileState> = {}
+      const next: Files = {}
       for (const [path, state] of Object.entries(prev)) {
         // Retain anything still holding unsaved work — including a 'missing' file
         // (deleted on disk) whose draft would otherwise be silently GC'd on close.
@@ -201,11 +265,11 @@ export function useFileState(
       }
       return changed ? next : prev
     })
-  }, [])
+  }, [setActiveFiles])
 
   /** Retarget file state from oldPath to newPath (rename/move) */
   const retargetFile = useCallback((oldPath: string, newPath: string) => {
-    setFiles(prev => {
+    setActiveFiles(prev => {
       const next = { ...prev }
       let changed = false
       for (const key of Object.keys(prev)) {
@@ -222,11 +286,11 @@ export function useFileState(
       }
       return changed ? next : prev
     })
-  }, [])
+  }, [setActiveFiles])
 
   /** Remove file state for a path and all children (delete) */
   const removeFilesUnder = useCallback((path: string) => {
-    setFiles(prev => {
+    setActiveFiles(prev => {
       const next = { ...prev }
       let changed = false
       for (const key of Object.keys(prev)) {
@@ -237,29 +301,34 @@ export function useFileState(
       }
       return changed ? next : prev
     })
-  }, [])
+  }, [setActiveFiles])
 
   const updateDraft = useCallback((path: string, draft: string) => {
-    setFiles(prev => {
+    setActiveFiles(prev => {
       const existing = prev[path] ?? defaultFileState()
       const next = fileTransition(existing, { type: 'EDIT', draft, editedAt: Date.now() })
       return { ...prev, [path]: next }
     })
-  }, [])
+  }, [setActiveFiles])
 
   const updateViewport = useCallback((path: string, line: number) => {
-    setFiles(prev => {
+    setActiveFiles(prev => {
       const existing = prev[path]
       if (!existing) return { ...prev, [path]: { ...defaultFileState(), viewportLine: line } }
       if (existing.viewportLine === line) return prev
       return { ...prev, [path]: { ...existing, viewportLine: line } }
     })
-  }, [])
+  }, [setActiveFiles])
 
   const save = useCallback(async (path: string, content: string): Promise<{ conflict: boolean }> => {
     const project = projectRef.current
+    // Capture the worktree once: the save targets THIS worktree's bytes, and every
+    // transition (start → success/conflict/error) lands in its bucket, so a switch
+    // mid-save never strands 'saving' state nor leaks the result into another view.
+    const wt = worktreeRef.current
+    const key = wt ?? project
     let baseRevision: number | undefined
-    setFiles(prev => {
+    setFilesIn(key, prev => {
       const s = prev[path]
       if (!s) return prev
       baseRevision = s.baseRevision ?? undefined
@@ -267,14 +336,14 @@ export function useFileState(
     })
 
     try {
-      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, worktreeRef.current)}`, {
+      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, wt)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, baseRevision }),
       })
 
       if (res.status === 409) {
-        setFiles(prev => {
+        setFilesIn(key, prev => {
           const s = prev[path]
           return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_CONFLICT' }) } : prev
         })
@@ -284,29 +353,31 @@ export function useFileState(
       if (!res.ok) throw new Error(`${res.status}`)
 
       const body = await res.json() as { revision: number }
-      setFiles(prev => {
+      setFilesIn(key, prev => {
         const s = prev[path]
         return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_SUCCESS', content, revision: body.revision }) } : prev
       })
       return { conflict: false }
     } catch {
-      setFiles(prev => {
+      setFilesIn(key, prev => {
         const s = prev[path]
         return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_ERROR' }) } : prev
       })
       return { conflict: false }
     }
-  }, [])
+  }, [setFilesIn])
 
   const forceSave = useCallback(async (path: string, content: string) => {
     const project = projectRef.current
-    setFiles(prev => {
+    const wt = worktreeRef.current
+    const key = wt ?? project
+    setFilesIn(key, prev => {
       const s = prev[path]
       return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_START' }) } : prev
     })
 
     try {
-      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, worktreeRef.current)}`, {
+      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, wt)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -314,28 +385,31 @@ export function useFileState(
       if (!res.ok) throw new Error(`${res.status}`)
 
       const body = await res.json() as { revision: number }
-      setFiles(prev => {
+      setFilesIn(key, prev => {
         const s = prev[path]
         return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_SUCCESS', content, revision: body.revision }) } : prev
       })
     } catch {
-      setFiles(prev => {
+      setFilesIn(key, prev => {
         const s = prev[path]
         return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_ERROR' }) } : prev
       })
     }
-  }, [])
+  }, [setFilesIn])
 
   const acceptDisk = useCallback((path: string) => {
     const project = projectRef.current
-    fetchContent(project, path, worktreeRef.current).then(result => {
-      if (!result) return
-      setFiles(prev => {
+    const wt = worktreeRef.current
+    const key = wt ?? project
+    const signal = wtAbortRef.current?.signal
+    fetchContent(project, path, wt, signal).then(result => {
+      if (!result || signal?.aborted || worktreeKeyRef.current !== key) return
+      setFilesIn(key, prev => {
         const existing = prev[path] ?? defaultFileState()
         return { ...prev, [path]: fileTransition(existing, { type: 'ACCEPT_DISK', content: result.content, revision: result.revision }) }
       })
     }).catch(() => {/* network/server error — keep conflict state */})
-  }, [])
+  }, [setFilesIn])
 
   return {
     files,
