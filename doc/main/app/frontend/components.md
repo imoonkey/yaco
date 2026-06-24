@@ -206,11 +206,11 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 **Compare mode**: Toggle via `GitCompareArrows` icon in Changes section header. State: `compareMode`, `compareBase`, `compareHead`, `compareResult`. When active, the Changes section shows `CompareRefPicker` + file list from `/git/:project/compare`. Clicking a file opens a compare diff tab (`diff:path?base=X&compare=Y`) via `openPreviewDiffTabById`. Loading uses skeleton shimmer.
 
-**Props**: `{ projectName: string; projectPath: string; worktree?: string | null; worktrees: WorktreeInfo[]; activeWorktree: string | null; onWorktreeSelect: (slug: string | null) => void; projects; activeProject; badgesByProject; badgesBySession; readySessionKeys; attentionTaskIds; projectSessionCounts; onProjectSelect; onProjectReorder; onProjectRemove; onAddProject; onMarkAllRead; onVisibilityReport; attachIntent; clearAttachIntent; notificationBell? }`
+**Props**: `{ projectName: string; projectPath: string; worktree?: string | null; worktrees: WorktreeInfo[]; activeWorktree: string | null; onWorktreeSelect: (id: string | null) => void; projects; activeProject; badgesByProject; badgesBySession; readySessionKeys; attentionTaskIds; projectSessionCounts; onProjectSelect; onProjectReorder; onProjectRemove; onAddProject; onMarkAllRead; onVisibilityReport; attachIntent; clearAttachIntent; notificationBell? }` (`worktree`/`activeWorktree`/`onWorktreeSelect` carry the worktree's **absolute path**, not a slug)
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Computes `effectivePath` from `projectPath + worktree` for session cwd and file ops
+- Computes `effectivePath = activeWorktree ?? projectPath` (the selected worktree's absolute path, else the project root) — the directory file/git reads and session cwd resolve against
 - Threads `worktree` param through `useWorkspaceState`, `useFileTree`, `useGitStatus`, and all mutation functions
 - Builds section content (project list with worktree sub-items, explorer, changes, working-area groups, sessions) as React nodes — the tasks tab renders through the group/PanelHost path, not as a separate slot
 - Passes content slots to `WorkspaceLayout` for placement

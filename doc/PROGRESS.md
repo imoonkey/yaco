@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-24: Frontend worktrees — git-sourced list + abspath identity (worktree-explorer-view P1 frontend)
+
+**What changed:**
+- `app/ui/src/hooks/useProjectWorktrees.ts`: fetches `GET /api/worktrees/:project` (git-sourced — primary + manual/external worktrees) instead of deriving the list from `/api/tasks` (active-task-linked only). New `WorktreeInfo` shape `{ id, name, branch, head, isPrimary, dirty, ahead, behind }`; `id` is the worktree's **absolute path**, replacing the `.worktrees/<slug>` slug. SSE `filetree`/`worktrees` refresh, 60s poll, and the `currentProject` stale-guard preserved.
+- Worktree identity threaded through `env.project.worktree` is now that abspath, so every `?worktree=` caller carries it url-encoded with no further change: `appendWorktree` (`useApi.ts`, doc-only), the quick-open (`quickOpenIndex.ts`) and text-search (`WorkspaceTextSearch.tsx`) builders were already abspath-safe. `effectivePath = activeWorktree ?? projectPath` (was `${projectPath}/.worktrees/${worktree}`).
+- `App.tsx`: localStorage selection (`yaco-worktree:<project>`) stores a path; the stale-selection-clear effect drops any value not in the loaded git list, guarded on a **non-empty** list so a valid restored path isn't clobbered while `useProjectWorktrees` reloads on a project switch.
+- Forced consequences of the shape/semantics flip (not P2 UX work): `ProjectList` sub-list keys/labels by `wt.id`/`wt.name` and filters the primary; `FileExplorer` copy-absolute-path uses `worktree ?? projectPath` (the twin `.worktrees/<slug>` reconstruction); `ProjectsPanel` test fixture updated.
+
+**Why:**
+- The task-derived list only surfaced worktrees a live task pointed at, so manual / archived-task / external worktrees were invisible — the core visibility bug. Git is the real source of truth. Abspath identity matches the already-merged server contract (the realpath-allowlisted `?worktree=` middleware) and unlocks worktrees at arbitrary locations. The session decouple, no-remount-on-switch, and per-worktree editor content/drafts are deliberately **P3** — P1 changes only the source + identity and preserves prior session/remount behavior (no regression).
+
+**Key files:** `app/ui/src/hooks/useProjectWorktrees.ts`, `App.tsx`, `workspace/WorkspaceProvider.tsx`, `workspace/context.ts`, `hooks/useApi.ts`, `components/ProjectList.tsx`, `components/FileExplorer.tsx`.
+**Verification:** `cd app/ui && npx tsc -b && npm run lint && npm test` → 82 files, 1047 tests pass. Cross-provider review (Codex, 2 rounds): R1 SEND_BACK (1 high = session-still-uses-effectivePath, accepted as P3-deferred; 1 medium = stale-selection over-clear, fixed `23c160f6`); R2 APPROVE for P1 scope (0 unresolved critical/high). QA (5/5 flows, real handlers + a real external worktree): git-sourced list incl. primary, `?worktree=<abspath>` re-roots file reads (internal + external), garbage → 404. Artifacts: `plan/all/worktree-explorer-view/{impl-plan_p1-frontend,code-review_p1-frontend,qa_p1-frontend}.md`.
+**Commit:** `d522840d`..`23c160f6` (+ docs).
+**Next:** P2 (File-Explorer header worktree dropdown; remove the ProjectList sub-list) and P3 (filestate projection, session decouple, persistence schema, drop-remount), coordinated by the orchestrator.
+**Blockers:** None.
+
 ## 2026-06-24: `withProject` `?worktree=` — slug contract → realpath-allowlisted abspath (worktree-explorer-view P1 middleware)
 
 **What changed:**

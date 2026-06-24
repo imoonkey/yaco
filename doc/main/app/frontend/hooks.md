@@ -96,7 +96,7 @@ type GroupTab =
 
 ## useApi.ts (~386 lines)
 
-Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=slug` to any API URL when a worktree is active — used by all file/git hooks. `usePolling` catch block sets `loading=false` on error (retains previous `data`) — prevents stuck loading state after transient network failures (e.g., sleep/wake).
+Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=<abspath>` (url-encoded) to any API URL when a worktree is selected — the value is the worktree's absolute path, validated server-side against `git worktree list`. Used by all file/git hooks. `usePolling` catch block sets `loading=false` on error (retains previous `data`) — prevents stuck loading state after transient network failures (e.g., sleep/wake).
 
 ### Data Hooks
 
@@ -114,22 +114,22 @@ All data hooks return `{ data, error, refresh }`.
 
 `useHistory` is on-demand only — not polled, not SSE-driven. Fetches when `refresh()` is called (first History tab open, after resume/close/rename). Returns `{ data, error, loading, refresh }`.
 
-## useProjectWorktrees.ts (61 lines)
+## useProjectWorktrees.ts (~58 lines)
 
-Discovers active worktrees for a project by reading worktree status from the task API response.
+Enumerates every git-registered worktree of a project (primary + linked, incl. manual/external) from the worktrees API.
 
 **Export**: `useProjectWorktrees(projectName)` → `WorktreeInfo[]`
 
-**WorktreeInfo**: `{ slug: string, dirty: boolean, branch: string, ahead: number, behind: number }`
+**WorktreeInfo**: `{ id: string, name: string, branch: string, head: string, isPrimary: boolean, dirty: boolean, ahead: number, behind: number }` — `id` is the worktree's **absolute path** (the stable identity that replaces the old `.worktrees/<slug>` slug).
 
 Behavior:
-- Fetches `GET /api/tasks/:project` and collects tasks where `worktreeStatus.active === true`
-- Deduplicates by slug, sorts alphabetically
+- Fetches `GET /api/worktrees/:project` (git-sourced via `git worktree list`), which includes the primary checkout — so manually-created and task-less worktrees appear (unlike the old task-derived list, which only surfaced active-task-linked worktrees)
+- Returns the server's list as-is (primary first); no client-side filter/dedup/sort
 - SSE `filetree` + `worktrees` channels trigger refresh
 - 60s polling fallback
 - Stale-fetch guard via `currentProject` ref — prevents project-switch race conditions where old project's response overwrites new project's worktree list
 - Resets to `[]` immediately on project change (before async fetch)
-- Task API errors are non-fatal (returns empty array)
+- API errors are non-fatal (returns empty array)
 
 `useFileTree` uses lazy loading (VS Code pattern):
 - Returns `{ data, error, refresh, expandDir, patchTree }`
