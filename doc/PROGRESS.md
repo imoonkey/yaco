@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-24: Per-worktree file-state store + active projection + race guards (worktree-explorer-view P3)
+
+**What changed:**
+- `app/ui/src/hooks/useFileState.ts`: moved the per-worktree dimension INSIDE the hook as `filesByWorktree: Record<worktreeKey, Record<relpath, FileState>>` (`worktreeKey = activeWorktree ?? projectName`). `files` and `filesRef.current` project the **active** bucket, so every relpath consumer (EditorPanel / WorkspaceEditorColumn / GroupTabBar / PanelGroup / MobilePanelProjection / useWorkspaceState) is unchanged. Open tabs re-fetch on worktree switch; drafts are per-worktree and restored on return; `gcBuffers`/retarget/remove act on the active bucket only (background drafts survive). Saves/force-save/accept-disk land in their **captured** worktree bucket. Dirty/conflict signatures switched from a NUL char-join to `JSON.stringify(sorted)` (collision-free, same identity-stability).
+- `app/ui/src/hooks/useApi.ts` (`useFileTree`): captured-worktree + per-worktree-epoch AbortController guards on `loadRoot`, `expandDir` child loads, and the SSE refresh, on **both** success and failure paths (a stale failure never `setError`s on the new worktree nor deletes its `loadedDirs`); the current-worktree ref moved to `useLayoutEffect` so it is current before any fetch callback runs.
+- Tests: `__tests__/useFileStateWorktree.test.ts` + `__tests__/useFileTreeWorktree.test.ts` — active-projection identity, per-worktree draft isolation/restore, stale content-fetch drop, stale SSE-refetch drop via the captured-key check alone, stale `loadRoot` (success + failure) drop, stale `expandDir` child-fetch drop.
+
+**Why:**
+- The load-bearing piece of the worktree-as-view redesign: once the workspace stops remounting per worktree, a stale fetch from worktree A could resolve into worktree B's view. Keeping the per-worktree dimension inside `useFileState` (relpath public contract intact, CLAUDE.md "keep v1 mechanical") plus captured-worktree + abort guards on every file/tree fetch makes worktree switching re-point editor content with **no cross-worktree leak**. Cross-provider codex review (3 rounds) drove the `loadRoot` captured check + the layout-effect ref + the failure-path guards. **Not yet UI-reachable**: `App.tsx` still remounts `<Workspace>` on a worktree switch — the no-remount projection is unit-tested, awaiting the later `drop-remount` task.
+
+**Key files:** `app/ui/src/hooks/useFileState.ts`, `app/ui/src/hooks/useApi.ts`, `app/ui/src/hooks/__tests__/useFileStateWorktree.test.ts`, `app/ui/src/hooks/__tests__/useFileTreeWorktree.test.ts`; docs `doc/main/app/frontend/hooks.md`, `state.md`; evidence `plan/all/worktree-explorer-view/{code-review,qa}_p3-filestate-projection.md`
+**Verification:** `scripts/verify.sh` green (cli + server tests, ui lint, root build w/ `tsc -b`); `cd app/ui && npx tsc -b` + `npm run lint` + `npm test` → 84 files / 1053 tests; focused Playwright e2e (worktree / multi-instance-editors / file-create / empty-editor) → 12 passed; cross-provider codex review APPROVE (0 unresolved critical/high).
+**Commit:** code `100ec21d`; this doc/evidence commit is a docs-only tail (no code change).
+**Next:** `drop-remount` (App.tsx remount key drops `activeWorktree`) + `persistence-schema` (all-bucket draft flush + legacy migration) make this projection UI-reachable.
+**Blockers:** None
+
 ## 2026-06-24: Frontend worktrees — git-sourced list + abspath identity (worktree-explorer-view P1 frontend)
 
 **What changed:**
