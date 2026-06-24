@@ -51,6 +51,17 @@ touched_ui=0
 grep -qE '^(src|cli|app)/' <<<"$diff_files" && touched_code=1
 grep -qE '^app/ui/' <<<"$diff_files" && touched_ui=1
 
+# A diff that is ENTIRELY documentation — only doc/ or plan/ trees, or markdown
+# files — is its own doc-sync: there is no separate code change left to record.
+# So a design doc or task-graph committed without a `docs:` prefix must not
+# false-fail the doc check. Any non-doc file flips this off, so a mixed diff
+# still owes the evidence check below.
+doc_only=0
+if [ "$touched_any" = 1 ] && [ "$touched_code" = 0 ] && [ "$touched_ui" = 0 ] \
+  && ! grep -qvE '^doc/|^plan/|\.mdx?$' <<<"$diff_files"; then
+  doc_only=1
+fi
+
 # artifact_refs_head <iname-glob> : true if some plan/ file matching the glob
 # (case-insensitive) contains the current HEAD short sha.
 artifact_refs_head() {
@@ -78,7 +89,8 @@ if [ "$touched_any" = 1 ]; then
   # pipeline can SIGPIPE `cmd` when grep exits early, which under pipefail would
   # flip a valid `docs:` commit to a false doc=fail. No pipe -> no flake.
   doc_subjects="$(git log --format='%s' "$base"..HEAD)"
-  if grep -qE 'PROGRESS\.md$|^doc/' <<<"$diff_files" \
+  if [ "$doc_only" = 1 ] \
+    || grep -qE 'PROGRESS\.md$|^doc/' <<<"$diff_files" \
     || grep -qE '^docs(\(.+\))?:' <<<"$doc_subjects"; then
     doc=pass
   else

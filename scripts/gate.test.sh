@@ -105,11 +105,12 @@ r="$(mk 0)"
 expect "clean -> all skip" "$r" "$(head_sha "$r")" \
   '{"verify":"skip","doc":"skip","review":"skip","qa":"skip"}' 0
 
-# 2. plan-only change, no doc evidence -> doc owed and fails
+# 2. doc-only diff (plan/ markdown), no docs: prefix -> self-documenting: a
+# pure-doc change has no separate code to record, so doc passes (was a false fail).
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" plan/foo.md "add plan note"
-expect "plan-only, no doc -> doc fail" "$r" "$b" \
-  '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
+expect "doc-only plan/ -> doc pass" "$r" "$b" \
+  '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
 # 3. doc/** change -> doc passes by path
 r="$(mk 0)"; b="$(head_sha "$r")"
@@ -124,14 +125,32 @@ expect "docs: commit -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
 # 3c. docs: commit amid several non-matching commits (the case that would
-# SIGPIPE a `git log | grep -q` pipeline under pipefail) -> still doc pass
+# SIGPIPE a `git log | grep -q` pipeline under pipefail) -> still doc pass.
+# A non-doc file (tool.cfg) keeps the diff OFF the doc-only path, so the docs:
+# subject detection is what passes the doc check (preserving that coverage).
 r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" tool.cfg "chore: zero"
 commit_file "$r" plan/a.md "chore: one"
 commit_file "$r" plan/b.md "docs: the evidence"
 commit_file "$r" plan/c.md "chore: two"
 commit_file "$r" plan/d.md "chore: three"
-expect "docs: commit amid noise -> doc pass" "$r" "$b" \
+expect "docs: commit amid noise (mixed) -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
+
+# 3d. doc-only diff via a top-level markdown file (README), non-docs commit ->
+# doc pass (a .md anywhere is documentation).
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" README.md "update readme"
+expect "doc-only README.md -> doc pass" "$r" "$b" \
+  '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
+
+# 3e. MIXED non-doc + plan/ diff, no doc/PROGRESS and no docs: commit -> doc
+# fail: the doc-only relaxation must NOT leak to a diff with real non-doc work.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" tool.cfg "chore: config change"
+commit_file "$r" plan/note.md "add note"
+expect "mixed non-doc+plan, no evidence -> doc fail" "$r" "$b" \
+  '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
 # 4. code + verify pass + doc + review present -> all green, qa skip
 r="$(mk 0)"; b="$(head_sha "$r")"
