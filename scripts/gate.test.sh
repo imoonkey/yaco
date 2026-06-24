@@ -137,12 +137,13 @@ commit_file "$r" plan/d.md "chore: three"
 expect "docs: commit amid noise (mixed) -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
-# 3d. doc-only diff via a top-level markdown file (README), non-docs commit ->
-# doc pass (a .md anywhere is documentation).
+# 3d. behavior-bearing markdown OUTSIDE the doc/plan trees (an agent-config skill
+# prompt) is NOT doc_only — it changes behavior, so it still owes doc evidence
+# and must not be auto-passed just for being *.md.
 r="$(mk 0)"; b="$(head_sha "$r")"
-commit_file "$r" README.md "update readme"
-expect "doc-only README.md -> doc pass" "$r" "$b" \
-  '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
+commit_file "$r" agent-config/skills/x/SKILL.md "update skill"
+expect "behavior .md outside doc trees not doc_only -> doc fail" "$r" "$b" \
+  '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
 # 3e. MIXED non-doc + plan/ diff, no doc/PROGRESS and no docs: commit -> doc
 # fail: the doc-only relaxation must NOT leak to a diff with real non-doc work.

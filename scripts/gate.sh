@@ -54,14 +54,15 @@ touched_ui=0
 grep -qE '^(src|cli|app)/' <<<"$diff_files" && touched_code=1
 grep -qE '^app/ui/' <<<"$diff_files" && touched_ui=1
 
-# A diff that is ENTIRELY documentation — only doc/ or plan/ trees, or markdown
-# files — is its own doc-sync: there is no separate code change left to record.
-# So a design doc or task-graph committed without a `docs:` prefix must not
-# false-fail the doc check. Any non-doc file flips this off, so a mixed diff
-# still owes the evidence check below.
+# A diff confined to the documentation trees — doc/ and plan/ (design docs,
+# task graphs) — is its own doc-sync: no separate code change is left to record,
+# so a design doc committed without a `docs:` prefix must not false-fail the doc
+# check. Scoped to those trees on purpose: a bare *.md match would admit
+# behavior-bearing markdown (agent-config skill prompts, CLAUDE.md/AGENTS.md),
+# which must still owe doc evidence. Any path outside doc//plan/ flips this off.
 doc_only=0
 if [ "$touched_any" = 1 ] && [ "$touched_code" = 0 ] && [ "$touched_ui" = 0 ] \
-  && ! grep -qvE '^doc/|^plan/|\.mdx?$' <<<"$diff_files"; then
+  && ! grep -qvE '^(doc|plan)/' <<<"$diff_files"; then
   doc_only=1
 fi
 
