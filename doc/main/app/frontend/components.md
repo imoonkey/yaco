@@ -210,7 +210,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Computes `effectivePath = activeWorktree ?? projectPath` (the selected worktree's absolute path, else the project root) — the directory file/git reads and session cwd resolve against
+- Computes `effectivePath = activeWorktree ?? projectPath` (the selected worktree's absolute path, else the project root) — the directory **file/git reads** resolve against it. **Session cwd resolves against the base `projectPath`, not `effectivePath`**: new sessions + history resume spawn at the project root regardless of the selected worktree (design P3 sever-3 — a worktree is a view, not a session dimension). `effectivePath` feeds the file/git resources; the base `projectPath` feeds the sessions resource (`useWorkspaceData`).
 - Threads `worktree` param through `useWorkspaceState`, `useFileTree`, `useGitStatus`, and all mutation functions
 - Builds section content (project list with worktree sub-items, explorer, changes, working-area groups, sessions) as React nodes — the tasks tab renders through the group/PanelHost path, not as a separate slot
 - Passes content slots to `WorkspaceLayout` for placement

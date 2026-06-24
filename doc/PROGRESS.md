@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-24: Sessions decoupled from the selected worktree (worktree-explorer-view P3 sever-3)
+
+**What changed:**
+- `app/ui/src/workspace/WorkspaceProvider.tsx`: threads the **base** `projectPath` (not `effectivePath`) into `useWorkspaceData`. The `projectPath` slot feeds only the sessions resource; git follows the worktree via the separate `worktree` (abspath) arg. New sessions now spawn at the project root regardless of the selected worktree.
+- `app/ui/src/workspace/panels/SessionsPanel.tsx`: history resume uses `env.project.path` (base root), not `effectivePath`.
+- `app/ui/src/workspace/resources.ts` + `useWorkspaceSessions.ts`: comments narrowed — `WorkspaceSessionsResourceOptions.projectPath` is the new-session cwd (base root), decoupled from the worktree.
+- Tests: `__tests__/resources.test.ts` (data layer — list fetches `?project=` with no `worktree=`, git status carries `worktree=<wt>`, new-session POST `cwd = base`), `panels/__tests__/SessionsPanel.test.tsx` (resume cwd = base with a worktree selected; list parity).
+- Doc: `doc/main/app/frontend/components.md` — corrected the drifted claim that session cwd resolves against `effectivePath`; it now uses the base `projectPath`.
+
+**Why:**
+- A git worktree is a *view*, not a workspace-identity dimension (design §2). Conflating "which worktree am I viewing" with "where a new terminal spawns" re-introduces the category error. Worktree-bound agent runs go through the task/orchestration layer with an explicit cwd; an interactive session always starts at the project root. The session **list** was already projectName-keyed, so it was identical across worktrees already. `effectivePath` now narrows to file/git views only. Sever-1/sever-2 (no-remount + per-project layout/persistence) and the per-worktree editor-content keying are separate P3 slices, not in this task.
+
+**Key files:** `app/ui/src/workspace/{WorkspaceProvider.tsx,resources.ts,useWorkspaceSessions.ts,panels/SessionsPanel.tsx}`, tests `__tests__/resources.test.ts` + `panels/__tests__/SessionsPanel.test.tsx`, `doc/main/app/frontend/components.md`.
+**Verification:** `scripts/verify.sh` green (cli · server · ui lint · build=`tsc -b`). `app/ui`: `tsc -b` + `npm run lint` clean, full vitest 1049 passed (incl. 4 new P3 tests). Cross-provider review (Codex `codex-hasty-frank-delta-301d2d`): APPROVE, 0 critical/high; 2 LOW (data-layer test gap + comment accuracy) resolved in the code commit. QA: 4 flows PASS; e2e worktree view-following 7 passed; `worktree-persist.spec.ts:89` (per-worktree *layout* persistence) is a **pre-existing** failure for sever-1/2, reproduced at base with the P3 source reverted — out of scope. Artifacts: `plan/all/worktree-explorer-view/{impl-plan,code-review,qa}_p3-decouple-sessions.md`.
+**Commit:** `713ac3f3` (code) + docs tail.
+**Next:** P3 sever-1/sever-2 (drop `activeWorktree` from the `App.tsx` remount key + `useWorkspaceState`/`usePersistence` worktree arg; layout/drafts project-keyed) and the per-worktree file-content keying.
+**Blockers:** None.
+
+
 ## 2026-06-24: Frontend worktrees — git-sourced list + abspath identity (worktree-explorer-view P1 frontend)
 
 **What changed:**
