@@ -39,8 +39,10 @@ export const withProject = createMiddleware<ProjectEnv>(async (c, next) => {
   const proj = projects.find(p => p.name === projectName)
   if (!proj) return fail(c, 404, 'project not found')
 
+  // Presence, not truthiness: a present-but-empty `?worktree=` is a malformed
+  // worktree request and must 404 — not silently fall back to the primary.
   const worktree = c.req.query('worktree')
-  if (worktree) {
+  if (worktree !== undefined) {
     const resolved = await resolveWorktree(proj.path, worktree)
     if (!resolved) return fail(c, 404, 'worktree not found')
     // The primary collapses to the base project so its cache identity (git

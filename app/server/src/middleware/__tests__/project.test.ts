@@ -112,8 +112,14 @@ describe('withProject — ?worktree= abspath allowlist', () => {
     expect(res.status).toBe(404)
   })
 
-  it('rejects a traversal path that escapes the worktree set with 404', async () => {
-    const traversal = join(testProjectPath, '.worktrees', '..', '..', 'etc')
+  it('rejects a raw ../ traversal string that realpath-escapes the worktree set with 404', async () => {
+    // A registered worktree makes `.worktrees/` real so realpath can traverse it.
+    // The candidate is a RAW string with `..` (NOT path.join, which would
+    // pre-normalize the segments away) that canonicalizes OUT to an existing but
+    // non-worktree path — exercising the exact allowlist check, not mere existence.
+    const wt = join(testProjectPath, '.worktrees', 'feat')
+    git(['worktree', 'add', '-q', '-b', 'task/feat', wt], testProjectPath)
+    const traversal = `${wt}/../../base.md` // realpath → <primary>/base.md (exists, not a worktree)
     const res = await resolveProject(traversal)
     expect(res.status).toBe(404)
   })
@@ -133,6 +139,16 @@ describe('withProject — ?worktree= abspath allowlist', () => {
 
   it('rejects a non-absolute worktree value with 404', async () => {
     const res = await resolveProject('feat')
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a present-but-empty ?worktree= with 404 (presence, not truthiness)', async () => {
+    const res = await makeApp().request('/test-project?worktree=')
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a bare ?worktree (no value) with 404', async () => {
+    const res = await makeApp().request('/test-project?worktree')
     expect(res.status).toBe(404)
   })
 })
