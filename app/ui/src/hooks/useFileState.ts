@@ -82,6 +82,12 @@ export function useFileState(
   const worktreeRef = useRef(worktree)
   const worktreeKeyRef = useRef(worktreeKey)
   const filesRef = useRef(files)
+  // The WHOLE per-worktree store, mirrored for the persistence flush: serializing it
+  // (not just the active projection) is the design §P3 "all-buckets surface", and it
+  // reflects background-bucket mutations too — a save/accept that completes into a
+  // now-background worktree after a switch lands here, so the flush never writes back
+  // a stale draft for it.
+  const filesByWorktreeRef = useRef(filesByWorktree)
   // Mirror latest values for async fetch/SSE callbacks that read without re-subscribing.
   // useLayoutEffect (not passive) so a tab-bar Save handler reading `filesRef.current`
   // sees the committed draft before the next user event, never one render stale.
@@ -90,6 +96,7 @@ export function useFileState(
     worktreeRef.current = worktree
     worktreeKeyRef.current = worktreeKey
     filesRef.current = files
+    filesByWorktreeRef.current = filesByWorktree
   })
 
   // Mutate one worktree's bucket; returns the prior whole map when the updater is
@@ -414,6 +421,7 @@ export function useFileState(
   return {
     files,
     filesRef,
+    filesByWorktreeRef,
     dirtyTabs,
     conflictTabs,
     gcBuffers,

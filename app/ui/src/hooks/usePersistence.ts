@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type PersistedState,
   type PersistedDrafts,
+  type PersistedDraftsByWorktree,
+  type PersistedDraftEntry,
   type WorkspaceLayout,
   type WorkspacePanelLayout,
   type LayoutNode,
@@ -10,6 +12,7 @@ import {
   isFileTab,
   layoutKey,
   draftsKey,
+  worktreeDraftKey,
   loadStoredSize,
   dedupeTabs,
 } from './workspaceTypes'
@@ -237,9 +240,9 @@ function migrateOldBlob(parsed: Record<string, unknown>, flat: WorkspaceLayout):
   return { panelLayout, terminalBindings, editorMru, terminalMru, activeGroupId }
 }
 
-export function loadPersistedState(project: string, worktree?: string | null): PersistedState {
+export function loadPersistedState(project: string): PersistedState {
   try {
-    const raw = localStorage.getItem(layoutKey(project, worktree))
+    const raw = localStorage.getItem(layoutKey(project))
     if (!raw) return defaultPersistedState()
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
@@ -280,46 +283,190 @@ export function loadPersistedState(project: string, worktree?: string | null): P
   }
 }
 
-export function loadPersistedDrafts(project: string, worktree?: string | null): PersistedDrafts {
-  try {
-    const raw = localStorage.getItem(draftsKey(project, worktree))
-    if (!raw) return { files: {} }
-    const parsed = JSON.parse(raw) as PersistedDrafts
-    if (!parsed.files || typeof parsed.files !== 'object') return { files: {} }
-    const files = Object.fromEntries(
-      Object.entries(parsed.files).filter(([path]) => isFileTab(path))
-    )
-    return { files }
-  } catch {
-    return { files: {} }
+/** Validate + salvage one drafts bucket (a `relpath → entry` map): keep only real
+ *  file tabs with a well-formed entry. Shared by the new multi-bucket reader and the
+ *  legacy `{ files }` readers. */
+function parseDraftBucket(raw: unknown): Record<string, PersistedDraftEntry> {
+  const out: Record<string, PersistedDraftEntry> = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const [path, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isFileTab(path)) continue
+    const e = value as Record<string, unknown>
+    if (!e || typeof e !== 'object') continue
+    if (typeof e.draft !== 'string' && e.draft !== null) continue
+    out[path] = {
+      draft: e.draft as string | null,
+      baseRevision: typeof e.baseRevision === 'number' ? e.baseRevision : null,
+      viewportLine: typeof e.viewportLine === 'number' ? e.viewportLine : 1,
+      updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : 0,
+    }
   }
+  return out
+}
+
+/** A legacy single-bucket blob carries a top-level `files` object; the new
+ *  multi-bucket record is keyed by worktree abspaths (never the literal "files").
+ *  This discriminates the two on the SHARED `yaco-drafts:${project}` key. */
+function isLegacyPrimaryBlob(parsed: unknown): parsed is { files: unknown } {
+  return !!parsed && typeof parsed === 'object' && typeof (parsed as Record<string, unknown>).files === 'object'
+}
+
+/** Merge a legacy bucket into an existing one, newer `updatedAt` winning per path —
+ *  so a worktree carrying BOTH a pre-P1 slug key and a post-P1 abspath key (which
+ *  canonicalize to the same bucket) keeps every path's freshest draft, order-
+ *  independently. */
+function mergeNewerWins(
+  into: Record<string, PersistedDraftEntry> | undefined,
+  add: Record<string, PersistedDraftEntry>,
+): Record<string, PersistedDraftEntry> {
+  if (!into) return add
+  const out = { ...into }
+  for (const [path, entry] of Object.entries(add)) {
+    if (!out[path] || entry.updatedAt >= out[path].updatedAt) out[path] = entry
+  }
+  return out
+}
+
+/**
+ * Load the on-disk drafts record, folding legacy keys in (design §P3 migration).
+ * worktreeKey = abspath; primary = projectPath.
+ *
+ * Sources, in precedence order (earlier wins — a newer bucket is never clobbered by
+ * a stale legacy fold):
+ *  1. `yaco-drafts:${project}` — the new multi-bucket record, OR a legacy primary
+ *     `{ files }` blob (same key, discriminated by shape → folded into `projectPath`).
+ *     These buckets are AUTHORITATIVE (the post-migration store) — no legacy `:wt:`
+ *     key overrides them.
+ *  2. `yaco-drafts:${project}:wt:<suffix>` — legacy per-worktree blobs. The suffix is
+ *     the raw worktree id `draftsKey` was called with: an ABSPATH (post-P1, e.g.
+ *     `/repo/proj/.worktrees/B`) is the bucket key verbatim; a bare SLUG (pre-P1, e.g.
+ *     `B`) resolves to `${projectPath}/.worktrees/<slug>` (the abspath that slug stood
+ *     for). Folded only into buckets NOT already authoritative; duplicates that
+ *     canonicalize to the same bucket merge newer-per-path (lossless).
+ *
+ * Runs synchronously at mount so the merged base exists before any save — this is
+ * the r2 "gate the first save until the merge ran" data-loss guard.
+ */
+export function loadDraftsByWorktree(project: string, projectPath: string): PersistedDraftsByWorktree {
+  const record: PersistedDraftsByWorktree = {}
+  const authoritative = new Set<string>() // buckets from the primary blob — legacy never overrides
+
+  try {
+    const raw = localStorage.getItem(draftsKey(project))
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown
+      if (isLegacyPrimaryBlob(parsed)) {
+        record[projectPath] = parseDraftBucket(parsed.files)
+        authoritative.add(projectPath)
+      } else if (parsed && typeof parsed === 'object') {
+        for (const [key, bucket] of Object.entries(parsed as Record<string, unknown>)) {
+          record[key] = parseDraftBucket(bucket)
+          authoritative.add(key)
+        }
+      }
+    }
+  } catch { /* corrupt blob — fall through to legacy fold */ }
+
+  const legacyWtPrefix = `${draftsKey(project)}:wt:`
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || !key.startsWith(legacyWtPrefix)) continue
+    const suffix = key.slice(legacyWtPrefix.length)
+    // Post-P1 the worktree id IS an abspath → use it verbatim; a pre-P1 slug resolves
+    // under `.worktrees/`. (A raw abspath suffixed under `.worktrees/<abspath>` would
+    // never restore — the live worktree key is the abspath itself.)
+    const abspath = suffix.startsWith('/') ? suffix : `${projectPath}/.worktrees/${suffix}`
+    if (authoritative.has(abspath)) continue // the multi-bucket record already won
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) ?? '') as { files?: unknown }
+      const files = parseDraftBucket(parsed?.files)
+      if (Object.keys(files).length > 0) record[abspath] = mergeNewerWins(record[abspath], files)
+    } catch { /* skip corrupt legacy blob */ }
+  }
+
+  return record
+}
+
+/** Project the active worktree's bucket as the single-bucket `PersistedDrafts`
+ *  `useFileState` restores. */
+function activeDraftsProjection(
+  record: PersistedDraftsByWorktree,
+  projectPath: string,
+  worktree?: string | null,
+): PersistedDrafts {
+  return { files: record[worktreeDraftKey(projectPath, worktree)] ?? {} }
 }
 
 // --- Save helpers ---
 
-export function saveLayout(project: string, worktree: string | null | undefined, state: PersistedState): void {
+export function saveLayout(project: string, state: PersistedState): void {
   try {
-    localStorage.setItem(layoutKey(project, worktree), JSON.stringify(state))
+    localStorage.setItem(layoutKey(project), JSON.stringify(state))
   } catch { /* layout is tiny — quota should never be an issue */ }
 }
 
-function saveDrafts(project: string, worktree: string | null | undefined, drafts: PersistedDrafts): void {
-  try {
-    localStorage.setItem(draftsKey(project, worktree), JSON.stringify(drafts))
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-      const entries = Object.entries(drafts.files).sort((a, b) => a[1].updatedAt - b[1].updatedAt)
-      while (entries.length > 0) {
-        entries.shift()
-        try {
-          localStorage.setItem(draftsKey(project, worktree), JSON.stringify({ files: Object.fromEntries(entries) }))
-          return
-        } catch { continue }
-      }
-      // All evicted — persist empty so next load doesn't restore stale data
-      try { localStorage.setItem(draftsKey(project, worktree), JSON.stringify({ files: {} })) } catch { /* noop */ }
-    }
+/** Drop empty buckets so the persisted record never grows a key for a worktree with
+ *  no live drafts. */
+function pruneEmptyBuckets(record: PersistedDraftsByWorktree): PersistedDraftsByWorktree {
+  const out: PersistedDraftsByWorktree = {}
+  for (const [key, files] of Object.entries(record)) {
+    if (Object.keys(files).length > 0) out[key] = files
   }
+  return out
+}
+
+function saveDrafts(project: string, record: PersistedDraftsByWorktree): void {
+  const pruned = pruneEmptyBuckets(record)
+  try {
+    localStorage.setItem(draftsKey(project), JSON.stringify(pruned))
+  } catch (err) {
+    if (!(err instanceof DOMException && err.name === 'QuotaExceededError')) return
+    // Evict the oldest (bucket, path) entries across ALL worktrees until it fits.
+    const entries = Object.entries(pruned).flatMap(([key, files]) =>
+      Object.entries(files).map(([path, entry]) => ({ key, path, entry })),
+    ).sort((a, b) => a.entry.updatedAt - b.entry.updatedAt)
+    while (entries.length > 0) {
+      entries.shift()
+      const rebuilt: PersistedDraftsByWorktree = {}
+      for (const { key, path, entry } of entries) (rebuilt[key] ??= {})[path] = entry
+      try {
+        localStorage.setItem(draftsKey(project), JSON.stringify(pruneEmptyBuckets(rebuilt)))
+        return
+      } catch { continue }
+    }
+    // All evicted — persist empty so next load doesn't restore stale data.
+    try { localStorage.setItem(draftsKey(project), JSON.stringify({})) } catch { /* noop */ }
+  }
+}
+
+/**
+ * One-shot migration commit. Legacy per-worktree blobs live under their OWN keys
+ * (`yaco-drafts:${project}:wt:<suffix>`), separate from the new record. Folding them
+ * into the base in memory is not enough: once a migrated bucket is emptied and
+ * `saveDrafts` prunes it from the record, the stale legacy key would re-fold on the
+ * next load and resurrect the cleared draft. So retire every legacy `:wt:` key, then
+ * persist the merged base.
+ *
+ * Order matters: the base ALREADY holds the legacy data (folded by
+ * `loadDraftsByWorktree` at mount), so we free the legacy storage FIRST and write the
+ * merged record second. Writing first would transiently double the legacy data on
+ * disk (legacy keys + the merged copy), and a near-quota user would then evict real
+ * entries that actually fit post-migration — eviction the subsequent delete makes
+ * irreversible. The delete + write are synchronous and adjacent (no await between),
+ * so there is no crash window where the in-memory base could be lost.
+ * (The legacy primary `{ files }` blob shares the new record's key, so the merged
+ *  write overwrites it in place — no separate key to retire, no resurrection path.)
+ */
+export function commitDraftMigration(project: string, base: PersistedDraftsByWorktree): void {
+  const prefix = `${draftsKey(project)}:wt:`
+  const legacyKeys: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith(prefix)) legacyKeys.push(key)
+  }
+  if (legacyKeys.length === 0) return
+  for (const key of legacyKeys) localStorage.removeItem(key)
+  saveDrafts(project, base)
 }
 
 // --- Hook ---
@@ -329,32 +476,52 @@ function saveDrafts(project: string, worktree: string | null | undefined, drafts
  * Phase 1: returns initialLayout + initialDrafts synchronously at mount.
  * Phase 2: call bindSnapshots() after state hooks are created to enable
  *          debounced saves and synchronous beforeunload/unmount flush.
+ *
+ * `projectPath` is the project root's absolute path — the primary worktree's bucket
+ * key and the base for resolving legacy `:wt:<slug>` → abspath during migration.
+ * `worktree` (abspath id, or null for primary) selects which bucket to project as
+ * the active `initialDrafts`. Layout is project-global; only drafts carry buckets.
  */
-export function usePersistence(projectName: string, worktree?: string | null) {
-  const [initialLayout] = useState(() => loadPersistedState(projectName, worktree))
-  const [initialDrafts] = useState(() => loadPersistedDrafts(projectName, worktree))
+export function usePersistence(projectName: string, projectPath: string, worktree?: string | null) {
+  const [initialLayout] = useState(() => loadPersistedState(projectName))
+
+  // Migrate-on-mount: the full drafts record (legacy keys folded in) is the BASE
+  // every flush overlays its live buckets onto — so a background or migrated-but-
+  // unvisited bucket is never clobbered by an active-only save. Computed once,
+  // synchronously, before any save can run: the r2 first-save data-loss gate.
+  const [draftsBase] = useState(() => loadDraftsByWorktree(projectName, projectPath))
+  const draftsBaseRef = useRef(draftsBase)
+  const [initialDrafts] = useState(() => activeDraftsProjection(draftsBase, projectPath, worktree))
+
+  // Commit the migration once at mount: persist the merged base and retire the legacy
+  // per-worktree keys so an emptied-then-pruned bucket can never resurrect from them.
+  useEffect(() => {
+    commitDraftMigration(projectName, draftsBaseRef.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const projectRef = useRef(projectName)
-  const worktreeRef = useRef(worktree)
-  // Mirror latest project/worktree for flush callbacks that read without re-subscribing.
+  // Mirror latest project for flush callbacks that read without re-subscribing.
   useEffect(() => {
     projectRef.current = projectName
-    worktreeRef.current = worktree
   })
 
   const layoutSnapshotRef = useRef<(() => PersistedState) | null>(null)
-  const draftsSnapshotRef = useRef<(() => PersistedDrafts) | null>(null)
+  const draftsSnapshotRef = useRef<(() => PersistedDraftsByWorktree) | null>(null)
 
   const flushLayout = useCallback(() => {
     if (layoutSnapshotRef.current) {
-      saveLayout(projectRef.current, worktreeRef.current, layoutSnapshotRef.current())
+      saveLayout(projectRef.current, layoutSnapshotRef.current())
     }
   }, [])
 
   const flushDrafts = useCallback(() => {
-    if (draftsSnapshotRef.current) {
-      saveDrafts(projectRef.current, worktreeRef.current, draftsSnapshotRef.current())
-    }
+    if (!draftsSnapshotRef.current) return
+    // Overlay the live (visited) buckets onto the migrated base, so unvisited and
+    // background-worktree buckets survive every save. The merge becomes the new base.
+    const merged = { ...draftsBaseRef.current, ...draftsSnapshotRef.current() }
+    draftsBaseRef.current = merged
+    saveDrafts(projectRef.current, merged)
   }, [])
 
   // Debounce timers
@@ -391,7 +558,7 @@ export function usePersistence(projectName: string, worktree?: string | null) {
 
   const bindSnapshots = useCallback((snapshots: {
     layoutRef: () => PersistedState
-    draftsRef: () => PersistedDrafts
+    draftsRef: () => PersistedDraftsByWorktree
   }) => {
     layoutSnapshotRef.current = snapshots.layoutRef
     draftsSnapshotRef.current = snapshots.draftsRef

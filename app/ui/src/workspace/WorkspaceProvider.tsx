@@ -125,8 +125,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // worktree's path (null → the project root). It scopes only the file/git views.
   const effectivePath = activeWorktree ?? projectPath
 
-  // Centralized tab/layout/file state.
-  const ws = useWorkspaceState(projectName, worktree)
+  // Centralized tab/layout/file state. projectPath (the project root abspath) keys
+  // the primary drafts bucket + the legacy-drafts migration; worktree selects the
+  // active bucket. Layout/open-tabs stay project-global.
+  const ws = useWorkspaceState(projectName, projectPath, worktree)
   const {
     activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
     mobilePane, layout, panelLayout, setPanelLayout, files, filesRef, dirtyTabs, conflictTabs, recentFiles,

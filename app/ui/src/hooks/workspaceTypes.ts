@@ -63,9 +63,17 @@ export type PersistedDraftEntry = {
   updatedAt: number
 }
 
+/** The ACTIVE worktree's drafts — the single-bucket projection `useFileState`
+ *  restores (`initialDrafts.files`) and every relpath consumer reads. */
 export type PersistedDrafts = {
   files: Record<string, PersistedDraftEntry>
 }
+
+/** The on-disk drafts record (design §P3): one bucket per `worktreeKey`, the
+ *  worktree's absolute path — the primary checkout's key is `projectPath`. Flush
+ *  serializes every bucket so a dirty draft in a background worktree is never lost;
+ *  the active bucket is projected as `PersistedDrafts` for `useFileState`. */
+export type PersistedDraftsByWorktree = Record<string, Record<string, PersistedDraftEntry>>
 
 /** The LEGACY per-editor multi-file view shape (`{ openTabs, activeTab, previewTab }`).
  *  Editor-tab payload now lives flat in the group tree (`GroupTab.tabId`/`preview`),
@@ -151,12 +159,18 @@ export function defaultFileState(): FileState {
   return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0, loadError: null }
 }
 
-export function layoutKey(project: string, worktree?: string | null): string {
-  return worktree ? `yaco-workspace:${project}:wt:${worktree}` : `yaco-workspace:${project}`
+export function layoutKey(project: string): string {
+  return `yaco-workspace:${project}`
 }
 
-export function draftsKey(project: string, worktree?: string | null): string {
-  return worktree ? `yaco-drafts:${project}:wt:${worktree}` : `yaco-drafts:${project}`
+export function draftsKey(project: string): string {
+  return `yaco-drafts:${project}`
+}
+
+/** The drafts-record bucket key for a worktree: its absolute path, or the project
+ *  root path for the primary checkout. `worktree` is the abspath id (P1) or null. */
+export function worktreeDraftKey(projectPath: string, worktree?: string | null): string {
+  return worktree || projectPath
 }
 
 export function loadStoredSize(value: unknown, fallback: number): number {

@@ -57,7 +57,7 @@ afterEach(() => {
 
 /** Mount the hook and return the live render-result handle. */
 function mount() {
-  return renderHook(() => useWorkspaceState('proj', null))
+  return renderHook(() => useWorkspaceState('proj', '/repo/proj', null))
 }
 
 describe('routing-wire — separateKinds ON', () => {

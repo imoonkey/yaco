@@ -13,16 +13,16 @@ describe('inline suggestions default', () => {
   })
 
   it('keeps the disabled default when no layout is persisted', () => {
-    const { result } = renderHook(() => usePersistence('proj', null))
+    const { result } = renderHook(() => usePersistence('proj', '/repo/proj', null))
     expect(result.current.initialLayout.layout.autocompleteEnabled).toBe(false)
   })
 
   it('restores an opted-in value from persisted layout', () => {
     localStorage.setItem(
-      layoutKey('proj', null),
+      layoutKey('proj'),
       JSON.stringify({ layout: { ...DEFAULT_LAYOUT, autocompleteEnabled: true } }),
     )
-    const { result } = renderHook(() => usePersistence('proj', null))
+    const { result } = renderHook(() => usePersistence('proj', '/repo/proj', null))
     expect(result.current.initialLayout.layout.autocompleteEnabled).toBe(true)
   })
 })

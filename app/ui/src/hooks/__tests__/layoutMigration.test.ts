@@ -17,7 +17,7 @@ vi.mock('../useSSE', () => ({
   addSSEListener: () => () => {},
 }))
 
-import { loadPersistedState, loadPersistedDrafts } from '../usePersistence'
+import { loadPersistedState, loadDraftsByWorktree } from '../usePersistence'
 import { useWorkspaceState } from '../useWorkspaceState'
 import {
   type LayoutNode, type GroupTab,
@@ -29,9 +29,16 @@ import {
 } from '../../workspace/panelLayoutModel'
 
 const PROJECT = 'proj'
+const PROJECT_PATH = '/repo/proj'
 
-function seedLayout(blob: unknown, worktree?: string | null): void {
-  localStorage.setItem(layoutKey(PROJECT, worktree), JSON.stringify(blob))
+// Layout is project-global now (design §P3): seed the single per-project key.
+function seedLayout(blob: unknown): void {
+  localStorage.setItem(layoutKey(PROJECT), JSON.stringify(blob))
+}
+
+/** The primary worktree's draft for a relpath, read through the migration loader. */
+function primaryDraft(path: string): string | null | undefined {
+  return loadDraftsByWorktree(PROJECT, PROJECT_PATH)[PROJECT_PATH]?.[path]?.draft
 }
 
 /** Every editor tab across the whole tree, in document order. */
@@ -79,7 +86,7 @@ describe('migration: old v1 blob → group model', () => {
     const state = loadPersistedState(PROJECT)
     expect(editorTabPaths(state.panelLayout.desktop)).toContain('dirty.ts')
     // The draft survives (the path is referenced + dirty, so the buffer is kept).
-    expect(loadPersistedDrafts(PROJECT).files['dirty.ts']?.draft).toBe('unsaved edit')
+    expect(primaryDraft('dirty.ts')).toBe('unsaved edit')
   })
 
   it('diff tab with query refs migrates as one editor tab whose tabId round-trips', () => {
@@ -243,7 +250,7 @@ describe('migration: per-key isolation', () => {
 
     loadPersistedState(PROJECT)
 
-    expect(loadPersistedDrafts(PROJECT).files['a.ts']?.draft).toBe('hello')
+    expect(primaryDraft('a.ts')).toBe('hello')
     expect(localStorage.getItem(`yaco-sessions:${PROJECT}`)).toBe('lineage-state')
     expect(localStorage.getItem(layoutKey(PROJECT))).toBe('{ broken')
   })
@@ -271,7 +278,7 @@ describe('migration: new-shape round-trip via useWorkspaceState', () => {
     }
     seedLayout({ panelLayout: stored, editorMru: ['editor'], terminalBindings: {}, activeGroupId: 'group:2' })
 
-    const { unmount } = renderHook(() => useWorkspaceState(PROJECT))
+    const { unmount } = renderHook(() => useWorkspaceState(PROJECT, PROJECT_PATH))
     unmount()
 
     const reloaded = loadPersistedState(PROJECT)
@@ -282,13 +289,18 @@ describe('migration: new-shape round-trip via useWorkspaceState', () => {
   })
 })
 
-// --- per (project, worktree) scoping ----------------------------------------
+// --- layout is project-global (design §P3) -----------------------------------
 
-describe('migration: per (project, worktree) scoping', () => {
-  it('migrates each worktree slot independently', () => {
-    seedLayout({ layout: { autocompleteEnabled: true } }, 'wt-1')
-    seedLayout({ layout: { autocompleteEnabled: false } }, null)
-    expect(loadPersistedState(PROJECT, 'wt-1').panelLayout.panelState.editor.autocompleteEnabled).toBe(true)
+describe('layout: project-global, old per-worktree keys ignored', () => {
+  it('reads the single per-project layout key; a stale per-worktree key is never read', () => {
+    // A leftover pre-decouple per-worktree layout blob must NOT shadow the project layout.
+    localStorage.setItem(
+      `${layoutKey(PROJECT)}:wt:wt-1`,
+      JSON.stringify({ layout: { ...DEFAULT_LAYOUT, autocompleteEnabled: true } }),
+    )
+    seedLayout({ layout: { ...DEFAULT_LAYOUT, autocompleteEnabled: false } })
+
+    // loadPersistedState takes the project only; the project layout wins.
     expect(loadPersistedState(PROJECT).panelLayout.panelState.editor.autocompleteEnabled).toBe(false)
   })
 })

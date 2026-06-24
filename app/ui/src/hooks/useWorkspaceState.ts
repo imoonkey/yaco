@@ -1,5 +1,8 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
-import { type PersistedDrafts, type LayoutNode, isFileTab, parseDiffTab } from './workspaceTypes'
+import {
+  type PersistedDraftsByWorktree, type PersistedDraftEntry, type FileState, type LayoutNode,
+  isFileTab, parseDiffTab,
+} from './workspaceTypes'
 import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import { usePersistence } from './usePersistence'
 import { useFileState } from './useFileState'
@@ -29,9 +32,28 @@ export function parseKeepPaths(sig: string): Set<string> {
   return new Set<string>(JSON.parse(sig) as string[])
 }
 
-export function useWorkspaceState(projectName: string, worktree?: string | null) {
+/** Serialize one worktree's live file state into its persisted drafts bucket: keep a
+ *  path iff it carries an unsaved draft or a non-default viewport (the same filter the
+ *  old single-bucket snapshot used). */
+function serializeBucket(files: Record<string, FileState>): Record<string, PersistedDraftEntry> {
+  const out: Record<string, PersistedDraftEntry> = {}
+  for (const [path, state] of Object.entries(files)) {
+    if (!isFileTab(path)) continue
+    if (state.draft != null || state.viewportLine > 1) {
+      out[path] = {
+        draft: state.draft,
+        baseRevision: state.baseRevision,
+        viewportLine: state.viewportLine,
+        updatedAt: state.editedAt || Date.now(),
+      }
+    }
+  }
+  return out
+}
+
+export function useWorkspaceState(projectName: string, projectPath: string, worktree?: string | null) {
   // Phase 1: load persisted state
-  const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, worktree)
+  const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, projectPath, worktree)
 
   // Union of file-tab paths across the restored group tree — what useFileState
   // hydrates on mount and refetches on SSE. Computed once from the migrated tree.
@@ -42,7 +64,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
 
   // Phase 2: create domain hooks
   const {
-    files, filesRef, dirtyTabs, conflictTabs,
+    files, filesRef, filesByWorktreeRef, dirtyTabs, conflictTabs,
     gcBuffers,
     fetchForTab, retargetFile, removeFilesUnder,
     updateDraft, updateViewport,
@@ -82,6 +104,30 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   }
   const layoutRef = useRef(layoutValue)
 
+  // The drafts flush snapshot (design §P3 all-bucket flush). Serialize EVERY live
+  // worktree bucket from useFileState's whole store — not just the active projection —
+  // so a dirty draft in a background worktree is flushed, and a background save that
+  // cleared a draft after a switch is reflected (never written back stale).
+  // useFileState keys its primary bucket by `projectName`; persistence keys it by
+  // `projectPath` (abspath, uniform with worktree keys), so remap that one key. A
+  // present-but-empty bucket is kept as `{}` — that is how a fully-cleared bucket
+  // tells the overlay to prune it (vs an unvisited worktree, absent from the store,
+  // whose persisted draft the base must keep).
+  //
+  // Scope boundary: this is exhaustive under the CURRENT remount model — App.tsx
+  // remounts the workspace on a worktree switch, so useFileState restores the whole
+  // entering bucket from persistence and the flush serializes a COMPLETE bucket. Full
+  // no-remount fidelity (useFileState restoring ALL buckets up front + hydrating a
+  // switched-to worktree, so a partially-hydrated bucket can't serialize `{}` and
+  // prune a base draft) belongs to the decouple task that removes the remount.
+  const snapshotDrafts = useCallback((): PersistedDraftsByWorktree => {
+    const out: PersistedDraftsByWorktree = {}
+    for (const [key, bucket] of Object.entries(filesByWorktreeRef.current)) {
+      out[key === projectName ? projectPath : key] = serializeBucket(bucket)
+    }
+    return out
+  }, [filesByWorktreeRef, projectName, projectPath])
+
   // The open-file-tab union, derived from the live group tree; identity is stable
   // across edits that don't change the union (a JSON signature) so the buffer-GC
   // effect stays calm. JSON.stringify never collides on a filename-legal char (a
@@ -108,21 +154,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   useEffect(() => {
     bindSnapshots({
       layoutRef: () => layoutRef.current,
-      draftsRef: (): PersistedDrafts => {
-        const entries: PersistedDrafts['files'] = {}
-        for (const [path, state] of Object.entries(filesRef.current)) {
-          if (!isFileTab(path)) continue
-          if (state.draft != null || state.viewportLine > 1) {
-            entries[path] = {
-              draft: state.draft,
-              baseRevision: state.baseRevision,
-              viewportLine: state.viewportLine,
-              updatedAt: state.editedAt || Date.now(),
-            }
-          }
-        }
-        return { files: entries }
-      },
+      draftsRef: snapshotDrafts,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
