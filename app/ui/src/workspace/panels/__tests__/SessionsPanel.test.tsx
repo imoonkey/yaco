@@ -4,7 +4,7 @@
 // provider and assert the same DOM/behavior as the current inline session
 // section (WorkspaceLayout's "Sessions" SectionHeader + body). Helpers are
 // inlined and file-local so the seven sibling panel tests never collide here.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { SessionsPanel, sessionsPanelDef } from '../SessionsPanel'
@@ -12,10 +12,21 @@ import { PanelFrame } from '../../PanelFrame'
 import {
   WorkspaceEnvContext, WorkspaceDataContext,
   WorkspaceSelectionContext, WorkspaceCommandsContext,
+  WorkspacePanelResourcesContext,
   type WorkspaceEnv, type WorkspaceSelection, type WorkspaceCommands,
   type WorkspaceData, type WorkspaceGitResource, type WorkspaceSessionsResource,
+  type WorkspacePanelResources,
 } from '../../context'
-import type { AgentSession } from '../../../types'
+import type { AgentSession, HistorySession } from '../../../types'
+import { startSession } from '../../../hooks/useApi'
+
+// Resume cwd is the only thing this panel feeds to the API; mock just that call
+// and keep the rest of useApi real (useHistory etc.). Lets the resume test assert
+// the cwd arg without a server.
+vi.mock('../../../hooks/useApi', async (importActual) => {
+  const actual = await importActual<typeof import('../../../hooks/useApi')>()
+  return { ...actual, startSession: vi.fn(async () => 'resumed-handle') }
+})
 
 function makeSession(name: string, status: AgentSession['status'], parentSession?: string): AgentSession {
   return { name, provider: 'codex', status, project: 'test', summary: '', parentSession }
@@ -47,9 +58,11 @@ function makeData(sessions: AgentSession[]): WorkspaceData {
 
 // Only the slices SessionsPanel reads are populated; the rest is cast away so
 // the test documents the real contract instead of fabricating every field.
-function makeEnv(isMobile = false): WorkspaceEnv {
+// `path` is the base project root; `effectivePath` is the selected worktree's
+// path (= base when none selected) — the panel must resume sessions in `path`.
+function makeEnv(isMobile = false, path = '/test', effectivePath = path): WorkspaceEnv {
   return {
-    project: { name: 'test', path: '/test', worktree: null, effectivePath: '/test' },
+    project: { name: 'test', path, worktree: effectivePath === path ? null : effectivePath, effectivePath },
     viewport: { isMobile, isLandscape: false, isTouch: false },
   } as unknown as WorkspaceEnv
 }
@@ -75,11 +88,12 @@ function makeSelection(terminalBindings: Record<string, string>, activeTerminalI
   } as unknown as WorkspaceSelection
 }
 
-function Providers({ sessions, terminalBindings, activeTerminalId, isMobile, children }: {
-  sessions: AgentSession[]; terminalBindings: Record<string, string>; activeTerminalId: string | null; isMobile: boolean; children: ReactNode
+function Providers({ sessions, terminalBindings, activeTerminalId, isMobile, env, resources, children }: {
+  sessions: AgentSession[]; terminalBindings: Record<string, string>; activeTerminalId: string | null; isMobile: boolean
+  env?: WorkspaceEnv; resources?: WorkspacePanelResources; children: ReactNode
 }) {
-  return (
-    <WorkspaceEnvContext.Provider value={makeEnv(isMobile)}>
+  const tree = (
+    <WorkspaceEnvContext.Provider value={env ?? makeEnv(isMobile)}>
       <WorkspaceDataContext.Provider value={makeData(sessions)}>
         <WorkspaceSelectionContext.Provider value={makeSelection(terminalBindings, activeTerminalId)}>
           <WorkspaceCommandsContext.Provider value={commands}>
@@ -89,6 +103,9 @@ function Providers({ sessions, terminalBindings, activeTerminalId, isMobile, chi
       </WorkspaceDataContext.Provider>
     </WorkspaceEnvContext.Provider>
   )
+  return resources
+    ? <WorkspacePanelResourcesContext.Provider value={resources}>{tree}</WorkspacePanelResourcesContext.Provider>
+    : tree
 }
 
 function renderBody(
@@ -272,5 +289,61 @@ describe('SessionsPanel', () => {
   it('does not render a row Open beside button', () => {
     renderBody([makeSession('alpha', 'idle')])
     expect(screen.queryByLabelText('Open alpha beside')).toBeNull()
+  })
+
+  // --- Worktree decouple (design §P3 sever-3) ------------------------------
+
+  it('resumes a history session in the BASE project root, not the selected worktree', async () => {
+    const entry: HistorySession = {
+      id: 'hist-abc12345', provider: 'codex', title: 'Past work', summary: 'past summary',
+      created: '2026-06-01T00:00:00.000Z', modified: '2026-06-01T00:00:00.000Z',
+      tokens: null, gitBranch: null, liveSessionName: null,
+    }
+    const resources = {
+      fileTree: {
+        data: null, expandDir: vi.fn(async () => {}), patchTree: vi.fn(),
+        refresh: vi.fn(async () => {}), clearLoadedDirs: vi.fn(),
+      },
+      history: { data: [entry], loading: false, refresh: vi.fn(async () => {}) },
+    } as unknown as WorkspacePanelResources
+    // A worktree is selected → effectivePath ('/base/.worktrees/wt') ≠ base path.
+    const env = makeEnv(false, '/base', '/base/.worktrees/wt')
+
+    // Framed so the published header actions (the live/history toggle) render.
+    render(
+      <Providers sessions={[]} terminalBindings={{}} activeTerminalId={null} isMobile={false} env={env} resources={resources}>
+        <PanelFrame chrome={sessionsPanelDef.chrome} title="Sessions" useHeader={sessionsPanelDef.useHeader}>
+          <SessionsPanel />
+        </PanelFrame>
+      </Providers>,
+    )
+
+    fireEvent.click(screen.getByTitle('Show history'))
+    fireEvent.click(screen.getByText('Past work'))
+
+    await waitFor(() => expect(startSession).toHaveBeenCalled())
+    // Resume cwd is the BASE root, never the worktree path.
+    expect(startSession).toHaveBeenCalledWith('codex', '/base', 'hist-abc12345', expect.any(String))
+  })
+
+  it('renders the same live session list whether a worktree is selected or not', () => {
+    const sessions = [makeSession('alpha', 'idle'), makeSession('beta', 'idle')]
+    const base = render(
+      <Providers sessions={sessions} terminalBindings={{}} activeTerminalId={null} isMobile={false} env={makeEnv(false, '/base')}>
+        <SessionsPanel />
+      </Providers>,
+    )
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.getByText('beta')).toBeTruthy()
+    base.unmount()
+
+    // Worktree selected (effectivePath differs) — the list is unchanged.
+    render(
+      <Providers sessions={sessions} terminalBindings={{}} activeTerminalId={null} isMobile={false} env={makeEnv(false, '/base', '/base/.worktrees/wt')}>
+        <SessionsPanel />
+      </Providers>,
+    )
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.getByText('beta')).toBeTruthy()
   })
 })

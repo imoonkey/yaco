@@ -235,8 +235,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const onAttachSession = useCallback((name: string) => { attachSessionRef.current(name) }, [])
 
   // Single shared resources: one git poller, one sessions poller + manager.
+  // Sessions take the BASE projectPath (new-session cwd), decoupled from the
+  // worktree (design §2: a new interactive session uses the project root, not
+  // the selected worktree). git follows the worktree via the separate `worktree`
+  // arg — effectivePath scopes only the file/git views, never session cwd.
   const data = useWorkspaceData({
-    projectName, projectPath: effectivePath, worktree,
+    projectName, projectPath, worktree,
     onSessionChange,
     onRenameBoundTerminals: renameBoundTerminals,
     onAttachSession,

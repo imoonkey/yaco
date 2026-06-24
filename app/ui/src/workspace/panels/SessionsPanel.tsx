@@ -52,7 +52,10 @@ export function SessionsPanel() {
   const selection = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
 
-  const { name: projectName, effectivePath } = env.project
+  // History resume spawns at the BASE project root, not the selected worktree
+  // (design §P3: sessions decouple from the worktree; effectivePath scopes only
+  // the file/git views). `path` is the project root; `effectivePath` is unused here.
+  const { name: projectName, path: projectPath } = env.project
   const { isMobile } = env.viewport
 
   // Consume the provider-owned, ALWAYS-ON history (it survives section collapse +
@@ -98,7 +101,7 @@ export function SessionsPanel() {
     focusedSession: selection.activeSession,
     isMobile,
     history,
-    projectPath: effectivePath,
+    projectPath,
     projectName,
     clickSession: commands.clickSession,
     openBeside: commands.openBeside,

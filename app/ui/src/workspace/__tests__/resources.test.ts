@@ -5,7 +5,7 @@
 // poller, and one sessions manager, and surfaces the explicit resource shape
 // (no hook return type leaks into the public interfaces).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, cleanup, waitFor } from '@testing-library/react'
+import { renderHook, cleanup, waitFor, act } from '@testing-library/react'
 import { useWorkspaceSessions } from '../useWorkspaceSessions'
 import { useWorkspaceData } from '../resources'
 import type { WorkspaceGitResource, WorkspaceSessionsResource } from '../resources'
@@ -74,9 +74,11 @@ let fetchSpy: ReturnType<typeof vi.fn>
 function installFetch() {
   fetchSpy = vi.fn(async (input: unknown) => {
     const url = String(input)
-    const json = url.includes('/git/') && url.includes('/status')
-      ? { changes: [], stale: false }
-      : [] // sessions + pinned-sessions both return arrays
+    const json = url.includes('/sessions/start')
+      ? { name: 'started-handle' } // POST /sessions/start → { name }
+      : url.includes('/git/') && url.includes('/status')
+        ? { changes: [], stale: false }
+        : [] // sessions + pinned-sessions both return arrays
     return { ok: true, status: 200, json: async () => json } as unknown as Response
   })
   vi.stubGlobal('fetch', fetchSpy)
@@ -84,8 +86,13 @@ function installFetch() {
 
 const requestUrls = () => fetchSpy.mock.calls.map((c) => String(c[0]))
 const countMatching = (re: RegExp) => requestUrls().filter((u) => re.test(u)).length
+/** JSON bodies of the POST requests whose URL matches `re`. */
+const postBodies = (re: RegExp) => fetchSpy.mock.calls
+  .filter((c) => re.test(String(c[0])))
+  .map((c) => JSON.parse(String((c[1] as RequestInit | undefined)?.body ?? '{}')))
 
 const SESSIONS_ROUTE = /\/api\/sessions\?project=/
+const SESSIONS_START_ROUTE = /\/api\/sessions\/start/
 const GIT_STATUS_ROUTE = /\/api\/git\/[^/]+\/status/
 const PINNED_ROUTE = /\/api\/ui-state\/pinned-sessions\?project=/
 
@@ -153,5 +160,51 @@ describe('useWorkspaceData single-poller composition', () => {
     expect(typeof sessions.togglePin).toBe('function')
     expect(typeof sessions.reorderPinned).toBe('function')
     expect(typeof sessions.refresh).toBe('function')
+  })
+})
+
+// --- Worktree decouple (design §P3 sever-3) ---------------------------------
+//
+// The sessions resource is keyed by the BASE project — list reads by projectName,
+// a new session spawns in projectPath — independent of the selected worktree. The
+// worktree reaches ONLY the git resource. Proven at the data layer (fetch URLs +
+// POST body), so a regression that re-couples session cwd to the worktree fails
+// here, not just in the SessionsPanel render.
+describe('useWorkspaceData — sessions decoupled from the worktree', () => {
+  const WT = '/tmp/res-proj/.worktrees/wt'
+
+  beforeEach(() => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    installFetch()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('reads the session list by projectName while git follows the worktree path', async () => {
+    renderHook(() => useWorkspaceData({ ...makeOpts(), worktree: WT }))
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2))
+
+    const sessionUrls = requestUrls().filter((u) => SESSIONS_ROUTE.test(u))
+    expect(sessionUrls).toHaveLength(1)
+    expect(sessionUrls[0]).not.toContain('worktree=') // list ignores the worktree
+
+    const gitUrls = requestUrls().filter((u) => GIT_STATUS_ROUTE.test(u))
+    expect(gitUrls[0]).toContain(`worktree=${encodeURIComponent(WT)}`) // git follows it
+  })
+
+  it('starts a new session in the BASE projectPath, not the selected worktree', async () => {
+    const { result } = renderHook(() =>
+      useWorkspaceData({ ...makeOpts(), projectPath: '/tmp/res-proj', worktree: WT }),
+    )
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2))
+
+    await act(async () => { await result.current.sessions.startSession('codex') })
+
+    const starts = postBodies(SESSIONS_START_ROUTE)
+    expect(starts).toHaveLength(1)
+    expect(starts[0].cwd).toBe('/tmp/res-proj') // base root, never the worktree
   })
 })

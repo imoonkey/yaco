@@ -54,6 +54,10 @@ export interface WorkspaceData {
 
 export interface WorkspaceSessionsResourceOptions {
   projectName: string
+  /** Base project root — the cwd a NEW session spawns in. NOT the worktree (design
+   *  §P3: sessions decouple from the selected worktree; the worktree drives only the
+   *  file/git views, via the separate `worktree` field). History resume targets the
+   *  same base root, threaded separately in `SessionsPanel`. */
   projectPath: string
   onSessionChange?: () => void
   onAttachSession: (name: string) => void

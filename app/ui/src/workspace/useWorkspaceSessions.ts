@@ -262,6 +262,9 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     const id = `${STARTING_SESSION_PREFIX}${provider}:${pendingSeq.current++}`
     setPendingStarts(prev => [...prev, { id, provider, name: null, startedAt: Date.now() }])
     try {
+      // cwd = base project root (design §2/§6): a new interactive session spawns
+      // at the project root, never the selected worktree — worktree-bound runs go
+      // through the task/orchestration layer with an explicit cwd.
       const name = await startSession(provider, projectPath)
       setPendingStarts(prev => prev.map(p => (p.id === id ? { ...p, name } : p)))
       // Show the new session through the create-or-focus-or-bind path so it always
