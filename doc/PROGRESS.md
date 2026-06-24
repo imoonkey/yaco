@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-24: Set-done gate guard — leaf-→-done runs the exit gate (codify-process-gate v1 · T3)
+
+**What changed:**
+- `yaco task set` now refuses to mark a *leaf* `done` when the repo's exit gate is red or the session's worktree is dirty. Inside `runSet`'s locked block — after `validateState`/`rollup`/`stateEnteredAt`, before `saveTaskStore` — `guardLeafSetDone` runs `runGate(process.cwd())` and throws `CliError(INVALID)` (exit 1) listing the gaps (`failing checks: …` and/or `worktree has uncommitted changes`) when any check is `fail` or `dirty`, so a red gate persists nothing.
+- The guard fires on *exactly* a leaf transition into `done` (`state==="done" && oldState!=="done" && !hasChildren`). A milestone reaching `done` by `rollup()` is a different id the guard never inspects, so rollup-to-done is not gated.
+- Added `findGateScript(cwd): string | null` to `cli/src/lib/core/gate/index.ts`: the guard is **dormant** (returns early) unless the worktree has `scripts/gate.sh`, so projects that haven't adopted the gate keep marking leaves done. `runGate` itself stays fail-closed for the explicit `yaco gate` verb.
+- gitignored `*.lock.d/`: the task-store lock dir is held *inside* the repo while the guard runs, so without this the untracked lock would read as a dirty tree and spuriously refuse every leaf-→-done.
+
+**Why:**
+- v1 of codify-process-gate makes "silently skipping the verify floor" impossible: the gate is enforced at the moment a leaf is declared done, against the session's own diff (design §7④), reusing the same `runGate` the `yaco gate` verb (T2) exposes.
+- **`--json` envelope discipline (review HIGH):** the guard first inherited `gate.sh`'s verify-heavy stderr, so a red gate streamed progress *before* the one-line `{ok:false,error}` envelope; app/server's `runYacoTask` JSON.parses the whole stderr, turning a clean 400 INVALID into a 500 INTERNAL. Fixed by `runGate(cwd,{stderr})` — `"ignore"` under `--json` (discarded, never captured, so no spawnSync/ENOBUFS regression), `"inherit"` in text mode for live progress; `yaco gate` keeps the inherit default.
+
+**Key files:** `cli/src/commands/task/set.ts` (guardLeafSetDone), `cli/src/lib/core/gate/index.ts` (findGateScript, RunGateOptions.stderr), `cli/test/gate.test.ts` (5 guard tests), `.gitignore`.
+**Verification:** `cd cli && bun run test` → 1077 pass / 0 fail (guard suite 22/0); `bunx tsc --noEmit` clean. Guard tests drive the real CLI subprocess against a stub `scripts/gate.sh`: RED→exit 1 naming the failing check (write not persisted); GREEN+clean→done; GREEN+dirty→refused; milestone rollup→done not gated under a red gate; no `scripts/gate.sh`→dormant. Independent cross-provider review (Codex) found one HIGH (the `--json` stderr envelope pollution above); fixed at 4443ec50 + a whole-stderr-parse regression assertion; re-review verdict APPROVE / 0 unresolved. Review artifact: `plan/all/codify-some-process/review_codex_set-done-gate-guard.md`.
+**Commit:** eef61b38 (guard) + 4443ec50 (review fix) + this docs commit
+**Next:** T4 gate-skill-wiring (point /implement, /verify, /qa, /orchestrate at `yaco gate` / `scripts/verify.sh`).
+**Blockers:** None.
+
+
 ## 2026-06-24: Thin `yaco gate` verb over scripts/gate.sh (codify-process-gate v1 · T2)
 
 **What changed:**
