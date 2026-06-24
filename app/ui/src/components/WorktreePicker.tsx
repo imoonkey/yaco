@@ -25,12 +25,14 @@ interface WorktreePickerProps {
 }
 
 /** Resolve the currently-selected entry: the worktree whose id matches the
- *  selection, else the primary (selection === null), else the first listed. */
+ *  selection, else the primary, else the first listed. The primary fallback runs
+ *  even when `activeWorktree` is a non-null id that is no longer registered (a
+ *  stale selection App clears on its next pass), so the trigger never shows a
+ *  linked branch for a worktree that has gone away. */
 function currentEntry(worktrees: WorktreeInfo[], activeWorktree: string | null): WorktreeInfo {
-  const match = activeWorktree
-    ? worktrees.find(wt => wt.id === activeWorktree)
-    : worktrees.find(wt => wt.isPrimary)
-  return match ?? worktrees[0]
+  return worktrees.find(wt => wt.id === activeWorktree)
+    ?? worktrees.find(wt => wt.isPrimary)
+    ?? worktrees[0]
 }
 
 export function WorktreePicker({ worktrees, activeWorktree, onSelect }: WorktreePickerProps) {

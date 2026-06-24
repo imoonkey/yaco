@@ -314,6 +314,15 @@ describe('FilesPanel — worktree picker (the header dropdown the user clicks)',
     expect(within(trigger).getByText('main')).toBeTruthy()
   })
 
+  it('falls back to the primary branch when the selected id is gone (not the first row)', async () => {
+    // Linked worktree ordered BEFORE primary; the selection points at a worktree
+    // that is no longer registered. The trigger must show primary, not worktrees[0].
+    const linkedFirst: WorktreeInfo[] = [WORKTREES[1], WORKTREES[0]]
+    renderFilesPanel({ worktrees: linkedFirst, activeWorktree: '/abs/wt/gone' })
+    const trigger = await screen.findByLabelText('Select worktree')
+    expect(within(trigger).getByText('main')).toBeTruthy()
+  })
+
   it('opening the dropdown lists every worktree by branch + a primary chip', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
