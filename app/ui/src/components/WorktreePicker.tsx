@@ -1,19 +1,23 @@
-// WorktreePicker — the Files-header worktree selector (design: §P2).
+// WorktreePicker — the Files-panel-body worktree selector (design: §P2/§P2b).
 //
-// Trigger: a compact `GitBranch` + current branch label, composed INSIDE the
-// Explorer header's `flex items-center` actions row (the header-actions-one-row
-// constraint — a control appended after the actions div wraps into the resize
-// handle). Body: a body-anchored, fixed-position dropdown (same technique as
-// `RefSearchDropdown` — anchor ref + `position: fixed`, so it escapes the header)
-// listing every git-registered worktree by BRANCH name, the main working tree
-// tagged with a `primary` chip, each row carrying a dirty dot + ahead/behind.
+// Lives at the TOP of the Files panel body (mirroring how `CompareRefPicker` sits
+// atop the Changes body), styled like the Changes "Compare ref" box: an accent
+// top-border + tinted container whose trigger is a Compare-ref row — a small
+// `worktree` label column, the current branch in mono, and a rotating `ChevronDown`.
+//
+// Body: a body-anchored, fixed-position dropdown (same technique as
+// `RefSearchDropdown` — anchor ref + `position: fixed`) listing every git-registered
+// worktree by BRANCH name, the main working tree tagged with a `primary` chip, each
+// row carrying ahead/behind + a dirty dot. Rows follow the RefSearchDropdown idiom
+// (h-[24px], blue-12% focus bg, mouseEnter focus); there is no search input — the
+// list is short.
 //
 // The list is git-sourced (P1: `useProjectWorktrees`), so manually-created and
 // task-less worktrees appear. Selecting a row calls `onSelect(id | null)` — the
 // primary maps to `null`, every other worktree to its absolute-path id.
 import { useState, useRef, useEffect } from 'react'
 import type { CSSProperties } from 'react'
-import { GitBranch, Check } from 'lucide-react'
+import { GitBranch, ChevronDown, Check } from 'lucide-react'
 import { DialogShell } from './DialogShell'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 
@@ -40,26 +44,53 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect }: Worktree
   const anchorRef = useRef<HTMLButtonElement>(null)
 
   // Nothing to pick (non-git project, or the list is still loading): render no
-  // affordance rather than an empty trigger.
+  // affordance rather than an empty box.
   if (worktrees.length === 0) return null
 
   const current = currentEntry(worktrees, activeWorktree)
 
   return (
-    <>
+    <div
+      className="mx-1 mt-1 rounded-md flex flex-col shrink-0"
+      style={{
+        borderTop: '2px solid var(--sol-accent)',
+        backgroundColor: 'color-mix(in srgb, var(--sol-accent) 3%, var(--sol-bg))',
+      }}
+    >
+      {/* Trigger row — the Compare-ref row idiom (label · mono value · chevron).
+          A <button> (not the CompareRefPicker <div>) so the `Select worktree`
+          aria-label selector stays a stable form control; the flex-col parent
+          stretches it to full width. */}
       <button
         ref={anchorRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-1 h-[18px] rounded text-ui-xs font-medium normal-case tracking-normal cursor-pointer min-w-0 max-w-[140px]"
-        style={{ color: open ? 'var(--sol-blue)' : 'var(--sol-text-dim)' }}
+        className="flex items-center h-[22px] cursor-pointer rounded-sm mx-1 my-1"
+        style={{ transition: 'background-color 120ms' }}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
         title={`Worktree: ${current.name}`}
         aria-label="Select worktree"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <GitBranch size={12} className="shrink-0" />
-        <span className="truncate">{current.branch}</span>
+        <span
+          className="shrink-0 text-ui-2xs uppercase tracking-wider font-semibold px-1.5"
+          style={{ color: 'var(--sol-text)' }}
+        >worktree</span>
+        <span
+          className="flex-1 text-ui-md truncate font-medium text-left"
+          style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
+        >{current.branch}</span>
+        <ChevronDown
+          size={10}
+          className="shrink-0 mr-1"
+          style={{
+            color: open ? 'var(--sol-accent)' : 'var(--sol-text)',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
+          }}
+        />
       </button>
       {open && (
         <WorktreeDropdown
@@ -70,15 +101,14 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect }: Worktree
           onClose={() => setOpen(false)}
         />
       )}
-    </>
+    </div>
   )
 }
 
-const DROPDOWN_WIDTH = 248
-
 /** The body-anchored worktree list. Mounts only while open (state resets
  *  naturally); position is computed from the trigger in an effect so the ref is
- *  not read during render, then right-clamped so it never spills past the viewport. */
+ *  not read during render, then right-clamped so it never spills past the viewport.
+ *  Focus starts on the active row and follows the mouse (RefSearchDropdown idiom). */
 function WorktreeDropdown({ anchorRef, worktrees, activeWorktree, onSelect, onClose }: {
   anchorRef: React.RefObject<HTMLElement | null>
   worktrees: WorktreeInfo[]
@@ -86,13 +116,17 @@ function WorktreeDropdown({ anchorRef, worktrees, activeWorktree, onSelect, onCl
   onSelect: (id: string | null) => void
   onClose: () => void
 }) {
-  const [posStyle, setPosStyle] = useState<CSSProperties>({ position: 'fixed', left: 0, top: 0, width: DROPDOWN_WIDTH })
+  const activeIdx = Math.max(0, worktrees.findIndex(wt =>
+    wt.isPrimary ? activeWorktree === null : wt.id === activeWorktree))
+  const [focusIdx, setFocusIdx] = useState(activeIdx)
+  const [posStyle, setPosStyle] = useState<CSSProperties>({ position: 'fixed', left: 0, top: 0, width: 200 })
   useEffect(() => {
     const anchor = anchorRef.current
     if (!anchor) return
     const rect = anchor.getBoundingClientRect()
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - DROPDOWN_WIDTH - 8))
-    setPosStyle({ position: 'fixed', left, top: rect.bottom + 4, width: DROPDOWN_WIDTH })
+    const width = Math.max(rect.width, 200)
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+    setPosStyle({ position: 'fixed', left, top: rect.bottom + 4, width })
   }, [anchorRef])
 
   return (
@@ -110,8 +144,9 @@ function WorktreeDropdown({ anchorRef, worktrees, activeWorktree, onSelect, onCl
       style={posStyle}
     >
       <div role="listbox" aria-label="Worktrees" className="flex flex-col max-h-[min(320px,50vh)] overflow-y-auto">
-        {worktrees.map(wt => {
+        {worktrees.map((wt, idx) => {
           const isActive = wt.isPrimary ? activeWorktree === null : wt.id === activeWorktree
+          const isFocused = idx === focusIdx
           return (
             <button
               key={wt.id}
@@ -120,11 +155,13 @@ function WorktreeDropdown({ anchorRef, worktrees, activeWorktree, onSelect, onCl
               aria-selected={isActive}
               data-worktree-id={wt.id}
               onClick={() => onSelect(wt.isPrimary ? null : wt.id)}
-              className={`flex items-center gap-1.5 px-2 h-[26px] text-ui-md cursor-pointer text-left ${
-                isActive
-                  ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)] font-medium'
-                  : 'text-[var(--sol-text)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
-              }`}
+              onMouseEnter={() => setFocusIdx(idx)}
+              className="flex items-center gap-1.5 px-2 h-[24px] text-ui-md cursor-pointer text-left"
+              style={{
+                backgroundColor: isFocused ? 'color-mix(in srgb, var(--sol-blue) 12%, transparent)' : undefined,
+                color: isFocused ? 'var(--sol-blue)' : 'var(--sol-text)',
+                transition: 'background-color 80ms',
+              }}
               title={wt.name}
             >
               <GitBranch size={11} className="shrink-0 opacity-60" />

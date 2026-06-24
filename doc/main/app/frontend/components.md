@@ -46,7 +46,7 @@ App (384 lines)
         ├── FileExplorer (435 lines)
         │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon
         │   └── fileExplorerNode — git letter indicators (M/A/D/U)
-        ├── ProjectList (~146 lines) — project rows only (worktree selection moved to the Files-header WorktreePicker, §P2)
+        ├── ProjectList (~146 lines) — project rows only (worktree selection moved to the Files-panel-body WorktreePicker, §P2/§P2b)
         ├── Menu — compact shared context menu: keyboard nav (Arrow/Enter/Home/End), long-press (350ms), iOS native-callout suppression
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
@@ -251,7 +251,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceSidebar.tsx` | 26 | GitChangeItem component — status pill badges, active left accent border |
 | `CompareRefPicker.tsx` | ~120 | Vertical two-row ref selector (base/compare) with swap animation, opens RefSearchDropdown |
 | `RefSearchDropdown.tsx` | ~250 | Search-first ref picker dropdown — filter tabs (All/Branches/Tags/Commits), fuzzy search, grouped sections, keyboard nav, relative dates + author on commits |
-| `WorktreePicker.tsx` | ~165 | Files-header worktree selector (§P2). Trigger = `GitBranch` + current branch, composed inside `useFilesHeader`'s `flex items-center` actions row; body-anchored fixed dropdown (RefSearchDropdown technique) lists every git-sourced worktree by branch, primary chip on the main working tree, dirty dot + ahead/behind per row. Select → `env.selectWorktree(id \| null)` (primary → null). |
+| `WorktreePicker.tsx` | ~190 | Worktree selector INSIDE the Files panel body, atop the tree/search swap (§P2/§P2b) — styled like the Changes "Compare ref" box: accent top-border + tinted container, a Compare-ref trigger row (`worktree` label · current branch in mono · rotating `ChevronDown`). Body-anchored fixed dropdown (RefSearchDropdown technique + row idiom: h-[24px], blue-12% focus bg, mouseEnter focus) lists every git-sourced worktree by branch, primary chip on the main working tree, dirty dot + ahead/behind per row, Check on the active. No search input (the list is short). Select → `env.selectWorktree(id \| null)` (primary → null). |
 | `SectionHeader.tsx` | 17 | Shared collapsible section header (uppercase, ARIA expand) |
 
 ## FileExplorer

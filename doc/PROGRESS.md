@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-24: Worktree selector restyled to the Compare-ref box, moved into the Files panel body (worktree-explorer-view P2b)
+
+**What changed:**
+- `app/ui/src/components/WorktreePicker.tsx`: restyled to the Changes "Compare ref" idiom. The bare `GitBranch` + branch chip is replaced by a boxed selector — `mx-1 mt-1 rounded-md`, `borderTop: 2px solid var(--sol-accent)`, tinted bg `color-mix(in srgb, var(--sol-accent) 3%, var(--sol-bg))` — whose trigger is a Compare-ref row: a small uppercase `worktree` label column, the current branch in mono (`var(--font-mono)`, letterSpacing -0.01em, `var(--sol-text-dark)`), and a `ChevronDown` (size 10) that rotates 180° + turns `var(--sol-accent)` when open. The trigger stays a `<button>` (so the `aria-label="Select worktree"` selector remains a stable form control). The floating `DialogShell` dropdown is kept (anchored to the trigger) but its rows now follow the `RefSearchDropdown` idiom — `h-[24px] text-ui-md`, focus bg `color-mix(in srgb, var(--sol-blue) 12%, transparent)` + `var(--sol-blue)`, `onMouseEnter` sets focus (initialised on the active row). All behaviour preserved: git-sourced list, `primary` chip, dirty dot, ahead/behind, `Check` on the active row, `role="option"` + `data-worktree-id`, listbox `aria-label="Worktrees"`, the `worktrees.length === 0` null guard. No search input / filter tabs (the list is short).
+- `app/ui/src/workspace/panels/FilesPanel.tsx`: the picker moved OUT of the framed header (`useFilesHeader`) and into the panel BODY — rendered at the top of `<div className="h-full min-h-0 flex flex-col">`, above the explorer/text-search swap, mirroring how `CompareRefPicker` sits atop the Changes body. It now scopes BOTH the tree and the text-search views (the old header chip showed in tree mode only).
+- Tests: `app/ui/src/workspace/panels/__tests__/FilesPanel.test.tsx` — the worktree-picker block now asserts the in-body placement (the trigger is inside the explorer's flex-col body wrapper, not the header subtree) and that the picker also shows in search mode; existing trigger/list/select assertions unchanged (stable selectors). `app/ui/tests/e2e/worktree{,-external,-persist}.spec.ts` — comments/titles updated from "header" to the in-panel picker; selectors (`getByLabel('Select worktree')`, listbox, `data-worktree-id`) unchanged.
+
+**Why:**
+- The worktree selector and the Changes "Compare ref" selector do the same kind of job — pick the ref/worktree that scopes the panel below — so they should read the same. Hiding the worktree picker as a header chip made it easy to miss and inconsistent with Compare ref; moving it into the body atop the tree/search swap (where Compare ref lives in the Changes body) makes the "this scopes everything below" relationship visible and uniform.
+
+**Key files:** `app/ui/src/components/WorktreePicker.tsx`, `app/ui/src/workspace/panels/FilesPanel.tsx`, `app/ui/src/workspace/panels/__tests__/FilesPanel.test.tsx`, `app/ui/tests/e2e/worktree{,-external,-persist}.spec.ts`, `doc/main/app/frontend/components.md`.
+**Verification:** `app/ui` `npx tsc -b` (clean) + `npm run lint` (clean) + `npm test` (**1087 passed**, +2 in-body placement tests). Isolated static-build e2e — the full worktree trio `worktree.spec.ts` + `worktree-persist.spec.ts` + `worktree-external.spec.ts` → **9 passed**. Visual confirmation via a throwaway screenshot spec (accent-bordered box atop the Files body, rotating chevron, mono value; dropdown rows with primary chip + dirty dot + ahead/behind + active Check). Cross-provider Codex review + `/qa` artifacts under `plan/all/worktree-explorer-view/`.
+**Design:** [plan/all/worktree-explorer-view/impl-plan_p2b-picker-inpanel.md](../plan/all/worktree-explorer-view/impl-plan_p2b-picker-inpanel.md).
+**Next:** none for this change; worktree-explorer-view follow-ups (external-path session labels, "open terminal in this worktree") remain as design Non-goals.
+**Blockers:** None.
+
 ## 2026-06-24: External-worktree end-to-end capstone (worktree-explorer-view P3 e2e-verify, the final leaf)
 
 **What changed:**

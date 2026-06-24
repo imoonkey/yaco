@@ -179,6 +179,15 @@ export function FilesPanel() {
   // (WorkspaceLayout.tsx). The framed header is supplied by PanelFrame.
   return (
     <div className="h-full min-h-0 flex flex-col">
+      {/* The worktree selector scopes BOTH the tree and the text-search views, so
+          it sits atop the body (above the tree/search swap) — mirroring how
+          CompareRefPicker sits atop the Changes body. Null-guards itself away when
+          the project has no git worktrees. */}
+      <WorktreePicker
+        worktrees={env.worktrees}
+        activeWorktree={env.activeWorktree}
+        onSelect={env.selectWorktree}
+      />
       {showTextSearch ? (
         <Suspense fallback={TextSearchFallback}>
           <LazyWorkspaceTextSearch
@@ -256,11 +265,6 @@ function useFilesHeader(): PanelHeaderSlots {
     </div>
   ) : (
     <div className="flex gap-0.5 items-center">
-      <WorktreePicker
-        worktrees={env.worktrees}
-        activeWorktree={env.activeWorktree}
-        onSelect={env.selectWorktree}
-      />
       <button
         type="button"
         onClick={() => commands.setFilesMode('search')}

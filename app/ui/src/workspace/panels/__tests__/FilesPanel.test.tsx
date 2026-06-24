@@ -296,7 +296,7 @@ describe('FilesPanel — file-reveal controller', () => {
   })
 })
 
-describe('FilesPanel — worktree picker (the header dropdown the user clicks)', () => {
+describe('FilesPanel — worktree picker (the in-body dropdown the user clicks)', () => {
   const WORKTREES: WorktreeInfo[] = [
     { id: '/demo', name: 'demo (primary)', branch: 'main', head: 'aaa1111', isPrimary: true, dirty: false, ahead: 0, behind: 0 },
     { id: '/abs/wt/feature-x', name: 'feature-x', branch: 'task/feature-x', head: 'bbb2222', isPrimary: false, dirty: true, ahead: 2, behind: 1 },
@@ -306,6 +306,28 @@ describe('FilesPanel — worktree picker (the header dropdown the user clicks)',
     renderFilesPanel({ worktrees: [] })
     await screen.findByLabelText('Search in files')
     expect(screen.queryByLabelText('Select worktree')).toBeNull()
+  })
+
+  it('renders the picker INSIDE the panel body (atop the explorer), not the header', async () => {
+    const { container } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
+    const trigger = await screen.findByLabelText('Select worktree')
+    // The body is the flex column that also holds the explorer's flex-fill root;
+    // the picker is a sibling above it (it moved out of the framed header).
+    const explorerRoot = container.querySelector('.flex-1.min-h-0.min-w-0')
+    const body = explorerRoot?.parentElement
+    expect(body?.className).toContain('flex-col')
+    expect(body?.contains(trigger)).toBe(true)
+    // The header toolbar (Search/New File/...) is a SEPARATE subtree from the picker.
+    const searchBtn = screen.getByLabelText('Search in files')
+    expect(body?.contains(searchBtn)).toBe(false)
+  })
+
+  it('the picker also scopes search mode (visible above the text-search body)', async () => {
+    // It moved to the body atop the tree/search swap, so unlike the old header chip
+    // (tree-mode only) it now shows in search mode too — both views are worktree-scoped.
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null, showTextSearch: true })
+    expect(await screen.findByText('text-search-body')).toBeTruthy()
+    expect(screen.getByLabelText('Select worktree')).toBeTruthy()
   })
 
   it('the trigger shows the current branch (primary when nothing is selected)', async () => {

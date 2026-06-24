@@ -57,10 +57,11 @@ test.describe('Worktree features', () => {
     expect(uiTask.worktreeStatus).toBeUndefined()
   })
 
-  // Worktree selection moved from the ProjectList sub-list to the File Explorer
-  // header dropdown (design §P2). These two specs drive that REAL affordance — the
-  // trigger the user clicks — and assert the observable outcome: the listed
-  // worktrees, and the explorer re-rooting to the selected worktree's tree.
+  // Worktree selection moved from the ProjectList sub-list to a picker INSIDE the
+  // File Explorer panel body, styled like the Changes "Compare ref" box (design
+  // §P2/§P2b). These two specs drive that REAL affordance — the trigger the user
+  // clicks — and assert the observable outcome: the listed worktrees, and the
+  // explorer re-rooting to the selected worktree's tree.
   const worktreePicker = (page: Page) => page.getByLabel('Select worktree')
   const worktreeList = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
   async function openWorktreePicker(page: Page) {
@@ -69,7 +70,7 @@ test.describe('Worktree features', () => {
     await expect(worktreeList(page)).toBeVisible({ timeout: 5_000 })
   }
 
-  test('the Files header picker lists every git worktree by branch + a primary chip', async ({ page }) => {
+  test('the Files panel picker lists every git worktree by branch + a primary chip', async ({ page }) => {
     await selectProject(page, fixture.name)
     await openWorktreePicker(page)
 
@@ -80,7 +81,7 @@ test.describe('Worktree features', () => {
     await expect(list.getByText('primary', { exact: true })).toBeVisible()
   })
 
-  test('selecting a worktree in the header re-roots the file explorer', async ({ page }) => {
+  test('selecting a worktree in the Files panel re-roots the file explorer', async ({ page }) => {
     await selectProject(page, fixture.name)
     await openWorktreePicker(page)
 

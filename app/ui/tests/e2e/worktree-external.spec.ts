@@ -24,7 +24,7 @@ import {
 //   and the session list are all unchanged. Selecting primary returns to the main
 //   tree.
 //
-// Drives the REAL affordances (the Files-header picker, the session row, the tab
+// Drives the REAL affordances (the in-panel Files picker, the session row, the tab
 // the user clicks) and asserts user-observable outcomes (which tree is shown, which
 // bytes the editor holds, that the same socket stays open), never selector presence.
 
@@ -201,7 +201,7 @@ test.describe('Worktree-as-view: external worktree end-to-end', () => {
     expect(sessionCountBefore).toBeGreaterThan(0)
     await expect(sessionRow(page, session)).toBeVisible()
 
-    // --- THE SWITCH: select the EXTERNAL worktree in the Files-header picker. ---
+    // --- THE SWITCH: select the EXTERNAL worktree in the in-panel Files picker. ---
     await selectWorktreeRow(page, fixture.branch)
 
     // The switch actually happened: the explorer re-rooted to the worktree (its
