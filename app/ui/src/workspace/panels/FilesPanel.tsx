@@ -75,11 +75,12 @@ const NOOP_DRAIN = (): void => {}
 
 // --- Worktree-picker open store ------------------------------------------
 //
-// The worktree DROPDOWN is opened from the framed HEADER (`useFilesHeader`) but renders
-// (and anchors) in the BODY. PanelFrame draws those two as SIBLINGS, so they share no
-// React state — the open boolean lives in this module store instead (mirroring
-// ChangesPanel's `compareSlot`). KISS: one open flag per project, keyed by name, read
-// through `useSyncExternalStore`. A project with no slot reads the default (closed).
+// The worktree list is toggled from the framed HEADER (`useFilesHeader`) but renders
+// INLINE in the BODY (an accent box, like Changes' CompareRefPicker). PanelFrame draws
+// those two as SIBLINGS, so they share no React state — the open boolean lives in this
+// module store instead (mirroring ChangesPanel's `compareSlot`). KISS: one open flag per
+// project, keyed by name, read through `useSyncExternalStore`. A project with no slot
+// reads the default (closed).
 const worktreePickerOpen = new Map<string, boolean>()
 const worktreePickerListeners = new Set<() => void>()
 
@@ -224,13 +225,14 @@ export function FilesPanel() {
   // (WorkspaceLayout.tsx). The framed header is supplied by PanelFrame.
   return (
     <div className="h-full min-h-0 flex flex-col">
-      {/* Worktree selector (design §P2d, mirroring Changes' "Compare ref"):
-          - PRIMARY active → nothing persistent shows (the header GitBranch toggle is
-            the entry point that opens the floating dropdown).
+      {/* Worktree selector (design §P2e, mirroring Changes' "Compare ref"):
+          - PRIMARY active + closed → nothing persistent shows (the header GitBranch
+            toggle is the entry point that opens the inline list).
           - A NON-PRIMARY worktree active → a persistent indicator box shows here AT ALL
             TIMES (tree AND search mode — it scopes both views), reminding the user and
-            offering an X to remove (→ primary). Selecting in the dropdown re-roots the
-            explorer; `WorktreePicker` self-guards when the project has no worktrees. */}
+            offering an X to remove (→ primary). The selector renders INLINE in the body
+            (an accent box that pushes the tree down), like CompareRefPicker — not a
+            floating dropdown; `WorktreePicker` self-guards when there are no worktrees. */}
       <WorktreePicker
         worktrees={env.worktrees}
         activeWorktree={env.activeWorktree}
@@ -286,10 +288,11 @@ function useFilesHeader(): PanelHeaderSlots {
   const pickerOpen = useWorktreePickerOpen(projectName)
 
   // Worktree toggle (tree mode only). Renders only when the project has git worktrees —
-  // like Compare ref's header toggle: GitBranch flips the dropdown-open store
-  // (aria-pressed). The title carries the active branch so hover shows which worktree
-  // is selected. There is no header X: the dropdown self-closes (outside-click / Escape
-  // / re-toggle), and REMOVING a worktree (→ primary) is the body indicator's own X.
+  // like Compare ref's header toggle: GitBranch flips the open store (aria-pressed) that
+  // reveals the INLINE worktree list in the body. The title carries the active branch so
+  // hover shows which worktree is selected. There is no header X: the toggle closes the
+  // list (re-toggle / select), and REMOVING a worktree (→ primary) is the body
+  // indicator's own X.
   const current = currentWorktreeEntry(env.worktrees, env.activeWorktree)
   const worktreeToggle = current && (
     <button

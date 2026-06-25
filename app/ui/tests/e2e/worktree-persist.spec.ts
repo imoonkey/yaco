@@ -32,7 +32,7 @@ import {
 // The main checkout additionally carries the `.worktrees/` dir (the linked
 // worktree checkouts) which is absent from the worktree's own tree.
 
-// auth-v2's branch label as shown in the Files-panel worktree dropdown (§P2d).
+// auth-v2's branch label as shown in the Files-panel worktree list (§P2e).
 const AUTH_BRANCH = 'task/auth-v2'
 const MAIN_DRAFT_MARKER = '__MAIN_ONLY_DRAFT__'
 
@@ -41,8 +41,8 @@ const searchInput = (page: Page) =>
   page.locator('input[placeholder="Search files..."], input[placeholder="Loading files..."]')
 const searchRows = (page: Page) => page.locator('[data-search-result-idx]')
 
-// The Files header worktree toggle opens a FLOATING DROPDOWN (HIDDEN by default;
-// mirrors worktree.spec.ts and Changes' Compare-ref mode, design §P2d).
+// The Files header worktree toggle reveals an INLINE list in the panel body (HIDDEN by
+// default; mirrors worktree.spec.ts and Changes' Compare-ref mode, design §P2e).
 const worktreeToggle = (page: Page) => page.getByLabel('Select worktree')
 const worktreeList = (page: Page) => page.getByRole('listbox', { name: 'Worktrees' })
 async function openWorktreePicker(page: Page): Promise<void> {
@@ -62,7 +62,7 @@ function draftsBlobContains(page: Page, project: string, marker: string): Promis
 }
 
 /** Load the app, select the fixture project, and wait for the Files-header worktree
- *  toggle to be available (the worktree selector is header-toggled in §P2d). */
+ *  toggle to be available (the worktree selector is header-toggled in §P2e). */
 async function openFixture(page: Page, name: string): Promise<void> {
   await page.goto('/')
   await waitForAppReady(page)
@@ -70,7 +70,7 @@ async function openFixture(page: Page, name: string): Promise<void> {
   await expect(worktreeToggle(page)).toBeVisible({ timeout: 15_000 })
 }
 
-/** Pick the auth-v2 worktree from the Files-panel dropdown; confirm the workspace
+/** Pick the auth-v2 worktree from the Files-panel inline list; confirm the workspace
  *  re-rooted to it (the worktree-only `wip.txt` appears in the file tree) and the
  *  picker closed (mirrors Compare ref's exit-on-select). */
 async function switchToWorktree(page: Page): Promise<void> {

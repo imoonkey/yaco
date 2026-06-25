@@ -299,7 +299,7 @@ describe('FilesPanel — file-reveal controller', () => {
   })
 })
 
-describe('FilesPanel — worktree picker (header toggle → floating dropdown + non-default indicator)', () => {
+describe('FilesPanel — worktree picker (header toggle → INLINE list + non-default indicator)', () => {
   const WORKTREES: WorktreeInfo[] = [
     { id: '/demo', name: 'demo (primary)', branch: 'main', head: 'aaa1111', isPrimary: true, dirty: false, ahead: 0, behind: 0 },
     { id: '/abs/wt/feature-x', name: 'feature-x', branch: 'task/feature-x', head: 'bbb2222', isPrimary: false, dirty: true, ahead: 2, behind: 1 },
@@ -318,27 +318,30 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(screen.queryByRole('button', { name: /^Worktree: / })).toBeNull()
   })
 
-  it('PRIMARY active: header toggle present, no persistent indicator, dropdown hidden', async () => {
+  it('PRIMARY active + closed: header toggle present, no persistent indicator, list hidden', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     expect(await screen.findByLabelText('Select worktree')).toBeTruthy()
     // Compare ref shows nothing on the default → no indicator box for primary.
     expect(screen.queryByRole('button', { name: /^Worktree: / })).toBeNull()
-    // The dropdown is not rendered until the toggle is clicked.
+    // The list is not rendered until the toggle is clicked.
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
   })
 
-  it('clicking the header toggle opens a floating dropdown rendered IN the panel body', async () => {
+  it('clicking the header toggle reveals the worktree list INLINE in the panel body (no floating overlay)', async () => {
     const { container } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
 
     const list = worktreeList()
-    // The dropdown (DialogShell overlay=false) renders in place inside the body — the
-    // flex column that also holds the explorer's flex-fill root. The header toolbar is
-    // a SEPARATE subtree.
+    // The list renders INLINE — a sibling of the explorer's flex-fill root inside the
+    // same flex-column body (it pushes the tree down), like CompareRefPicker. It is NOT a
+    // floating DialogShell overlay (no role=dialog), and the header toolbar is a SEPARATE
+    // subtree.
+    expect(screen.queryByRole('dialog')).toBeNull()
     const explorerRoot = container.querySelector('.flex-1.min-h-0.min-w-0')
     const body = explorerRoot?.parentElement
     expect(body?.className).toContain('flex-col')
     expect(body?.contains(list)).toBe(true)
+    expect(body?.contains(explorerRoot ?? null)).toBe(true)
     expect(body?.contains(screen.getByLabelText('Search in files'))).toBe(false)
   })
 
@@ -368,7 +371,7 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(screen.queryByRole('button', { name: /^Worktree: / })).toBeNull()
   })
 
-  it('opening the dropdown shows every worktree by branch + a primary chip', async () => {
+  it('opening the list shows every worktree by branch + a primary chip', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
 
@@ -378,7 +381,7 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(within(list).getByText('primary')).toBeTruthy()
   })
 
-  it('clicking a linked worktree row binds it by id AND closes the dropdown', async () => {
+  it('clicking a linked worktree row binds it by id AND closes the list', async () => {
     const { selectWorktree } = renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
 
@@ -386,7 +389,7 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(row).toBeTruthy()
     fireEvent.click(row)
     expect(selectWorktree).toHaveBeenCalledWith('/abs/wt/feature-x')
-    // Selecting closes the dropdown — the list is gone and the toggle resets to closed.
+    // Selecting closes the list — it is gone and the toggle resets to closed.
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
     expect(screen.getByLabelText('Select worktree')).toBeTruthy()
   })
@@ -404,7 +407,7 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
   })
 
-  it('the header toggle relabels when open and closes the dropdown (there is no header X)', async () => {
+  it('the header toggle relabels when open and closes the list (there is no header X)', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
     fireEvent.click(await screen.findByLabelText('Select worktree'))
     expect(worktreeList()).toBeTruthy()
@@ -414,15 +417,15 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(screen.getByLabelText('Hide worktree picker')).toBeTruthy()
     expect(screen.queryByLabelText('Close worktree picker')).toBeNull()
 
-    // The relabeled toggle itself closes the dropdown.
+    // The relabeled toggle itself closes the list.
     fireEvent.click(screen.getByLabelText('Hide worktree picker'))
     expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
     expect(screen.getByLabelText('Select worktree')).toBeTruthy()
   })
 
-  it('NON-PRIMARY active: a persistent indicator box shows the worktree branch (dropdown closed)', async () => {
+  it('NON-PRIMARY active + closed: a persistent indicator box shows the worktree branch (list closed)', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
-    // The reminder is shown at all times for a non-default worktree, with no dropdown open.
+    // The reminder is shown at all times for a non-default worktree, with the list closed.
     const region = await screen.findByRole('button', { name: 'Worktree: task/feature-x' })
     expect(within(region).getByText('task/feature-x')).toBeTruthy()
     expect(removeButton()).toBeTruthy()
@@ -445,11 +448,13 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     expect(selectWorktree).toHaveBeenCalledWith(null)
   })
 
-  it('clicking the indicator region opens the dropdown anchored at the box', async () => {
+  it('clicking the indicator region opens the inline list', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
     fireEvent.click(await screen.findByRole('button', { name: 'Worktree: task/feature-x' }))
-    // The same git-sourced dropdown opens (the indicator is itself a trigger).
+    // The same git-sourced list opens inline (the indicator is itself a trigger). When
+    // open, the indicator collapses into the list (no role=dialog overlay).
     const list = worktreeList()
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(within(list).getByText('main')).toBeTruthy()
     expect(within(list).getByText('task/feature-x')).toBeTruthy()
   })
@@ -460,17 +465,5 @@ describe('FilesPanel — worktree picker (header toggle → floating dropdown + 
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
     const region = await screen.findByRole('button', { name: 'Worktree: task/feature-x' })
     expect(region.tagName).toBe('BUTTON')
-  })
-
-  it('opening the dropdown moves focus ONTO the active option (not left on the trigger)', async () => {
-    // Guards the stray-Enter reopen regression: the dropdown autofocuses its active row,
-    // so the header toggle is not left focused-and-armed after opening (a focused toggle
-    // + a later Enter would otherwise re-activate it). Pairs with restoreFocus={false}.
-    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: null })
-    const toggle = await screen.findByLabelText('Select worktree')
-    fireEvent.click(toggle)
-    const activeOption = worktreeList().querySelector('[data-worktree-id="/demo"]') as HTMLElement
-    expect(document.activeElement).toBe(activeOption)
-    expect(document.activeElement).not.toBe(toggle)
   })
 })
