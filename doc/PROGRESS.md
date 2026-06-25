@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-25: gate.sh — review/qa freshness = "no code since reviewed_sha", not exact-HEAD-sha (codify-process-gate v1 follow-up · F0)
+
+**What changed:**
+- `scripts/gate.sh`: the `review`/`qa` freshness rule no longer requires a `plan/` artifact to literally contain the **current HEAD short sha** (the deleted `artifact_refs_head`). It now reads `reviewed_sha` **from** the artifact and treats the review as fresh iff `git diff <reviewed_sha>..HEAD --no-renames --name-only` touches **no code root** `^(src|cli|app)/`; `qa` is the same against `^app/ui/`. So a review stays valid through docs/plan-only commits stacked on reviewed code (the **docs-tail footgun** — a docs commit moved HEAD and false-staled the review), while a code commit landing after the review correctly goes stale. The code-touch predicate is now **one definition** (`code_roots_re` / `ui_root_re`) reused by both the floor mapping and the freshness check, so they can never diverge.
+- New helpers: `extract_reviewed_sha` (field-anchored parse — `(^|[^a-z0-9_])reviewed_sha[:=]…` so a substring like `unreviewed_sha:` is **not** mistaken for the field; handles `reviewed_sha:` headers, the `reviewed_sha=` verdict-line form, markdown `**reviewed_sha:**`, backtick-wrapped, and 7- to 40-char shas) and `artifact_is_fresh <touch-regex> <glob>` (the sha must be a known commit **and** an ancestor of HEAD — a missing / unknown / rebased-orphaned sha can't prove the review covers HEAD's history → stale; **any one** fresh artifact passes).
+- `scripts/gate.test.sh`: +10 cases (15 → **25**). F0 freshness: docs-tail stays `review=pass` (the footgun fix), code-after-review → stale, non-ancestor reviewed_sha → stale, missing `reviewed_sha` line → not fresh, multiple artifacts → any-fresh-wins, qa-vs-review predicate divergence (a `cli/` commit staling review while `qa` stays fresh), 40-char sha; plus the parser-format guards from review (verdict-line `=`, markdown+backtick, and the `unreviewed_sha:` substring rejection).
+
+**Why:**
+- The v1 gate keyed `review` freshness on an **exact HEAD short-sha match** inside the artifact. A docs-only tail commit (the standard "stamp the review artifact, then commit a docs tail" flow this very project uses) moves HEAD, so the artifact — referencing the reviewed **code** sha — no longer matched and the review reported a false `stale`, blocking `yaco task set <leaf> done` / the `/implement` self-check on work that was actually reviewed. Freshness should ask "is there unreviewed **code** since the review?", not "does the artifact name today's HEAD?".
+
+**Key files:** `scripts/gate.sh`, `scripts/gate.test.sh`.
+**Verification:** `scripts/gate.test.sh` **25/25**; `scripts/verify.sh` green (cli 1077/0, server 751/751, ui lint clean, build ok); `extract_reviewed_sha` validated against the repo's real artifact prose (short, full-40, markdown-bold+backtick, inline `=`) and rejecting `unreviewed_sha:` / `pre_reviewed_sha:`. Independent cross-provider review (Codex, default model, two rounds): R1 caught a real **HIGH** — the parser matched `reviewed_sha` as a bare substring, so `unreviewed_sha: <fresh-sha>` forged freshness (reproduced `review=pass`) — plus a MEDIUM (formats untested); the fix anchored the field boundary + added the three format/rejection cases; R2 (fresh context) re-reviewed → **0 critical / 0 high**. `gate.sh` is interpreted by path, so the change is live on merge with no re-install.
+**Design:** [plan/all/codify-some-process/cn/design.md §11](../plan/all/codify-some-process/cn/design.md) (F0 row); review artifact [plan/all/codify-some-process/review_codex_gate-freshness-backfill.md](../plan/all/codify-some-process/review_codex_gate-freshness-backfill.md).
+**Next:** v2 `T5 gate-memo` (content-hash memo over the working tree) builds on this freshness rule; T6 Stop hook stays DEFERRED (design §11.1). Do **not** mark the task done or merge — orchestrate gatekeeps + merges.
+**Blockers:** None.
+
 ## 2026-06-24: Worktree picker renders INLINE in the panel body (drops the floating dropdown), matching Compare-ref's box (worktree-explorer-view P2e)
 
 **What changed:**

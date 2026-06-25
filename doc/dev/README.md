@@ -22,9 +22,11 @@ convention as `scripts/worktree-provision.sh`):
 | [`scripts/gate.sh <base>`](../../scripts/gate.sh) | Floor-from-diff aggregator. Computes `git diff <base>..HEAD`, maps touched paths to the checks they owe (code→`verify`+`review`, `app/ui`→`qa`, any change→`doc`), runs every owed check, and prints a one-line JSON summary `{verify,doc,review,qa: pass\|fail\|skip}` as the **last stdout line**. Any `fail` → non-zero exit. |
 
 `gate.sh` derives the check set from the diff, not from which task is in flight —
-the work can't dodge a gate by misclassifying itself. v1 is stateless and
-existence-only for `review`/`qa` artifacts (a `plan/` file referencing the
-current HEAD sha). The thin `yaco gate` verb wraps these scripts
+the work can't dodge a gate by misclassifying itself. v1 is stateless; `review`/`qa`
+are existence + **freshness** checks — a `plan/` artifact whose own `reviewed_sha`
+is an ancestor of HEAD with no code (`review`: `^(src|cli|app)/`) / no `app/ui`
+(`qa`) touched since, so a docs/plan-only tail keeps a review valid while a later
+code commit correctly stales it. The thin `yaco gate` verb wraps these scripts
 ([`main/cli/gate.md`](../main/cli/gate.md)), and the skills call them: `/verify` runs
 `scripts/verify.sh`, `/implement` self-checks with `yaco gate`, and `/orchestrate`
 gatekeeps on its result. `scripts/gate.test.sh` is a hermetic test of the floor mapping.
