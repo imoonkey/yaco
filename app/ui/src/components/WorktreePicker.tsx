@@ -17,7 +17,9 @@
 //   - OPEN (header toggle on, any state): the accent box wraps the full worktree LIST
 //     inline — every worktree as a row. The list is git-sourced (P1: `useProjectWorktrees`),
 //     so manually-created and task-less worktrees appear. Selecting a row calls
-//     `onSelect(id | null)` (primary → `null`) and closes.
+//     `onSelect(id | null)` (primary → `null`) and closes. For a non-primary worktree the
+//     indicator row stays above the list while open, so its region/chevron is always a
+//     non-select close path — the only one in search mode, where the header has no toggle.
 //
 // Inline rendering needs no `position:fixed` anchor, no `autoFocusRef`/`restoreFocus`: the
 // list lives in the panel flow, and closing it never restores focus to the header button,
@@ -81,14 +83,77 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect, open, onOp
   // affordance. The header toggle guards on the same count.
   if (worktrees.length === 0) return null
 
-  // OPEN (any active worktree): the full list inline. The active row carries the `Check`,
-  // so picking `primary` here is the return-to-main path (the indicator's X equivalent).
-  if (open) {
-    return (
-      <div className={ACCENT_BOX} style={ACCENT_BOX_STYLE}>
+  // Canonical selection: a gone/stale id resolves to primary (currentWorktreeEntry), so
+  // the indicator, the header title, and the open list's `Check` all agree. The `??` only
+  // satisfies the type — currentWorktreeEntry always resolves once `worktrees` is non-empty.
+  const current = currentWorktreeEntry(worktrees, activeWorktree) ?? worktrees[0]
+  const onPrimary = current.isPrimary
+
+  // CLOSED + primary: nothing persistent — exactly as Compare ref shows nothing when not
+  // comparing. (A non-primary worktree keeps its reminder; an open list always renders.)
+  if (!open && onPrimary) return null
+
+  return (
+    <div className={ACCENT_BOX} style={ACCENT_BOX_STYLE}>
+      {/* Indicator row — the persistent reminder for a non-primary worktree. Shown while
+          CLOSED (the reminder) AND while OPEN, so its region/chevron stays a non-select
+          close path — the ONLY one in search mode, where the header has no toggle and
+          DialogShell's Escape/outside-click is gone. The X removes the worktree (→
+          primary) and closes. Primary has no reminder, so its box (only ever opened from
+          the tree-mode header toggle) shows just the list. */}
+      {!onPrimary && (
+        <div className="flex items-center h-[24px] mx-1 my-1 gap-1">
+          <button
+            type="button"
+            aria-label={`Worktree: ${current.branch}`}
+            aria-expanded={open}
+            className="flex flex-1 min-w-0 items-center h-full cursor-pointer rounded-sm px-1 gap-1.5"
+            style={{ transition: 'background-color 120ms' }}
+            onClick={() => onOpenChange(!open)}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+          >
+            <span
+              className="shrink-0 text-ui-2xs uppercase tracking-wider font-semibold"
+              style={{ color: 'var(--sol-text)' }}
+            >worktree</span>
+            <span
+              className="flex-1 text-ui-md truncate font-medium text-left"
+              style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
+            >{current.branch}</span>
+            <WorktreeMeta wt={current} />
+            <ChevronDown
+              size={10}
+              className="shrink-0"
+              style={{
+                color: open ? 'var(--sol-accent)' : 'var(--sol-text)',
+                transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
+              }}
+            />
+          </button>
+          <button
+            type="button"
+            aria-label="Remove worktree (return to primary)"
+            title="Remove worktree (return to primary)"
+            className="flex items-center justify-center shrink-0 w-[18px] h-[18px] rounded-sm"
+            style={{ color: 'var(--sol-text)', transition: 'color 120ms, background-color 120ms' }}
+            onClick={() => { onSelect(null); onOpenChange(false) }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--sol-accent)'; e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--sol-text)'; e.currentTarget.style.backgroundColor = '' }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Inline worktree list — the full git-sourced list, shown while OPEN. Selecting a
+          row binds it (primary → null) and closes; the active row (canonical `current`)
+          carries the `Check`, so a stale selection marks primary just like the indicator. */}
+      {open && (
         <div role="listbox" aria-label="Worktrees" className="flex flex-col py-1 max-h-[min(320px,50vh)] overflow-y-auto">
           {worktrees.map((wt) => {
-            const isActive = wt.isPrimary ? activeWorktree === null : wt.id === activeWorktree
+            const isActive = wt === current
             return (
               <button
                 key={wt.id}
@@ -121,63 +186,7 @@ export function WorktreePicker({ worktrees, activeWorktree, onSelect, open, onOp
             )
           })}
         </div>
-      </div>
-    )
-  }
-
-  const current = currentWorktreeEntry(worktrees, activeWorktree)
-  // CLOSED + primary (or a gone/stale selection that resolves to primary): nothing
-  // persistent — exactly as Compare ref shows nothing when not comparing.
-  if (!current || current.isPrimary) return null
-
-  // CLOSED + non-primary: the persistent indicator box (Compare-ref styling). A clickable
-  // region opens the inline list; a sibling X removes the worktree (→ primary). The two
-  // affordances are siblings (no nested interactive element).
-  return (
-    <div className={ACCENT_BOX} style={ACCENT_BOX_STYLE}>
-      <div className="flex items-center h-[24px] mx-1 my-1 gap-1">
-        <button
-          type="button"
-          aria-label={`Worktree: ${current.branch}`}
-          aria-expanded={open}
-          className="flex flex-1 min-w-0 items-center h-full cursor-pointer rounded-sm px-1 gap-1.5"
-          style={{ transition: 'background-color 120ms' }}
-          onClick={() => onOpenChange(!open)}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-        >
-          <span
-            className="shrink-0 text-ui-2xs uppercase tracking-wider font-semibold"
-            style={{ color: 'var(--sol-text)' }}
-          >worktree</span>
-          <span
-            className="flex-1 text-ui-md truncate font-medium text-left"
-            style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
-          >{current.branch}</span>
-          <WorktreeMeta wt={current} />
-          <ChevronDown
-            size={10}
-            className="shrink-0"
-            style={{
-              color: open ? 'var(--sol-accent)' : 'var(--sol-text)',
-              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
-            }}
-          />
-        </button>
-        <button
-          type="button"
-          aria-label="Remove worktree (return to primary)"
-          title="Remove worktree (return to primary)"
-          className="flex items-center justify-center shrink-0 w-[18px] h-[18px] rounded-sm"
-          style={{ color: 'var(--sol-text)', transition: 'color 120ms, background-color 120ms' }}
-          onClick={() => onSelect(null)}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--sol-accent)'; e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--sol-text)'; e.currentTarget.style.backgroundColor = '' }}
-        >
-          <X size={12} />
-        </button>
-      </div>
+      )}
     </div>
   )
 }

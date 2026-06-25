@@ -451,8 +451,9 @@ describe('FilesPanel — worktree picker (header toggle → INLINE list + non-de
   it('clicking the indicator region opens the inline list', async () => {
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
     fireEvent.click(await screen.findByRole('button', { name: 'Worktree: task/feature-x' }))
-    // The same git-sourced list opens inline (the indicator is itself a trigger). When
-    // open, the indicator collapses into the list (no role=dialog overlay).
+    // The same git-sourced list opens inline under the persistent indicator (the
+    // indicator is itself a trigger and stays above the list as the close path; no
+    // role=dialog overlay).
     const list = worktreeList()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(within(list).getByText('main')).toBeTruthy()
@@ -465,5 +466,32 @@ describe('FilesPanel — worktree picker (header toggle → INLINE list + non-de
     renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x' })
     const region = await screen.findByRole('button', { name: 'Worktree: task/feature-x' })
     expect(region.tagName).toBe('BUTTON')
+  })
+
+  it('in search mode the indicator stays a non-select close path while open (no dead-end)', async () => {
+    // Search mode has no header toggle and inline rendering has no Escape/outside-click, so
+    // the indicator row must REMAIN above the open list as the close affordance — otherwise
+    // opening from the indicator in search mode would trap the user (close only by select).
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/feature-x', showTextSearch: true })
+    const region = await screen.findByRole('button', { name: 'Worktree: task/feature-x' })
+    fireEvent.click(region)
+    expect(worktreeList()).toBeTruthy()
+    // The indicator persists while open (it is the only close path here) and toggles closed.
+    const stillThere = screen.getByRole('button', { name: 'Worktree: task/feature-x' })
+    expect(stillThere.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(stillThere)
+    expect(screen.queryByRole('listbox', { name: 'Worktrees' })).toBeNull()
+  })
+
+  it('opening with a stale selection marks PRIMARY active in the list (canonical, not raw)', async () => {
+    // A gone selection resolves to primary everywhere — the open list must mark the primary
+    // row active (not leave every row unselected because raw activeWorktree matched none).
+    renderFilesPanel({ worktrees: WORKTREES, activeWorktree: '/abs/wt/gone' })
+    fireEvent.click(await screen.findByLabelText('Select worktree'))
+    const list = worktreeList()
+    const primaryRow = list.querySelector('[data-worktree-id="/demo"]') as HTMLElement
+    const linkedRow = list.querySelector('[data-worktree-id="/abs/wt/feature-x"]') as HTMLElement
+    expect(primaryRow.getAttribute('aria-selected')).toBe('true')
+    expect(linkedRow.getAttribute('aria-selected')).toBe('false')
   })
 })
