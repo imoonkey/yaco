@@ -78,13 +78,15 @@ if [ "$touched_any" = 1 ] && [ "$touched_code" = 0 ] && [ "$touched_ui" = 0 ] \
 fi
 
 # extract_reviewed_sha <file> : print the first sha following a `reviewed_sha`
-# marker (handles `reviewed_sha:`, `reviewed_sha=`, markdown `**reviewed_sha:**`,
-# backtick-wrapped). [^0-9a-fA-F]* eats any separators, so it stops at the sha.
-# Empty output when the artifact carries no reviewed_sha line — freshness cannot
-# be established, so the caller treats that artifact as not fresh.
+# field marker. The `(^|[^a-z0-9_])` boundary means a substring inside another
+# identifier (e.g. `unreviewed_sha:`) is NOT mistaken for the field; `[:=]` is the
+# required separator (`reviewed_sha:` header or `reviewed_sha=` verdict-line form);
+# `[^0-9a-f]*` then eats any markdown/backticks/space up to the sha (7-40 hex, so
+# both short and full forms parse). Empty output when no real reviewed_sha field
+# is present — freshness can't be established, so the caller treats it as not fresh.
 extract_reviewed_sha() {
-  sed -n 's/.*[Rr]eviewed_sha[^0-9a-fA-F]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$1" \
-    2>/dev/null | head -1
+  grep -oiE '(^|[^a-z0-9_])reviewed_sha[:=][^0-9a-f]*[0-9a-f]{7,40}' "$1" 2>/dev/null \
+    | grep -oiE '[0-9a-f]{7,40}' | head -1
 }
 
 # artifact_is_fresh <touch-regex> <iname-glob> : true if SOME plan/ artifact

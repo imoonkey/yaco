@@ -305,6 +305,38 @@ artifact "$r" plan/review_x.md "$long_sha"
 expect "40-char reviewed_sha parsed -> review pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
+# F0h. the verdict-line inline form `reviewed_sha=<sha>` (T7 format, amid the
+# unresolved_* counts) is parsed. Fresh through a docs tail.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+commit_file "$r" doc/PROGRESS.md "progress"
+artifact_raw "$r" plan/review_x.md \
+  "VERDICT: pass  unresolved_critical=0  unresolved_high=0  reviewed_sha=$code_sha"
+expect "inline reviewed_sha= verdict form parsed -> review pass" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
+
+# F0i. markdown-bold + backtick-wrapped marker (`**reviewed_sha:** ` + backticks)
+# is parsed — the real header style.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+commit_file "$r" doc/PROGRESS.md "progress"
+artifact_raw "$r" plan/review_x.md "- **reviewed_sha:** \`$code_sha\` — frozen there"
+expect "markdown/backtick reviewed_sha form parsed -> review pass" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
+
+# F0j. a `reviewed_sha` SUBSTRING inside another identifier (`unreviewed_sha:`)
+# must NOT be read as the field — otherwise a fresh-looking sha on a non-field
+# line forges freshness. No real reviewed_sha field -> not fresh -> review fail.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+artifact_raw "$r" plan/review_x.md "unreviewed_sha: $code_sha (not a real field)"
+commit_file "$r" doc/PROGRESS.md "progress"
+expect "reviewed_sha substring (unreviewed_sha) not parsed -> review fail" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
+
 # 9. invalid base sha -> hard error exit 2 (must not masquerade as empty diff)
 r="$(mk 0)"
 expect_exit "invalid base -> exit 2" "$r" "nonexistent" 2
