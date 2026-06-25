@@ -67,6 +67,15 @@ artifact() {
   printf 'reviewed_sha: %s\n' "$sha" >"$repo/$path"
 }
 
+# artifact_raw <repo> <path> <body> : write an arbitrary artifact body (e.g. one
+# carrying NO reviewed_sha line). Guards the temp root like the other writers.
+artifact_raw() {
+  local repo="$1" path="$2" body="$3"
+  in_root "$repo"
+  mkdir -p "$repo/$(dirname "$path")"
+  printf '%s\n' "$body" >"$repo/$path"
+}
+
 # expect <label> <repo> <base> <want_json> <want_exit>
 expect() {
   local label="$1" repo="$2" base="$3" want_json="$4" want_exit="$5" out rc json
@@ -211,6 +220,90 @@ commit_file "$r" doc/PROGRESS.md "progress"
 artifact "$r" plan/review_x.md deadbeef
 expect "stale review sha -> review fail" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
+
+# --- F0: review/qa freshness = reviewed_sha..HEAD touches no code (qa: no app/ui) ---
+
+# F0a. THE FOOTGUN FIX — a docs-only commit stacked on reviewed code keeps
+# review=pass. The artifact references the CODE sha (not HEAD); the later docs
+# commit moves HEAD past it, but reviewed_sha..HEAD touches no code -> still fresh.
+# Under the old exact-HEAD-sha rule this false-failed (artifact != HEAD sha).
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+commit_file "$r" doc/PROGRESS.md "docs: progress on top of reviewed code"
+artifact "$r" plan/review_x.md "$code_sha"
+expect "docs tail on reviewed code -> review pass (no false-stale)" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
+
+# F0b. a code commit lands AFTER the review -> review goes stale (fail). The
+# artifact reviewed the first code commit; new code after it is unreviewed.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+artifact "$r" plan/review_x.md "$code_sha"
+commit_file "$r" cli/bar.ts "feat: more code after the review"
+commit_file "$r" doc/PROGRESS.md "progress"
+expect "code commit after review -> review fail (stale)" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
+
+# F0c. reviewed_sha is a valid commit but NOT an ancestor of HEAD (rebased /
+# orphaned onto a side branch) -> can't prove it covers HEAD's history -> stale.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+in_root "$r"
+orig_branch="$(git -C "$r" rev-parse --abbrev-ref HEAD)"
+git -C "$r" checkout -q -b side
+commit_file "$r" cli/side.ts "feat: orphaned code"
+orphan_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+git -C "$r" checkout -q "$orig_branch"
+artifact "$r" plan/review_x.md "$orphan_sha"
+commit_file "$r" doc/PROGRESS.md "progress"
+expect "reviewed_sha not ancestor of HEAD -> review fail (stale)" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
+
+# F0d. a review artifact with NO reviewed_sha line -> freshness cannot be
+# established -> not fresh -> review fail.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+commit_file "$r" doc/PROGRESS.md "progress"
+artifact_raw "$r" plan/review_x.md "just prose, no machine-readable sha here"
+expect "review artifact without reviewed_sha -> review fail" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
+
+# F0e. multiple review artifacts: one stale, one fresh -> ANY fresh one passes.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+old_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+commit_file "$r" cli/bar.ts "feat: more code"
+new_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+commit_file "$r" doc/PROGRESS.md "progress"
+artifact "$r" plan/review_old.md "$old_sha"   # stale: cli/bar.ts landed after it
+artifact "$r" plan/review_new.md "$new_sha"   # fresh: no code since
+expect "multiple reviews, any fresh -> review pass" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
+
+# F0f. qa keys on app/ui, review on all code roots: a cli/ commit after the
+# artifacts makes review stale (code touched) but qa still fresh (no app/ui).
+# Exercises that the two freshness checks use DIFFERENT touch predicates.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" app/ui/x.ts "feat: ui"
+ui_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
+artifact "$r" plan/review_x.md "$ui_sha"
+artifact "$r" plan/qa_x.md "$ui_sha"
+commit_file "$r" cli/foo.ts "feat: cli code, not app/ui"
+commit_file "$r" doc/PROGRESS.md "progress"
+expect "cli commit after artifacts -> review stale, qa fresh" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"fail","qa":"pass"}' 1
+
+# F0g. full-length (40-char) reviewed_sha is parsed too (artifacts may carry the
+# long form). Fresh through a docs tail.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+long_sha="$(git -C "$r" rev-parse HEAD)"
+commit_file "$r" doc/PROGRESS.md "progress"
+artifact "$r" plan/review_x.md "$long_sha"
+expect "40-char reviewed_sha parsed -> review pass" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
 # 9. invalid base sha -> hard error exit 2 (must not masquerade as empty diff)
 r="$(mk 0)"

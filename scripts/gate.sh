@@ -11,10 +11,14 @@
 #   any change at all            -> doc
 #   nothing                      -> every check skips
 #
-# Evidence checks are existence-only in v1 (verdict/severity parsing is v3):
+# Evidence checks are existence + freshness in v1 (verdict/severity parsing is v3):
 #   doc    : a doc/** or PROGRESS.md change, or a `docs:` commit since <base>
-#   review : a plan/ *review* file referencing the current HEAD sha
-#   qa     : a plan/ *qa* file referencing the current HEAD sha
+#   review : a plan/ *review* file whose reviewed_sha..HEAD touches no code root
+#            (^(src|cli|app)/) — the review lands AFTER the last code change.
+#   qa     : a plan/ *qa* file whose reviewed_sha..HEAD touches no app/ui/.
+# Freshness reads reviewed_sha FROM the artifact (not the live HEAD sha), so a
+# docs/plan-only commit stacked on reviewed code keeps the review valid (no
+# docs-tail false-stale); a code commit after the review correctly goes stale.
 #
 # Output discipline: all progress goes to stderr; stdout carries ONLY the final
 # JSON line, so `gate.sh <base> | tail -1` is the machine contract. Any check
@@ -46,13 +50,20 @@ head_sha="$(git rev-parse --short=7 HEAD)"
 # which would let relocated code skip the verify/review floor.
 diff_files="$(git diff "$base"..HEAD --name-only --no-renames)"
 
+# Code-touch predicates — ONE definition, reused by both the floor mapping below
+# and the review/qa freshness check (a review is fresh iff no code path changed
+# since its reviewed_sha; qa keys on app/ui only). Keep these the single source of
+# truth for "what counts as code" so the floor and freshness can never diverge.
+code_roots_re='^(src|cli|app)/'
+ui_root_re='^app/ui/'
+
 # --- floor from the diff -----------------------------------------------------
 touched_any=0
 touched_code=0
 touched_ui=0
 [ -n "$diff_files" ] && touched_any=1
-grep -qE '^(src|cli|app)/' <<<"$diff_files" && touched_code=1
-grep -qE '^app/ui/' <<<"$diff_files" && touched_ui=1
+grep -qE "$code_roots_re" <<<"$diff_files" && touched_code=1
+grep -qE "$ui_root_re" <<<"$diff_files" && touched_ui=1
 
 # A diff confined to the documentation trees — doc/ and plan/ (design docs,
 # task graphs) — is its own doc-sync: no separate code change is left to record,
@@ -66,13 +77,33 @@ if [ "$touched_any" = 1 ] && [ "$touched_code" = 0 ] && [ "$touched_ui" = 0 ] \
   doc_only=1
 fi
 
-# artifact_refs_head <iname-glob> : true if some plan/ file matching the glob
-# (case-insensitive) contains the current HEAD short sha.
-artifact_refs_head() {
-  local f
+# extract_reviewed_sha <file> : print the first sha following a `reviewed_sha`
+# marker (handles `reviewed_sha:`, `reviewed_sha=`, markdown `**reviewed_sha:**`,
+# backtick-wrapped). [^0-9a-fA-F]* eats any separators, so it stops at the sha.
+# Empty output when the artifact carries no reviewed_sha line — freshness cannot
+# be established, so the caller treats that artifact as not fresh.
+extract_reviewed_sha() {
+  sed -n 's/.*[Rr]eviewed_sha[^0-9a-fA-F]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$1" \
+    2>/dev/null | head -1
+}
+
+# artifact_is_fresh <touch-regex> <iname-glob> : true if SOME plan/ artifact
+# matching the glob carries a reviewed_sha whose `reviewed_sha..HEAD` diff
+# (--no-renames) touches no path matching <touch-regex>. The sha must be a known
+# commit AND an ancestor of HEAD — a missing, unknown, or rebased/orphaned sha
+# can't prove the review covers HEAD's history, so it is stale. Any one fresh
+# artifact passes the check.
+artifact_is_fresh() {
+  local touch_re="$1" glob="$2" f sha changed
   while IFS= read -r f; do
-    grep -qF "$head_sha" "$f" && return 0
-  done < <(find plan -type f -iname "$1" 2>/dev/null)
+    sha="$(extract_reviewed_sha "$f")"
+    [ -n "$sha" ] || continue
+    git rev-parse --verify --quiet "$sha^{commit}" >/dev/null 2>&1 || continue
+    git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || continue
+    changed="$(git diff "$sha"..HEAD --name-only --no-renames)"
+    grep -qE "$touch_re" <<<"$changed" && continue
+    return 0
+  done < <(find plan -type f -iname "$glob" 2>/dev/null)
   return 1
 }
 
@@ -104,11 +135,11 @@ if [ "$touched_any" = 1 ]; then
 fi
 
 if [ "$touched_code" = 1 ]; then
-  if artifact_refs_head '*review*'; then review=pass; else review=fail; failed=1; fi
+  if artifact_is_fresh "$code_roots_re" '*review*'; then review=pass; else review=fail; failed=1; fi
 fi
 
 if [ "$touched_ui" = 1 ]; then
-  if artifact_refs_head '*qa*'; then qa=pass; else qa=fail; failed=1; fi
+  if artifact_is_fresh "$ui_root_re" '*qa*'; then qa=pass; else qa=fail; failed=1; fi
 fi
 
 echo "gate: verify=$verify doc=$doc review=$review qa=$qa (base=$base head=$head_sha)" >&2
