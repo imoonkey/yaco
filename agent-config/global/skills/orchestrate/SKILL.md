@@ -94,6 +94,8 @@ yaco task attach <task-id> w-<task-id> --json
 
 Then **wait** for the worker: `yaco agent wait w-<task-id> --from-start --json`.
 
+A `wait --from-start` returns at the worker's **first** idle — which, with background tasks or sub-agents in play, isn't necessarily the whole turn finishing: the worker can autonomously re-enter `processing` afterward, so the return is a cue to **gate**, not proof of done.
+
 ## Gatekeep
 
 Orchestrate's core job: **decide done by reading evidence — never by redoing the work,
