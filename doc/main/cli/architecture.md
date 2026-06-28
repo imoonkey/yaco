@@ -144,7 +144,7 @@ from `src/lib/core/paths/yaco-home.ts#agentWrapperPath()`), which sets a bash
 `EXIT` trap. On process exit (normal, error, or signal), the trap deletes
 the state file directly.
 
-- **Sole shell artifact.** The wrapper body is shipped as a real file at `cli/scripts/agent-wrapper.sh` and installed verbatim by `yaco agent hooks install`. Shell is the only stack where the EXIT trap reliably fires when the tmux pane dies abruptly, so this stays out of TypeScript by design (Shell Boundary).
+- **Sole shell artifact.** The wrapper body is shipped as a real file at `cli/scripts/agent-wrapper.sh` and installed to `${YACO_HOME}/agent-wrapper.sh`. Shell is the only stack where the EXIT trap reliably fires when the tmux pane dies abruptly, so this stays out of TypeScript by design (Shell Boundary). At runtime, `ensureHooks` refreshes the managed wrapper from source when a checkout is discoverable; when a compiled `yaco` is launched from another project cwd, it reuses the already-installed managed wrapper instead of requiring the source checkout.
 - **Session name re-read at exit** — the EXIT trap calls `tmux display-message -p '#{session_name}'` to get the current name (which reflects any renames that occurred during the session's lifetime). Falls back to the startup-cached name when the tmux session is already gone (e.g., `tmux kill-session`).
 - **Rename breadcrumb** — `renameState()` writes `.renamed-<oldHandle>` in the sessions dir pointing to the new name. Write-before-delete: new state file is written before old is removed, preventing a race where GC deletes the old file between tmux rename and state rename (leaving no file). Callers pass pre-read state to avoid a re-read race with GC. Chain-safe: A→B→C updates A's breadcrumb to point to C. Cleanup: EXIT trap removes breadcrumb on exit; `deleteState()` removes breadcrumbs to/from the deleted handle; `status` GC sweeps orphans whose target file is gone.
 - **Handle-reuse guard** — the wrapper receives the session's `createdAt` and only deletes the state file if the on-disk file still belongs to the same launch. This prevents an older exiting process from deleting a newer session that quickly reused the same default handle.
@@ -159,10 +159,12 @@ the state file directly.
 ### Hook Installation
 
 `yaco agent hooks install` (handler in `src/commands/agent/hooks/install.ts`)
-calls `ensureHooks` for both providers. `ensureHooks` writes
-`${YACO_HOME}/agent-wrapper.sh` from `cli/scripts/agent-wrapper.sh` (chmod
-0755, only rewrites when the bytes differ) and then merges yaco-owned
-entries into the provider configs.
+calls `ensureHooks` for both providers. `ensureHooks` ensures
+`${YACO_HOME}/agent-wrapper.sh` exists and is executable, refreshing it from
+`cli/scripts/agent-wrapper.sh` when source is available, then merges
+yaco-owned entries into the provider configs. This keeps `agent start`
+working from non-YACO project directories after `tools/install.sh` has written
+the managed wrapper.
 
 The canonical entry point for hook merging is now `yaco install` (writes the
 same configs plus the rest of the install state). `yaco agent hooks install`

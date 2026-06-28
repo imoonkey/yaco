@@ -14,8 +14,8 @@
 - After the server correctly preferred the compiled binary, a second runtime edge surfaced: the installed binary still tried to discover `cli/scripts/agent-wrapper.sh` from the current project cwd. That worked in the `yaco` checkout but failed in projects such as `resume`, making the UI's `Starting...` row disappear.
 
 **Key files:** `app/server/src/lib/constants.ts`, `app/server/src/lib/__tests__/constants.test.ts`, `cli/src/lib/core/agent/lifecycle.ts`, `cli/test/wrapper-resolve.test.ts`, `cli/test/unit/commands/project/{current,registry}.test.ts`, `app/server/src/lib/__tests__/projects.test.ts`, `doc/main/app/backend/libs.md`, `doc/dev/app/workflow.md`.
-**Verification:** `./scripts/verify.sh` green (CLI 1077/1077, server 754/754, UI lint, build); `tools/install.sh --cli-only`; `yaco doctor` 12/12; direct CLI start from `/Users/moonkey/Dropbox/JobHunting/resume` succeeded and was killed; local app API `POST /api/sessions/start` for `resume` succeeded and was closed; independent Claude `/code-review` artifact approved with 0 critical/high.
-**Commit:** Uncommitted.
+**Verification:** `./scripts/verify.sh` green (CLI 1077/1077, server 754/754, UI lint, build); `tools/install.sh --cli-only`; `yaco doctor` 12/12; direct CLI start from `/Users/moonkey/Dropbox/JobHunting/resume` succeeded and was killed; local app API `POST /api/sessions/start` for `resume` succeeded and was closed; independent Claude `/code-review` artifact approved with 0 critical/high; QA artifact [plan/all/20260628_agent-start-runtime/qa-e595e094.md](../plan/all/20260628_agent-start-runtime/qa-e595e094.md).
+**Commit:** `e595e094`.
 **Next:** Optional hardening: add a compiled-binary integration test from a non-YACO git directory; unify server/CLI executable predicates.
 **Blockers:** None.
 

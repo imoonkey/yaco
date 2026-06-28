@@ -96,13 +96,11 @@ Hook configs written by `yaco install` use the canonical form:
 Iterates the provider registry (`listProviders()` from
 `lib/core/agent/providers`) and calls each provider's `hooks.install()` for
 adapters that declare hooks — Claude's resolves to `ensureClaudeHooks`, Codex's
-to `ensureCodexHooks` (both in `lib/core/agent/lifecycle.ts`). The adapter's
-`install` is called directly (NOT `ensureHooks`, which would re-call
-`readAgentWrapperScript` and fail under the bun-compiled binary's VFS — see the
-wrapper note below); the wrapper is written once, above, by
-`installAgentWrapper`. The action list / `--dry-run` plan is keyed off each
-adapter's `hooks.configPath()`, so adding a provider widens the merge loop with
-no install.ts edit.
+to `ensureCodexHooks` (both in `lib/core/agent/lifecycle.ts`). `install.ts`
+writes the wrapper once via `installAgentWrapper`; the adapter hook merge is
+then direct so the install plan stays keyed off each adapter's
+`hooks.configPath()`. Adding a provider widens the merge loop with no
+install.ts edit.
 
 | Provider | Config | Hooks merged |
 |----------|--------|--------------|
@@ -138,6 +136,12 @@ from one of two sources, in order:
 Both point at the same on-disk file at install time; the fallback is the
 mechanism that makes the compiled binary path work for `tools/install.sh`'s
 exec handoff.
+
+Runtime `ensureHooks` uses the same source-discovery idea as a refresh path,
+but compiled `yaco` starts are allowed to proceed from non-YACO project cwd
+when source discovery fails: the already-installed `${YACO_HOME}/agent-wrapper.sh`
+is treated as the deployable artifact, validated as an executable file, and
+reused.
 
 ## Registry safety (HIGH 5 from review pass 1)
 
