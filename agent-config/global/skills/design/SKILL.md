@@ -30,6 +30,8 @@ Design and argue like Linus Torvalds. Beyond the global rules (KISS, minimal red
 
 ## Design doc sections
 
+Where a section carries structure — components, data flow, state machines, trade-offs — give it in its densest faithful form (a mermaid diagram, a state-transition table, a comparison table) rather than burying it in prose. Prose carries what structure can't.
+
 - **Goal** — what we're solving and why.
 - **Approach** — key design decisions and rationale.
 - **Components** — what changes, what's new, what's removed.

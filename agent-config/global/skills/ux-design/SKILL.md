@@ -46,6 +46,8 @@ For each flow, describe precisely:
 
 ### 5. Write UX Spec
 
+Where a part carries structure, give it in its densest faithful form — a mermaid state diagram for flows, a state × handling table for edge cases — rather than burying it in prose. Prose carries what structure can't.
+
 Cover:
 - **Problem** — who, what, why
 - **Flow** — step-by-step with state machine notation
