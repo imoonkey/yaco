@@ -10,7 +10,7 @@
 
 import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -49,7 +49,7 @@ function fixture(): Fix {
     dir: (name: string) => {
       const p = join(root, name);
       mkdirSync(p, { recursive: true });
-      return p;
+      return realpathSync(p);
     },
   };
 }

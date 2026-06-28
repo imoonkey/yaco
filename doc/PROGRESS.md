@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-28: Agent starts use installed yaco plus managed wrapper fallback
+
+**What changed:**
+- `app/server/src/lib/constants.ts` now resolves `YACO_PATH` to explicit `YACO_PATH`, then executable `${YACO_BIN_DIR:-$HOME/.local/bin}/yaco`, then `which yaco`. This prevents npm-run services from picking the workspace `node_modules/.bin/yaco` source shim.
+- `cli/src/lib/core/agent/lifecycle.ts` now treats `${YACO_HOME}/agent-wrapper.sh` as the deployed runtime artifact: it refreshes from source when a YACO checkout is discoverable, but compiled `yaco` can start agents from non-YACO project directories by reusing the already-installed managed wrapper.
+- Added `constants.test.ts` coverage for explicit override, installed binary preference over a PATH shim, and `YACO_BIN_DIR`.
+- Added wrapper fallback tests and fixed project-registry tests to expect the production `realpath` canonical path on macOS `/var` → `/private/var`.
+- Updated app backend/dev docs with the installed-binary contract for live Claude/Codex behavior, plus an implementation plan and review artifact under `plan/all/20260628_agent-start-runtime/`.
+
+**Why:**
+- On laptop launchd, the server ran under npm scripts, so `which yaco` resolved the workspace shim whose shebang requires `bun`; launchd did not expose bun, causing `env: bun: No such file or directory`.
+- After the server correctly preferred the compiled binary, a second runtime edge surfaced: the installed binary still tried to discover `cli/scripts/agent-wrapper.sh` from the current project cwd. That worked in the `yaco` checkout but failed in projects such as `resume`, making the UI's `Starting...` row disappear.
+
+**Key files:** `app/server/src/lib/constants.ts`, `app/server/src/lib/__tests__/constants.test.ts`, `cli/src/lib/core/agent/lifecycle.ts`, `cli/test/wrapper-resolve.test.ts`, `cli/test/unit/commands/project/{current,registry}.test.ts`, `app/server/src/lib/__tests__/projects.test.ts`, `doc/main/app/backend/libs.md`, `doc/dev/app/workflow.md`.
+**Verification:** `./scripts/verify.sh` green (CLI 1077/1077, server 754/754, UI lint, build); `tools/install.sh --cli-only`; `yaco doctor` 12/12; direct CLI start from `/Users/moonkey/Dropbox/JobHunting/resume` succeeded and was killed; local app API `POST /api/sessions/start` for `resume` succeeded and was closed; independent Claude `/code-review` artifact approved with 0 critical/high.
+**Commit:** Uncommitted.
+**Next:** Optional hardening: add a compiled-binary integration test from a non-YACO git directory; unify server/CLI executable predicates.
+**Blockers:** None.
+
 ## 2026-06-25: gate.sh — review/qa freshness = "no code since reviewed_sha", not exact-HEAD-sha (codify-process-gate v1 follow-up · F0)
 
 **What changed:**

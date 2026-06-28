@@ -1,12 +1,37 @@
 import { execSync } from 'child_process'
+import { statSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
 import { sessionsDir } from '@yaco/cli/core/paths'
 import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from '@yaco/cli/core/task'
 
+function userHome(): string {
+  return process.env.HOME || homedir()
+}
+
+function isExecutableFile(path: string): boolean {
+  try {
+    const st = statSync(path)
+    return st.isFile() && (st.mode & 0o111) !== 0
+  } catch {
+    return false
+  }
+}
+
+function installedYacoPath(): string | null {
+  const binDir = process.env.YACO_BIN_DIR || join(userHome(), '.local', 'bin')
+  const candidate = join(binDir, 'yaco')
+  return isExecutableFile(candidate) ? candidate : null
+}
+
 /** Resolved path to the yaco binary (startup-time resolution).
- *  YACO_PATH env var wins (test/escape hatch); otherwise we trust `which`,
- *  falling back to the bare `yaco` name so PATH resolution still runs. */
+ *  YACO_PATH env var wins (test/escape hatch); otherwise prefer the installed
+ *  compiled binary. npm prepends workspace node_modules/.bin to PATH for dev
+ *  scripts, and that shim needs bun, which launchd services do not expose. */
 export const YACO_PATH = (() => {
   if (process.env.YACO_PATH) return process.env.YACO_PATH
+  const installed = installedYacoPath()
+  if (installed) return installed
   try {
     return execSync('which yaco', { encoding: 'utf-8' }).trim() || 'yaco'
   } catch {

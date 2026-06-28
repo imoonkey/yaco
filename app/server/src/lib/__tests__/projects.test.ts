@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'fs/promises'
+import { mkdtemp, rm, readFile, writeFile, mkdir, realpath } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -67,7 +67,7 @@ describe('projects: shared add/remove behavior', () => {
   async function realDir(name: string): Promise<string> {
     const dir = join(homeDir.value, name)
     await mkdir(dir, { recursive: true })
-    return dir
+    return realpath(dir)
   }
 
   it('add registers a name -> absolute existing directory', async () => {
@@ -151,9 +151,10 @@ describe('projects: shared add/remove behavior', () => {
   })
 
   it('remove removes by name', async () => {
-    addProject({ name: 'alpha', path: await realDir('a') })
+    const alpha = await realDir('a')
+    addProject({ name: 'alpha', path: alpha })
     addProject({ name: 'beta', path: await realDir('b') })
-    expect(removeProject('alpha')).toEqual({ name: 'alpha', path: join(homeDir.value, 'a') })
+    expect(removeProject('alpha')).toEqual({ name: 'alpha', path: alpha })
     expect((await loadProjects()).map((p) => p.name)).toEqual(['beta'])
   })
 

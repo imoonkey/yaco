@@ -15,13 +15,19 @@
  *  fallback branch would otherwise be dead code.
  */
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { _findExistingWrapperPathForTests, readAgentWrapperScript } from "../src/lib/core/agent/lifecycle.ts";
+import {
+  _ensureAgentWrapperScriptFromForTests,
+  _findExistingWrapperPathForTests,
+  readAgentWrapperScript,
+} from "../src/lib/core/agent/lifecycle.ts";
+import { agentWrapperPath } from "../src/lib/core/paths/yaco-home.ts";
 import { CliError } from "../src/lib/core/errors.ts";
 
 const ORIGINAL_YACO_REPO_ROOT = process.env["YACO_REPO_ROOT"];
+const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const ORIGINAL_CWD = process.cwd();
 let sandbox: string;
 
@@ -38,11 +44,14 @@ beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), "yaco-wrapper-resolve-"));
   // Clear env so tests start from a known state. Each test sets what it needs.
   delete process.env["YACO_REPO_ROOT"];
+  process.env["YACO_HOME"] = join(sandbox, ".yaco");
 });
 
 afterEach(() => {
   if (ORIGINAL_YACO_REPO_ROOT === undefined) delete process.env["YACO_REPO_ROOT"];
   else process.env["YACO_REPO_ROOT"] = ORIGINAL_YACO_REPO_ROOT;
+  if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
+  else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
   process.chdir(ORIGINAL_CWD);
   rmSync(sandbox, { recursive: true, force: true });
 });
@@ -92,7 +101,8 @@ describe("findExistingWrapperPath fallback chain", () => {
     // cwd is the load-bearing fallback here.
     process.chdir(sandbox);
     const found = _findExistingWrapperPathForTests(packaged);
-    expect(found).toBe(expected);
+    expect(found).not.toBeNull();
+    expect(realpathSync(found!)).toBe(realpathSync(expected));
   });
 
   it("returns null when no candidate exists", () => {
@@ -147,5 +157,32 @@ describe("readAgentWrapperScript", () => {
     } finally {
       rmSync(emptyDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("ensureAgentWrapperScript runtime fallback", () => {
+  it("uses an installed managed wrapper when no source checkout is discoverable", () => {
+    const emptyDir = join(sandbox, "empty");
+    mkdirSync(emptyDir);
+    process.chdir(emptyDir);
+
+    const managedPath = agentWrapperPath();
+    mkdirSync(join(sandbox, ".yaco"), { recursive: true });
+    writeFileSync(managedPath, "#!/bin/bash\n# installed wrapper\n", { mode: 0o644 });
+
+    _ensureAgentWrapperScriptFromForTests("/nonexistent/scripts/agent-wrapper.sh");
+
+    expect(readFileSync(managedPath, "utf-8")).toBe("#!/bin/bash\n# installed wrapper\n");
+    expect((statSync(managedPath).mode & 0o111) !== 0).toBe(true);
+  });
+
+  it("fails when neither source nor installed wrapper exists", () => {
+    const emptyDir = join(sandbox, "empty");
+    mkdirSync(emptyDir);
+    process.chdir(emptyDir);
+
+    expect(existsSync(agentWrapperPath())).toBe(false);
+    expect(() => _ensureAgentWrapperScriptFromForTests("/nonexistent/scripts/agent-wrapper.sh"))
+      .toThrow("run `yaco install`");
   });
 });

@@ -10,7 +10,7 @@
  *  reads it from disk and writes it to `${YACO_HOME}/agent-wrapper.sh` on
  *  install. No embedded shell strings.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync, statSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 import { execSync } from "child_process";
@@ -176,6 +176,39 @@ function resolveAgentWrapperPath(repoRoot?: string): string {
 export function readAgentWrapperScript(repoRoot?: string): string {
   return readFileSync(resolveAgentWrapperPath(repoRoot), "utf-8");
 }
+
+/** Ensure the runtime wrapper exists under ${YACO_HOME}. Runtime starts should
+ *  not require the source checkout: after `yaco install`, the managed wrapper is
+ *  already the deployable artifact. When the source script is discoverable we
+ *  refresh it; otherwise we trust the installed copy and only fail if it is
+ *  missing or not a file. */
+function ensureAgentWrapperScriptFrom(packaged: string, repoRoot?: string): void {
+  const managedPath = agentWrapperPath();
+  const sourcePath = findExistingWrapperPath(packaged, repoRoot);
+  if (sourcePath !== null) {
+    ensureManagedScript(managedPath, readFileSync(sourcePath, "utf-8"));
+    return;
+  }
+
+  if (!existsSync(managedPath)) {
+    throw new CliError(
+      ErrCode.INTERNAL,
+      `${managedPath} missing and cannot locate agent-wrapper.sh source — run \`yaco install\` from a yaco checkout or set YACO_REPO_ROOT`,
+    );
+  }
+
+  const stat = statSync(managedPath);
+  if (!stat.isFile()) {
+    throw new CliError(ErrCode.INTERNAL, `${managedPath} is not a file`);
+  }
+  if ((stat.mode & 0o111) === 0) chmodSync(managedPath, 0o755);
+}
+
+function ensureAgentWrapperScript(): void {
+  ensureAgentWrapperScriptFrom(packagedAgentWrapperPath());
+}
+
+export const _ensureAgentWrapperScriptFromForTests = ensureAgentWrapperScriptFrom;
 
 function makeHookEntry(event: string, async_: boolean, timeout?: number): Record<string, unknown> {
   const entry: Record<string, unknown> = {
@@ -649,7 +682,7 @@ export function ensureCodexHooks(): void {
  *  Provider config mutation is delegated to the adapter (`hooks.install`); the
  *  shared runtime only owns the wrapper. */
 export function ensureHooks(provider: string): void {
-  ensureManagedScript(agentWrapperPath(), readAgentWrapperScript());
+  ensureAgentWrapperScript();
   getProvider(provider).hooks?.install();
 }
 

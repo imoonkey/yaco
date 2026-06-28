@@ -66,6 +66,10 @@ The installer resolves paths from its own location, builds and installs the
 `${YACO_HOME}/agent-wrapper.sh` and merges yaco-owned entries into
 `~/.claude/settings.json` + `~/.codex/hooks.json`), links global agent config
 to `agent-config/global`, and updates `${YACO_HOME:-~/.yaco}/projects.json`.
+The app server also prefers the installed binary
+`${YACO_BIN_DIR:-$HOME/.local/bin}/yaco` for all agent/task CLI calls, even
+when started by npm scripts, so live Claude/Codex behavior only changes after
+`tools/install.sh` rebuilds that binary and the service is restarted.
 
 > ⚠️ `tsx watch` only reliably reloads on changes to the entry file (`app/server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, redeployed, behavior unchanged". When in doubt, `touch app/server/src/index.ts` to force a respawn, or check `ps -o pid,etime,cmd -p $(pgrep -f 'tsx.*src/index.ts' | tail -1)` to see how old the running child is.
 

@@ -17,13 +17,13 @@ Server-side library modules providing business logic, background services, and s
 
 ## Module Reference
 
-### constants.ts (50 lines)
+### constants.ts (~120 lines)
 
 Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
 **Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `YACO_AGENT_COMMAND_TIMEOUT_MS`, `YACO_AGENT_START_TIMEOUT_MS`, `YACO_AGENT_STATUS_TIMEOUT_MS`, `YACO_TASK_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `YACO_PATH`, `AGENT_SESSIONS_DIR`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `VOICE_MAX_SPEAK_CHARS`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
 
-- `YACO_PATH` — resolved once at startup: `process.env.YACO_PATH` wins (test/escape hatch); otherwise `which yaco`; otherwise the bare name `yaco` so PATH resolution still runs. Imported by `agent.ts` and `routes/tasks.ts`.
+- `YACO_PATH` — resolved once at startup: `process.env.YACO_PATH` wins (test/escape hatch); otherwise an executable `${YACO_BIN_DIR:-$HOME/.local/bin}/yaco`; otherwise `which yaco`; otherwise the bare name `yaco` so PATH resolution still runs. The installed-binary preference is intentional: npm prepends workspace `node_modules/.bin` in dev scripts, whose source shim needs `bun`, while launchd/systemd service PATHs do not guarantee `bun`. Imported by `agent.ts` and `routes/tasks.ts`.
 - `YACO_TASK_COMMAND_TIMEOUT_MS` — `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`). Must strictly EXCEED the CLI's task-lock timeout so lock contention surfaces as the structured `{ok:false,error:{code:'LOCK',...}}` envelope on stderr before the server's execFile kills the child — otherwise LOCK would be swallowed into a generic 500.
 
 Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `agent.ts`, `session-reconciler.ts`, `session-summary.ts`, `scanner.ts`, `terminal.ts`, `voice.ts`, `routes/tasks.ts`, `index.ts`
