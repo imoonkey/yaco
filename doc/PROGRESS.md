@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-30: Laptop Vite entry + robust Accept Disk conflict handling
+
+**What changed:**
+- Laptop Tailscale Serve was confirmed and reset to proxy `https://laptop.tailnet-example.ts.net/` to Vite dev (`127.0.0.1:5173`) so the Tailnet URL hot-loads the same UI as `http://localhost:5173/`.
+- Project watcher hard-prunes high-volume runtime log subtrees (`logs/traffic`, `logs/usage`) and `.git/**/index.lock`, preventing cproxy traffic logs and Git transient locks from triggering `filetree`/`git` refresh storms.
+- File state now tracks `serverRevision` separately from `baseRevision`, so conflict state can remember the disk revision while keeping the stale save token that prevents unsafe plain saves.
+- `acceptDisk()` now clears immediately only when conflict state already holds a freshly-refetched disk revision; save-time 409 conflicts wait for the follow-up content fetch before discarding a draft. Background accept refreshes cannot overwrite edits/saves that land after the click, stale revisions are ignored, and missing files clear stale clean bytes.
+
+**Why:**
+- `resume/qiguo_resume.tex` was Git-clean, but Chrome held a stale local draft; clicking Accept Disk looked ineffective because the UI path depended on a follow-up fetch and could be disturbed by laptop-only refresh churn.
+- Laptop tailnet access caused cproxy traffic logs under a registered workspace parent to be observed as project file changes, producing repeated `filetree`/`git` refreshes and UI flicker.
+
+**Key files:** `app/server/src/lib/project-watcher.ts`, `app/server/src/lib/__tests__/project-watcher.test.ts`, `app/ui/src/hooks/{useFileState,fileStateMachine,workspaceTypes}.ts`, `app/ui/src/hooks/__tests__/{useFileStateWorktree,fileStateMachine}.test.ts`, `doc/dev/app/workflow.md`, `doc/main/app/{backend/libs.md,frontend/hooks.md,frontend/state.md,ui/workspace/editor-and-preview.md}`, `plan/all/laptop-vite-accept-disk/`.
+**Verification:** `scripts/verify.sh` passed; `python3 agent-config/global/skills/update-doc/scripts/check-docs.py` passed; live HTTP checks confirmed Tailnet Vite HTML, resume git status clean, and laptop SSE sample without `filetree`/`git`; independent final review approved with 0 critical/high; QA artifact [plan/all/laptop-vite-accept-disk/qa-0a84045edaf0.md](../plan/all/laptop-vite-accept-disk/qa-0a84045edaf0.md).
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-28: Agent starts use installed yaco plus managed wrapper fallback
 
 **What changed:**

@@ -185,4 +185,197 @@ describe('useFileState active-worktree projection', () => {
     expect(result.current.files['a.ts'].serverContent).toBe('disk-bytes')
     expect(result.current.dirtyTabs.has('a.ts')).toBe(false)
   })
+
+  it('clears a conflict immediately from the cached disk version while refresh is pending', async () => {
+    type Pending = { url: string; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise(res => {
+      pending.push({ url: String(url), resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+    const grab = (pred: (u: string) => boolean): Pending => {
+      const i = pending.findIndex(p => pred(p.url))
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result } = renderHook(
+      () => useFileState('proj', PROJECT_PATH, null, NO_DRAFTS, openTabs, openTabsRef),
+    )
+
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve({ content: 'base', revision: 1 }) })
+    act(() => { result.current.updateDraft('a.ts', 'mine') })
+
+    act(() => { sseCallback?.() })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve({ content: 'disk', revision: 2 }) })
+    expect(result.current.conflictTabs.has('a.ts')).toBe(true)
+
+    act(() => { result.current.acceptDisk('a.ts') })
+    expect(result.current.files['a.ts'].draft).toBeNull()
+    expect(result.current.files['a.ts'].serverContent).toBe('disk')
+    expect(result.current.files['a.ts'].baseRevision).toBe(2)
+    expect(result.current.conflictTabs.has('a.ts')).toBe(false)
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(false)
+    expect(pending.some(p => p.url.includes('/content'))).toBe(true)
+  })
+
+  it('does not let acceptDisk refresh discard edits typed after the cached accept', async () => {
+    type Pending = { url: string; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise(res => {
+      pending.push({ url: String(url), resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+    const grab = (pred: (u: string) => boolean): Pending => {
+      const i = pending.findIndex(p => pred(p.url))
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result } = renderHook(
+      () => useFileState('proj', PROJECT_PATH, null, NO_DRAFTS, openTabs, openTabsRef),
+    )
+
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve({ content: 'base', revision: 1 }) })
+    act(() => { result.current.updateDraft('a.ts', 'mine') })
+    act(() => { sseCallback?.() })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve({ content: 'disk', revision: 2 }) })
+    act(() => { result.current.acceptDisk('a.ts') })
+    act(() => { result.current.updateDraft('a.ts', 'new edit') })
+
+    await act(async () => { grab(u => u.includes('/content')).resolve({ content: 'disk', revision: 2 }) })
+
+    expect(result.current.files['a.ts'].draft).toBe('new edit')
+    expect(result.current.files['a.ts'].serverContent).toBe('disk')
+    expect(result.current.files['a.ts'].baseRevision).toBe(2)
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(true)
+  })
+
+  it('does not let acceptDisk refresh roll back a save completed after cached accept', async () => {
+    type Pending = { url: string; init?: RequestInit; resolve: (data: unknown) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => new Promise(res => {
+      pending.push({ url: String(url), init, resolve: (data) => res({ ok: true, status: 200, json: () => Promise.resolve(data) }) })
+    })))
+    const grab = (pred: (p: Pending) => boolean): Pending => {
+      const i = pending.findIndex(pred)
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result } = renderHook(
+      () => useFileState('proj', PROJECT_PATH, null, NO_DRAFTS, openTabs, openTabsRef),
+    )
+
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(p => p.url.includes('/content')).resolve({ content: 'base', revision: 1 }) })
+    act(() => { result.current.updateDraft('a.ts', 'mine') })
+    act(() => { sseCallback?.() })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(p => p.url.includes('/content')).resolve({ content: 'disk', revision: 2 }) })
+    act(() => { result.current.acceptDisk('a.ts') })
+    act(() => { result.current.updateDraft('a.ts', 'saved-after-accept') })
+
+    await act(async () => {
+      const savePromise = result.current.save('a.ts', 'saved-after-accept')
+      await waitFor(() => expect(pending.some(p => p.init?.method === 'PUT')).toBe(true))
+      grab(p => p.init?.method === 'PUT').resolve({ revision: 3 })
+      await savePromise
+    })
+    expect(result.current.files['a.ts'].serverContent).toBe('saved-after-accept')
+    expect(result.current.files['a.ts'].baseRevision).toBe(3)
+
+    await act(async () => { grab(p => p.url.includes('/content') && !p.init?.method).resolve({ content: 'disk', revision: 2 }) })
+
+    expect(result.current.files['a.ts'].serverContent).toBe('saved-after-accept')
+    expect(result.current.files['a.ts'].baseRevision).toBe(3)
+    expect(result.current.files['a.ts'].draft).toBeNull()
+    expect(result.current.dirtyTabs.has('a.ts')).toBe(false)
+  })
+
+  it('waits for disk content after a save-time 409 before accepting disk', async () => {
+    type Pending = { url: string; init?: RequestInit; resolve: (res: Response) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => new Promise<Response>(res => {
+      pending.push({ url: String(url), init, resolve: res })
+    })))
+    const ok = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const grab = (pred: (p: Pending) => boolean): Pending => {
+      const i = pending.findIndex(pred)
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result } = renderHook(
+      () => useFileState('proj', PROJECT_PATH, null, NO_DRAFTS, openTabs, openTabsRef),
+    )
+
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(p => p.url.includes('/content')).resolve(ok({ content: 'base', revision: 1 })) })
+    act(() => { result.current.updateDraft('a.ts', 'mine') })
+
+    await act(async () => {
+      const savePromise = result.current.save('a.ts', 'mine')
+      await waitFor(() => expect(pending.some(p => p.init?.method === 'PUT')).toBe(true))
+      grab(p => p.init?.method === 'PUT').resolve(new Response(JSON.stringify({ error: 'revision conflict', currentRevision: 2 }), { status: 409, headers: { 'Content-Type': 'application/json' } }))
+      await savePromise
+    })
+    expect(result.current.files['a.ts'].status).toBe('conflict')
+    expect(result.current.files['a.ts'].serverContent).toBe('base')
+    expect(result.current.files['a.ts'].serverRevision).toBe(1)
+
+    act(() => { result.current.acceptDisk('a.ts') })
+    expect(result.current.files['a.ts'].status).toBe('conflict')
+    expect(result.current.files['a.ts'].draft).toBe('mine')
+
+    await act(async () => { grab(p => p.url.includes('/content') && !p.init?.method).resolve(ok({ content: 'disk-after-409', revision: 2 })) })
+
+    expect(result.current.files['a.ts'].status).toBe('clean')
+    expect(result.current.files['a.ts'].draft).toBeNull()
+    expect(result.current.files['a.ts'].serverContent).toBe('disk-after-409')
+    expect(result.current.files['a.ts'].baseRevision).toBe(2)
+  })
+
+  it('marks a cached accept missing when the follow-up disk read returns 404', async () => {
+    type Pending = { url: string; resolve: (res: Response) => void }
+    const pending: Pending[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => new Promise<Response>(res => {
+      pending.push({ url: String(url), resolve: res })
+    })))
+    const ok = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const grab = (pred: (u: string) => boolean): Pending => {
+      const i = pending.findIndex(p => pred(p.url))
+      if (i < 0) throw new Error('no pending fetch matched')
+      return pending.splice(i, 1)[0]
+    }
+
+    const openTabs = ['a.ts']
+    const openTabsRef = { current: openTabs }
+    const { result } = renderHook(
+      () => useFileState('proj', PROJECT_PATH, null, NO_DRAFTS, openTabs, openTabsRef),
+    )
+
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve(ok({ content: 'base', revision: 1 })) })
+    act(() => { result.current.updateDraft('a.ts', 'mine') })
+    act(() => { sseCallback?.() })
+    await waitFor(() => expect(pending.some(p => p.url.includes('/content'))).toBe(true))
+    await act(async () => { grab(u => u.includes('/content')).resolve(ok({ content: 'disk', revision: 2 })) })
+
+    act(() => { result.current.acceptDisk('a.ts') })
+    await act(async () => { grab(u => u.includes('/content')).resolve(new Response(null, { status: 404 })) })
+
+    expect(result.current.files['a.ts'].status).toBe('missing')
+    expect(result.current.files['a.ts'].draft).toBeNull()
+  })
 })

@@ -81,6 +81,7 @@ Managed by `useFileState` (keyed by path, shared across editor tabs). Each open 
 | Field | Type | Description |
 |-------|------|-------------|
 | `draft` | `string \| null` | `null` = clean (shows disk content). Non-null = user has edited |
+| `serverRevision` | `number \| null` | Revision for the current `serverContent`; conflict keeps this disk revision separate from the stale save token |
 | `baseRevision` | `number \| null` | File mtime — optimistic-concurrency token for the save `PUT` (not the conflict signal) |
 | `viewportLine` | `number` | Source line at top of editor viewport |
 | `status` | `FileStatus` | `clean`, `dirty`, `saving`, `conflict`, `missing` |
@@ -91,7 +92,7 @@ Managed by `useFileState` (keyed by path, shared across editor tabs). Each open 
 2. User types → `draft` set to current content, status becomes `dirty`
 3. `Cmd+S` → content + `baseRevision` sent to server. On success the draft is cleared to `clean` **only if the buffer still equals the saved bytes**; keystrokes typed during the in-flight save are kept `dirty` over the new revision (never discarded)
 4. Conflict is **content-based**: an SSE `filetree` refetch raises `conflict` only when disk content genuinely diverges from the buffer's base. The editor's own save (same content, new mtime) is absorbed silently; if disk converges to the live buffer the file returns to `clean`
-5. Conflict resolution: `forceSave()` (overwrite server) or `acceptDisk()` (discard local draft)
+5. Conflict resolution: `forceSave()` (overwrite server) or `acceptDisk()` (discard local draft). Accepting disk applies cached disk content immediately only when the conflict state already holds a refreshed disk revision; save-time 409 states wait for the follow-up content fetch before discarding the draft.
 6. Tab closed → buffer kept iff still referenced by some open editor tab **or** holds an unsaved draft (a shared-buffer GC over `allEditorTabPaths`); a clean, unreferenced buffer drops immediately, an unsaved one lingers (recoverable) until explicitly discarded — including a `missing` file deleted on disk while dirty
 7. Switch tabs → draft preserved (survives tab switching)
 

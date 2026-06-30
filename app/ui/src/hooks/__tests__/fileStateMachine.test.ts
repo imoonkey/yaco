@@ -9,6 +9,7 @@ function synced(content: string, rev: number, draft: string | null = null): File
   return {
     ...defaultFileState(),
     serverContent: content,
+    serverRevision: rev,
     draft,
     baseRevision: rev,
     status: draft != null ? 'dirty' : 'clean',
@@ -72,7 +73,17 @@ describe('fileStateMachine — SERVER_SYNC is content-based, not mtime-based', (
     // refresh it, or the next normal save would silently overwrite disk.
     const conflicted = { ...synced('theirs', 100, 'mine'), status: 'conflict' as const }
     const next = fileTransition(conflicted, { type: 'SERVER_SYNC', content: 'theirs', revision: 200 })
-    expect(next).toBe(conflicted)             // unchanged: still conflict, base still 100
+    expect(next.status).toBe('conflict')
+    expect(next.baseRevision).toBe(100)
+  })
+
+  it('updates the disk revision while preserving the stale save token in conflict', () => {
+    const conflicted = { ...synced('theirs', 100, 'mine'), serverRevision: 100, status: 'conflict' as const }
+    const next = fileTransition(conflicted, { type: 'SERVER_SYNC', content: 'theirs', revision: 200 })
+    expect(next.status).toBe('conflict')
+    expect(next.baseRevision).toBe(100)
+    expect(next.serverRevision).toBe(200)
+    expect(next.draft).toBe('mine')
   })
 
   it('clears a stale conflict when disk converges to our buffer', () => {
@@ -105,6 +116,27 @@ describe('fileStateMachine — SERVER_MISSING keeps unsaved work', () => {
     const next = fileTransition(dirty, { type: 'SERVER_MISSING' })
     expect(next.status).toBe('missing')
     expect(next.draft).toBe('unsaved edits')  // retained; GC keys off draft != null
+    expect(next.serverContent).toBe('disk')
+  })
+
+  it('clears stale disk bytes when a clean file is deleted on disk', () => {
+    const clean = synced('disk', 100)
+    const next = fileTransition(clean, { type: 'SERVER_MISSING' })
+    expect(next.status).toBe('missing')
+    expect(next.draft).toBeNull()
+    expect(next.serverContent).toBeNull()
+    expect(next.serverRevision).toBeNull()
+  })
+})
+
+describe('fileStateMachine — ACCEPT_DISK_CACHED clears draft without a save token', () => {
+  it('uses cached disk content to clear conflict UI but waits for a real revision', () => {
+    const conflicted = { ...synced('disk', 100, 'mine'), status: 'conflict' as const }
+    const next = fileTransition(conflicted, { type: 'ACCEPT_DISK_CACHED', content: 'disk', revision: 200 })
+    expect(next.status).toBe('clean')
+    expect(next.draft).toBeNull()
+    expect(next.serverContent).toBe('disk')
+    expect(next.baseRevision).toBe(200)
   })
 })
 

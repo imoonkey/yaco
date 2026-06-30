@@ -46,7 +46,9 @@ const sessionPathCache = new Map<string, string>()
 const IGNORE = [
   /^\.git\/objects\//,
   /^\.git\/logs\//,
+  /^\.git\/.*index\.lock$/,
   /node_modules\//,
+  /(^|\/)logs\/(traffic|usage)(\/|$)/,
   /\.DS_Store$/,
 ]
 
@@ -61,17 +63,25 @@ function toRel(projectPath: string, absPath: string): string | null {
 /** Stat-free prune verdict: `true` prune, `false` force-keep, `undefined` defer
  *  to the gitignore check. `node_modules` and git `objects/`/`logs/` are matched
  *  by path SEGMENT so nested copies (a worktree's own node_modules, a submodule's
- *  .git) are caught at any depth; `.git` metadata (HEAD/index/refs) is kept for
- *  the `git` channel. The whole `.worktrees` subtree is force-kept — it is
- *  gitignored, but the app serves per-worktree filetree/git, so it must stay
- *  watched (its node_modules/.git are still pruned by the rules above). */
+ *  .git) are caught at any depth; high-volume runtime log subtrees
+ *  (`logs/traffic`, `logs/usage`) are pruned because parent-project watchers cannot
+ *  rely on a child repo's `.gitignore`. `.git` metadata (HEAD/index/refs) is kept for
+ *  the `git` channel, except transient index locks that git may create while
+ *  answering status. The `.worktrees` subtree is force-kept — it is gitignored, but
+ *  the app serves per-worktree filetree/git, so it must stay watched (its
+ *  node_modules, runtime logs, and .git logs dirs are still pruned by the rules
+ *  above). */
 export function hardVerdict(rel: string): boolean | undefined {
   const segs = rel.split('/')
   if (segs.includes('node_modules')) return true
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (segs[i] === 'logs' && (segs[i + 1] === 'traffic' || segs[i + 1] === 'usage')) return true
+  }
   if (rel.endsWith('.DS_Store')) return true
   const gitIdx = segs.indexOf('.git')
   if (gitIdx !== -1) {
     const sub = segs[gitIdx + 1]
+    if (segs[segs.length - 1] === 'index.lock') return true
     return sub === 'objects' || sub === 'logs'
   }
   if (rel === '.worktrees' || rel.startsWith('.worktrees/')) return false

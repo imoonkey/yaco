@@ -151,18 +151,29 @@ describe('hardVerdict (watch-prune rules)', () => {
     expect(hardVerdict('.worktrees/wt/node_modules/pkg')).toBe(true)
   })
 
-  it('keeps .git metadata but prunes objects/ and logs/', () => {
+  it('prunes high-volume runtime log subtrees at any depth', () => {
+    expect(hardVerdict('logs')).toBeUndefined()
+    expect(hardVerdict('logs/app.log')).toBeUndefined()
+    expect(hardVerdict('logs/traffic/meta.json')).toBe(true)
+    expect(hardVerdict('cproxy/logs/usage/ledger.ndjson')).toBe(true)
+    expect(hardVerdict('a/logs/archive/logs/traffic/request.json')).toBe(true)
+  })
+
+  it('keeps .git metadata but prunes objects/, logs/, and transient index locks', () => {
     expect(hardVerdict('.git')).toBe(false)
     expect(hardVerdict('.git/HEAD')).toBe(false)
     expect(hardVerdict('.git/refs/heads/main')).toBe(false)
+    expect(hardVerdict('.git/index.lock')).toBe(true)
+    expect(hardVerdict('.git/worktrees/wt/index.lock')).toBe(true)
     expect(hardVerdict('.git/objects/ab/cd')).toBe(true)
     expect(hardVerdict('.git/logs/HEAD')).toBe(true)
   })
 
-  it('force-keeps the whole .worktrees subtree', () => {
+  it('force-keeps .worktrees paths except hard-pruned runtime dirs', () => {
     expect(hardVerdict('.worktrees')).toBe(false)
     expect(hardVerdict('.worktrees/wt')).toBe(false)
     expect(hardVerdict('.worktrees/wt/src/app.ts')).toBe(false)
+    expect(hardVerdict('.worktrees/wt/logs/traffic/request.json')).toBe(true)
   })
 
   it('defers everything else to the gitignore check', () => {

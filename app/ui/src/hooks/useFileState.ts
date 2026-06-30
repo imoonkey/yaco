@@ -69,6 +69,7 @@ export function useFileState(
       for (const [path, entry] of Object.entries(bucket)) {
         restored[path] = {
           serverContent: null,
+          serverRevision: null,
           draft: entry.draft,
           baseRevision: entry.baseRevision,
           viewportLine: entry.viewportLine,
@@ -433,13 +434,60 @@ export function useFileState(
     const wt = worktreeRef.current
     const key = wt ?? projectPath
     const signal = lifeAbortRef.current?.signal
-    fetchContent(project, path, wt, signal).then(result => {
-      if (!result || signal?.aborted) return
+    const cached = filesByWorktreeRef.current[key]?.[path]
+    const acceptEditedAt = cached?.editedAt ?? 0
+    const cachedContent = cached?.serverContent ?? null
+    const cachedRevision = cached?.serverRevision ?? null
+    const usedCached = cached?.status === 'conflict'
+      && cached.serverContent != null
+      && cached.serverRevision != null
+      && cached.serverRevision !== cached.baseRevision
+    if (usedCached) {
       setFilesIn(key, prev => {
         const existing = prev[path] ?? defaultFileState()
-        return { ...prev, [path]: fileTransition(existing, { type: 'ACCEPT_DISK', content: result.content, revision: result.revision }) }
+        return { ...prev, [path]: fileTransition(existing, { type: 'ACCEPT_DISK_CACHED', content: cachedContent!, revision: cachedRevision! }) }
       })
-    }).catch(() => {/* network/server error — keep conflict state */})
+    }
+    fetchContent(project, path, wt, signal).then(result => {
+      if (signal?.aborted) return
+      setFilesIn(key, prev => {
+        const existing = prev[path] ?? defaultFileState()
+        const stillCachedAccept = usedCached
+          && existing.draft == null
+          && existing.status === 'clean'
+          && existing.editedAt === acceptEditedAt
+          && existing.serverContent === cachedContent
+          && existing.serverRevision === cachedRevision
+          && existing.baseRevision === cachedRevision
+        if (!result) {
+          return stillCachedAccept
+            ? { ...prev, [path]: fileTransition(existing, { type: 'SERVER_MISSING' }) }
+            : prev
+        }
+        const event = (usedCached ? stillCachedAccept : existing.editedAt === acceptEditedAt)
+          ? { type: 'ACCEPT_DISK' as const, content: result.content, revision: result.revision }
+          : { type: 'SERVER_SYNC' as const, content: result.content, revision: result.revision }
+        return { ...prev, [path]: fileTransition(existing, event) }
+      })
+    }).catch(err => {
+      if (err?.name === 'AbortError' || signal?.aborted) return
+      setFilesIn(key, prev => {
+        const existing = prev[path]
+        if (!existing) return prev
+        const stillCachedAccept = usedCached
+          && existing.draft == null
+          && existing.status === 'clean'
+          && existing.editedAt === acceptEditedAt
+          && existing.serverContent === cachedContent
+          && existing.serverRevision === cachedRevision
+          && existing.baseRevision === cachedRevision
+        if (!stillCachedAccept) return prev
+        const status = err instanceof ApiError ? err.status : 0
+        const message = err instanceof ApiError ? err.message : 'Failed to load file'
+        return { ...prev, [path]: fileTransition(existing, { type: 'LOAD_ERROR', status, message }) }
+      })
+      console.warn(`acceptDisk: failed to refresh "${path}"`, err)
+    })
   }, [setFilesIn, projectPath])
 
   return {

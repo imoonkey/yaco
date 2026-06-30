@@ -9,6 +9,7 @@ export type LoadError = { status: number; message: string }
 
 export type FileState = {
   serverContent: string | null
+  serverRevision: number | null
   draft: string | null
   baseRevision: number | null
   viewportLine: number
@@ -151,7 +152,7 @@ export function parseDiffTab(tab: string): { path: string; base?: string; compar
 // --- Helpers ---
 
 export function defaultFileState(): FileState {
-  return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0, loadError: null }
+  return { serverContent: null, serverRevision: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0, loadError: null }
 }
 
 export function layoutKey(project: string): string {

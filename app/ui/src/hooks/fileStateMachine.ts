@@ -13,6 +13,7 @@ export type FileEvent =
   | { type: 'SAVE_CONFLICT' }
   | { type: 'SAVE_ERROR' }
   | { type: 'ACCEPT_DISK'; content: string; revision: number }
+  | { type: 'ACCEPT_DISK_CACHED'; content: string; revision: number }
   | { type: 'LOAD_ERROR'; status: number; message: string }
 
 // --- Transition ---
@@ -21,9 +22,18 @@ export type FileEvent =
 export function fileTransition(state: FileState, event: FileEvent): FileState {
   switch (event.type) {
     case 'SERVER_MISSING':
-      return state.status === 'missing' ? state : { ...state, status: 'missing' }
+      if (state.status === 'missing') return state
+      return {
+        ...state,
+        serverContent: state.draft == null ? null : state.serverContent,
+        serverRevision: state.draft == null ? null : state.serverRevision,
+        status: 'missing',
+      }
 
     case 'SERVER_SYNC': {
+      const knownRevision = Math.max(state.baseRevision ?? -Infinity, state.serverRevision ?? -Infinity)
+      if (event.revision < knownRevision) return state
+
       // Dirty/conflict with draft: a conflict is about CONTENT divergence, not
       // mtime. Comparing the file's mtime (our revision token) alone flags our
       // own save echoed back through the file watcher as a phantom disk change.
@@ -34,14 +44,17 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
         // the stale base revision is the guard that forces an explicit
         // Keep-Mine / Accept-Disk choice before a plain Ctrl+S overwrites disk.
         if (state.serverContent === event.content) {
-          if (state.status === 'conflict') return state
-          return state.baseRevision === event.revision ? state : { ...state, baseRevision: event.revision }
+          if (state.status === 'conflict') {
+            return state.serverRevision === event.revision ? state : { ...state, serverRevision: event.revision }
+          }
+          return state.baseRevision === event.revision && state.serverRevision === event.revision ? state : { ...state, baseRevision: event.revision, serverRevision: event.revision }
         }
         // Disk now equals our live buffer — buffer and disk agree, so we're back
         // in sync; clears any stale conflict/dirty for this path.
         if (state.draft === event.content) {
           return {
             serverContent: event.content,
+            serverRevision: event.revision,
             draft: null,
             baseRevision: event.revision,
             viewportLine: state.viewportLine,
@@ -51,15 +64,16 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
           }
         }
         // Disk content genuinely diverged under an unsaved draft — real conflict.
-        return { ...state, serverContent: event.content, status: 'conflict' }
+        return { ...state, serverContent: event.content, serverRevision: event.revision, status: 'conflict' }
       }
 
       // Clean file: adopt server content
-      if (state.serverContent === event.content && state.baseRevision === event.revision && state.status === 'clean' && state.loadError == null) {
+      if (state.serverContent === event.content && state.baseRevision === event.revision && state.serverRevision === event.revision && state.status === 'clean' && state.loadError == null) {
         return state
       }
       return {
         serverContent: event.content,
+        serverRevision: event.revision,
         draft: null,
         baseRevision: event.revision,
         viewportLine: state.viewportLine,
@@ -72,7 +86,7 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
     case 'FILL_REVISION':
       // Gentle fill for tab-open fetch: only update if no base revision yet
       if (state.baseRevision == null) {
-        return { ...state, serverContent: event.content, baseRevision: event.revision, loadError: null }
+        return { ...state, serverContent: event.content, serverRevision: event.revision, baseRevision: event.revision, loadError: null }
       }
       return state
 
@@ -93,9 +107,9 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
       // still equals the bytes we persisted; otherwise keep the newer draft
       // dirty over the freshly-written revision.
       if (state.draft == null || state.draft === event.content) {
-        return { ...state, serverContent: event.content, draft: null, baseRevision: event.revision, status: 'clean', loadError: null }
+        return { ...state, serverContent: event.content, serverRevision: event.revision, draft: null, baseRevision: event.revision, status: 'clean', loadError: null }
       }
-      return { ...state, serverContent: event.content, baseRevision: event.revision, status: 'dirty', loadError: null }
+      return { ...state, serverContent: event.content, serverRevision: event.revision, baseRevision: event.revision, status: 'dirty', loadError: null }
 
     case 'SAVE_CONFLICT':
       return { ...state, status: 'conflict' }
@@ -106,6 +120,19 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
     case 'ACCEPT_DISK':
       return {
         serverContent: event.content,
+        serverRevision: event.revision,
+        draft: null,
+        baseRevision: event.revision,
+        viewportLine: state.viewportLine,
+        status: 'clean',
+        editedAt: state.editedAt,
+        loadError: null,
+      }
+
+    case 'ACCEPT_DISK_CACHED':
+      return {
+        serverContent: event.content,
+        serverRevision: event.revision,
         draft: null,
         baseRevision: event.revision,
         viewportLine: state.viewportLine,

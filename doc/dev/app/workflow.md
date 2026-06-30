@@ -108,7 +108,14 @@ sudo tailscale set --operator=$USER                           # Linux only — l
 tailscale serve --bg --https=443 http://127.0.0.1:5173
 ```
 
-Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
+Confirm the mapping after any service reinstall or Tailscale reset:
+
+```bash
+tailscale serve status --json
+curl -sk https://laptop.tailnet-example.ts.net/ | grep '/@vite/client'
+```
+
+The Tailnet URL should serve Vite dev HTML (including `/@vite/client` and `/src/main.tsx`), not the backend's built `app/ui/dist` shell. Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
 
 The dev config also wires two remote-access perf knobs (dev-only — `apply: 'serve'`):
 
