@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-07-03: Clear orphaned mermaid error node in markdown preview
+
+**What changed:**
+- `MarkdownPreview`'s mermaid render loop (`WorkspaceEditorArea.tsx`) now sweeps
+  `body > [id^="dmermaid-"]` orphans at the start of each render pass and drops
+  `#d<id>` immediately on a failed render.
+- Regression test `MarkdownPreviewMermaid.test.tsx` drives the failed → valid
+  transition (a mocked mermaid mimicking the orphan side effect) and asserts no
+  orphan survives; documented the landmine on the mermaid line of
+  `doc/main/app/ui/workspace/editor-and-preview.md`.
+
+**Why:**
+- A valid saved doc still showed a mermaid "Syntax error" bomb. Root cause:
+  `mermaid.render()` appends its error diagram as a direct `document.body` child
+  on a parse failure and throws **without removing it**. The loop's catch only
+  swapped the diagram cell for an inline red `<pre>`, so any transient broken
+  edit while typing a mermaid block left a bomb floating over the preview that
+  survived every later valid render (until page reload).
+
+**Key files:** `app/ui/src/workspace/WorkspaceEditorArea.tsx`, `app/ui/src/workspace/__tests__/MarkdownPreviewMermaid.test.tsx`, `doc/main/app/ui/workspace/editor-and-preview.md`
+**Verification:** `tsc -b` · `eslint` · `vitest run src/` (1106 tests) green; real-chrome puppeteer repro confirmed the orphan mechanism and the sweep fix; Codex cross-provider review approve-with-nits (nit applied — sweep scoped to direct body children).
+**Commit:** `93b933b5` (fix) + docs follow-up
+**Next:** None
+**Blockers:** None
+
 ## 2026-06-30: Laptop Vite entry + robust Accept Disk conflict handling
 
 **What changed:**
