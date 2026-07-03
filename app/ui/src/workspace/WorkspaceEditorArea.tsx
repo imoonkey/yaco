@@ -142,16 +142,24 @@ export function MarkdownPreview({
     const renderAll = async () => {
       const mermaid = await loadMermaid()
       if (cancelled) return
+      // mermaid.render() appends its error diagram (id `d<id>`) as a direct child
+      // of document.body on a parse failure and never removes it, so a transient
+      // broken edit leaves a "Syntax error" bomb floating over the preview that
+      // survives later valid renders. Sweep orphans left by a prior pass, and drop
+      // each one on failure.
+      document.querySelectorAll('body > [id^="dmermaid-"]').forEach((node) => node.remove())
       for (const div of mermaidDivs) {
         if (cancelled) return
         const source = div.textContent?.trim()
         if (!source) continue
+        const id = `mermaid-${Date.now()}-${counter++}`
         try {
-          const { svg } = await mermaid.render(`mermaid-${Date.now()}-${counter++}`, source)
+          const { svg } = await mermaid.render(id, source)
           div.innerHTML = svg
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Diagram render failed'
           div.innerHTML = `<pre style="color:var(--sol-red);font-size:var(--text-ui-md);white-space:pre-wrap">${escapeHtml(msg)}</pre>`
+          document.getElementById(`d${id}`)?.remove()
         }
         div.setAttribute('data-processed', 'true')
       }
