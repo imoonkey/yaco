@@ -311,6 +311,17 @@ type TerminalConnection = {
 }
 
 const connections = new Map<WebSocket, TerminalConnection>()
+// Serialize image pastes per terminal session so a rapid re-paste never spawns
+// a second xclip owner while the previous one is still being read — that churn
+// is what makes the agent's `xclip -o` read fail and fall through to the
+// wl-paste path that hangs on Mutter's X11->Wayland bridge.
+const imagePasteChains = new Map<string, Promise<void>>()
+// After Ctrl+V the agent reads the clipboard asynchronously and gives no
+// signal when it is done, so we hold the queue this long before the next paste
+// may replace the X11 owner. This is a best-effort bound, not a hard guarantee:
+// the agent's `xclip -o` read is well under this in practice (tens of ms), but
+// a paste arriving after the agent stalls past the window could still race.
+const IMAGE_PASTE_READ_WINDOW_MS = 500
 let pingInterval: ReturnType<typeof setInterval> | null = null
 let sweepInterval: ReturnType<typeof setInterval> | null = null
 
@@ -477,15 +488,29 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
         }
         if (msg.type === 'image-paste' && typeof msg.mime === 'string' && typeof msg.base64 === 'string') {
           // Mirror the laptop's clipboard image into the desktop's X11 CLIPBOARD,
-          // then send Ctrl+V so the focused TUI agent (Claude Code, Codex)
-          // triggers its own paste path and reads the bytes back via xclip /
-          // arboard. Fire-and-forget — we don't block PTY input on it.
+          // then send Ctrl+V so the focused TUI agent (Claude Code, Codex) reads
+          // the bytes back via `xclip -o`. writeImageToClipboard only resolves
+          // once that read is verified serving, so we never send Ctrl+V into a
+          // stale/empty selection (which would send the agent to its hanging
+          // wl-paste fallback). Serialized per session so re-pastes don't race.
+          const mime = msg.mime
           const bytes = Buffer.from(msg.base64, 'base64')
-          writeImageToClipboard(msg.mime, bytes).then(() => {
+          const prev = imagePasteChains.get(sessionName) ?? Promise.resolve()
+          const next = prev.then(async () => {
+            await writeImageToClipboard(mime, bytes)
             proc.write('\x16')
+            // Keep the queue pending across the agent's read so a back-to-back
+            // paste can't replace the X11 owner while it is still being read.
+            await new Promise(resolve => setTimeout(resolve, IMAGE_PASTE_READ_WINDOW_MS))
           }).catch((err: unknown) => {
             const message = err instanceof ClipboardWriteError ? `${err.code}: ${err.message}` : String(err)
             console.warn(`[ws] image-paste failed for ${sessionName}: ${message}`)
+          })
+          imagePasteChains.set(sessionName, next)
+          // Drop the entry once it settles (unless a newer paste replaced it) so
+          // the map doesn't retain one promise per session name forever.
+          void next.then(() => {
+            if (imagePasteChains.get(sessionName) === next) imagePasteChains.delete(sessionName)
           })
           return
         }
