@@ -302,15 +302,15 @@ Discover the X11 / Wayland env vars (`DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`)
 - On GNOME/Wayland, mutter writes a per-session Xauthority cookie at `/run/user/$UID/.mutter-Xwaylandauth.<random>`. We pick the most recently modified one. DISPLAY defaults to `:0`, WAYLAND_DISPLAY to `wayland-0`.
 - Returns `{}` on macOS or when no graphical session is detectable — clipboard ops then fail with a clear `no-display` error rather than hanging.
 
-### clipboard-write.ts (~60 lines)
+### clipboard-write.ts (~120 lines)
 
 Pipe image bytes into the X11 CLIPBOARD selection via `xclip` so a TUI agent (Claude Code, Codex) running in a tmux session on the same desktop can read them through its own paste path.
 
 **Exports**: `writeImageToClipboard(mime, bytes)`, `ClipboardWriteError`
 
-- 10MB byte cap, MIME whitelist (`image/png|jpeg|gif|webp|bmp`)
-- Spawns `xclip -selection clipboard -t <mime> -i` with the env from `discoverClipboardEnv()`. xclip reads stdin to EOF then forks itself into a daemon that serves subsequent paste requests; the parent process exits with code 0 once stdin closes.
-- Pivoted to xclip + Xwayland because GNOME mutter's Wayland clipboard portal hangs `wl-copy` / `wl-paste` indefinitely on this setup; xclip via Xwayland round-trips reliably and both Claude Code (`xclip -t image/png -o`) and Codex (arboard Rust crate) read from the same X11 CLIPBOARD selection.
+- 10MB byte cap; **`image/png` only** — png is the sole target the agent reads over X11 (`xclip -t image/png -o`), so any other MIME would fall through to the hanging `wl-paste` branch and is rejected up front with `unsupported-mime`.
+- Spawns `xclip -selection clipboard -t image/png -i` with the env from `discoverClipboardEnv()`. xclip reads stdin to EOF then forks itself into a daemon that serves subsequent paste requests. **Resolves only after re-reading the selection with the agent's own `xclip -o` and confirming it returns the whole image** (bounded retry loop, each read timeout-guarded), so the caller never sends Ctrl+V to a not-yet-serving owner.
+- Pivoted to xclip + Xwayland because the agent reads `xclip -o 2>/dev/null || wl-paste`, and `wl-paste` hangs indefinitely on GNOME mutter's X11→Wayland clipboard bridge (the "Pasting…" freeze). The verify-before-Ctrl+V above — plus per-session serialization + a post-Ctrl+V read window in the WS loop (see [server.md](./server.md)) — keeps the agent's first-choice `xclip -o` succeeding so the hanging `wl-paste` fallback is never reached. Both Claude Code and Codex (arboard Rust crate) read from the same X11 CLIPBOARD selection. (Unsetting `WAYLAND_DISPLAY` does not help: `wl-paste` defaults to `wayland-0`.)
 
 ### session-summary.ts (~85 lines)
 

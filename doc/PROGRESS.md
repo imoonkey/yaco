@@ -1,5 +1,35 @@
 # Progress
 
+## 2026-07-03: Image-paste "Pasting…" hang — keep the agent on the X11 read path
+
+**What changed:**
+- `writeImageToClipboard` (`clipboard-write.ts`) now resolves only after re-reading
+  the selection with the agent's own `xclip -o` and confirming it returns the whole
+  image (bounded, per-read timeout-guarded retry); MIME set narrowed to `image/png`
+  only.
+- The `image-paste` WS handler (`index.ts`) serializes pastes per session and holds
+  the queue for a short read window (~500ms) after Ctrl+V; the settled chain entry is
+  dropped if still current.
+- Docs: `libs.md` clipboard-write.ts section + `server.md` image-paste step.
+
+**Why:**
+- On the GNOME/Wayland desktop the TUI agent reads a pasted image with
+  `xclip -o 2>/dev/null || wl-paste`. A re-paste's xclip ownership churn made
+  `xclip -o` fail, dropping the agent onto `wl-paste`, which hangs forever on
+  Mutter's X11→Wayland image bridge — the intermittent "Pasting…" freeze. Verifying
+  the X11 owner is live+serving before Ctrl+V (plus serialization) keeps the agent's
+  first-choice `xclip -o` succeeding, so the hanging `wl-paste` branch is unreachable.
+  `image/png` only because it is the sole agent-xclip-readable target (a non-PNG
+  selection would still fall through to `wl-paste`). Reconfirmed environmental
+  prerequisite: the feature needs an active GNOME login on the desktop (breaks after
+  any reboot that lands on the GDM greeter).
+
+**Key files:** `app/server/src/lib/clipboard-write.ts`, `app/server/src/index.ts`, `doc/main/app/backend/{libs.md,server.md}`
+**Verification:** server `npm test` 755 passed; `tsc` clean on both touched files; end-to-end validation against the real module (Claude's exact `xclip -o` returns the full latest image after every write incl. 2MB + rapid churn; non-PNG rejected cleanly with `unsupported-mime`); Codex review, 2 rounds — all 3 findings resolved (the 500ms window documented as a bounded, non-guaranteed mitigation). Deployed via `systemctl --user restart yaco-server`, fresh `YACO server running` boot line confirmed.
+**Commit:** `f230d67e` (fix) + docs follow-up
+**Next:** Optional — client-side transcode-to-PNG to support non-PNG clipboard sources; a real read-completion signal stronger than the fixed read window.
+**Blockers:** None
+
 ## 2026-07-03: Clear orphaned mermaid error node in markdown preview
 
 **What changed:**
