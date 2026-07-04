@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-07-03: Cursor jitter over editor tab/breadcrumb bars — phantom vertical scrollbar
+
+**What changed:**
+- The editor's horizontal-scroll strips — group tab strip (`GroupTabBar.tsx`),
+  legacy tab bar (`WorkspaceTabBar.tsx`), breadcrumb path bar
+  (`WorkspaceBreadcrumbs.tsx`), and the mobile tab list (`MobilePanelProjection.tsx`)
+  — now pair `overflow-x-auto` with `overflow-y-hidden`.
+
+**Why:**
+- Tailwind's `overflow-x-auto` sets only `overflow-x: auto`; per the CSS spec, when
+  one overflow axis is non-`visible` the other computes to `auto`, so each strip
+  silently ran `overflow-y: auto` too. Each is a fixed-height bar (28px minus a 1px
+  border → a 27px content box) whose single line renders 1px taller — measured live
+  on the tab strip as `clientHeight 27 / scrollHeight 28`. That 1px overflow spawns a
+  vertical scrollbar in a bar too short to scroll; with classic space-reserving
+  scrollbars (the user's Linux Chromium) the appear→relayout→disappear loop makes the
+  strip and the `cursor: pointer` over it jitter continuously. Headless Chromium uses
+  overlay scrollbars (no reserved space), so `elementFromPoint`/mutation/size probes
+  showed zero oscillation and never reproduced it — which pinned the cause to
+  scrollbar reservation, not a JS/React loop. The file-explorer tree tested clean
+  (rows are `width:100%`+`truncate`; a simulated reserved scrollbar gave `hOver: 0`).
+
+**Key files:** `app/ui/src/workspace/{GroupTabBar,WorkspaceTabBar,WorkspaceBreadcrumbs,MobilePanelProjection}.tsx`
+**Verification:** Live DOM: post-fix both strips compute `overflow-y: hidden`, `phantomVScroll: false`, whole-page bug-signature scan empty; user visually confirmed the jitter is gone. `tsc -b` clean; `eslint` clean on all four files; `MobilePanelProjection` tests 9/9 (the `overflow-x-auto` substring assertion still holds). Self-review: context menus are cursor-positioned overlays outside the scroll container, so `overflow-y-hidden` clips nothing new.
+**Commit:** `3683c063` (fix) + docs follow-up
+**Next:** If jitter is ever reported specifically inside the file-tree rows (tested clean here), capture a screen recording of that exact region.
+**Blockers:** None
+
 ## 2026-07-03: Image-paste "Pasting…" hang — keep the agent on the X11 read path
 
 **What changed:**
