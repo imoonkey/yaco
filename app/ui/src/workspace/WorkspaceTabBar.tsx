@@ -209,7 +209,7 @@ export function WorkspaceTabBar({
   return (
     <>
     <div className="flex items-center shrink-0" style={BAR_STYLE}>
-      <div ref={scrollRef} className="flex-1 min-w-0 flex items-center h-full overflow-x-auto" style={fadeMask ? { maskImage: fadeMask, WebkitMaskImage: fadeMask } : undefined}>
+      <div ref={scrollRef} className="flex-1 min-w-0 flex items-center h-full overflow-x-auto overflow-y-hidden" style={fadeMask ? { maskImage: fadeMask, WebkitMaskImage: fadeMask } : undefined}>
       {openTabs.length === 0 ? (
         <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>
       ) : openTabs.map(tab => {

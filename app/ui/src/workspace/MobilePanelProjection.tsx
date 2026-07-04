@@ -324,7 +324,7 @@ function MobileEditorTabs({ tabs, activeInstanceId, onSelect, onClose, onSave, o
       style={{ height: 34, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       data-testid="mobile-editor-tabs"
     >
-      <div data-testid="mobile-editor-tab-list" className="flex-1 min-w-0 h-full flex items-center overflow-x-auto">
+      <div data-testid="mobile-editor-tab-list" className="flex-1 min-w-0 h-full flex items-center overflow-x-auto overflow-y-hidden">
         {tabs.map((tab) => {
           const isActive = tab.instanceId === activeInstanceId
           const path = tabIdToPath(tab.tabId)

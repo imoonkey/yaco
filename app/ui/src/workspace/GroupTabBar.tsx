@@ -252,7 +252,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
     <div className="flex items-center shrink-0" style={BAR_STYLE} data-group-tab-bar={groupId}>
       <div
         ref={stripRef}
-        className="flex-1 min-w-0 flex items-center h-full overflow-x-auto"
+        className="flex-1 min-w-0 flex items-center h-full overflow-x-auto overflow-y-hidden"
         style={{ backgroundColor: dragging && mergeHint ? 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' : undefined }}
         onDragOver={onStripDragOver}
         onDragLeave={onStripDragLeave}

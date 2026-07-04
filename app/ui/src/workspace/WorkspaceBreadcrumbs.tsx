@@ -17,7 +17,7 @@ export function WorkspaceBreadcrumbs({
 
   return (
     <div
-      className="flex items-center px-3 shrink-0 overflow-x-auto"
+      className="flex items-center px-3 shrink-0 overflow-x-auto overflow-y-hidden"
       style={{ height: 28, fontSize: 'var(--text-ui-md)', color: 'var(--sol-text)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {dirSegments.map((seg, i) => {
