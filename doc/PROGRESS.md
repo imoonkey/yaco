@@ -1,5 +1,31 @@
 # Progress
 
+## 2026-07-04: File-tree repaint churn — memoize the Seti/folder icons
+
+**What changed:**
+- `FileTypeIcon` and `FolderIcon` (`fileExplorerIcons.tsx`) are now wrapped in
+  `React.memo`, keyed on their primitive props (`name` / `open`).
+
+**Why:**
+- The file tree's data reference churns on every git/session poll (see the
+  `FilesPanel` note: the tree ref changes each poll/SSE cycle). Un-memoized,
+  every poll re-rendered every visible row and re-applied `FileTypeIcon`'s
+  `dangerouslySetInnerHTML`, tearing down and rebuilding a **byte-identical**
+  `<svg>` per row — measured live as bursts of 8 icon-node swaps per poll
+  (`childList` add/remove on `span.shrink-0.inline-flex`, old/new outerHTML
+  identical). That repaint flickers the pointer over the file explorer (and the
+  editor tab strip / breadcrumb, which reuse `FileTypeIcon`), visible on the
+  remote/NoMachine desktop. It presented as **project-specific**: a project with
+  active sessions / git changes (quant) polls constantly and churns; an idle,
+  clean project (yaco) showed 0 tree mutations, so it looked fixed. This is the
+  second, distinct cause behind the "cursor jitter over file paths" report — the
+  first was the phantom vertical scrollbar on the editor bars (commit `3683c063`).
+
+**Key files:** `app/ui/src/components/fileExplorerIcons.tsx`
+**Verification:** Live DOM on quant: pre-fix ~8 icon-swaps/poll (24 in 5s); post-fix, with polling still live (fetches firing), tree icon-swaps and body mutations both 0 over 7s. `tsc -b` clean; `eslint` clean; `FilesPanel` + `EditorPanel` tests 44/44. Final visual confirmation pending on the user's real (classic-scrollbar / remote) display.
+**Next:** If any tree repaint churn remains, stabilize the `useFileTree` data reference so react-arborist doesn't re-render at all when nothing changed (deeper than this leaf-memo).
+**Blockers:** None
+
 ## 2026-07-03: Cursor jitter over editor tab/breadcrumb bars — phantom vertical scrollbar
 
 **What changed:**
