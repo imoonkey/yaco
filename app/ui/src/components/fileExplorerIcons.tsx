@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { Folder, FolderOpen } from 'lucide-react'
 import { getIcon } from '../lib/setiIcons'
 
@@ -24,13 +24,18 @@ function getSetiIcon(name: string): { svg: string; color: string } {
 }
 
 // --- Icons (shared with Workspace) ---
-export function FileTypeIcon({ name }: { name: string }) {
+// Memoized on their primitive props: the file tree re-renders on every git/session
+// poll (its data reference churns each cycle), and without memo React re-applies
+// `dangerouslySetInnerHTML` and rebuilds a byte-identical <svg> every time — a
+// wasteful repaint that flickers the pointer over the row (visible on remote
+// displays). memo skips the re-render entirely when `name`/`open` is unchanged.
+export const FileTypeIcon = memo(function FileTypeIcon({ name }: { name: string }) {
   const { svg, color } = useMemo(() => getSetiIcon(name), [name])
   const colored = svg.replace('<svg ', `<svg width="16" height="16" style="fill:${color}" `)
   return <span className="shrink-0 inline-flex" dangerouslySetInnerHTML={{ __html: colored }} />
-}
+})
 
-export function FolderIcon({ open }: { open?: boolean }) {
+export const FolderIcon = memo(function FolderIcon({ open }: { open?: boolean }) {
   const Icon = open ? FolderOpen : Folder
   return <Icon size={14} className="shrink-0" color="#C09553" />
-}
+})
