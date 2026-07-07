@@ -1,5 +1,32 @@
 # Progress
 
+# Progress
+
+## 2026-07-07: Sessions-list cursor jitter — composite the status pulse (opacity, not box-shadow)
+
+**What changed:**
+- `status-glow` (`index.css`, class `.status-pulse`) now animates **opacity** instead
+  of **box-shadow**, plus `will-change: opacity`.
+
+**Why:**
+- `.status-pulse` is on `processing` / `starting` session dots (and the history live
+  dot) — i.e. it runs exactly while agents are active. The old keyframes pulsed
+  `box-shadow` (0→3px), a **non-composited** property: it repaints on the main thread
+  every frame, and the shadow spread reaches into the dot's row, so the row under the
+  pointer repainted continuously → the cursor flickered over the sessions list on the
+  remote/NoMachine desktop. Opacity animates on the compositor without repainting
+  neighbours (the `blocked` dot already used opacity via `animate-pulse` and never
+  jittered). Third distinct source in the "cursor jitter over the UI" thread, after the
+  editor-bar phantom scrollbar (`3683c063`) and the file-icon repaint churn (`173798b5`).
+  The common mechanism: on this remote display, any continuous/frequent repaint under
+  the pointer re-asserts the cursor and flickers it — so the fix is always to cut the
+  repaint (kill the phantom scrollbar / memoize / composite).
+
+**Key files:** `app/ui/src/index.css`
+**Verification:** Vite serves the opacity keyframes + `will-change`; `tsc -b` clean. CSS mechanism is textbook (box-shadow = main-thread paint that spreads into the row; opacity = GPU composite, no neighbour repaint), corroborated by the non-jittery opacity-based `blocked` dot. Final visual confirmation pending on the user's NoMachine display.
+**Next:** Remaining main-thread-paint infinite animation is `skeleton-shimmer` (animates `background-position`) but it only runs during loading (transient). Wholesale option for the remote display: enable `prefers-reduced-motion` — the app already honours it (the reduced-motion `@media` block zeroes all animation durations).
+**Blockers:** None
+
 ## 2026-07-04: File-tree repaint churn — memoize the Seti/folder icons
 
 **What changed:**
