@@ -13,14 +13,18 @@
   dot) — i.e. it runs exactly while agents are active. The old keyframes pulsed
   `box-shadow` (0→3px), a **non-composited** property: it repaints on the main thread
   every frame, and the shadow spread reaches into the dot's row, so the row under the
-  pointer repainted continuously → the cursor flickered over the sessions list on the
-  remote/NoMachine desktop. Opacity animates on the compositor without repainting
-  neighbours (the `blocked` dot already used opacity via `animate-pulse` and never
-  jittered). Third distinct source in the "cursor jitter over the UI" thread, after the
-  editor-bar phantom scrollbar (`3683c063`) and the file-icon repaint churn (`173798b5`).
-  The common mechanism: on this remote display, any continuous/frequent repaint under
-  the pointer re-asserts the cursor and flickers it — so the fix is always to cut the
-  repaint (kill the phantom scrollbar / memoize / composite).
+  pointer repainted continuously → the cursor flickered over the sessions list. Opacity
+  animates on the compositor without repainting neighbours (the `blocked` dot already
+  used opacity via `animate-pulse` and never jittered). Third distinct source in the
+  "cursor jitter over the UI" thread, after the editor-bar phantom scrollbar
+  (`3683c063`) and the file-icon repaint churn (`173798b5`).
+  The common mechanism (CORRECTION — earlier entries wrongly blamed a NoMachine remote
+  display): the user views the desktop's yaco server from a **laptop browser over
+  Tailscale HTTPS** (`https://desktop.tailnet-example.ts.net/`), a normal local browser —
+  NOT a remote desktop. The flicker is **browser-level**: any continuous/frequent
+  repaint of the region under the pointer makes Chromium re-assert/re-hit-test the
+  cursor there and it jitters. So each fix cuts the repaint (kill the phantom scrollbar
+  / memoize / composite), and all three help every user on any display.
 
 **Key files:** `app/ui/src/index.css`
 **Verification:** Vite serves the opacity keyframes + `will-change`; `tsc -b` clean. CSS mechanism is textbook (box-shadow = main-thread paint that spreads into the row; opacity = GPU composite, no neighbour repaint), corroborated by the non-jittery opacity-based `blocked` dot. Final visual confirmation pending on the user's NoMachine display.
