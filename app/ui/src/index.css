@@ -274,13 +274,19 @@
   --text-ui-2xl: 16px;
 }
 
-/* Session status pulse — solid dot with expanding glow ring */
+/* Session status pulse — opacity-only so it composites on the GPU. A box-shadow
+   pulse repaints on the main thread every frame AND its spread reaches into the
+   dot's row, so the row under the pointer repainted continuously — which flickered
+   the cursor over the sessions list on remote/NoMachine displays. Opacity animates
+   on the compositor without repainting neighbours (same as the `blocked` dot's
+   `animate-pulse`). */
 @keyframes status-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sol-cyan) 50%, transparent); }
-  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--sol-cyan) 0%, transparent); }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
 }
 .status-pulse {
   animation: status-glow 1.8s ease-in-out infinite;
+  will-change: opacity;
 }
 
 /* Voice compose dialog animations */
