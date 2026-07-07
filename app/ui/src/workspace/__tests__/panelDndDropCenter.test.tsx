@@ -314,7 +314,7 @@ describe('GroupTabBar — cross-group move + group merge', () => {
 function renderPanelGroup(group: TabsNode, tree: LayoutNode) {
   const commands = {
     selectTab: vi.fn(), closePane: vi.fn(), splitGroup: vi.fn(), reorderGroupTab: vi.fn(),
-    closeGroup: vi.fn(), setActiveGroup: vi.fn(), setEditorPrefs: vi.fn(), acceptDisk: vi.fn(),
+    closeGroup: vi.fn(), setActiveGroup: vi.fn(), setTabView: vi.fn(), setAutocomplete: vi.fn(), acceptDisk: vi.fn(),
     moveTab: vi.fn(), moveTabToSplit: vi.fn(), moveGroup: vi.fn(),
     actions: { filesRef: { current: {} } },
   } as unknown as WorkspaceCommands
@@ -323,7 +323,7 @@ function renderPanelGroup(group: TabsNode, tree: LayoutNode) {
   } as unknown as WorkspaceSelection
   const editorTabs: WorkspaceEditorTabs = { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() }
   const layoutValue = {
-    layout: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
+    layout: { autocompleteEnabled: false },
     panelLayout: { desktop: tree },
   } as unknown as WorkspaceLayoutContextValue
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv

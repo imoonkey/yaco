@@ -35,7 +35,7 @@ const leftOnly = {
 const mkInitial = (d: unknown, showSidebar: boolean, showRightPanel: boolean): PersistedState => ({
   terminalBindings: {}, editorMru: [], terminalMru: [], activeGroupId: '',
   mobilePane: 'files', recentFiles: [],
-  panelLayout: { version: 1, desktop: d as never, mobile: { activeDock: 'browse' }, panelState: { editor: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false } } as never },
+  panelLayout: { version: 1, desktop: d as never, mobile: { activeDock: 'browse' }, panelState: { files: { mode: 'tree' } } },
   layout: { ...DEFAULT_LAYOUT, showSidebar, showRightPanel },
 })
 

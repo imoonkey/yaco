@@ -29,7 +29,7 @@ import {
   type PanelId, type SplitSide,
 } from './context'
 import type { PaneMarker } from './panelInstance'
-import { collectIds, editorInstancesInOrder, groupCount, regionsOf, tabIdToPath } from './panelLayoutModel'
+import { collectIds, editorInstancesInOrder, editorTabView, groupCount, regionsOf, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
 import type { LayoutNode, TabsNode } from '../hooks/workspaceTypes'
 import type { Region } from './dndGeometry'
@@ -129,6 +129,10 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
 
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
+  // The editor view shown in the tab bar's actions is the ACTIVE editor tab's own
+  // per-tab view; its setter targets that instance. Autocomplete is global.
+  const activeEditorTab = activeTabNode?.kind === 'editor' ? activeTabNode : null
+  const activeView = editorTabView(activeEditorTab)
 
   return (
     <div
@@ -147,11 +151,12 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         terminalBindings={selection.terminalBindings}
         pathsOpenElsewhere={pathsOpenElsewhere}
         editorPrefs={{
-          previewMode: layout.previewMode,
-          splitDirection: layout.splitDirection,
+          previewMode: activeView.previewMode,
+          splitDirection: activeView.splitDirection,
           autocompleteEnabled: layout.autocompleteEnabled,
         }}
-        onSetEditorPrefs={commands.setEditorPrefs}
+        onSetView={(patch) => { if (activeEditorTab) commands.setTabView(activeEditorTab.instanceId, patch) }}
+        onSetAutocomplete={commands.setAutocomplete}
         onSelectTab={onSelectTab}
         onCloseTab={onCloseTab}
         onSplit={onSplit}

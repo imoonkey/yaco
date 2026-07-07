@@ -47,7 +47,7 @@ import {
   type WorkspaceEditorBuffers, type WorkspaceEditorTabs,
   type WorkspaceCommands, type WorkspaceControllers, type WorkspaceRawActions,
   type WorkspaceControllerRegistry, type FileRevealIntent, type WorkspacePanelResources,
-  type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
+  type FocusTarget, type JumpRequest, type PanelId,
   type PanelPlacement, type SplitSide,
 } from './context'
 import type { ResizeSplitOptions } from './panelLayoutModel'
@@ -139,6 +139,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
     openTasksTab,
     pinTab, reorderGroupTab, moveTab, moveTabToSplit, moveGroup,
+    setTabView,
     openFileInGroup, openDiffInGroup, previewDiffInGroup,
     openFileRouted, previewFileRouted, openDiffRouted, previewDiffRouted,
     openBoundTerminalRouted, openFileAtLineRouted, toggleSeparateKinds,
@@ -751,8 +752,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const resetLayout = useCallback(() => {
     setPanelLayout((prev) => modelResetLayout(prev))
   }, [setPanelLayout])
-  const setEditorPrefs = useCallback((patch: Partial<EditorPrefs>) => {
-    updateLayout(patch)
+  const setAutocomplete = useCallback((enabled: boolean) => {
+    updateLayout({ autocompleteEnabled: enabled })
   }, [updateLayout])
 
   const commands = useMemo<WorkspaceCommands>(() => ({
@@ -768,7 +769,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
-    movePanel, splitPanel, resetLayout, setEditorPrefs, toggleSeparateKinds,
+    movePanel, splitPanel, resetLayout, setTabView, setAutocomplete, toggleSeparateKinds,
     actions: rawActions,
   }), [
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
@@ -780,7 +781,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
-    movePanel, splitPanel, resetLayout, setEditorPrefs, toggleSeparateKinds, rawActions,
+    movePanel, splitPanel, resetLayout, setTabView, setAutocomplete, toggleSeparateKinds, rawActions,
   ])
 
   // --- Context values ---

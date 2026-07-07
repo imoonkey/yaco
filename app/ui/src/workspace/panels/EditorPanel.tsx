@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
 import { editorTabByInstance } from '../../hooks/useLayoutState'
+import { editorTabView } from '../panelLayoutModel'
 import { fetchGitCompare } from '../../hooks/useApi'
 import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
@@ -64,7 +65,10 @@ export function EditorPanel() {
   // NOT the tab bar, NOT another instance's tab.
   const myTab = editorTabByInstance(tree, instanceId)
   const activeTab = myTab?.tabId ?? null
-  const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
+  // The md/html view (previewMode/splitDirection/splitSize) is PER-TAB — read it off
+  // THIS instance's tab. Autocomplete stays a GLOBAL editor preference.
+  const { previewMode, splitDirection, splitSize } = editorTabView(myTab)
+  const { autocompleteEnabled } = layout
   // Derived tab state (mirrors the inline editor body).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeFileState = activeFilePath ? files[activeFilePath] : null
@@ -158,7 +162,7 @@ export function EditorPanel() {
       projectName={projectName}
       worktree={worktree}
       instanceId={instanceId}
-      onLayoutUpdate={actions.updateLayout}
+      onSetView={(patch) => commands.setTabView(instanceId, patch)}
       onSaveFile={commands.saveFile}
       onForceSave={commands.forceSave}
       onAcceptDisk={commands.acceptDisk}

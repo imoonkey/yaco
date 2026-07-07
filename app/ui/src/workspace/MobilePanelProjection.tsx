@@ -26,7 +26,7 @@ import { toggleTheme } from '../lib/theme'
 import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { collectFramedLeaves } from './desktopTreeSizing'
-import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath, groupOf } from './panelLayoutModel'
+import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath, groupOf, editorTabView } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes } from './tabLabels'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
@@ -105,6 +105,8 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
     ?? groupEditorTabs[0]?.instanceId
     ?? ''
   const activeEditorTabId = groupEditorTabs.find((t) => t.instanceId === editorInstanceId)?.tabId ?? ''
+  // The mobile editor-actions toggle reflects the active editor tab's PER-TAB view.
+  const activeEditorView = editorTabView(groupEditorTabs.find((t) => t.instanceId === editorInstanceId) ?? null)
   const showMobileEditorActions = voice.editor.eligible
     || (!!activeEditorTabId && !isDiffTab(activeEditorTabId))
   const terminalGroupId = activeTerminalId ? groupOf(tree, activeTerminalId) : null
@@ -145,11 +147,12 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
           {activeEditorTabId && (
             <EditorActions
               tabId={activeEditorTabId}
-              previewMode={layout.previewMode}
-              splitDirection={layout.splitDirection}
+              previewMode={activeEditorView.previewMode}
+              splitDirection={activeEditorView.splitDirection}
               autocompleteEnabled={layout.autocompleteEnabled}
               isTouch={isTouch}
-              onSetEditorPrefs={commands.setEditorPrefs}
+              onSetView={(patch) => commands.setTabView(editorInstanceId, patch)}
+              onSetAutocomplete={commands.setAutocomplete}
             />
           )}
         </>

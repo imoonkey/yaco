@@ -34,6 +34,7 @@ type CommandMocks = WorkspaceCommands & {
   openToSide: ReturnType<typeof vi.fn>
   closeFocusedSurface: ReturnType<typeof vi.fn>
   setFocusTarget: ReturnType<typeof vi.fn>
+  setTabView: ReturnType<typeof vi.fn>
   actions: {
     setActiveTab: ReturnType<typeof vi.fn>
     setMobilePane: ReturnType<typeof vi.fn>
@@ -50,6 +51,7 @@ function makeCommands(): CommandMocks {
     openToSide: vi.fn(),
     closeFocusedSurface: vi.fn(() => true),
     setFocusTarget: vi.fn(),
+    setTabView: vi.fn(),
     toggleTasks: vi.fn(),
     toggleDock: vi.fn(),
     toggleActivity: vi.fn(),
@@ -69,6 +71,8 @@ type SelectionOverrides = Partial<{
   showSearch: boolean
   activeSession: string
   activeGroupId: string
+  activeEditorId: string
+  activeEditorTab: WorkspaceSelection['activeEditorTab']
   activeEditorTabId: string | null
 }>
 
@@ -76,6 +80,8 @@ function makeSelection(over: SelectionOverrides): WorkspaceSelection {
   return {
     activeSession: '',
     activeGroupId: 'group:1',
+    activeEditorId: 'editor',
+    activeEditorTab: null,
     activeEditorTabId: null,
     focusedPane: { kind: 'editor', instanceId: 'editor' },
     focusTarget: 'editor',
@@ -139,7 +145,7 @@ function renderKeyboard(opts: {
   const commands = makeCommands()
   const selection = makeSelection(opts.selection ?? {})
   const data = { sessions: { orderedSessions: opts.orderedSessions ?? [] } } as unknown as WorkspaceData
-  const layout = { layout: { previewMode: 'edit' }, panelLayout: opts.panelLayout ?? defaultWorkspacePanelLayout() } as unknown as WorkspaceLayoutContextValue
+  const layout = { layout: {}, panelLayout: opts.panelLayout ?? defaultWorkspacePanelLayout() } as unknown as WorkspaceLayoutContextValue
   const env = { viewport: { isMobile: false } } as unknown as WorkspaceEnv
   const panelResources = { fileTree: { data: opts.fileTree ?? null } } as unknown as WorkspacePanelResources
   render(
@@ -236,6 +242,65 @@ describe('useWorkspaceKeyboard — split chords (Cmd+\\ / Cmd+K Cmd+\\)', () => 
     // No mountPane → querySelector returns null.
     cmd('\\', 'Backslash')
     expect(commands.splitGroup).not.toHaveBeenCalled()
+  })
+})
+
+describe('useWorkspaceKeyboard — Cmd+Shift+V preview cycle (per-tab)', () => {
+  // The active GROUP's active editor tab carries the per-tab previewMode the cycle
+  // reads + writes (canTogglePreview gates on THIS tab, not the global-MRU editor).
+  const activeTab = (previewMode: 'edit' | 'split' | 'preview'): WorkspaceSelection['activeEditorTab'] =>
+    ({ instanceId: 'editor', kind: 'editor', tabId: 'README.md', ...(previewMode !== 'edit' ? { previewMode } : {}) })
+
+  const layout = normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:1', activeTab: 'editor', tabs: [{ instanceId: 'editor', kind: 'editor', tabId: 'README.md' }] } },
+      ],
+    },
+  })
+
+  it('cycles the ACTIVE editor tab via setTabView(instanceId, {previewMode}), not updateLayout', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeEditorTab: activeTab('edit'), focusedPane: { kind: 'editor', instanceId: 'editor' } },
+      panelLayout: layout,
+    })
+    cmd('v', 'KeyV', { shiftKey: true })
+    // edit → split, written per-tab; the global layout path is untouched.
+    expect(commands.setTabView).toHaveBeenCalledWith('editor', { previewMode: 'split' })
+    expect(commands.actions.updateLayout).not.toHaveBeenCalled()
+  })
+
+  it('reads the tab\'s OWN current mode to pick the next (split → preview)', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeEditorTab: activeTab('split'), focusedPane: { kind: 'editor', instanceId: 'editor' } },
+      panelLayout: layout,
+    })
+    cmd('v', 'KeyV', { shiftKey: true })
+    expect(commands.setTabView).toHaveBeenCalledWith('editor', { previewMode: 'preview' })
+  })
+
+  it('wraps preview → edit', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeEditorTab: activeTab('preview'), focusedPane: { kind: 'editor', instanceId: 'editor' } },
+      panelLayout: layout,
+    })
+    cmd('v', 'KeyV', { shiftKey: true })
+    expect(commands.setTabView).toHaveBeenCalledWith('editor', { previewMode: 'edit' })
+  })
+
+  it('targets the ACTIVE-GROUP tab, not the global-MRU editor, when they diverge', () => {
+    // MRU editor is a DIFFERENT instance than the active group's active editor tab
+    // (e.g. after selecting another group without focusing its editor). The cycle
+    // must write the tab the user sees + `canTogglePreview` gated on.
+    const { commands } = renderKeyboard({
+      selection: { activeEditorId: 'editor:2', activeEditorTab: activeTab('edit'), focusedPane: { kind: 'editor', instanceId: 'editor' } },
+      panelLayout: layout,
+    })
+    cmd('v', 'KeyV', { shiftKey: true })
+    expect(commands.setTabView).toHaveBeenCalledWith('editor', { previewMode: 'split' })
+    expect(commands.setTabView).not.toHaveBeenCalledWith('editor:2', expect.anything())
   })
 })
 

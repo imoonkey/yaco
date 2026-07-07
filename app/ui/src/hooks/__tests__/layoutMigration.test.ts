@@ -176,7 +176,7 @@ describe('migration: oldest flat blob → group model', () => {
     expect(terminalInstancesInOrder(state.panelLayout.desktop)).toContain('terminal')
     expect(state.terminalBindings.terminal).toBe('sess-1')
     expect(state.recentFiles).toEqual(['a.ts', 'b.ts'])
-    expect(state.panelLayout.panelState.editor.autocompleteEnabled).toBe(true)
+    expect(state.layout.autocompleteEnabled).toBe(true)
     // activeGroupId names a live group (the MRU head's group).
     expect(firstGroupId(state.panelLayout.desktop)).toBeTruthy()
     expect(groupOf(state.panelLayout.desktop, state.editorMru[0])).toBe(state.activeGroupId)
@@ -273,7 +273,7 @@ describe('migration: new-shape round-trip via useWorkspaceState', () => {
       mobile: { activeDock: 'browse' as const },
       panelState: {
         files: { mode: 'search' as const },
-        editor: { previewMode: 'preview' as const, splitDirection: 'vertical' as const, splitSize: 42, autocompleteEnabled: true },
+        separateKinds: true,
       },
     }
     seedLayout({ panelLayout: stored, editorMru: ['editor'], terminalBindings: {}, activeGroupId: 'group:2' })
@@ -301,6 +301,6 @@ describe('layout: project-global, old per-worktree keys ignored', () => {
     seedLayout({ layout: { ...DEFAULT_LAYOUT, autocompleteEnabled: false } })
 
     // loadPersistedState takes the project only; the project layout wins.
-    expect(loadPersistedState(PROJECT).panelLayout.panelState.editor.autocompleteEnabled).toBe(false)
+    expect(loadPersistedState(PROJECT).layout.autocompleteEnabled).toBe(false)
   })
 })

@@ -13,15 +13,26 @@ import {
 import {
   voiceReducer, INITIAL_STATE, selectTarget, selectInteractionState, type VoiceTargetContext,
 } from '../../hooks/voiceStateMachine'
-import { type LayoutNode, type GroupTab } from '../../hooks/workspaceTypes'
+import { type LayoutNode, type GroupTab, type PreviewMode } from '../../hooks/workspaceTypes'
 
-// An editor GroupTab (the eligible-target unit under FLAT).
-const et = (tabId: string): GroupTab => ({ instanceId: 'editor', kind: 'editor', tabId })
+// An editor GroupTab (the eligible-target unit under FLAT). `previewMode` now rides
+// PER-TAB (omitted when 'edit'); pass it to model a previewable file's view mode.
+const et = (tabId: string, previewMode?: PreviewMode): GroupTab =>
+  previewMode && previewMode !== 'edit'
+    ? { instanceId: 'editor', kind: 'editor', tabId, previewMode }
+    : { instanceId: 'editor', kind: 'editor', tabId }
 
-// A tree of editor tabs keyed by instance id. An instance with no editor tab here
-// is ineligible (editorVoiceTab → null), modelling the old `ev(null)` empty pane.
-function mkTree(editors: Record<string, string>): LayoutNode {
-  const tabs: GroupTab[] = Object.entries(editors).map(([instanceId, tabId]) => ({ instanceId, kind: 'editor', tabId }))
+// A tree of editor tabs keyed by instance id. A value is either a bare tabId or a
+// `[tabId, previewMode]` pair (the per-tab view). An instance with no editor tab
+// here is ineligible (editorVoiceTab → null), modelling the old empty pane.
+type EditorSpec = string | [string, PreviewMode]
+function mkTree(editors: Record<string, EditorSpec>): LayoutNode {
+  const tabs: GroupTab[] = Object.entries(editors).map(([instanceId, spec]) => {
+    const [tabId, previewMode] = Array.isArray(spec) ? spec : [spec, undefined]
+    return previewMode && previewMode !== 'edit'
+      ? { instanceId, kind: 'editor', tabId, previewMode }
+      : { instanceId, kind: 'editor', tabId }
+  })
   return { kind: 'tabs', id: 'group:1', tabs, activeTab: tabs[0]?.instanceId ?? '' }
 }
 
@@ -32,7 +43,6 @@ function base(overrides: Partial<ResolveVoiceTargetArgs> = {}): ResolveVoiceTarg
     terminalIds: ['terminal'],
     tree: mkTree({ editor: 'a.ts', 'editor:2': 'b.ts' }),
     terminalBindings: { terminal: 's1' },
-    previewMode: 'edit',
     showingTasks: false,
     activeEditorId: 'editor:2',
     activeTerminalId: 'terminal',
@@ -66,13 +76,14 @@ describe('resolveVoiceTarget — eligible instances', () => {
   })
 
   it('excludes a previewable file shown in preview mode, keeps it in split mode', () => {
-    const md = base({ editorIds: ['editor'], tree: mkTree({ editor: 'README.md' }), activeEditorId: 'editor' })
-    expect(resolveVoiceTarget({ ...md, previewMode: 'preview' }).instances.some(i => i.kind === 'editor')).toBe(false)
-    expect(resolveVoiceTarget({ ...md, previewMode: 'split' }).instances.some(i => i.kind === 'editor')).toBe(true)
+    const preview = base({ editorIds: ['editor'], tree: mkTree({ editor: ['README.md', 'preview'] }), activeEditorId: 'editor' })
+    expect(resolveVoiceTarget(preview).instances.some(i => i.kind === 'editor')).toBe(false)
+    const split = base({ editorIds: ['editor'], tree: mkTree({ editor: ['README.md', 'split'] }), activeEditorId: 'editor' })
+    expect(resolveVoiceTarget(split).instances.some(i => i.kind === 'editor')).toBe(true)
   })
 
   it('keeps a non-previewable file editable even in preview mode', () => {
-    const code = base({ editorIds: ['editor'], tree: mkTree({ editor: 'a.ts' }), activeEditorId: 'editor', previewMode: 'preview' })
+    const code = base({ editorIds: ['editor'], tree: mkTree({ editor: ['a.ts', 'preview'] }), activeEditorId: 'editor' })
     expect(resolveVoiceTarget(code).instances.some(i => i.kind === 'editor')).toBe(true)
   })
 
@@ -84,6 +95,17 @@ describe('resolveVoiceTarget — eligible instances', () => {
   it('excludes an unbound terminal', () => {
     const { instances } = resolveVoiceTarget(base({ terminalBindings: { terminal: '' } }))
     expect(instances.some(i => i.kind === 'terminal')).toBe(false)
+  })
+
+  it('scopes preview-mode ineligibility PER TAB: a preview-mode previewable file is out while an edit-mode sibling stays in', () => {
+    // Two editor instances, each a previewable file: one tab is in preview mode
+    // (ineligible), the sibling is default edit mode (eligible) — the view rides
+    // per-tab, so one being previewed never blocks the other.
+    const { instances } = resolveVoiceTarget(base({
+      editorIds: ['editor', 'editor:2'],
+      tree: mkTree({ editor: ['README.md', 'preview'], 'editor:2': 'GUIDE.md' }),
+    }))
+    expect(instances.filter(i => i.kind === 'editor').map(i => i.instanceId)).toEqual(['editor:2'])
   })
 })
 
@@ -153,22 +175,22 @@ describe('instanceFromTarget — frozen target → display instance', () => {
 
 describe('isEditorVoiceEligible — shared editable-target predicate', () => {
   it('accepts an editable file tab', () => {
-    expect(isEditorVoiceEligible(et('a.ts'), 'edit', false)).toBe(true)
+    expect(isEditorVoiceEligible(et('a.ts'), false)).toBe(true)
   })
   it('rejects an empty pane and a diff tab', () => {
-    expect(isEditorVoiceEligible(null, 'edit', false)).toBe(false)
-    expect(isEditorVoiceEligible(et('diff:a.ts'), 'edit', false)).toBe(false)
+    expect(isEditorVoiceEligible(null, false)).toBe(false)
+    expect(isEditorVoiceEligible(et('diff:a.ts'), false)).toBe(false)
   })
-  it('rejects a previewable file rendered in preview mode, accepts it in split/edit', () => {
-    expect(isEditorVoiceEligible(et('README.md'), 'preview', false)).toBe(false)
-    expect(isEditorVoiceEligible(et('README.md'), 'split', false)).toBe(true)
-    expect(isEditorVoiceEligible(et('README.md'), 'edit', false)).toBe(true)
+  it('rejects a previewable file whose tab is in preview mode, accepts it in split/edit', () => {
+    expect(isEditorVoiceEligible(et('README.md', 'preview'), false)).toBe(false)
+    expect(isEditorVoiceEligible(et('README.md', 'split'), false)).toBe(true)
+    expect(isEditorVoiceEligible(et('README.md'), false)).toBe(true)
   })
-  it('keeps a non-previewable file editable even in preview mode', () => {
-    expect(isEditorVoiceEligible(et('a.ts'), 'preview', false)).toBe(true)
+  it('keeps a non-previewable file editable even when its tab is in preview mode', () => {
+    expect(isEditorVoiceEligible(et('a.ts', 'preview'), false)).toBe(true)
   })
   it('rejects any editor while tasks overlays the active surface', () => {
-    expect(isEditorVoiceEligible(et('a.ts'), 'edit', true)).toBe(false)
+    expect(isEditorVoiceEligible(et('a.ts'), true)).toBe(false)
   })
 })
 

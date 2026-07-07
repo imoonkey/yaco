@@ -68,10 +68,6 @@ function parseFlatLayout(pl: Record<string, unknown>): WorkspaceLayout {
     showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
     showTextSearch: typeof pl.showTextSearch === 'boolean' ? pl.showTextSearch : DEFAULT_LAYOUT.showTextSearch,
     autocompleteEnabled: typeof pl.autocompleteEnabled === 'boolean' ? pl.autocompleteEnabled : DEFAULT_LAYOUT.autocompleteEnabled,
-    previewMode: pl.previewMode === 'edit' || pl.previewMode === 'preview' || pl.previewMode === 'split' ? pl.previewMode
-      : DEFAULT_LAYOUT.previewMode,
-    splitDirection: pl.splitDirection === 'horizontal' || pl.splitDirection === 'vertical' ? pl.splitDirection : DEFAULT_LAYOUT.splitDirection,
-    splitSize: typeof pl.splitSize === 'number' && pl.splitSize >= 20 && pl.splitSize <= 80 ? pl.splitSize : DEFAULT_LAYOUT.splitSize,
     leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
     rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
     explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),
@@ -189,7 +185,7 @@ function loadGroupBlob(parsed: Record<string, unknown>, stored: Record<string, u
  *  `editorMru` through the migration id map, preserve terminal bindings + dirty
  *  buffers (the latter via the path-keyed file state), seed activeGroupId from the
  *  MRU head's group. */
-function migrateOldBlob(parsed: Record<string, unknown>, flat: WorkspaceLayout): LoadedTree {
+function migrateOldBlob(parsed: Record<string, unknown>): LoadedTree {
   const stored = asRecord(parsed.panelLayout)
   const isV1 = stored.version === 1
   const activeSession = typeof parsed.activeSession === 'string' ? parsed.activeSession : ''
@@ -198,14 +194,10 @@ function migrateOldBlob(parsed: Record<string, unknown>, flat: WorkspaceLayout):
   const oldViews = parseOldViews(parsed)
   const { tree: migratedTree, idMap } = migrateTreeToGroups(oldTree, oldViews)
 
-  const panelState = isV1 ? stored.panelState : {
-    editor: {
-      previewMode: flat.previewMode,
-      splitDirection: flat.splitDirection,
-      splitSize: flat.splitSize,
-      autocompleteEnabled: flat.autocompleteEnabled,
-    },
-  }
+  // The md/html view is per-tab now, so a pre-group blob carries no panelState —
+  // an old global previewMode is simply dropped and each migrated tab loads at the
+  // default view. `separateKinds`/files-mode default off/tree via normalization.
+  const panelState = isV1 ? stored.panelState : {}
   const panelLayout = normalizeLayout({
     version: 1,
     desktop: migratedTree,
@@ -249,7 +241,7 @@ export function loadPersistedState(project: string): PersistedState {
 
     const stored = asRecord(parsed.panelLayout)
     const isNewGroupBlob = stored.version === 1 && isGroupShapeTree(stored.desktop)
-    const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed, layout)
+    const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed)
 
     // The flat `showSidebar`/`showRightPanel` flags and the tree's `hidden` flags
     // are persisted independently (and computed independently by the migration), so

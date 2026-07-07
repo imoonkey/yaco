@@ -12,6 +12,7 @@ import {
 import {
   defaultWorkspacePanelLayout, normalizeLayout, firstGroupId, groupOf,
   tabsInGroup, editorTabPaths, editorInstancesInOrder, terminalInstancesInOrder,
+  editorTabView, tabByInstance,
 } from '../../workspace/panelLayoutModel'
 
 // --- Fixtures ---------------------------------------------------------------
@@ -426,5 +427,55 @@ describe('BIND_TERMINAL / buildInstanceState', () => {
     expect(s.editorMru).toEqual(['editor']) // ghost dropped
     expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor' })
     expect(s.activeGroupId).toBe('group:1') // 'gone' clamped to the live group
+  })
+})
+
+// --- SET_TAB_VIEW (per-tab md/html view) ------------------------------------
+
+describe('SET_TAB_VIEW — per-tab view is independent + normalized', () => {
+  const viewOf = (s: InstanceState, id: string) => editorTabView(tabByInstance(s.panelLayout.desktop, id))
+
+  it('patches only the target tab; a sibling in another group stays default', () => {
+    // Two groups, one editor tab each. Set tab1 to split; tab2 must be unaffected.
+    let s = makeState({ layout: twoGroups([editor('e1', 'a.md')], [editor('e2', 'b.md')]) })
+    s = instanceReducer(s, { type: 'SET_TAB_VIEW', instanceId: 'e1', patch: { previewMode: 'split' } })
+    expect(viewOf(s, 'e1').previewMode).toBe('split')
+    expect(viewOf(s, 'e2').previewMode).toBe('edit') // sibling untouched
+  })
+
+  it('patches only the target tab among two tabs in the SAME group', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'a.md'), editor('e2', 'b.md')]) })
+    s = instanceReducer(s, { type: 'SET_TAB_VIEW', instanceId: 'e2', patch: { previewMode: 'preview', splitSize: 65 } })
+    expect(viewOf(s, 'e2')).toMatchObject({ previewMode: 'preview', splitSize: 65 })
+    expect(viewOf(s, 'e1').previewMode).toBe('edit')
+  })
+
+  it('carries a full non-default view, then a default patch strips the field (normalizeTab)', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'a.md')]) })
+    s = instanceReducer(s, { type: 'SET_TAB_VIEW', instanceId: 'e1', patch: { previewMode: 'split', splitDirection: 'vertical', splitSize: 70 } })
+    let tab = tabByInstance(s.panelLayout.desktop, 'e1')!
+    expect(tab.kind === 'editor' && tab.previewMode).toBe('split')
+    expect(tab.kind === 'editor' && tab.splitDirection).toBe('vertical')
+    expect(tab.kind === 'editor' && tab.splitSize).toBe(70)
+    // Back to edit → previewMode field is stripped (absent), reads as default.
+    s = instanceReducer(s, { type: 'SET_TAB_VIEW', instanceId: 'e1', patch: { previewMode: 'edit' } })
+    tab = tabByInstance(s.panelLayout.desktop, 'e1')!
+    expect(tab.kind === 'editor' && tab.previewMode).toBeUndefined()
+    expect(viewOf(s, 'e1').previewMode).toBe('edit')
+  })
+
+  it('is a no-op for an unknown instance id', () => {
+    const s = makeState({ layout: oneGroup([editor('e1', 'a.md')]) })
+    const next = instanceReducer(s, { type: 'SET_TAB_VIEW', instanceId: 'ghost', patch: { previewMode: 'split' } })
+    expect(next).toBe(s)
+  })
+
+  it('travels with the tab across a cross-group MOVE_TAB', () => {
+    // A tab in preview mode moved to another group keeps previewMode:'preview'.
+    let s = makeState({ layout: twoGroups([editor('e1', 'a.md', { previewMode: 'preview' })], [editor('e2', 'b.md')]) })
+    expect(viewOf(s, 'e1').previewMode).toBe('preview')
+    s = instanceReducer(s, { type: 'MOVE_TAB', fromGroupId: 'group:1', instanceId: 'e1', toGroupId: 'group:2', toIndex: 1, protectedPaths: NO_PROTECT })
+    expect(groupOf(s.panelLayout.desktop, 'e1')).toBe('group:2') // moved
+    expect(viewOf(s, 'e1').previewMode).toBe('preview')          // view survived the move
   })
 })

@@ -3,7 +3,7 @@ import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { FileNode } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { splitSideFromGeometry, orthogonalSide } from './panelInstance'
-import { editorTabsInGroup, tabsInGroup } from './panelLayoutModel'
+import { editorTabsInGroup, tabsInGroup, editorTabView } from './panelLayoutModel'
 import type { LayoutNode } from '../hooks/workspaceTypes'
 import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv, useOptionalWorkspacePanelResources } from './context'
 
@@ -62,14 +62,14 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const toggleDock = commands.toggleDock
   const toggleActivity = commands.toggleActivity
   const splitGroup = commands.splitGroup
+  const setTabView = commands.setTabView
   const closeGroup = commands.closeGroup
   const clickSession = commands.clickSession
   const openToSide = commands.openToSide
   const setShowSearch = commands.actions.setShowSearch
-  const { activeSession, activeGroupId, activeEditorTabId, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
+  const { activeSession, activeGroupId, activeEditorTab, activeEditorTabId, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
   const { orderedSessions } = useWorkspaceDataContext().sessions
-  const { layout, panelLayout } = useWorkspaceLayout()
-  const { previewMode } = layout
+  const { panelLayout } = useWorkspaceLayout()
   const { isMobile } = useWorkspaceEnv().viewport
   // The file tree the explorer renders (provider-owned, always-on). Used to gate
   // Cmd+Enter open-to-side to FILES — the explorer reports a focused path for
@@ -244,7 +244,12 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         e.preventDefault()
         e.stopPropagation()
         const cycle = { edit: 'split', split: 'preview', preview: 'edit' } as const
-        actions.updateLayout({ previewMode: cycle[previewMode] })
+        // Cycle the ACTIVE GROUP's active editor tab — the SAME tab `canTogglePreview`
+        // gates on (its previewability), not the global-MRU editor which can diverge.
+        if (activeEditorTab) {
+          const current = editorTabView(activeEditorTab).previewMode
+          setTabView(activeEditorTab.instanceId, { previewMode: cycle[current] })
+        }
         return
       }
       // Cmd+W: close the focused group tab (editor = its file, or a terminal),
@@ -296,7 +301,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeEditorTabId, activeGroupId, panelLayout, canTogglePreview, closeFocusedSurface, closeGroup, clickSession, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitGroup, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeEditorTab, activeEditorTabId, activeGroupId, panelLayout, canTogglePreview, closeFocusedSurface, closeGroup, clickSession, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, orderedSessions, setTabView, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitGroup, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

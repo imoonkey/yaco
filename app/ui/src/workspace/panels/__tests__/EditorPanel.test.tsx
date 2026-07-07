@@ -15,7 +15,7 @@ import { EditorPanel, editorPanelDef } from '../EditorPanel'
 import { PanelInstanceProvider } from '../../panelInstance'
 import {
   DEFAULT_LAYOUT, type FileState, type WorkspaceLayout,
-  type TabsNode, type WorkspacePanelLayout,
+  type TabsNode, type WorkspacePanelLayout, type PreviewMode,
 } from '../../../hooks/workspaceTypes'
 import { fetchGitBaseline, fetchGitCompare, fetchGitDiff } from '../../../hooks/useApi'
 import {
@@ -63,6 +63,13 @@ vi.stubGlobal('ResizeObserver', class {
   disconnect() { /* no-op */ }
 })
 
+// The markdown/html preview surface pointer-detects via matchMedia; jsdom lacks it.
+vi.stubGlobal('matchMedia', (query: string) => ({
+  matches: false, media: query,
+  addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+  onchange: null, dispatchEvent() { return false },
+}))
+
 afterEach(cleanup)
 beforeEach(() => {
   mockFetchGitBaseline.mockReset().mockResolvedValue({ content: '', exists: false })
@@ -84,7 +91,7 @@ const FOO_DIFF = [
   '',
 ].join('\n')
 
-type TabSpec = { instanceId: string; tabId: string; preview?: boolean }
+type TabSpec = { instanceId: string; tabId: string; preview?: boolean; previewMode?: PreviewMode }
 
 type EditorPanelHarnessInput = {
   // When set, the panel is wrapped in a PanelInstanceProvider for this instance;
@@ -142,7 +149,7 @@ function makeEditorPanelCommands() {
     showQuickOpen: vi.fn(), closeFocusedSurface: vi.fn(), toggleTasks: vi.fn(), closeTasks: vi.fn(),
     collapsePanel: vi.fn(), resizeSplitChild: vi.fn(), toggleDock: vi.fn(), toggleActivity: vi.fn(),
     activateTabsPanel: vi.fn(), movePanel: vi.fn(), splitPanel: vi.fn(), resetLayout: vi.fn(),
-    setEditorPrefs: vi.fn(),
+    setTabView: vi.fn(), setAutocomplete: vi.fn(),
     actions,
   } as unknown as WorkspaceCommands
 
@@ -154,14 +161,14 @@ function buildPanelLayout(tabs: TabSpec[], activeInstance: string): WorkspacePan
   const group: TabsNode = {
     kind: 'tabs',
     id: 'group:1',
-    tabs: tabs.map(t => ({ instanceId: t.instanceId, kind: 'editor', tabId: t.tabId, ...(t.preview ? { preview: true } : {}) })),
+    tabs: tabs.map(t => ({ instanceId: t.instanceId, kind: 'editor', tabId: t.tabId, ...(t.preview ? { preview: true } : {}), ...(t.previewMode && t.previewMode !== 'edit' ? { previewMode: t.previewMode } : {}) })),
     activeTab: activeInstance,
   }
   return {
     version: 1,
     desktop: group,
     mobile: { activeDock: 'editor' },
-    panelState: { files: { mode: 'tree' }, editor: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false } },
+    panelState: { files: { mode: 'tree' } },
   } as unknown as WorkspacePanelLayout
 }
 
@@ -286,6 +293,22 @@ describe('EditorPanel — single-tab body (no own tab bar)', () => {
     expect(cm.getAttribute('data-content')).toBe('hi')
     // The group owns the tab strip — the body renders no tabs.
     expect(screen.queryByTestId('tab')).toBeNull()
+  })
+
+  it('reads the md/html view from its OWN tab: a previewMode=preview markdown tab renders no editor (preview only)', () => {
+    // Default (edit) → the CodeMirror editor mounts.
+    const edit = renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '# hi' } } })
+    expect(screen.getByTestId('cm-editor').getAttribute('data-file-path')).toBe('notes.md')
+    edit.unmount()
+
+    // Same file, but the tab's own previewMode is 'preview' → editor is replaced by
+    // the markdown preview (no cm-editor body). Proves the body reads the PER-TAB view.
+    renderEditorPanel({
+      instanceId: 'editor:2',
+      tabs: [{ instanceId: 'editor:2', tabId: 'notes.md', previewMode: 'preview' }],
+      files: { 'notes.md': { serverContent: '# hi' } },
+    })
+    expect(screen.queryByTestId('cm-editor')).toBeNull()
   })
 
   it('with no tab open, renders the No-file-open prompt; the body owns no action toggles (desktop)', () => {

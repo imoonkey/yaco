@@ -20,6 +20,15 @@ export type FileState = {
 
 export type PreviewMode = 'edit' | 'preview' | 'split'
 export type SplitDirection = 'horizontal' | 'vertical'
+
+/** The per-tab md/html view state carried on an editor `GroupTab`: the
+ *  edit/split/preview mode, the split axis, and the divider size (percent). */
+export type EditorTabView = {
+  previewMode: PreviewMode
+  splitDirection: SplitDirection
+  splitSize: number
+}
+
 export type MobilePane = 'files' | 'editor' | 'tasks' | 'terminal'
 
 // The legacy `MobilePane` and the panel-model `MobileDock` are the same four
@@ -45,9 +54,6 @@ export type WorkspaceLayout = {
   showChanges: boolean
   showTextSearch: boolean
   autocompleteEnabled: boolean
-  previewMode: PreviewMode
-  splitDirection: SplitDirection
-  splitSize: number
   leftSize: number
   rightSize: number
   explorerSize: number
@@ -117,9 +123,6 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showChanges: true,
   showTextSearch: false,
   autocompleteEnabled: false,
-  previewMode: 'edit',
-  splitDirection: 'horizontal',
-  splitSize: 50,
   leftSize: 220,
   rightSize: 420,
   explorerSize: 250,
@@ -231,9 +234,15 @@ export const TASKS_INSTANCE_ID = 'tasks'
  *  the next preview) lifted off the old `EditorView`; a terminal tab carries it too
  *  (a session click opens a preview terminal, pinned on re-click/interaction). The
  *  same file open in two groups = two editor tabs (two `instanceId`s, same `tabId`)
- *  sharing the per-path buffer. */
+ *  sharing the per-path buffer.
+ *
+ *  `previewMode`/`splitDirection`/`splitSize` are the PER-TAB md/html view state
+ *  (the edit/split/preview toggle + its divider). Like `preview`/`pinned` they are
+ *  OMITTED when equal to the default (`'edit'` / `'horizontal'` / `50`), so a tab in
+ *  the default view carries none of them; `editorTabView`/`normalizeTab` are the
+ *  read/omit boundary. They travel verbatim when the tab is moved between groups. */
 export type GroupTab =
-  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean; previewMode?: PreviewMode; splitDirection?: SplitDirection; splitSize?: number }
   | { instanceId: string; kind: 'terminal'; preview?: boolean }
   | { instanceId: string; kind: 'tasks' }
 
@@ -256,15 +265,11 @@ export type LayoutNode = LeafNode | SplitNode | TabsNode
 
 /** Persisted panel-local state that is not tree structure. `separateKinds` routes
  *  opens by kind (editor opens avoid terminal-active groups and vice versa); off by
- *  default, so — like a tab's `preview`/`pinned` — it is OMITTED when false. */
+ *  default, so — like a tab's `preview`/`pinned` — it is OMITTED when false. The
+ *  md/html view state (previewMode/splitDirection/splitSize) is NOT here — it lives
+ *  per-tab on the editor `GroupTab`. */
 export type PanelState = {
   files: { mode: 'tree' | 'search' }
-  editor: {
-    previewMode: PreviewMode
-    splitDirection: SplitDirection
-    splitSize: number
-    autocompleteEnabled: boolean
-  }
   separateKinds?: boolean
 }
 

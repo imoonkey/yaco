@@ -18,7 +18,7 @@ import { createContext, useContext, type ReactNode, type MutableRefObject, type 
 import type { Project, GitChange, AgentSession, SessionProvider, FileNode, HistorySession } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
-  FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
+  FileState, EditorTabView, MobilePane, WorkspaceLayout,
   WorkspacePanelLayout, GroupTab, FocusedPane,
 } from '../hooks/workspaceTypes'
 import type { ResizeSplitOptions } from './panelLayoutModel'
@@ -159,13 +159,6 @@ export type PanelPlacement =
   | { kind: 'tabs'; tabsId: string; index?: number }
   | { kind: 'default' }
 
-export type EditorPrefs = {
-  previewMode: PreviewMode
-  splitDirection: SplitDirection
-  splitSize: number
-  autocompleteEnabled: boolean
-}
-
 /** Raw layout/tab/session mutators from `useWorkspaceState`, threaded so the
  *  phase-1 renderer (and the keyboard/nav consumers) drive the unchanged
  *  `WorkspaceLayout` + child components with identical semantics. Phase-3 panels
@@ -279,7 +272,11 @@ export type WorkspaceCommands = {
   movePanel: (panel: PanelId, placement: PanelPlacement) => void
   splitPanel: (target: PanelId, panel: PanelId, side: SplitSide) => void
   resetLayout: () => void
-  setEditorPrefs: (patch: Partial<EditorPrefs>) => void
+  /** Patch the PER-TAB md/html view (previewMode/splitDirection/splitSize) of the
+   *  editor tab `instanceId`. A default value clears its field (normalized away). */
+  setTabView: (instanceId: string, patch: Partial<EditorTabView>) => void
+  /** Toggle inline-suggestion (autocomplete) — a GLOBAL editor preference. */
+  setAutocomplete: (enabled: boolean) => void
   // Flip kind-routing (design: separateKinds) via the panelState write path.
   toggleSeparateKinds: () => void
 

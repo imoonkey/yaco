@@ -34,7 +34,7 @@ function renderGroup(group: TabsNode, opts: { tree?: LayoutNode; dirtyTabs?: str
   const commands = {
     selectTab: vi.fn(), closePane: vi.fn(), splitGroup: vi.fn(),
     reorderGroupTab: vi.fn(), closeGroup: vi.fn(), setActiveGroup: vi.fn(),
-    setEditorPrefs: vi.fn(), acceptDisk: vi.fn(), saveFile: vi.fn(),
+    setTabView: vi.fn(), setAutocomplete: vi.fn(), acceptDisk: vi.fn(), saveFile: vi.fn(),
     actions: { filesRef: { current: {} } },
   } as unknown as WorkspaceCommands
   const selection = {
@@ -46,7 +46,7 @@ function renderGroup(group: TabsNode, opts: { tree?: LayoutNode; dirtyTabs?: str
     conflictTabs: new Set<string>(),
   }
   const layoutValue = {
-    layout: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
+    layout: { autocompleteEnabled: false },
     panelLayout: { desktop: tree },
   } as unknown as WorkspaceLayoutContextValue
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv

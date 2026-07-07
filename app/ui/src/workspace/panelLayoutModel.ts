@@ -36,7 +36,7 @@ import type { PanelId, SplitSide, PanelPlacement } from './context'
 import type { MobileDock } from './panelMeta'
 import type {
   LayoutNode, LeafNode, SplitChild, SplitNode, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
-  SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
+  SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode, EditorTabView,
 } from '../hooks/workspaceTypes'
 import { parseDiffTab, isFileTab, TASKS_INSTANCE_ID } from '../hooks/workspaceTypes'
 
@@ -125,12 +125,25 @@ export function defaultDesktopTree(): LayoutNode {
 export function defaultPanelState(): PanelState {
   return {
     files: { mode: 'tree' },
-    editor: {
-      previewMode: 'edit',
-      splitDirection: 'horizontal',
-      splitSize: 50,
-      autocompleteEnabled: false,
-    },
+  }
+}
+
+/** The default md/html view: plain editor, horizontal split, 50% divider. A tab
+ *  carrying none of the per-tab view fields reads as this. */
+export const DEFAULT_TAB_VIEW: EditorTabView = {
+  previewMode: 'edit',
+  splitDirection: 'horizontal',
+  splitSize: 50,
+}
+
+/** The per-tab md/html view of an editor tab, defaulting each omitted field. Null
+ *  (no such tab / a terminal tab) reads as the default view. */
+export function editorTabView(tab: GroupTab | null): EditorTabView {
+  if (!tab || tab.kind !== 'editor') return DEFAULT_TAB_VIEW
+  return {
+    previewMode: tab.previewMode ?? DEFAULT_TAB_VIEW.previewMode,
+    splitDirection: tab.splitDirection ?? DEFAULT_TAB_VIEW.splitDirection,
+    splitSize: tab.splitSize ?? DEFAULT_TAB_VIEW.splitSize,
   }
 }
 
@@ -517,6 +530,16 @@ function normalizeTab(raw: unknown, ctx: NormCtx): GroupTab | null {
   const tab: GroupTab = { instanceId, kind: 'editor', tabId: r.tabId }
   if (r.preview === true) tab.preview = true
   if (r.pinned === true) tab.pinned = true
+  // Per-tab md/html view — carried only when non-default (omit-on-default, like
+  // preview/pinned): a bad or default value is simply dropped so the tab reads as
+  // DEFAULT_TAB_VIEW. `splitSize` is clamped to the editor split range.
+  if (isPreviewMode(r.previewMode) && r.previewMode !== 'edit') tab.previewMode = r.previewMode
+  if (r.splitDirection === 'vertical') tab.splitDirection = 'vertical'
+  if (
+    typeof r.splitSize === 'number' && Number.isFinite(r.splitSize)
+    && r.splitSize >= EDITOR_SPLIT_RANGE.min && r.splitSize <= EDITOR_SPLIT_RANGE.max
+    && r.splitSize !== DEFAULT_TAB_VIEW.splitSize
+  ) tab.splitSize = r.splitSize
   return tab
 }
 
@@ -799,21 +822,8 @@ function isPreviewMode(value: unknown): value is PreviewMode {
 function normalizePanelState(input: unknown): PanelState {
   const raw = asRecord(input)
   const files = asRecord(raw.files)
-  const editor = asRecord(raw.editor)
-  const fallback = defaultPanelState()
   const state: PanelState = {
     files: { mode: files.mode === 'search' ? 'search' : 'tree' },
-    editor: {
-      previewMode: isPreviewMode(editor.previewMode) ? editor.previewMode : fallback.editor.previewMode,
-      splitDirection: editor.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
-      splitSize:
-        typeof editor.splitSize === 'number'
-        && editor.splitSize >= EDITOR_SPLIT_RANGE.min
-        && editor.splitSize <= EDITOR_SPLIT_RANGE.max
-          ? editor.splitSize
-          : fallback.editor.splitSize,
-      autocompleteEnabled: editor.autocompleteEnabled === true,
-    },
   }
   // Off by default → only a stored `true` survives; a missing/invalid value coerces
   // to off (the key omitted, like a tab's preview/pinned flag).

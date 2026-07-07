@@ -344,6 +344,7 @@ export function useWorkspaceState(projectName: string, projectPath: string, work
     openDiffTab: ls.openDiffTab,
     openBoundTerminalTab: ls.openBoundTerminalTab,
     pinTab: ls.pinTab,
+    setTabView: ls.setTabView,
     closeGroupTab: ls.closeGroupTab,
     closeGroup: ls.closeGroup,
     setActiveGroupTab: ls.setActiveGroupTab,

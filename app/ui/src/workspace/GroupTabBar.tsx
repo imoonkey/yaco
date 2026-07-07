@@ -14,8 +14,8 @@
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { X, AlertTriangle, Columns2, Rows2, FileDiff, ListTodo } from 'lucide-react'
 import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
-import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, useWorkspaceEditorTabs, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
-import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
+import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, useWorkspaceEditorTabs, type GroupPlacement, type SplitSide } from './context'
+import type { GroupTab, PreviewMode, SplitDirection, EditorTabView } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes, tabCloseLabel } from './tabLabels'
 import { EditorActions } from './EditorActions'
@@ -72,11 +72,14 @@ export type GroupTabBarProps = {
   onDiscardDirty: (path: string) => void
   /** Save an editor file tab by tab id. No-op for diff/terminal tabs. */
   onSaveTab?: (tabId: string) => void
-  /** The active editor tab's view prefs + setter — renders the right-aligned editor
+  /** The active editor tab's view prefs + setters — renders the right-aligned editor
    *  actions (suggestions sparkle + preview-mode toggle) when an editor tab is active.
-   *  Omitted in isolation tests (no editor actions render then). */
+   *  `previewMode`/`splitDirection` are the ACTIVE tab's per-tab view; `onSetView`
+   *  patches that tab. `autocompleteEnabled`/`onSetAutocomplete` are the GLOBAL
+   *  suggestion pref. Omitted in isolation tests (no editor actions render then). */
   editorPrefs?: { previewMode: PreviewMode; splitDirection: SplitDirection; autocompleteEnabled: boolean }
-  onSetEditorPrefs?: (patch: Partial<EditorPrefs>) => void
+  onSetView?: (patch: Partial<EditorTabView>) => void
+  onSetAutocomplete?: (enabled: boolean) => void
 }
 
 // 28px high bar, matching the editor tab strip the group replaces.
@@ -109,7 +112,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const {
     groupId, region, tabs, activeTab, isActiveGroup, terminalBindings,
     pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onPinTab, onMoveGroup,
-    onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, onSaveTab, editorPrefs, onSetEditorPrefs,
+    onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, onSaveTab, editorPrefs, onSetView, onSetAutocomplete,
   } = props
 
   // Dirty/conflict membership is subscribed HERE (the tab-bar leaf), not passed by
@@ -349,14 +352,15 @@ export function GroupTabBar(props: GroupTabBarProps) {
       </div>
 
       <div className="flex items-center shrink-0 gap-0.5 px-0.5" style={{ borderLeft: '1px solid var(--sol-border)' }}>
-        {activeEditorTabId && editorPrefs && onSetEditorPrefs && (
+        {activeEditorTabId && editorPrefs && onSetView && onSetAutocomplete && (
           <EditorActions
             tabId={activeEditorTabId}
             previewMode={editorPrefs.previewMode}
             splitDirection={editorPrefs.splitDirection}
             autocompleteEnabled={editorPrefs.autocompleteEnabled}
             isTouch={isTouch}
-            onSetEditorPrefs={onSetEditorPrefs}
+            onSetView={onSetView}
+            onSetAutocomplete={onSetAutocomplete}
           />
         )}
         {canSplit && (

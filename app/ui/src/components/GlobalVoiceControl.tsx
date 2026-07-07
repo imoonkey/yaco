@@ -13,9 +13,9 @@
 // the first eligible in order).
 import { LoaderCircle, Mic, Square } from 'lucide-react'
 import type { CapabilityState, InteractionState, VoiceTargetContext } from '../hooks/useVoice'
-import { isFileTab, type GroupTab, type LayoutNode, type PreviewMode } from '../hooks/workspaceTypes'
+import { isFileTab, type GroupTab, type LayoutNode } from '../hooks/workspaceTypes'
 import { isPreviewableFile } from '../lib/binaryFiles'
-import { tabByInstance } from '../workspace/panelLayoutModel'
+import { tabByInstance, editorTabView } from '../workspace/panelLayoutModel'
 
 export type VoiceInstanceKind = 'editor' | 'terminal'
 
@@ -40,7 +40,6 @@ export type ResolveVoiceTargetArgs = {
   terminalIds: string[]
   tree: LayoutNode
   terminalBindings: Record<string, string>
-  previewMode: PreviewMode
   /** The active surface hides the editor (mobile tasks pane). */
   showingTasks: boolean
   activeEditorId: string
@@ -53,15 +52,16 @@ const basename = (path: string): string => path.split('/').pop() || path
 /** An editor tab is an eligible voice target iff it shows a plain editable file: a
  *  real file tab (not a diff), not a previewable file in preview mode (markdown/
  *  html/image/pdf render a preview, not an Editor), and not hidden behind the tasks
- *  pane. The single source of truth the resolver, target-loss, and confirm paths
- *  all share, so a take can only land where an Editor is actually mounted (§G). */
+ *  pane. The preview mode is read from the tab's OWN per-tab view. The single source
+ *  of truth the resolver, target-loss, and confirm paths all share, so a take can
+ *  only land where an Editor is actually mounted (§G). */
 export function isEditorVoiceEligible(
-  tab: GroupTab | null, previewMode: PreviewMode, showingTasks: boolean,
+  tab: GroupTab | null, showingTasks: boolean,
 ): boolean {
   if (showingTasks) return false
   const tabId = tab && tab.kind === 'editor' ? tab.tabId : null
   if (!isFileTab(tabId)) return false
-  if (isPreviewableFile(tabId) && previewMode === 'preview') return false
+  if (isPreviewableFile(tabId) && editorTabView(tab).previewMode === 'preview') return false
   return true
 }
 
@@ -72,12 +72,12 @@ export function resolveVoiceTarget(args: ResolveVoiceTargetArgs): {
   instances: VoiceInstance[]
   target: VoiceInstance | null
 } {
-  const { editorIds, terminalIds, tree, terminalBindings, previewMode, showingTasks } = args
+  const { editorIds, terminalIds, tree, terminalBindings, showingTasks } = args
 
   const instances: VoiceInstance[] = []
   for (const id of editorIds) {
     const tab = editorVoiceTab(tree, id)
-    if (!isEditorVoiceEligible(tab, previewMode, showingTasks)) continue
+    if (!isEditorVoiceEligible(tab, showingTasks)) continue
     const filePath = tab!.kind === 'editor' ? tab!.tabId : ''
     instances.push({ kind: 'editor', instanceId: id, label: basename(filePath), filePath })
   }

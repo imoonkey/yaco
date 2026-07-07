@@ -76,7 +76,8 @@ function renderDock(dock: MobileDock, opts: {
     closePane: vi.fn(),
     saveFile: vi.fn(),
     acceptDisk: vi.fn(),
-    setEditorPrefs: vi.fn(),
+    setTabView: vi.fn(),
+    setAutocomplete: vi.fn(),
     ...opts.commands,
     // The save handler reads live content off actions.filesRef; merge after the spread
     // so a commands override can still pass its own actions if needed.
@@ -244,7 +245,7 @@ describe('MobilePanelProjection active instance routing', () => {
   })
 
   it('keeps mobile editor tabs scrollable with actions fixed in the same row', () => {
-    const setEditorPrefs = vi.fn()
+    const setAutocomplete = vi.fn()
     const EDITOR = 'editor:mobile'
     const desktop = {
       kind: 'split', id: 'root', axis: 'row',
@@ -268,8 +269,8 @@ describe('MobilePanelProjection active instance routing', () => {
     mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'editor' ? ['editor'] : REMAP[dock]))
     renderDock('editor', {
       panelLayout,
-      layout: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false },
-      commands: { setEditorPrefs } as Partial<WorkspaceCommands>,
+      layout: { autocompleteEnabled: false },
+      commands: { setAutocomplete } as Partial<WorkspaceCommands>,
       selection: {
         activeGroupId: 'group:1',
         activeEditorId: EDITOR,
@@ -295,7 +296,7 @@ describe('MobilePanelProjection active instance routing', () => {
     expect(screen.getByRole('button', { name: /Start voice recording/ })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
-    expect(setEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
+    expect(setAutocomplete).toHaveBeenCalledWith(true)
   })
 
   it('renders diff tabs with an explicit FileDiff icon in the mobile editor strip', () => {

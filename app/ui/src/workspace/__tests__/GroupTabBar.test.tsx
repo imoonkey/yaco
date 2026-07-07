@@ -450,13 +450,14 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
   })
 
   it('renders the editor actions (Suggestions) only when an editor tab is active (FIX 4)', () => {
-    const onSetEditorPrefs = vi.fn()
+    const onSetAutocomplete = vi.fn()
     const editorPrefs = { previewMode: 'edit' as const, splitDirection: 'horizontal' as const, autocompleteEnabled: false }
     renderBar({
-      tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1', editorPrefs, onSetEditorPrefs,
+      tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1', editorPrefs,
+      onSetView: vi.fn(), onSetAutocomplete,
     })
     fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
-    expect(onSetEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
+    expect(onSetAutocomplete).toHaveBeenCalledWith(true)
   })
 
   it('pins a preview editor/diff tab on tab-header double-click', () => {
@@ -484,12 +485,12 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
   })
 
   it('renders markdown/html view modes as icon buttons and toggles split direction from the middle button', () => {
-    const onSetEditorPrefs = vi.fn()
+    const onSetView = vi.fn()
     renderBar({
       tabs: [EDITOR('editor:1', 'notes.md')],
       activeTab: 'editor:1',
       editorPrefs: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
-      onSetEditorPrefs,
+      onSetView, onSetAutocomplete: vi.fn(),
     })
 
     for (const name of ['Edit', 'Split preview right', 'Preview']) {
@@ -497,38 +498,38 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
     }
 
     fireEvent.click(screen.getByRole('button', { name: 'Split preview right' }))
-    expect(onSetEditorPrefs).toHaveBeenCalledWith({ previewMode: 'split' })
+    expect(onSetView).toHaveBeenCalledWith({ previewMode: 'split' })
 
     cleanup()
-    onSetEditorPrefs.mockClear()
+    onSetView.mockClear()
     renderBar({
       tabs: [EDITOR('editor:1', 'notes.md')],
       activeTab: 'editor:1',
       editorPrefs: { previewMode: 'split', splitDirection: 'horizontal', autocompleteEnabled: false },
-      onSetEditorPrefs,
+      onSetView, onSetAutocomplete: vi.fn(),
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Switch split preview down' }))
-    expect(onSetEditorPrefs).toHaveBeenCalledWith({ splitDirection: 'vertical' })
+    expect(onSetView).toHaveBeenCalledWith({ splitDirection: 'vertical' })
 
     cleanup()
-    onSetEditorPrefs.mockClear()
+    onSetView.mockClear()
     renderBar({
       tabs: [EDITOR('editor:1', 'notes.md')],
       activeTab: 'editor:1',
       editorPrefs: { previewMode: 'split', splitDirection: 'vertical', autocompleteEnabled: false },
-      onSetEditorPrefs,
+      onSetView, onSetAutocomplete: vi.fn(),
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Switch split preview right' }))
-    expect(onSetEditorPrefs).toHaveBeenCalledWith({ splitDirection: 'horizontal' })
+    expect(onSetView).toHaveBeenCalledWith({ splitDirection: 'horizontal' })
   })
 
   it('renders NO editor actions when the active tab is a terminal (FIX 4)', () => {
     renderBar({
       tabs: [TERMINAL('terminal:1')], activeTab: 'terminal:1',
       editorPrefs: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
-      onSetEditorPrefs: vi.fn(),
+      onSetView: vi.fn(), onSetAutocomplete: vi.fn(),
     })
     expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
   })

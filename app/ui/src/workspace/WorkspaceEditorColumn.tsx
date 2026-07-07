@@ -6,8 +6,7 @@
 // holds no `openTabs` list and no per-editor tab bar; desktop group actions live in
 // `GroupTabBar`, while mobile actions live in `MobilePanelProjection`'s tab row.
 import { useCallback } from 'react'
-import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
-import type { WorkspaceLayout } from '../hooks/workspaceTypes'
+import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection, type EditorTabView } from '../hooks/workspaceTypes'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { clampLine } from './markdown'
@@ -35,7 +34,7 @@ export interface WorkspaceEditorColumnProps {
   // Per-instance identity (design: §B). Stamps the in-editor self-jump so only this
   // pane consumes it.
   instanceId: string
-  onLayoutUpdate: (patch: Partial<WorkspaceLayout>) => void
+  onSetView: (patch: Partial<EditorTabView>) => void
   onSaveFile: (path: string, content: string) => Promise<{ conflict: boolean }>
   onForceSave: (path: string, content: string) => Promise<void>
   onAcceptDisk: (path: string) => void
@@ -56,7 +55,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     files, layout, isMobile,
     activeDiff, editorDiffHunks, jumpRequest, editorInsert,
     projectName, worktree, compareContext,
-    instanceId, onLayoutUpdate,
+    instanceId, onSetView,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onCloseTab,
   } = props
@@ -83,9 +82,9 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     // Stamp this pane's instanceId so the go-to-line is consumed only here
     // (design: §B — the last bare jumpRequest producer).
     onSetJumpRequest({ key: Date.now(), path: activeFilePath, line: clampLine(line), scroll: false, instanceId })
-    if (previewMode !== 'split') onLayoutUpdate({ previewMode: 'edit' })
+    if (previewMode !== 'split') onSetView({ previewMode: 'edit' })
     onFocusEditor()
-  }, [activeFilePath, previewMode, instanceId, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
+  }, [activeFilePath, previewMode, instanceId, onSetJumpRequest, onSetView, onFocusEditor])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
@@ -105,7 +104,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         previewMode={previewMode}
         splitDirection={splitDirection}
         splitSize={splitSize}
-        onSplitResize={(size) => onLayoutUpdate({ splitSize: size })}
+        onSplitResize={(size) => onSetView({ splitSize: size })}
         hasConflict={hasConflict}
         jumpRequest={jumpRequest}
         onAcceptDisk={() => activeFilePath && onAcceptDisk(activeFilePath)}

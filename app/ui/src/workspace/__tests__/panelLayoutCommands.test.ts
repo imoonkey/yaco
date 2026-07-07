@@ -11,6 +11,9 @@ import {
   defaultWorkspacePanelLayout,
   defaultPanelState,
   normalizeLayout,
+  normalizeDesktopTree,
+  editorTabView,
+  DEFAULT_TAB_VIEW,
   collapsePanel,
   resizeSplitChild,
   toggleDock,
@@ -24,7 +27,7 @@ import {
   leafPanelsInOrder,
 } from '../panelLayoutModel'
 import { getPanelMeta } from '../panelMeta'
-import type { LayoutNode, SplitNode, LeafNode, SplitChild } from '../../hooks/workspaceTypes'
+import type { LayoutNode, SplitNode, LeafNode, SplitChild, GroupTab, EditorGroupTab, PreviewMode, SplitDirection } from '../../hooks/workspaceTypes'
 import type { PanelId } from '../context'
 
 // The clamp/normalize math reads each panel's min size from the metadata lookup.
@@ -509,13 +512,13 @@ describe('resetLayout', () => {
     expect(resetLayout()).toEqual(defaultWorkspacePanelLayout())
   })
 
-  it('resets the arrangement but preserves panel-local state (editor prefs)', () => {
+  it('resets the arrangement but preserves panel-local state', () => {
     const dirty = normalizeLayout({
       ...defaultWorkspacePanelLayout(),
       mobile: { activeDock: 'terminal' },
       panelState: {
         files: { mode: 'search' },
-        editor: { previewMode: 'split', splitDirection: 'vertical', splitSize: 70, autocompleteEnabled: true },
+        separateKinds: true,
       },
     })
     // also mutate the tree so reset is observable
@@ -525,7 +528,7 @@ describe('resetLayout', () => {
     expect(reset.desktop).toEqual(defaultWorkspacePanelLayout().desktop)
     expect(reset.mobile.activeDock).toBe('browse') // arrangement reset
     expect(reset.panelState).toEqual(messy.panelState) // prefs survive
-    expect(reset.panelState.editor.autocompleteEnabled).toBe(true)
+    expect(reset.panelState.separateKinds).toBe(true)
     expect(reset.panelState.files.mode).toBe('search')
   })
 
@@ -562,35 +565,64 @@ describe('leafPanelsInOrder', () => {
 
 
 
-describe('normalizeLayout salvages a stored v1 editor splitSize to range', () => {
-  const withSplitSize = (splitSize: unknown) =>
-    normalizeLayout({
-      ...defaultWorkspacePanelLayout(),
-      panelState: {
-        files: { mode: 'tree' },
-        editor: { previewMode: 'edit', splitDirection: 'horizontal', splitSize, autocompleteEnabled: false },
-      },
-    }).panelState.editor.splitSize
+describe('normalizeTab — per-tab md/html view (previewMode/splitDirection/splitSize)', () => {
+  // Build a desktop tree holding one editor tab with the given raw view fields,
+  // normalize it, and read the surviving editor tab back — the single validator
+  // (`normalizeTab`) runs inside `normalizeDesktopTree`.
+  const normTab = (fields: Record<string, unknown>): EditorGroupTab => {
+    const tree = normalizeDesktopTree({
+      kind: 'tabs', id: 'group:1', activeTab: 'editor',
+      tabs: [{ instanceId: 'editor', kind: 'editor', tabId: 'notes.md', ...fields }],
+    })
+    let hit: EditorGroupTab | null = null
+    const walk = (n: LayoutNode): void => {
+      if (n.kind === 'tabs') { const t = n.tabs.find((x) => x.instanceId === 'editor'); if (t && t.kind === 'editor') hit = t }
+      else if (n.kind === 'split') n.children.forEach((c) => walk(c.node))
+    }
+    walk(tree)
+    if (!hit) throw new Error('editor tab did not survive normalization')
+    return hit
+  }
 
-  const fallback = defaultPanelState().editor.splitSize
-
-  it('keeps an in-range value', () => {
-    expect(withSplitSize(70)).toBe(70)
-    expect(withSplitSize(20)).toBe(20) // inclusive bounds
-    expect(withSplitSize(80)).toBe(80)
+  it('round-trips a fully non-default view through normalizeLayout/normalizeDesktopTree', () => {
+    const tab = normTab({ previewMode: 'split', splitDirection: 'vertical', splitSize: 65 })
+    expect(tab.previewMode).toBe('split')
+    expect(tab.splitDirection).toBe('vertical')
+    expect(tab.splitSize).toBe(65)
+    expect(editorTabView(tab)).toEqual({ previewMode: 'split', splitDirection: 'vertical', splitSize: 65 })
   })
 
-  it('salvages an out-of-range value to the default (would otherwise break the split)', () => {
-    expect(withSplitSize(999)).toBe(fallback) // upper-bound overflow
-    expect(withSplitSize(10)).toBe(fallback) // below range
-    expect(withSplitSize(0)).toBe(fallback)
-    expect(withSplitSize(-1)).toBe(fallback)
+  it('strips default previewMode/splitDirection/splitSize (omit-on-default)', () => {
+    const tab = normTab({ previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50 })
+    expect(tab.previewMode).toBeUndefined()
+    expect(tab.splitDirection).toBeUndefined()
+    expect(tab.splitSize).toBeUndefined()
+    // A tab carrying no view fields reads back as DEFAULT_TAB_VIEW.
+    expect(editorTabView(tab)).toEqual(DEFAULT_TAB_VIEW)
   })
 
-  it('salvages a non-numeric / non-finite value to the default', () => {
-    expect(withSplitSize('70')).toBe(fallback)
-    expect(withSplitSize(Number.NaN)).toBe(fallback)
-    expect(withSplitSize(Number.POSITIVE_INFINITY)).toBe(fallback)
+  it('strips an out-of-range or non-finite splitSize (would break the split)', () => {
+    expect(normTab({ splitSize: 999 }).splitSize).toBeUndefined() // above range
+    expect(normTab({ splitSize: 10 }).splitSize).toBeUndefined()  // below range
+    expect(normTab({ splitSize: Number.NaN }).splitSize).toBeUndefined()
+    expect(normTab({ splitSize: '65' }).splitSize).toBeUndefined() // non-numeric
+    // In-range non-default survives, inclusive bounds included.
+    expect(normTab({ splitSize: 20 }).splitSize).toBe(20)
+    expect(normTab({ splitSize: 80 }).splitSize).toBe(80)
+  })
+
+  it('strips an invalid previewMode / splitDirection', () => {
+    expect(normTab({ previewMode: 'bogus' as PreviewMode }).previewMode).toBeUndefined()
+    expect(normTab({ splitDirection: 'sideways' as SplitDirection }).splitDirection).toBeUndefined()
+  })
+
+  it('editorTabView returns DEFAULT_TAB_VIEW for null and for a tab with no view fields', () => {
+    expect(editorTabView(null)).toEqual(DEFAULT_TAB_VIEW)
+    const bare: GroupTab = { instanceId: 'editor', kind: 'editor', tabId: 'a.ts' }
+    expect(editorTabView(bare)).toEqual(DEFAULT_TAB_VIEW)
+    // A terminal tab also reads as the default view (no per-tab md/html view).
+    const term: GroupTab = { instanceId: 'terminal', kind: 'terminal' }
+    expect(editorTabView(term)).toEqual(DEFAULT_TAB_VIEW)
   })
 })
 

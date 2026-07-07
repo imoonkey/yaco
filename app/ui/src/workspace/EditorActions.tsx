@@ -3,9 +3,8 @@
 // toggle (previewable files only). Rendered right-aligned in the desktop group tab
 // bar and in the mobile projection's editor tab row.
 import { Sparkles, Columns2, Rows2, Pencil, Eye } from 'lucide-react'
-import { isDiffTab, isFileTab, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
+import { isDiffTab, isFileTab, type PreviewMode, type SplitDirection, type EditorTabView } from '../hooks/workspaceTypes'
 import { isBinaryPreviewFile, isPreviewableFile } from '../lib/binaryFiles'
-import type { EditorPrefs } from './context'
 
 const SUGGESTIONS_BTN: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -81,10 +80,13 @@ export interface EditorActionsProps {
   splitDirection: SplitDirection
   autocompleteEnabled: boolean
   isTouch: boolean
-  onSetEditorPrefs: (patch: Partial<EditorPrefs>) => void
+  /** Patch the active tab's PER-TAB view (previewMode/splitDirection). */
+  onSetView: (patch: Partial<EditorTabView>) => void
+  /** Toggle the GLOBAL inline-suggestion preference. */
+  onSetAutocomplete: (enabled: boolean) => void
 }
 
-export function EditorActions({ tabId, previewMode, splitDirection, autocompleteEnabled, isTouch, onSetEditorPrefs }: EditorActionsProps) {
+export function EditorActions({ tabId, previewMode, splitDirection, autocompleteEnabled, isTouch, onSetView, onSetAutocomplete }: EditorActionsProps) {
   const filePath = isFileTab(tabId) ? tabId : null
   const canTogglePreview = !!filePath && isPreviewableFile(filePath) && !isBinaryPreviewFile(filePath)
   const showSuggestions = !isDiffTab(tabId)
@@ -101,7 +103,7 @@ export function EditorActions({ tabId, previewMode, splitDirection, autocomplete
     <div className="flex items-center gap-0.5 shrink-0">
       {showSuggestions && (
         <button
-          onClick={() => onSetEditorPrefs({ autocompleteEnabled: !autocompleteEnabled })}
+          onClick={() => onSetAutocomplete(!autocompleteEnabled)}
           title={suggestionsTitle}
           aria-label={suggestionsLabel}
           aria-pressed={autocompleteEnabled}
@@ -119,8 +121,8 @@ export function EditorActions({ tabId, previewMode, splitDirection, autocomplete
         <PreviewModeToggle
           mode={previewMode}
           splitDirection={splitDirection}
-          onChange={(mode) => onSetEditorPrefs({ previewMode: mode })}
-          onDirectionChange={(dir) => onSetEditorPrefs({ splitDirection: dir })}
+          onChange={(mode) => onSetView({ previewMode: mode })}
+          onDirectionChange={(dir) => onSetView({ splitDirection: dir })}
           isTouch={isTouch}
         />
       )}

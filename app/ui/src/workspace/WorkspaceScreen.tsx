@@ -19,7 +19,7 @@ import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceVoice, type VoiceInsert } from './useWorkspaceVoice'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import { WorkspaceProvider } from './WorkspaceProvider'
-import { editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
+import { editorInstancesInOrder, terminalInstancesInOrder, editorTabView } from './panelLayoutModel'
 import {
   useWorkspaceEnv, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceCommands,
   WorkspaceVoiceContext, type WorkspaceVoiceSurface,
@@ -84,7 +84,6 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const { name: projectName, worktree } = env.project
   const { isMobile } = env.viewport
   const { activeEditorTabId, activeSession, recentFiles, showSearch, focusedPane } = selection
-  const { previewMode } = layout
 
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -105,6 +104,9 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const activeFilePath = !showingTasks && isFileTab(activeEditorTabId) ? activeEditorTabId : null
   const activeDiffTab = !showingTasks && isDiffTab(activeEditorTabId)
   const isPreviewable = !!activeFilePath && isPreviewableFile(activeFilePath)
+  // The active-editor voice gate reads the SAME (active-group) tab's per-tab mode as
+  // `isPreviewable`/`activeFilePath` above, so eligibility stays self-consistent.
+  const activeEditorPreviewMode = editorTabView(selection.activeEditorTab).previewMode
 
   // The single workspace voice (one useVoice + one ComposeTray below).
   const voice = useVoice()
@@ -113,7 +115,7 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
     activeEditorId: selection.activeEditorId,
     activeTerminalId: selection.activeTerminalId,
     activeFilePath, attachedSession: activeSession,
-    activeDiffTab, isPreviewable, previewMode, showingTasks,
+    activeDiffTab, isPreviewable, activePreviewMode: activeEditorPreviewMode, showingTasks,
     tree: panelLayout.desktop,
     terminalBindings: selection.terminalBindings,
     setEditorInsert, setTerminalSend,
@@ -139,11 +141,11 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
     editorIds, terminalIds,
     tree: panelLayout.desktop,
     terminalBindings: selection.terminalBindings,
-    previewMode, showingTasks,
+    showingTasks,
     activeEditorId: selection.activeEditorId,
     activeTerminalId: selection.activeTerminalId,
     recentMultiKind,
-  }), [editorIds, terminalIds, panelLayout.desktop, selection.terminalBindings, previewMode, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind])
+  }), [editorIds, terminalIds, panelLayout.desktop, selection.terminalBindings, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind])
 
   // The mic records into the live idle target; read it from a ref so the handler
   // identity stays stable as the target recomputes each render.

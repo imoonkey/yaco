@@ -18,6 +18,7 @@ import {
   type PersistedState,
   type FocusedPane,
   type GroupTab,
+  type EditorTabView,
   type LayoutNode,
   type TabsNode,
   isFileTab,
@@ -106,6 +107,7 @@ type Action =
   | { type: 'OPEN_ROUTED_DIFF_TAB'; tabId: string; newGroupBasis?: number }
   | { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB'; session: string; preview: boolean; protectedPaths: ReadonlySet<string>; newGroupBasis?: number }
   | { type: 'PIN_TAB'; groupId: string; instanceId: string }
+  | { type: 'SET_TAB_VIEW'; instanceId: string; patch: Partial<EditorTabView> }
   | { type: 'CLOSE_GROUP_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP'; groupId: string }
   | { type: 'SET_ACTIVE_GROUP_TAB'; groupId: string; instanceId: string }
@@ -620,6 +622,25 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       if (panelLayout === state.panelLayout) return state
       return gcMaps({ ...state, panelLayout })
     }
+    case 'SET_TAB_VIEW': {
+      // Patch the per-tab md/html view onto the editor tab `instanceId`. Guard on an
+      // editor tab first so a terminal/tasks id (or an absent one) is a true no-op —
+      // `mapGroup` rebuilds the tree unconditionally, so skipping it here avoids a
+      // spurious re-render + persist. Spreading the patch is enough for the editor
+      // case: `normalizeTab` strips any field back to absent when it equals the
+      // default (or is out of range), so omit-on-default + validation live there.
+      const target = tabByInstance(state.panelLayout.desktop, action.instanceId)
+      if (target?.kind !== 'editor') return state
+      const groupId = groupOf(state.panelLayout.desktop, action.instanceId)
+      if (!groupId) return state
+      const panelLayout = mapGroup(state.panelLayout, groupId, (g) => ({
+        ...g,
+        tabs: g.tabs.map((t) =>
+          t.instanceId === action.instanceId && t.kind === 'editor' ? { ...t, ...action.patch } : t),
+      }))
+      if (panelLayout === state.panelLayout) return state
+      return { ...state, panelLayout }
+    }
     case 'CLOSE_GROUP_TAB': {
       const wasFocused = state.focusedPane.instanceId === action.instanceId
       let panelLayout = mapGroup(state.panelLayout, action.groupId, (g) => removeTab(g, action.instanceId))
@@ -945,6 +966,10 @@ export function useLayoutState(
     dispatch({ type: 'PIN_TAB', groupId, instanceId })
   }, [])
 
+  const setTabView = useCallback((instanceId: string, patch: Partial<EditorTabView>) => {
+    dispatch({ type: 'SET_TAB_VIEW', instanceId, patch })
+  }, [])
+
   const closeGroupTab = useCallback((groupId: string, instanceId: string) => {
     dispatch({ type: 'CLOSE_GROUP_TAB', groupId, instanceId })
   }, [])
@@ -1055,6 +1080,7 @@ export function useLayoutState(
     resolveEditorTarget,
     newCenterGroup,
     pinTab,
+    setTabView,
     closeGroupTab,
     closeGroup,
     setActiveGroupTab,

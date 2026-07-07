@@ -23,7 +23,9 @@ interface UseWorkspaceVoiceOpts {
   attachedSession: string | null
   activeDiffTab: boolean
   isPreviewable: boolean
-  previewMode: PreviewMode
+  // The active-group editor tab's per-tab preview mode — paired with `isPreviewable`
+  // above so the active-editor voice gate reads ONE tab (resolved by the caller).
+  activePreviewMode: PreviewMode
   // The home editor is hidden behind the tasks panel — its take is lost.
   showingTasks: boolean
   // The group tree, for instanceId-checked confirm + target-loss: the frozen run
@@ -37,27 +39,28 @@ interface UseWorkspaceVoiceOpts {
 
 /** Is editor instance `id` still presenting `filePath` in an *editable* Editor?
  *  Reuses the shared eligibility predicate (no diff, no preview render, not hidden
- *  by tasks) so a take never lands where no Editor is mounted, then pins the active
- *  tab to the exact target file. */
+ *  by tasks — the preview mode read from the tab's own view) so a take never lands
+ *  where no Editor is mounted, then pins the active tab to the exact target file. */
 function editorTargetValid(
-  tree: LayoutNode, id: string, filePath: string | undefined,
-  previewMode: PreviewMode, showingTasks: boolean,
+  tree: LayoutNode, id: string, filePath: string | undefined, showingTasks: boolean,
 ): boolean {
   if (!filePath) return false
   const tab = editorVoiceTab(tree, id)
-  if (!isEditorVoiceEligible(tab, previewMode, showingTasks)) return false
+  if (!isEditorVoiceEligible(tab, showingTasks)) return false
   return tab?.kind === 'editor' && tab.tabId === filePath
 }
 
 export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
   const {
     voice, activeEditorId, activeTerminalId, activeFilePath, attachedSession,
-    activeDiffTab, isPreviewable, previewMode, showingTasks,
+    activeDiffTab, isPreviewable, activePreviewMode, showingTasks,
     tree, terminalBindings,
     setEditorInsert, setTerminalSend, focusPane,
   } = opts
 
-  const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isPreviewable && previewMode === 'preview')
+  // The active editor's OWN view mode gates its eligibility (per-tab): a previewable
+  // file rendered in `preview` shows no editable Editor to dictate into.
+  const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isPreviewable && activePreviewMode === 'preview')
   const terminalVoiceEligible = !!attachedSession
 
   // Open the compose tray (idle: type / paste, with the in-tray Record button),
@@ -92,7 +95,7 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     const id = target?.instanceId
     if (!target || !id) return
     if (target.surface === 'editor') {
-      if (!editorTargetValid(tree, id, target.filePath, previewMode, showingTasks)) return
+      if (!editorTargetValid(tree, id, target.filePath, showingTasks)) return
       setEditorInsert({ text, key: Date.now(), instanceId: id, filePath: target.filePath })
     } else {
       if ((terminalBindings[id] ?? '') !== target.sessionName) return
@@ -100,7 +103,7 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
       focusPane('terminal', id)
     }
     voice.confirm(text)
-  }, [voice, tree, terminalBindings, previewMode, showingTasks, setEditorInsert, setTerminalSend, focusPane])
+  }, [voice, tree, terminalBindings, showingTasks, setEditorInsert, setTerminalSend, focusPane])
 
   // Detect target loss while the tray is open: the bound instance stopped
   // presenting the target file editably / stopped being bound to the target session.
@@ -111,11 +114,11 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     const id = t.instanceId
     if (!id) { voice.markTargetLost(); return }
     if (t.surface === 'editor') {
-      if (!editorTargetValid(tree, id, t.filePath, previewMode, showingTasks)) voice.markTargetLost()
+      if (!editorTargetValid(tree, id, t.filePath, showingTasks)) voice.markTargetLost()
     } else if ((terminalBindings[id] ?? '') !== t.sessionName) {
       voice.markTargetLost()
     }
-  }, [voice, tree, terminalBindings, previewMode, showingTasks])
+  }, [voice, tree, terminalBindings, showingTasks])
 
   return {
     editorVoiceEligible,

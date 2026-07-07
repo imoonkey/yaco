@@ -1,5 +1,5 @@
-// Pure tab-label helpers shared by the editor tab strip (WorkspaceTabBar) and the
-// working-area group strip (GroupTabBar): a tab's display name and same-basename
+// Pure tab-label helpers for the working-area group strip (GroupTabBar) and the
+// mobile editor tab strip: a tab's display name and same-basename
 // disambiguation. Kept out of the component files so fast-refresh stays happy.
 import { isDiffTab, parseDiffTab } from '../hooks/useWorkspaceState'
 
