@@ -20,8 +20,6 @@ test.use({ viewport: { width: 1360, height: 860 } })
 // by group so the two groups' controls never collide.
 const previewBtn = (page: Page, groupId: string) =>
   group(page, groupId).getByRole('button', { name: 'Preview', exact: true })
-const editBtn = (page: Page, groupId: string) =>
-  group(page, groupId).getByRole('button', { name: 'Edit', exact: true })
 const splitBtn = (page: Page, groupId: string) =>
   group(page, groupId).getByRole('button', { name: /Split preview/ })
 const splitRightGroup = (page: Page, groupId: string) =>
@@ -99,6 +97,14 @@ test.describe('USER-QA: per-tab editor view mode', () => {
       // Switch back to A → it is STILL in PREVIEW (mode is the tab's, not the group's).
       await tabInGroup(page, 'group:1', mdA).click()
       await expect(editorBody(page, 'group:1').locator('.markdown-preview')).toContainText('Alpha doc', { timeout: 10_000 })
+
+      // ...and the per-tab mode SURVIVES A RELOAD: A comes back in preview, B in edit.
+      await page.reload()
+      await expect(tabInGroup(page, 'group:1', mdA)).toBeVisible({ timeout: 15_000 })
+      await tabInGroup(page, 'group:1', mdA).click()
+      await expect(editorBody(page, 'group:1').locator('.markdown-preview')).toContainText('Alpha doc', { timeout: 10_000 })
+      await tabInGroup(page, 'group:1', mdB).click()
+      await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('Beta doc', { timeout: 10_000 })
     } finally {
       await project.dispose()
     }
