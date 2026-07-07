@@ -54,8 +54,9 @@ function readUiState(page: Page) {
 
 // --- New persisted shape (design: VSCode Tab Groups / Persistence + migration) ---
 //
-// The desktop tree persists a normalized `panelLayout` (+ `panelState.editor`
-// prefs + `mobile.activeDock`). Under the tab-group model the working area is a
+// The desktop tree persists a normalized `panelLayout` (+ `mobile.activeDock`).
+// The md/html view (previewMode/splitDirection/splitSize) persists PER-TAB on each
+// editor `GroupTab`. Under the tab-group model the working area is a
 // grid of GROUPS (`tabs` nodes whose `tabs[]` hold mixed editor/terminal tabs);
 // `editor`/`terminal` are NO LONGER dock leaves. The default tree is the dock
 // (projects/files/changes) + one empty working group + the activity column
@@ -109,14 +110,26 @@ function expectPanelTree(state: Json | null): void {
   expect(groupCount(pl.desktop)).toBeGreaterThanOrEqual(1)
 }
 
-/** Assert the blob persists a well-formed `panelState.editor` block (design:
- *  panelState.editor — the four editor prefs). */
-function expectEditorPrefs(state: Json | null): void {
-  const editor = asJson(asJson(panelLayout(state).panelState).editor)
-  expect(['edit', 'split', 'preview']).toContain(editor.previewMode)
-  expect(['horizontal', 'vertical']).toContain(editor.splitDirection)
-  expect(typeof editor.splitSize).toBe('number')
-  expect(typeof editor.autocompleteEnabled).toBe('boolean')
+/** The persisted previewMode of the first editor tab for `tabId` in the desktop
+ *  tree (the per-tab view lives on the GroupTab now, omitted when the default
+ *  'edit'). Null when no such tab is persisted. */
+function editorTabPreviewMode(state: Json | null, tabId: string): string | null {
+  let found: string | null = null
+  const walk = (node: Json | null): void => {
+    const n = asJson(node)
+    if (n.kind === 'tabs') {
+      for (const t of (Array.isArray(n.tabs) ? n.tabs : [])) {
+        const tt = asJson(t)
+        if (found === null && tt.kind === 'editor' && tt.tabId === tabId) {
+          found = typeof tt.previewMode === 'string' ? tt.previewMode : 'edit'
+        }
+      }
+    } else if (n.kind === 'split') {
+      for (const c of (Array.isArray(n.children) ? n.children : [])) walk(asJson(c).node)
+    }
+  }
+  walk(panelLayout(state).desktop)
+  return found
 }
 
 /** Assert the blob persists a valid mobile dock (design: mobile.activeDock). */
@@ -404,19 +417,16 @@ test.describe('Keyboard shortcut characterization', () => {
     await expect(page.getByRole('button', { name: 'Split preview right', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible()
 
-    // Cmd+Shift+V cycles edit -> split -> preview -> edit, exercising the editor
-    // pref + persistence path each time. The live mode lands in the legacy flat
-    // layout during the migration window; the new-shape `panelState.editor` is fed
-    // by the loader/migration (not yet by live edits — that is the tree-renderer
-    // phase), so the field-read pins that the new shape persists the four editor
-    // prefs well-formed after the cycle.
+    // Cmd+Shift+V cycles the ACTIVE tab's OWN mode edit -> split -> preview -> edit,
+    // written PER-TAB onto the editor GroupTab and persisted in the desktop tree
+    // (previewMode omitted when the default 'edit'). Each press exercises the
+    // setTabView + persistence path.
     await page.keyboard.press('Meta+Shift+v')
-    await page.waitForTimeout(500)
+    await expect.poll(async () => editorTabPreviewMode(await getWorkspaceState(page, project.name), mdFile), { timeout: 5_000 }).toBe('split')
     await page.keyboard.press('Meta+Shift+v')
-    await page.waitForTimeout(500)
+    await expect.poll(async () => editorTabPreviewMode(await getWorkspaceState(page, project.name), mdFile), { timeout: 5_000 }).toBe('preview')
     await page.keyboard.press('Meta+Shift+v')
-    await page.waitForTimeout(500)
-    expectEditorPrefs(await getWorkspaceState(page, project.name))
+    await expect.poll(async () => editorTabPreviewMode(await getWorkspaceState(page, project.name), mdFile), { timeout: 5_000 }).toBe('edit')
 
     // Cleanup
     await deleteTestFile(page, project.name, mdFile)
