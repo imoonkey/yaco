@@ -29,11 +29,11 @@ The working area is a grid of **groups**; each group's strip mixes one **editor 
 - **Tab context menu.** Right-click / long-press an editor tab to open a tab-aware menu. File actions render first (`Save` for dirty file tabs, `Close` or `Close Without Saving`), then a divider, then group-level Split actions and the kind-affinity toggle. The tab and menu both carry the native-context-menu suppression marker so iOS does not show its system callout.
 - **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an **empty** group beside the active one and opens the focused file there (`openToSide`, non-seeding).
 - **Reorder.** Tabs drag-reorder within their group (`reorderGroupTab`); editor and terminal tabs share one freely-orderable strip.
-- **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle and the md/html icon-only **edit | split | preview** mode toggle — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. The middle split icon reflects the current preview split direction; when split mode is active, clicking that same icon toggles direction. On mobile (no tab bar) the controls sit in the projected editor tab row with the mic. They act on the active editor tab via `setEditorPrefs`.
+- **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle and the md/html icon-only **edit | split | preview** mode toggle — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. The middle split icon reflects the current preview split direction; when split mode is active, clicking that same icon toggles direction. On mobile (no tab bar) the controls sit in the projected editor tab row with the mic. The mode toggle writes the active tab's **per-tab** view via `setTabView(instanceId, patch)`; the suggestions sparkle writes the **global** `setAutocomplete`.
 - **Dirty-close confirm.** "Close Without Saving" on the last tab of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another tab** (closing one tab while another shows it loses nothing).
 - **Close.** Closing a tab via its `×` removes it (`closeGroupTab`); the active tab falls to its neighbour. Closing the last tab in a non-last group removes the now-empty group (`closeGroup`); the final group stays alive, empty (`ensureFirstGroup`). An empty group is closable via its tab-bar **Close Group** item or `Cmd+W` when it is the active group.
 
-Editor *preferences* (`previewMode` / `splitDirection` / `splitSize` / inline-suggestions) stay global (in `panelState.editor`), shared across all editor tabs.
+The md/html view (`previewMode` / `splitDirection` / `splitSize`) is **per-tab** — carried on the editor `GroupTab` (omitted when the default `edit`/`horizontal`/`50`), so two tabs hold independent views (preview an HTML while split-editing a Markdown), and the mode travels with the tab on a move + survives reload. `editorTabView(tab)` reads it with defaults. Only **inline-suggestions** (`autocompleteEnabled`) stays global (in `WorkspaceLayout`).
 
 ## Syntax Highlighting
 
@@ -112,7 +112,7 @@ Both the debounce and throttle are keyed on the file path so a tab switch adopts
 
 ## Preview Mode
 
-The 3-icon Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle) appears in the tab bar for **previewable** files — currently `.md`, `.markdown`, `.html`, `.htm` (see `isPreviewableFile` in `ui/src/lib/binaryFiles.ts`). Mode is shared across files via `previewMode` in the workspace layout.
+The 3-icon Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle the active tab) appears in the tab bar for **previewable** files — currently `.md`, `.markdown`, `.html`, `.htm` (see `isPreviewableFile` in `ui/src/lib/binaryFiles.ts`). Mode is **per-tab**, carried on the editor `GroupTab` (`previewMode`/`splitDirection`/`splitSize`).
 
 - **Edit**: CodeMirror editor only
 - **Split**: Editor + live preview side-by-side, with a draggable divider (20%–80%). Two orientations:

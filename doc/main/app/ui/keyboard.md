@@ -40,7 +40,7 @@ Complete keyboard shortcut reference.
 | `Cmd+W` | Workspace (tasks focused) | Close the tasks tab (`closeTasks`) |
 | `Cmd+W` | Workspace (empty non-last group active) | Close the empty group (`closeGroup`) |
 | `Cmd+W` | Workspace (no focus) | No-op (does not close browser tab) |
-| `Cmd+Shift+V` | Workspace (`.md` tab active) | Cycle markdown mode: edit → split → preview → edit |
+| `Cmd+Shift+V` | Workspace (previewable tab active) | Cycle the **active tab's own** view: edit → split → preview → edit (per-tab, via `setTabView`) |
 | `Cmd+C` | Workspace (explorer focused) | Copy selected file path |
 | `Cmd+S` | Editor | Save file |
 

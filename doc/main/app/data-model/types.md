@@ -126,7 +126,8 @@ type FileState = {
 // payload-less SINGLETON (fixed `instanceId === TASKS_INSTANCE_ID === 'tasks'`,
 // at most one tree-wide).
 type GroupTab =
-  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean
+      previewMode?: PreviewMode; splitDirection?: 'horizontal' | 'vertical'; splitSize?: number }  // per-tab md/html view; each field omitted when default (edit/horizontal/50)
   | { instanceId: string; kind: 'terminal'; preview?: boolean }
   | { instanceId: string; kind: 'tasks' }
 
@@ -181,7 +182,7 @@ type WorkspacePanelLayout = {
   version: 1
   desktop: LayoutNode
   mobile: { activeDock: MobileDock }
-  panelState: PanelState                       // files mode + editor prefs (previewMode/splitDirection/splitSize/autocomplete)
+  panelState: PanelState                       // { files: {mode}, separateKinds? } — md/html view is per-tab on the editor GroupTab, not here
   refSize?: { w: number; h: number }           // viewport the fixed `basis` px were sized for; bases rescale proportionally to a new viewport (see frontend/state.md)
 }
 ```
@@ -191,7 +192,7 @@ A `leaf.panel` is one of the four singleton **dock** panels (`projects`/`files`/
 ### Workspace Layout (flat visibility + sizes)
 
 ```typescript
-type PreviewMode = 'edit' | 'preview' | 'split'
+type PreviewMode = 'edit' | 'preview' | 'split'   // the per-tab md/html view mode (lives on the editor GroupTab)
 
 type WorkspaceLayout = {
   showSidebar: boolean
@@ -201,10 +202,7 @@ type WorkspaceLayout = {
   showSessions: boolean
   showChanges: boolean
   showTextSearch: boolean
-  autocompleteEnabled: boolean
-  previewMode: PreviewMode
-  splitDirection: 'horizontal' | 'vertical'
-  splitSize: number                            // percentage (20–80)
+  autocompleteEnabled: boolean                 // inline-suggestions — the only editor pref left global (view mode is per-tab)
   leftSize: number; rightSize: number          // pixels
   explorerSize: number; searchSize: number; changesSize: number; sessionSize: number; projectSize: number
 }

@@ -2,6 +2,44 @@
 
 # Progress
 
+## 2026-07-07: Per-tab editor view mode (edit/split/preview)
+
+**What changed:**
+- The md/html view mode, split direction, and split size moved from the **global**
+  `WorkspaceLayout`/`PanelState.editor` onto the **editor `GroupTab`** (optional
+  `previewMode`/`splitDirection`/`splitSize`, omitted when default) — so two tabs
+  hold independent views (preview an HTML while split-editing a Markdown). The mode
+  travels with the tab on a move and survives reload; `normalizeTab` validates +
+  strips defaults, `editorTabView(tab)` reads with defaults.
+- New `setTabView(instanceId, patch)` command + `SET_TAB_VIEW` reducer action; the old
+  `setEditorPrefs` split into `setTabView` (per-tab) + `setAutocomplete` (global).
+  Body/tab-bar/mobile, voice eligibility, and the `Cmd+Shift+V` cycle all read/write
+  the tab's own mode; voice + keyboard key on the **active-group** editor tab (not the
+  global-MRU editor) so they stay consistent with `canTogglePreview`.
+- `PanelState` slimmed to `{ files, separateKinds? }`; `autocompleteEnabled` stays the
+  lone global editor pref in `WorkspaceLayout`. Deleted dead `WorkspaceTabBar` (legacy
+  renderer, unrendered since T8).
+
+**Why:**
+- The mode was global, so previewing one file forced every editor into the same mode —
+  you couldn't preview an HTML while split-editing a Markdown. The view is a property
+  of the *tab* (Obsidian-style per-pane), so it belongs on the `GroupTab` beside the
+  existing per-tab `preview`/`pinned`, riding their persist + travel-on-move rails.
+
+**Key files:** `hooks/workspaceTypes.ts`, `workspace/panelLayoutModel.ts`,
+`hooks/useLayoutState.ts`, `workspace/context.ts`, `workspace/WorkspaceProvider.tsx`,
+`panels/EditorPanel.tsx`, `WorkspaceEditorColumn.tsx`, `EditorActions.tsx`,
+`GroupTabBar.tsx`, `PanelGroup.tsx`, `MobilePanelProjection.tsx`, `useWorkspaceVoice.ts`,
+`components/GlobalVoiceControl.tsx`, `WorkspaceScreen.tsx`, `useWorkspaceKeyboard.ts`,
+`hooks/usePersistence.ts`; design/review/qa in `plan/all/20260707_per-tab-view-mode/`.
+**Verification:** `tsc -b` clean · `eslint` clean · `vitest run src/` 1119 passed ·
+Playwright (per-tab-view-mode + html-preview + mi-qa-editor-split + voice-target +
+workspace-persistence) green. Codex cross-provider review: SHIP-WITH-FIXES → 1 HIGH
+(active-editor identity in voice/keyboard) + 1 LOW (SET_TAB_VIEW no-op guard) fixed.
+**Commit:** `b75af67b`..`2747353d` (branch `feat/per-tab-view-mode`)
+**Next:** optional per-file-type default (e.g. `.html` opens in preview) — deferred.
+**Blockers:** None
+
 ## 2026-07-07: Sessions-list cursor jitter — composite the status pulse (opacity, not box-shadow)
 
 **What changed:**
