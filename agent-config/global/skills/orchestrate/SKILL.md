@@ -145,7 +145,7 @@ After each batch, scan for newly-ready tasks and dispatch. **Stop only when:**
 
 - a `requireHumanReview: true` task completes → report and wait for human input
 - **circuit breaker**: 3 consecutive task failures with no success in between → stop and report all failures
-- no more ready tasks → report final status
+- no more ready tasks → report final status; if a milestone landed this session, write its handoff narrative with `/impl-summary` into the bundle home
 
 On a human-review stop the human may **approve** (→ merge up per **Merge up**, then `done` once it
 lands), **request changes** (→ `ready` + note), or **abandon** (→ `cancelled`).

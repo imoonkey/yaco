@@ -137,6 +137,8 @@ Prepend to `doc/PROGRESS.md` (create if missing). This is the **canonical format
 
 Keep entries concise. One entry per logical change, not per commit.
 
+A PROGRESS entry is the short history trace; a milestone's handoff narrative is a separate artifact — write it with `/impl-summary` into the plan bundle, never into `doc/`.
+
 ### 5. Commit Docs
 
 Stage only the files touched by this `/update-doc` run — don't sweep in unrelated uncommitted docs.

@@ -105,6 +105,8 @@ Re-read the whole diff against the original goal/task and hunt for **missing sco
 
 Run `/update-doc` (**MUST USE**) to sync `doc/main/`, `doc/dev/`, project-local skills in `./.claude/skills/*`, and `doc/PROGRESS.md` with the changes.
 
+For milestone-scale work (a plan bundle, multiple phases), also write the handoff narrative with `/impl-summary` into the bundle home.
+
 ## Finish
 
 Run `yaco gate` as the self-check before finishing: it reads the session diff and
