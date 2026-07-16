@@ -29,7 +29,7 @@ skill MUST invoke it** — including the boring tail (`/qa`, `/update-doc`).
 ```mermaid
 flowchart TB
   D["Design & Plan<br/>(understand goal/task-ref · write plan)"]
-  I["Implement<br/>(subagent ok · MUST /simplify-code-arch · /tdd · /coding-standards as warranted)"]
+  I["Implement<br/>(subagent ok · /simplify-code-arch always · /tdd + /coding-standards as warranted)"]
   V["Verify<br/>(MUST /verify: build · lint · test · security — fast, run first)"]
   R["Code Review<br/>(independent reviewer runs MUST /code-review → artifact · cross-provider when feasible)"]
   F["Fix<br/>(change code, or next round persuade the reviewer)"]
