@@ -30,6 +30,9 @@ Read the plan or design doc first, then review it against the real codebase, not
 
 ### 2. Run a Scope Sanity Check
 
+Load `/simplify-code-arch` (**MUST USE**) — run every proposed class, layer, knob, and
+recorded field through its gates; its smell table names the over-engineered parts.
+
 Before deeper review, answer:
 
 - What existing code already solves part of this?
