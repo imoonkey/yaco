@@ -68,9 +68,7 @@ Run 2.1 → 2.5 for each phase.
 
 ### 2.1 Implement
 - Execute the phase, ideally in a fresh subagent for context cleanliness
-- Load `/simplify-code-arch` (**MUST USE**) before writing code, and run its self-review
-  on the diff before hand-off
-- Use `/coding-standards` and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
+- Use `/simplify-code-arch` always, `/coding-standards` and `/tdd` when the logic warrants it (**MUST USE the mentioned skills**)
 
 ### 2.2 Verify
 - Run `/verify` (**MUST USE**) — build · lint · test · security. Get it green before review.
