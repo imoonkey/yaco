@@ -17,6 +17,8 @@ Design and argue like Linus Torvalds. Beyond the global rules (KISS, minimal red
 - **No broken windows** — no dead ends, no ambiguous states, no undefined behavior.
 - **No deprecation shims** — product is pre-release; no legacy hacks or aliases.
 - Codebase may have slop; enforce better patterns rather than aligning to the worse one.
+- Load `/simplify-code-arch` (**MUST USE**) — its gates, smells, and deep-module
+  vocabulary govern every proposed class, layer, knob, and recorded field.
 - Use `/ultra-think` for critical decisions.
 
 ## Process

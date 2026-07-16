@@ -29,7 +29,7 @@ skill MUST invoke it** — including the boring tail (`/qa`, `/update-doc`).
 ```mermaid
 flowchart TB
   D["Design & Plan<br/>(understand goal/task-ref · write plan)"]
-  I["Implement<br/>(subagent ok · MUST /tdd · /coding-standards as warranted)"]
+  I["Implement<br/>(subagent ok · MUST /simplify-code-arch · /tdd · /coding-standards as warranted)"]
   V["Verify<br/>(MUST /verify: build · lint · test · security — fast, run first)"]
   R["Code Review<br/>(independent reviewer runs MUST /code-review → artifact · cross-provider when feasible)"]
   F["Fix<br/>(change code, or next round persuade the reviewer)"]
@@ -68,6 +68,8 @@ Run 2.1 → 2.5 for each phase.
 
 ### 2.1 Implement
 - Execute the phase, ideally in a fresh subagent for context cleanliness
+- Load `/simplify-code-arch` (**MUST USE**) before writing code, and run its self-review
+  on the diff before hand-off
 - Use `/coding-standards` and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
 
 ### 2.2 Verify
