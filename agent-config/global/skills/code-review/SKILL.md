@@ -7,6 +7,8 @@ description: Systematic code review with severity-based findings. Use before mer
 
 High standards, like kernel code. Hunt for logic holes, design-principle violations, hidden risks, and redundancy — not just local readability.
 
+Load `/simplify-code-arch` (**MUST USE**) — its gates and smell table define the design bar: speculative structure, shallow layers, wrong-altitude params are findings, not style nits.
+
 ## Process
 
 1. **Context** — `git diff --stat` and `git log -3 --oneline`.
