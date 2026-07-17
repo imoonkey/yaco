@@ -14,7 +14,7 @@
 # Evidence checks are existence + freshness in v1 (verdict/severity parsing is v3):
 #   doc    : a doc/** or PROGRESS.md change, or a `docs:` commit since <base>
 #   review : a plan/ *review* file whose reviewed_sha..HEAD touches no code root
-#            (^(src|cli|app)/) — the review lands AFTER the last code change.
+#            (^(src|cli|app|tools)/) — the review lands AFTER the last code change.
 #   qa     : a plan/ *qa* file whose reviewed_sha..HEAD touches no app/ui/.
 # Freshness reads reviewed_sha FROM the artifact (not the live HEAD sha), so a
 # docs/plan-only commit stacked on reviewed code keeps the review valid (no

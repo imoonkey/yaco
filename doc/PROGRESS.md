@@ -2,6 +2,29 @@
 
 # Progress
 
+## 2026-07-16: Hourly Claude Haiku usage keepalive
+
+**What changed:**
+- Added a one-shot `tools/claude-usage-keepalive.sh` that uses `yaco agent` to
+  send `hi` to a uniquely named Haiku session, bounds the wait to two minutes,
+  and always kills only that handle.
+- Added hermetic success/start-failure/kill-failure coverage, wired it into the
+  root verify entry, and classified `tools/` changes as code in the exit gate.
+
+**Why:**
+- An external hourly scheduler can trigger the Claude usage window without a
+  resident process or leaked agent sessions.
+
+**Key files:** `tools/claude-usage-keepalive.sh`,
+`tools/claude-usage-keepalive.test.sh`, `scripts/verify.sh`, `scripts/gate.sh`,
+`scripts/gate.test.sh`, `doc/dev/cli/workflow.md`
+**Verification:** keepalive lifecycle test passed; gate tests 26/26; root verify
+passed (CLI 1077, server 755, UI lint, production build); independent Claude
+review approved with zero unresolved critical/high findings.
+**Commit:** `0c355575`, `12076da2`
+**Next:** Add the documented cron entry on any machine that should run it.
+**Blockers:** None
+
 ## 2026-07-07: Per-tab editor view mode (edit/split/preview)
 
 **What changed:**

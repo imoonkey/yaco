@@ -28,6 +28,24 @@ yaco codex "Implement auth" --name builder --model o4-mini
 yaco claude --json -- --output-format json    # everything after `--` → claude verbatim
 ```
 
+### Hourly Claude Haiku keepalive
+
+`tools/claude-usage-keepalive.sh` runs one bounded turn: it starts a uniquely
+named Claude session through `yaco agent`, sends `hi` to the `haiku` model,
+waits at most two minutes, and kills that exact handle on success, failure, or
+interruption. The script is intentionally one-shot; cron owns the schedule.
+
+Use an absolute checkout path in `crontab -e`, and make the installed `yaco`
+binary visible to cron:
+
+```cron
+PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+0 * * * * /absolute/path/to/yaco/tools/claude-usage-keepalive.sh
+```
+
+Run `bash tools/claude-usage-keepalive.test.sh` for the hermetic lifecycle test.
+The root `scripts/verify.sh` runs it automatically.
+
 ## Building
 
 ```bash
