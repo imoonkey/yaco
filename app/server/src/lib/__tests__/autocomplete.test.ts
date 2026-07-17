@@ -45,9 +45,9 @@ describe('resolveAutocompleteModels', () => {
 
   it('returns default model chain when no env vars set', () => {
     expect(resolveAutocompleteModels()).toEqual([
-      'qwen/qwen3-32b',
-      'moonshotai/kimi-k2-instruct',
-      'llama-3.1-8b-instant',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
     ])
   })
 
@@ -395,15 +395,24 @@ describe('complete', () => {
     expect(result.prediction).toBe('and so on.')
   })
 
-  it('sends reasoning_effort:none for qwen3 models', async () => {
-    process.env.AUTOCOMPLETE_MODEL = 'qwen/qwen3-32b'
+  it('sends reasoning_effort:none for qwen models', async () => {
+    process.env.AUTOCOMPLETE_MODEL = 'qwen/qwen3.6-27b'
     mockCreate.mockResolvedValueOnce(chatResponse('more text.'))
     await complete('A ', '', 'doc.md')
     expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('none')
+    expect(mockCreate.mock.calls[0][0].reasoning_format).toBe('hidden')
   })
 
-  it('does NOT send reasoning_effort for non-qwen3 models', async () => {
-    process.env.AUTOCOMPLETE_MODEL = 'llama-3.1-8b-instant'
+  it('sends hidden low-effort reasoning for gpt-oss models', async () => {
+    process.env.AUTOCOMPLETE_MODEL = 'openai/gpt-oss-20b'
+    mockCreate.mockResolvedValueOnce(chatResponse('more text.'))
+    await complete('A ', '', 'doc.md')
+    expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe('low')
+    expect(mockCreate.mock.calls[0][0].reasoning_format).toBe('hidden')
+  })
+
+  it('does NOT send reasoning params for non-reasoning models', async () => {
+    process.env.AUTOCOMPLETE_MODEL = 'test-model'
     mockCreate.mockResolvedValueOnce(chatResponse('more text.'))
     await complete('A ', '', 'doc.md')
     expect(mockCreate.mock.calls[0][0].reasoning_effort).toBeUndefined()

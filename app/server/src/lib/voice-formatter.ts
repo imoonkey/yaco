@@ -7,20 +7,19 @@ import {
 
 const DEFAULT_MODELS = [
   'openai/gpt-oss-120b',
-  'llama-3.3-70b-versatile',
-  'qwen/qwen3-32b',
-  'llama-3.1-8b-instant',
+  'qwen/qwen3.6-27b',
+  'openai/gpt-oss-20b',
 ]
 
 /** Spoken-paraphrase model chain: quality-first. The paraphrase must preserve the
- *  original language (small/fast models like llama-3.1-8b translate 中文→English)
- *  and faithfully render the content, so a capable instruction-follower leads; the
- *  fast model is only a last-resort fallback. Latency matters less now the read-back
- *  is a paragraph, not one sentence. */
+ *  original language (small/fast models translate 中文→English) and faithfully
+ *  render the content, so a capable instruction-follower leads; the fast model is
+ *  only a last-resort fallback. Latency matters less now the read-back is a
+ *  paragraph, not one sentence. */
 const DEFAULT_SPEAK_MODELS = [
-  'llama-3.3-70b-versatile',
   'openai/gpt-oss-120b',
-  'llama-3.1-8b-instant',
+  'qwen/qwen3.6-27b',
+  'openai/gpt-oss-20b',
 ]
 
 const TIMEOUT_MS = 5000

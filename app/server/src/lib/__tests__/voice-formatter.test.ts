@@ -40,9 +40,8 @@ describe('resolveFormatterModels', () => {
     const models = resolveFormatterModels()
     expect(models).toEqual([
       'openai/gpt-oss-120b',
-      'llama-3.3-70b-versatile',
-      'qwen/qwen3-32b',
-      'llama-3.1-8b-instant',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-20b',
     ])
   })
 
@@ -52,8 +51,8 @@ describe('resolveFormatterModels', () => {
   })
 
   it('falls back to GROQ_FORMATTER_MODEL single model', () => {
-    process.env.GROQ_FORMATTER_MODEL = 'llama-3.1-8b-instant'
-    expect(resolveFormatterModels()).toEqual(['llama-3.1-8b-instant'])
+    process.env.GROQ_FORMATTER_MODEL = 'openai/gpt-oss-20b'
+    expect(resolveFormatterModels()).toEqual(['openai/gpt-oss-20b'])
   })
 
   it('prefers VOICE_FORMATTER_MODELS over GROQ_FORMATTER_MODEL', () => {
@@ -66,9 +65,8 @@ describe('resolveFormatterModels', () => {
     process.env.VOICE_FORMATTER_MODELS = '  ,  '
     expect(resolveFormatterModels()).toEqual([
       'openai/gpt-oss-120b',
-      'llama-3.3-70b-versatile',
-      'qwen/qwen3-32b',
-      'llama-3.1-8b-instant',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-20b',
     ])
   })
 })
@@ -85,8 +83,8 @@ describe('resolveSpeakModels', () => {
     const models = resolveSpeakModels()
     // Quality-first: a capable instruction-follower leads (preserves language /
     // faithful paraphrase); the fast model is only a fallback.
-    expect(models[0]).toBe('llama-3.3-70b-versatile')
-    expect(models).toContain('llama-3.1-8b-instant')
+    expect(models[0]).toBe('openai/gpt-oss-120b')
+    expect(models).toContain('openai/gpt-oss-20b')
     expect(models.length).toBeGreaterThan(1)
   })
 
@@ -97,7 +95,7 @@ describe('resolveSpeakModels', () => {
 
   it('ignores empty VOICE_SPEAK_MODELS and falls to defaults', () => {
     process.env.VOICE_SPEAK_MODELS = '  ,  '
-    expect(resolveSpeakModels()[0]).toBe('llama-3.3-70b-versatile')
+    expect(resolveSpeakModels()[0]).toBe('openai/gpt-oss-120b')
   })
 })
 
@@ -239,7 +237,7 @@ describe('formatWithFallback', () => {
 
   it('uses current Groq reasoning params for Qwen models', async () => {
     mockCreate.mockResolvedValueOnce(chatResponse('ok'))
-    await formatWithFallback(['qwen/qwen3-32b'], SYSTEM, 'hello')
+    await formatWithFallback(['qwen/qwen3.6-27b'], SYSTEM, 'hello')
     const callArgs = mockCreate.mock.calls[0][0]
     expect(callArgs.reasoning_effort).toBe('none')
     expect(callArgs.reasoning_format).toBe('hidden')

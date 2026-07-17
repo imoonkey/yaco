@@ -2,9 +2,9 @@ import { createHash } from 'crypto'
 import OpenAI from 'openai'
 
 const DEFAULT_MODELS = [
-  'qwen/qwen3-32b',                    // 60 RPM, 1K RPD, strong prose
-  'moonshotai/kimi-k2-instruct',       // 60 RPM, 1K RPD, fluent fallback
-  'llama-3.1-8b-instant',              // 30 RPM, 14.4K RPD, fast fallback
+  'qwen/qwen3.6-27b',                  // strong prose lead
+  'openai/gpt-oss-120b',              // capable fallback
+  'openai/gpt-oss-20b',              // fast, high-throughput fallback
 ]
 
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1'
@@ -34,8 +34,14 @@ const CURSOR = '<CURSOR>'
 /** Extensions we treat as Markdown prose. */
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
 
-/** Models known to support reasoning_effort: 'none'. */
-const REASONING_EFFORT_MODELS = ['qwen/qwen3-32b', 'qwen/qwen3-8b']
+/** Run reasoning models with reasoning off/minimal and hidden so it never bleeds
+ *  into the inline completion or eats the small max_tokens budget. */
+function applyReasoningParams(model: string, params: Record<string, unknown>): void {
+  if (model.includes('qwen')) params.reasoning_effort = 'none'
+  else if (model.includes('gpt-oss')) params.reasoning_effort = 'low'
+  else return
+  params.reasoning_format = 'hidden'
+}
 
 /** A fenced-code delimiter line: up to 3 spaces of indent then ``` or ~~~. */
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/
@@ -570,9 +576,7 @@ export async function complete(
         max_tokens: MAX_TOKENS,
       }
 
-      if (REASONING_EFFORT_MODELS.some((m) => model.startsWith(m))) {
-        params.reasoning_effort = 'none'
-      }
+      applyReasoningParams(model, params)
 
       const completion = await client.chat.completions.create(
         params as Parameters<typeof client.chat.completions.create>[0],

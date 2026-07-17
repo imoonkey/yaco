@@ -367,8 +367,8 @@ and the TTS **spoken rewrite** — over one shared fallback loop via the `openai
   speakable).
 - Model lists: `resolveFormatterModels()` (`VOICE_FORMATTER_MODELS` > `GROQ_FORMATTER_MODEL`
   > default chain) and `resolveSpeakModels()` (`VOICE_SPEAK_MODELS` > quality-first default led
-  by `llama-3.3-70b-versatile` — the paraphrase must preserve the original language, and the
-  fast 8B translated 中文→English; latency matters less for a paragraph).
+  by `openai/gpt-oss-120b` — the paraphrase must preserve the original language, and small/fast
+  models translate 中文→English; latency matters less for a paragraph).
 - Sets current Groq reasoning params for reasoning-capable models (Qwen3 `reasoning_effort=none`;
   GPT-OSS low-effort hidden), strips legacy `<think>...</think>` blocks, and removes boilerplate
   wrappers (`Here is the cleaned text:`, `整理如下：`, outer fences, surrounding quotes) — shared
@@ -411,7 +411,7 @@ Markdown continuation engine behind the inline-suggestion editor feature (see [r
 - **Postprocess** (`postprocess`) — normalize (strip `<think>`, strip wrapping fences/quotes/labels, cut at first newline, cap at `MAX_SUGGESTION_CHARS` 280, dedupe overlap with suffix) then **reject → empty** when the output is blank/punctuation-only, repeats the line above or local prefix, contains explanation phrasing, introduces a new raw URL, starts a heading/list out of context, breaks a table's column count, or matches secret-looking patterns. No repair — a wrong ghost is worse than none.
 - **Guards** — `isMarkdownPath` (`.md`/`.mdx`/`.markdown`), `isLikelySecretPath` (`.env*`, `*.pem|key|crt`, `id_rsa*`, `.ssh/`, `secrets/`), `isInsideFence` (open ` ``` `/`~~~` before the cursor line).
 - **Completion cache** — module-level LRU, `CACHE_MAX_ENTRIES` 64, `CACHE_TTL_MS` 5 min (empty results 60 s). Key includes model + `CONTEXT_VERSION` + a hash of `(headingPath + prefixTail + suffixHead)`, so a model/prompt change can't pin stale output.
-- **Models** — `resolveAutocompleteModels()`: `AUTOCOMPLETE_MODELS` (comma-separated) > `AUTOCOMPLETE_MODEL` (single) > defaults (`qwen/qwen3-32b` → `moonshotai/kimi-k2-instruct` → `llama-3.1-8b-instant`), all via the Groq OpenAI-compatible API. `reasoning_effort: 'none'` for reasoning-capable models; 3 s timeout per attempt.
+- **Models** — `resolveAutocompleteModels()`: `AUTOCOMPLETE_MODELS` (comma-separated) > `AUTOCOMPLETE_MODEL` (single) > defaults (`qwen/qwen3.6-27b` → `openai/gpt-oss-120b` → `openai/gpt-oss-20b`), all via the Groq OpenAI-compatible API. Reasoning hidden and minimized per model (`reasoning_effort: 'none'` for Qwen, `'low'` for gpt-oss); 3 s timeout per attempt.
 
 ### channels/ (shared messaging-channel infrastructure)
 
