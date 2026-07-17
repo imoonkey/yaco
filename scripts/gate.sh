@@ -6,7 +6,7 @@
 # set is derived from the diff, not declared — the agent cannot dodge a gate by
 # misclassifying its work (design.md §6.1, "floor from the diff").
 #
-#   touches code (src|cli|app)/  -> verify (run scripts/verify.sh) + review
+#   touches code (src|cli|app|tools)/  -> verify (run scripts/verify.sh) + review
 #   touches app/ui/              -> qa
 #   any change at all            -> doc
 #   nothing                      -> every check skips
@@ -54,7 +54,7 @@ diff_files="$(git diff "$base"..HEAD --name-only --no-renames)"
 # and the review/qa freshness check (a review is fresh iff no code path changed
 # since its reviewed_sha; qa keys on app/ui only). Keep these the single source of
 # truth for "what counts as code" so the floor and freshness can never diverge.
-code_roots_re='^(src|cli|app)/'
+code_roots_re='^(src|cli|app|tools)/'
 ui_root_re='^app/ui/'
 
 # --- floor from the diff -----------------------------------------------------

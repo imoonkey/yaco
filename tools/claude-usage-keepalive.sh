@@ -23,4 +23,5 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-yaco agent start claude --wait -- hi --name "$handle" --model haiku >/dev/null
+# A one-word reply should finish quickly; bound failure well below the hourly cadence.
+yaco agent start claude --wait --timeout-ms 120000 -- hi --name "$handle" --model haiku >/dev/null

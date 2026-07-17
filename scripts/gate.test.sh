@@ -162,7 +162,13 @@ commit_file "$r" plan/note.md "add note"
 expect "mixed non-doc+plan, no evidence -> doc fail" "$r" "$b" \
   '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
-# 3f. a code file RENAMED into a doc path must NOT be classified doc_only: git's
+# 3f. operational scripts under tools/ are code: they owe verify + review.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" tools/keepalive.sh "feat: add operational script"
+expect "tools script -> verify+review owed" "$r" "$b" \
+  '{"verify":"pass","doc":"fail","review":"fail","qa":"skip"}' 1
+
+# 3g. a code file RENAMED into a doc path must NOT be classified doc_only: git's
 # rename detection reports only the destination, hiding the cli/ source. gate.sh
 # uses --no-renames so both sides show -> touched_code stays on, verify+review owed.
 r="$(mk 0)"
