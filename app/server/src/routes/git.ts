@@ -147,7 +147,7 @@ app.get('/:project/refs', withProject, async (c) => {
   const [branchOut, tagOut, logOut] = await Promise.all([
     git(proj.path, ['branch', '-a', '--format=%(refname:short)']),
     git(proj.path, ['tag', '--sort=-creatordate']),
-    git(proj.path, ['log', '-50', '--format=%h\t%ci\t%an\t%s']),
+    git(proj.path, ['log', '-500', '--format=%h\t%ci\t%an\t%s']),
   ])
 
   const branches = branchOut.ok ? branchOut.stdout.split('\n').filter(Boolean) : []
