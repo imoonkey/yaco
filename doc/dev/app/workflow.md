@@ -31,16 +31,16 @@ doc/progress/app.md # Imported app history
 ## Running
 
 ```bash
-# Restart the long-running services (server + UI) and tail their logs.
-# The server runs as a systemd/launchd service, NOT inside tmux — see
-# Long-running services below for why.
+# Restart the long-running services (server + Vite + build watcher) and tail
+# their logs. The server runs as a systemd/launchd service, NOT inside tmux —
+# see Long-running services below for why.
 npm run dev
 
 # Service control (all wrap app/scripts/services.sh, cross-platform):
-npm run restart       # restart both services
-npm run stop          # stop both (free :3001 / :5173)
-npm run status        # status of both
-npm run logs          # tail both
+npm run restart       # restart all services
+npm run stop          # stop all (free :3001 / :5173)
+npm run status        # status of all
+npm run logs          # tail all
 
 # Foreground (no service manager — quick local debugging):
 npm run dev:local     # server + UI concurrent in the terminal
@@ -81,18 +81,26 @@ The backend starts runtime watchers only after `:3001` is successfully bound. If
 
 Both desktop (Linux) and laptop (macOS) run the dev servers as long-running OS-managed services, kept alive across reboots, and expose the UI over the Tailnet at `https://<host>.tailnet-example.ts.net/` (`desktop` and `laptop` hostnames).
 
+Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, and log paths all derive from it, so that table is the only place to add or rename one:
+
+| Service | Runs | Purpose |
+|---|---|---|
+| `yaco-server` | `npm run dev` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` |
+| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source |
+
 | Platform | Manager | Unit/Plist location |
 |---|---|---|
-| Linux (desktop) | systemd user units | `~/.config/systemd/user/yaco-{server,ui}.service` |
-| macOS (laptop) | launchd LaunchAgents | `~/Library/LaunchAgents/com.yaco.{server,ui}.plist` |
+| Linux (desktop) | systemd user units | `~/.config/systemd/user/yaco-{server,ui,ui-build}.service` |
+| macOS (laptop) | launchd LaunchAgents | `~/Library/LaunchAgents/com.yaco.{server,ui,ui-build}.plist` |
 
-Both are wrapped by `app/scripts/services.sh` (auto-detects OS):
+All are wrapped by `app/scripts/services.sh` (auto-detects OS):
 
 ```bash
-app/scripts/services.sh install   # one-time: generate units/plists for current OS, enable, and start
+app/scripts/services.sh install   # one-time: generate units/plists, enable, start, and set the tailnet mapping
 app/scripts/services.sh           # status (default)
-app/scripts/services.sh start     # start both
-app/scripts/services.sh stop      # stop both (free :3001 / :5173 for foreground npm run dev)
+app/scripts/services.sh start     # start all
+app/scripts/services.sh stop      # stop all (free :3001 / :5173 for foreground npm run dev)
 app/scripts/services.sh restart
 app/scripts/services.sh logs      # journalctl (Linux) or tail Library/Logs/*.log (macOS)
 app/scripts/services.sh enable    # autostart at boot/login
@@ -101,42 +109,30 @@ app/scripts/services.sh disable
 
 Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` so user services run before login. macOS LaunchAgents launch automatically at login (no equivalent flag needed).
 
-Tailscale forwards HTTPS to the dev servers (run once per machine, persists across reboots):
+### Tailnet mapping — `/` serves the built bundle
 
-```bash
-sudo tailscale set --operator=$USER                           # Linux only — lets the user manage serve without sudo
-tailscale serve --bg --https=443 http://127.0.0.1:5173        # laptop: / → Vite dev
-```
-
-Desktop splits the two (see below for why):
-
-```bash
-tailscale serve --bg --https=443  http://127.0.0.1:3001       # / → built bundle
-tailscale serve --bg --https=8741 http://127.0.0.1:5173       # :8741 → Vite dev
-systemctl --user enable --now yaco-ui-build.service           # `vite build --watch`, keeps dist fresh
-```
-
-Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
-
-### Desktop serves the production build
-
-Laptop→desktop RTT is ~110 ms, and Vite dev's unbundled module graph pays it per waterfall level: 208 requests / 2.4 MB / 2.5 s to first paint, against 31 requests / 643 KB / 1.0 s for the built bundle (measured from the laptop in real Chrome, cold cache). Desktop therefore runs both:
+`install` sets this (idempotent, persists across reboots); on Linux it first needs `sudo tailscale set --operator=$USER` so serve is manageable without sudo.
 
 | URL | → | Serves |
 |---|---|---|
-| `https://desktop.tailnet-example.ts.net/` | `127.0.0.1:3001` | Built `app/ui/dist`, via the Hono server |
-| `https://desktop.tailnet-example.ts.net:8741` | `127.0.0.1:5173` | Vite dev — HMR intact over the tailnet |
+| `https://<host>.tailnet-example.ts.net/` | `:3001` | Built `app/ui/dist`, via the Hono server |
+| `https://<host>.tailnet-example.ts.net:8741` | `:5173` | Vite dev — HMR intact over the tailnet |
 
-`yaco-ui-build.service` (`npx vite build --watch`) keeps `dist` current. It is **not** covered by `services.sh`, which only knows `yaco-server` and `yaco-ui` — install and control it directly with `systemctl --user`.
+**Why `/` is not Vite.** These machines are reached over the tailnet at ~110 ms RTT, and Vite dev's unbundled module graph pays that per waterfall level. Measured from the laptop against desktop, real Chrome, cold cache: Vite dev **208 requests / 2.4 MB / 2.5 s** to first paint, against **31 requests / 643 KB / 1.0 s** for the built bundle.
 
-Two consequences of serving a built bundle, both pointing the same way: `/` has no HMR and no live reload (a rebuild needs a manual browser refresh), and because Vite empties `dist` on each watch rebuild there is a ~13 s window per UI source change (~1 s build + ~12 s brotli over 170 files) where `/` can 404 or serve uncompressed assets. **Use `:8741` while iterating on UI code.** Laptop keeps `/` → Vite dev.
+Two consequences, both pointing the same way — **use `:8741` while iterating on UI code**:
+
+- `/` has no HMR and no live reload. A rebuild needs a browser refresh; plain `Cmd+R` suffices, because `index.html` is served `no-cache` and every asset it names is content-hashed and `immutable` (a hard refresh is never needed).
+- Vite empties `dist` on each watch rebuild, so for ~13 s per UI source change (~1 s build + ~12 s brotli over 170 files) `/` can 404 or serve uncompressed assets.
+
+Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
 
 Confirm the mapping after any service reinstall or Tailscale reset:
 
 ```bash
 tailscale serve status
-curl -sk https://laptop.tailnet-example.ts.net/  | grep '/@vite/client'   # laptop: Vite dev HTML
-curl -sk https://desktop.tailnet-example.ts.net/ | grep '/assets/index-'  # desktop: built bundle
+curl -sk https://desktop.tailnet-example.ts.net/      | grep '/assets/index-'  # built bundle
+curl -sk https://desktop.tailnet-example.ts.net:8741/ | grep '/@vite/client'   # Vite dev HTML
 ```
 
 The dev config also wires two remote-access perf knobs (dev-only — `apply: 'serve'`):
@@ -231,7 +227,7 @@ name** (`selectProject`) — never rely on `projects[0]` or anything already in 
 registry. The workspace localStorage key is `yaco-workspace:<project>`
 (`:wt:<slug>` when worktree-scoped).
 
-**Dev-only specs:** `voice-compose-backup` self-skips in the default build suite
+**Dev-only specs:** `voice-compose` self-skips in the default build suite
 (its fake MicVAD is `import.meta.env.DEV`-gated, the only dev-gated UI behavior) —
 run it with `E2E_REUSE=1`.
 

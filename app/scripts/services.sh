@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manage YACO long-running services (yaco-server, yaco-ui).
+# Manage YACO long-running services (yaco-server, yaco-ui, yaco-ui-build).
 # Linux: systemd user services in ~/.config/systemd/user/
 # macOS: launchd LaunchAgents in ~/Library/LaunchAgents/
 
@@ -15,13 +15,33 @@ APP_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$APP_DIR/server"
 UI_DIR="$APP_DIR/ui"
 
+# The canonical service set, as `name|working dir|npm script|description`.
+# Unit/label names derive from `name`, so this table is the single place a
+# service is added or renamed.
+SERVICES=(
+  "server|$SERVER_DIR|dev|YACO backend (Hono + tsx watch)"
+  "ui|$UI_DIR|dev|YACO frontend (Vite dev)"
+  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)"
+)
+svc_name()  { cut -d'|' -f1 <<<"$1"; }
+svc_dir()   { cut -d'|' -f2 <<<"$1"; }
+svc_script(){ cut -d'|' -f3 <<<"$1"; }
+svc_desc()  { cut -d'|' -f4 <<<"$1"; }
+
+# Canonical tailnet mapping: `/` serves the built bundle — over a high-RTT link
+# Vite dev's unbundled module graph costs ~7x the requests — and DEV_SERVE_PORT
+# keeps Vite reachable for HMR. -> See: doc/dev/app/workflow.md
+UI_PORT=5173
+API_PORT=3001
+DEV_SERVE_PORT=8741
+
 if [ "$OS" = linux ]; then
-  UNITS=(yaco-server.service yaco-ui.service)
   UNIT_DIR="$HOME/.config/systemd/user"
+  UNITS=(); for s in "${SERVICES[@]}"; do UNITS+=("yaco-$(svc_name "$s").service"); done
 else
-  LABELS=(com.yaco.server com.yaco.ui)
   PLIST_DIR="$HOME/Library/LaunchAgents"
   LOG_DIR="$HOME/Library/Logs"
+  LABELS=(); for s in "${SERVICES[@]}"; do LABELS+=("com.yaco.$(svc_name "$s")"); done
 fi
 
 CMD="${1:-status}"
@@ -58,17 +78,18 @@ resolve_node_bin_dir() {
 install_linux() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
   mkdir -p "$UNIT_DIR"
-  cat > "$UNIT_DIR/yaco-server.service" <<EOF
+  for s in "${SERVICES[@]}"; do
+    cat > "$UNIT_DIR/yaco-$(svc_name "$s").service" <<EOF
 [Unit]
-Description=YACO backend (Hono + tsx watch)
+Description=$(svc_desc "$s")
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$SERVER_DIR
+WorkingDirectory=$(svc_dir "$s")
 Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=$node_bin_dir/npm run dev
+ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=60
@@ -79,43 +100,22 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 EOF
-  cat > "$UNIT_DIR/yaco-ui.service" <<EOF
-[Unit]
-Description=YACO frontend (Vite dev)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=$UI_DIR
-Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=$node_bin_dir/npm run dev
-Restart=on-failure
-RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=default.target
-EOF
+  done
   systemctl --user daemon-reload
   systemctl --user enable --now "${UNITS[@]}"
   echo "Installed and started:"
-  echo "  $UNIT_DIR/yaco-server.service"
-  echo "  $UNIT_DIR/yaco-ui.service"
+  for u in "${UNITS[@]}"; do echo "  $UNIT_DIR/$u"; done
+  configure_serve
 }
 
 install_macos() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
   mkdir -p "$PLIST_DIR" "$LOG_DIR"
-  local labels=(server ui)
-  local dirs=("$SERVER_DIR" "$UI_DIR")
-  for i in 0 1; do
-    local label="com.yaco.${labels[$i]}"
-    local wd="${dirs[$i]}"
-    local logfile="$LOG_DIR/yaco-${labels[$i]}.log"
+  for s in "${SERVICES[@]}"; do
+    local name; name="$(svc_name "$s")"
+    local label="com.yaco.$name"
+    local wd; wd="$(svc_dir "$s")"
+    local logfile="$LOG_DIR/yaco-$name.log"
     local plist="$PLIST_DIR/$label.plist"
     cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -130,7 +130,7 @@ install_macos() {
     <array>
         <string>$node_bin_dir/npm</string>
         <string>run</string>
-        <string>dev</string>
+        <string>$(svc_script "$s")</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -162,8 +162,25 @@ EOF
     launchctl bootstrap "gui/$UID" "$plist"
   done
   echo "Installed and started:"
-  echo "  $PLIST_DIR/com.yaco.server.plist  (logs: $LOG_DIR/yaco-server.log)"
-  echo "  $PLIST_DIR/com.yaco.ui.plist      (logs: $LOG_DIR/yaco-ui.log)"
+  for s in "${SERVICES[@]}"; do
+    local n; n="$(svc_name "$s")"
+    echo "  $PLIST_DIR/com.yaco.$n.plist  (logs: $LOG_DIR/yaco-$n.log)"
+  done
+  configure_serve
+}
+
+# Point the tailnet at the canonical pair. Idempotent; persists across reboots.
+configure_serve() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo "tailscale not found — skipping tailnet serve setup"
+    return 0
+  fi
+  if tailscale serve --bg --https=443 "http://127.0.0.1:$API_PORT" >/dev/null &&
+     tailscale serve --bg --https="$DEV_SERVE_PORT" "http://127.0.0.1:$UI_PORT" >/dev/null; then
+    echo "Tailnet: / -> :$API_PORT (built UI), :$DEV_SERVE_PORT -> :$UI_PORT (Vite dev, HMR)"
+  else
+    echo "Tailnet serve setup failed — is tailscaled up, and on Linux has 'sudo tailscale set --operator=$USER' been run?" >&2
+  fi
 }
 
 linux_cmd() {
@@ -171,7 +188,8 @@ linux_cmd() {
     status)  systemctl --user status "${UNITS[@]}" --no-pager -n 0 ;;
     start|stop|restart|enable|disable)
              systemctl --user "$1" "${UNITS[@]}" ;;
-    logs)    journalctl --user -u yaco-server -u yaco-ui -f ;;
+    logs)    local args=(); for u in "${UNITS[@]}"; do args+=(-u "$u"); done
+             journalctl --user "${args[@]}" -f ;;
   esac
 }
 
@@ -220,8 +238,9 @@ macos_cmd() {
       done
       ;;
     logs)
-      touch "$LOG_DIR/yaco-server.log" "$LOG_DIR/yaco-ui.log"
-      tail -F "$LOG_DIR/yaco-server.log" "$LOG_DIR/yaco-ui.log"
+      local logs=(); for s in "${SERVICES[@]}"; do logs+=("$LOG_DIR/yaco-$(svc_name "$s").log"); done
+      touch "${logs[@]}"
+      tail -F "${logs[@]}"
       ;;
   esac
 }

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-07-22: Build-serving setup becomes canonical in services.sh
+
+**What changed:**
+- `app/scripts/services.sh` gained a `SERVICES` table (`name|dir|npm script|description`); unit names, plist labels, log paths, and `logs` arguments all derive from it. The two duplicated systemd heredocs and the parallel macOS arrays collapsed into one loop per platform.
+- `yaco-ui-build` is now a first-class third service on both platforms, running the new `npm run build:watch` (`vite build --watch`).
+- `install` now also applies the tailnet mapping (`/` → `:3001`, `:8741` → `:5173`) via a `configure_serve` step that skips cleanly when tailscale is absent.
+
+**Why:**
+- The build-serving setup was desktop-only and hand-installed, so a fresh `services.sh install` would silently produce the old single-service shape and leave `/` pointing at Vite.
+
+**Key files:** `app/scripts/services.sh`, `app/ui/package.json`, `doc/dev/app/workflow.md`
+**Verification:** `bash -n`; `services.sh install` on desktop regenerated all three units and re-applied the serve mapping; `yaco-ui-build` restarted onto `npm run build:watch` and was observed rebuilding + compressing; `logs` argument construction checked with a stubbed `journalctl`; the macOS branch exercised with stubbed `uname`/`launchctl` against a temp `$HOME` — all three plists parse under `plistlib` and carry the right `ProgramArguments`.
+**Commit:** (this commit)
+**Next:** Laptop still has the pre-canonical mapping (`/` → Vite); it adopts the new shape on its next `services.sh install`.
+**Blockers:** None
+
 ## 2026-07-22: Desktop serves the production build over the tailnet
 
 **What changed:**
