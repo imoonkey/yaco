@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import compression from 'compression'
 import { resolveDevPorts } from './e2ePorts'
+import { compressDist } from './scripts/compress-dist'
 
 // Worktree-isolated dev ports (main checkout → 5173 / 3001 unchanged).
 const { ui: UI_PORT, api: API_PORT } = resolveDevPorts()
@@ -33,11 +34,20 @@ const devGzip = (): PluginOption => ({
   },
 })
 
+// Precompressed .br/.gz siblings for the server's `pickEncoding` negotiation.
+// A plugin, not a post-build npm step, so `vite build --watch` compresses too.
+const buildCompress = (): PluginOption => ({
+  name: 'compress-dist',
+  apply: 'build',
+  closeBundle: compressDist,
+})
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     devGzip(),
+    buildCompress(),
   ],
   server: {
     host: '0.0.0.0',

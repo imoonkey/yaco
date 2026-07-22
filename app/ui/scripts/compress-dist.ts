@@ -1,9 +1,9 @@
-#!/usr/bin/env node
 import { createReadStream, createWriteStream } from 'node:fs'
 import { readdir, stat, rename, unlink } from 'node:fs/promises'
 import { join, extname, dirname, basename } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { createBrotliCompress, createGzip, constants } from 'node:zlib'
+import type { Transform } from 'node:stream'
 
 const DIST = new URL('../dist/', import.meta.url).pathname
 const MIN_SIZE = 1024
@@ -21,7 +21,7 @@ const brotli = () =>
 
 const gzip = () => createGzip({ level: constants.Z_BEST_COMPRESSION })
 
-async function* walk(dir) {
+async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) yield* walk(full)
@@ -29,7 +29,7 @@ async function* walk(dir) {
   }
 }
 
-async function compressTo(src, dest, makeStream) {
+async function compressTo(src: string, dest: string, makeStream: () => Transform) {
   const tmp = join(dirname(dest), `.${basename(dest)}.${process.pid}.tmp`)
   try {
     await pipeline(createReadStream(src), makeStream(), createWriteStream(tmp))
@@ -42,7 +42,7 @@ async function compressTo(src, dest, makeStream) {
   return size
 }
 
-async function main() {
+export async function compressDist() {
   let rawTotal = 0
   let brTotal = 0
   let gzTotal = 0
@@ -65,7 +65,7 @@ async function main() {
       count++
     } catch (err) {
       failed++
-      console.warn(`[compress-dist] WARN ${file}: ${err?.message ?? err}`)
+      console.warn(`[compress-dist] WARN ${file}: ${err instanceof Error ? err.message : String(err)}`)
       // Sweep any orphan temp files this PID left in the source's directory.
       const dir = dirname(file)
       const base = basename(file)
@@ -82,13 +82,8 @@ async function main() {
     }
   }
 
-  const kb = (n) => `${(n / 1024).toFixed(1)}KB`
+  const kb = (n: number) => `${(n / 1024).toFixed(1)}KB`
   console.log(
     `[compress-dist] ${count} files: raw ${kb(rawTotal)} → brotli ${kb(brTotal)} / gzip ${kb(gzTotal)} (failed: ${failed})`,
   )
 }
-
-main().catch((err) => {
-  console.error('[compress-dist] failed:', err)
-  process.exit(1)
-})
