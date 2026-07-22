@@ -680,6 +680,7 @@ export function DiffTab({
   const [activeHunkIndex, setActiveHunkIndex] = useState(0)
   const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set())
   const [tokenize, setTokenize] = useState<LineTokenizer | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const hunkRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
@@ -757,9 +758,12 @@ export function DiffTab({
   // j/k keyboard navigation for hunks, [ / ] for files
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Only handle when diff tab has focus (no input/textarea focused)
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      // Only handle when focus is inside this diff tab (or nowhere), so a
+      // background diff never steals keys from editors in other panes
+      const root = rootRef.current
+      const target = e.target as HTMLElement
+      if (!root || !(target === document.body || root.contains(target))) return
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
 
       if (e.key === 'j') {
         e.preventDefault()
@@ -810,7 +814,7 @@ export function DiffTab({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <DiffToolbar
         parsed={parsed}
         viewMode={effectiveMode}
