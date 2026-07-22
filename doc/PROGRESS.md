@@ -1,6 +1,22 @@
 # Progress
 
-# Progress
+## 2026-07-22: Desktop serves the production build over the tailnet
+
+**What changed:**
+- `tailscale serve` on desktop now maps `/` → `:3001` (Hono serving `app/ui/dist`) and `:8741` → `:5173` (Vite dev, HMR intact). Laptop keeps `/` → Vite.
+- New `yaco-ui-build.service` runs `npx vite build --watch` so `dist` tracks source. Not covered by `services.sh` (which only knows `yaco-server`/`yaco-ui`).
+- Dist compression moved from a post-build npm step into a `closeBundle` vite plugin; `scripts/compress-dist.mjs` → `.ts` so `vite.config.ts` can import it under its typed build. `ui/package.json` build is now `tsc -b && vite build`.
+
+**Why:**
+- Laptop→desktop RTT is ~110 ms and Vite dev pays it per waterfall level. Measured from the laptop in real Chrome, cold cache: Vite dev 208 requests / 2.4 MB / 2.5 s to first paint vs 31 requests / 643 KB / 1.0 s for the built bundle.
+- The compression move was forced by the first change: a step chained after `vite build` in the npm script never runs under `--watch`, so watch rebuilds were leaving no `.br`/`.gz` siblings and silently degrading `pickEncoding` to identity — 337 KB brotli became 1264 KB raw for the main chunk.
+- Investigation note: the sluggishness that prompted this is dominated by per-interaction RTT (`/api/files` is 40 ms locally, 110–128 ms from the laptop), not by desktop compute (PSI memory/IO stall 0) nor by terminal streaming (~400 KB/s arriving as 12 segments/s of ~32 KB — already coalesced, so server-side batching would buy nothing). The build-serving change fixes page load only; typing latency is RTT-bound with no local echo.
+
+**Key files:** `app/ui/vite.config.ts`, `app/ui/scripts/compress-dist.ts`, `app/ui/package.json`, `doc/dev/app/workflow.md`, `doc/main/app/backend/server.md`, `~/.config/systemd/user/yaco-ui-build.service`
+**Verification:** `npx tsc -b`, `npm run build`, `npm run lint` all pass; watcher observed rebuilding + compressing on a source touch; from the laptop the main URL serves the 337 KB brotli bundle, `/api` and the terminal WebSocket (101 Switching Protocols) work through the new path, and `:8741` still reports `[vite] connected` + `hot updated`.
+**Commit:** 4e4eb9f4
+**Next:** Optionally fold `yaco-ui-build.service` into `services.sh`, and consider a build-id signal so a page open on `/` learns it is stale.
+**Blockers:** None
 
 ## 2026-07-16: Hourly Claude Haiku usage keepalive
 

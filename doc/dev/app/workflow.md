@@ -101,21 +101,43 @@ app/scripts/services.sh disable
 
 Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` so user services run before login. macOS LaunchAgents launch automatically at login (no equivalent flag needed).
 
-Tailscale forwards HTTPS → Vite (run once per machine, persists across reboots):
+Tailscale forwards HTTPS to the dev servers (run once per machine, persists across reboots):
 
 ```bash
 sudo tailscale set --operator=$USER                           # Linux only — lets the user manage serve without sudo
-tailscale serve --bg --https=443 http://127.0.0.1:5173
+tailscale serve --bg --https=443 http://127.0.0.1:5173        # laptop: / → Vite dev
 ```
+
+Desktop splits the two (see below for why):
+
+```bash
+tailscale serve --bg --https=443  http://127.0.0.1:3001       # / → built bundle
+tailscale serve --bg --https=8741 http://127.0.0.1:5173       # :8741 → Vite dev
+systemctl --user enable --now yaco-ui-build.service           # `vite build --watch`, keeps dist fresh
+```
+
+Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
+
+### Desktop serves the production build
+
+Laptop→desktop RTT is ~110 ms, and Vite dev's unbundled module graph pays it per waterfall level: 208 requests / 2.4 MB / 2.5 s to first paint, against 31 requests / 643 KB / 1.0 s for the built bundle (measured from the laptop in real Chrome, cold cache). Desktop therefore runs both:
+
+| URL | → | Serves |
+|---|---|---|
+| `https://desktop.tailnet-example.ts.net/` | `127.0.0.1:3001` | Built `app/ui/dist`, via the Hono server |
+| `https://desktop.tailnet-example.ts.net:8741` | `127.0.0.1:5173` | Vite dev — HMR intact over the tailnet |
+
+`yaco-ui-build.service` (`npx vite build --watch`) keeps `dist` current. It is **not** covered by `services.sh`, which only knows `yaco-server` and `yaco-ui` — install and control it directly with `systemctl --user`.
+
+Two consequences of serving a built bundle, both pointing the same way: `/` has no HMR and no live reload (a rebuild needs a manual browser refresh), and because Vite empties `dist` on each watch rebuild there is a ~13 s window per UI source change (~1 s build + ~12 s brotli over 170 files) where `/` can 404 or serve uncompressed assets. **Use `:8741` while iterating on UI code.** Laptop keeps `/` → Vite dev.
 
 Confirm the mapping after any service reinstall or Tailscale reset:
 
 ```bash
-tailscale serve status --json
-curl -sk https://laptop.tailnet-example.ts.net/ | grep '/@vite/client'
+tailscale serve status
+curl -sk https://laptop.tailnet-example.ts.net/  | grep '/@vite/client'   # laptop: Vite dev HTML
+curl -sk https://desktop.tailnet-example.ts.net/ | grep '/assets/index-'  # desktop: built bundle
 ```
-
-The Tailnet URL should serve Vite dev HTML (including `/@vite/client` and `/src/main.tsx`), not the backend's built `app/ui/dist` shell. Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
 
 The dev config also wires two remote-access perf knobs (dev-only — `apply: 'serve'`):
 
@@ -154,9 +176,9 @@ npm run build    # Produces app/ui/dist/ (+ .br/.gz siblings)
 
 After a build, the backend can serve the built UI directly at `http://localhost:3001/`.
 
-`ui/package.json`'s build script chains `tsc -b && vite build && node scripts/compress-dist.mjs`. The final step walks `dist/`, writes brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename, and always overwrites stale `.br`/`.gz` so rebuilds stay consistent. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
+`ui/package.json`'s build script is `tsc -b && vite build`. Compression is a `closeBundle` plugin (`compress-dist` in `vite.config.ts`, implemented in `scripts/compress-dist.ts`) rather than a step chained after `vite build` — **a chained npm step never runs under `vite build --watch`**, which is how desktop keeps its served bundle current (see [Long-running services](#long-running-services-systemd--launchd--tailscale)). The plugin walks `dist/`, writing brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
 
-During `vite build`, `viteStaticCopy` also copies the self-hosted VAD runtime (vad-web worklet + `silero_vad_v5.onnx` + onnxruntime-web single-threaded SIMD `ort-wasm-simd-threaded.{mjs,wasm}`) from `node_modules` into `dist/assets/vad/<version>/` — no binaries are committed. The same files are served in dev via the plugin's middleware. Bump `VAD_ASSET_VERSION` in `vite.config.ts` on any `@ricky0123/vad-web`/`onnxruntime-web` upgrade. -> See: [doc/main/app/backend/server.md](../../main/app/backend/server.md#self-hosted-vad-assets-assetsvadversion).
+Vite empties `dist` on every build, watch rebuilds included, so siblings never go stale — a missing `.br`/`.gz` degrades to identity encoding, it is never served as the wrong bytes.
 
 ## Testing
 
