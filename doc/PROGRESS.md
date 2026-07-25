@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-07-25: `yaco agent usage` — normalized Claude + Codex subscription quota
+
+**What changed:**
+- New `yaco agent usage [provider] [--fresh] [--json]`. Codex quota comes from the local `codex app-server` JSON-RPC (`account/rateLimits/read`), Claude's from `GET https://api.anthropic.com/api/oauth/usage`. Both providers probe concurrently and render side by side, most-exhausted window first.
+- New `cli/src/lib/core/agent/providers/usage.ts` holds both probes plus normalization and the cache, following the per-capability layout of `history.ts` / `output.ts` rather than one file per provider. New `RATE_LIMIT` error code; new `usageCacheFile(provider)` in `yaco-home.ts`.
+- Per-provider 120s cache under `${YACO_HOME}/cache/`, bound to the mtime of that provider's credential file and skipped entirely when there is no file to bind to.
+
+**Why:**
+- Reading quota meant opening a TUI and running `/status` or `/usage` by hand, once per tool.
+- Both APIs were probed live before design, and two of the research note's assumptions turned out false. Codex's `primary`/`secondary` do **not** mean session/weekly — on a prolite account `primary` is the 7-day window and `secondary` is null. And the binding limit is often a *scoped* one: Claude reported `five_hour` 4% / `seven_day` 89% while its `limits[]` array carried a model-scoped weekly limit at **98%**, invisible to the note's field list. So each probe reads the richest source its provider offers (Claude `limits[]`, Codex `rateLimitsByLimitId`).
+- Windows carry the provider's own identity instead of a `session|weekly` enum. Codex publishes a duration and no name, Claude a name and no duration, and neither is derivable from the other — so any two-bucket mapping is a guess about a number the user plans around, and a 1-day and a 30-day window would both land under "weekly".
+- Codex stays on `app-server` rather than calling `chatgpt.com/backend-api/wham/usage` directly: the direct call works and returns the same data, but the Codex access token has a 10-day lifetime, and `app-server` is what refreshes it. Claude needs no subprocess because its endpoint takes the stored OAuth token directly.
+
+**Key files:** `cli/src/lib/core/agent/providers/usage.ts`, `cli/src/commands/agent/usage.ts`, `cli/src/commands/agent/index.ts`, `cli/src/lib/core/errors.ts`, `cli/src/lib/core/paths/yaco-home.ts`
+**Verification:** `scripts/verify.sh` green; 1122 cli unit tests (4 new `usage-*` suites: normalization against recorded live payloads, hermetic cache contract, subprocess lifecycle against a fake `codex` on PATH, command parse/exit/render) plus registration in both dispatcher sweeps; `npx tsc --noEmit` clean — it caught type errors that `bun test` and lint both passed. Live runs against the real account for both providers, and adversarial fake-`codex` runs for premature exit, stderr flood, and a TERM-ignoring child.
+**Review:** 3 rounds by an independent cross-provider reviewer (`codex`), all Critical/High resolved — see `plan/all/usage-monitor/review.md`. It caught an invented 1970 reset timestamp, a `RangeError` on malformed timestamps, a child process that could outlive the command, a 16 MiB stderr buffer, and a cache that could serve another account's numbers.
+**Commit:** 8f6a2919
+**Next:** Nothing consumes `--json` yet; a status-bar or app surface is the obvious follow-up. Two test gaps are recorded as accepted limitations in the review artifact (the 22s timeout path and a peak-memory assertion for the stderr flood).
+**Blockers:** None
+
 ## 2026-07-22: Build-serving setup becomes canonical in services.sh
 
 **What changed:**

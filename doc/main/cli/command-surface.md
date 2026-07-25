@@ -1,6 +1,6 @@
 # Command Surface Matrix
 
-> Last updated: 2026-06-17 (`agent history` windowing: strict parser + `--since`/`--limit` + windowed `{rows,…}` object + origin/`tokens` enrichment)
+> Last updated: 2026-07-25 (`agent usage`: normalized Claude + Codex subscription quota)
 
 The canonical map of the `yaco` command surface. The CLI is consumed by AI
 agents as much as by humans, so the surface is organized into CRUD-shaped
@@ -9,7 +9,7 @@ inspect one**, every collection read in **list**, every cwd/identity read in
 **resolve current**.
 
 Legend: ✅ existing · 🆕 added in the read-surface pass · ✏️ improved in the
-read-surface pass (text/contract) · 📜 added in the agent-messages pass.
+read-surface pass (text/contract) · 📜 added in the agent-messages pass · 📊 added in the usage-monitor pass.
 
 | area | get / inspect one | list | resolve current | create / start | update / send | delete / teardown |
 |---|---|---|---|---|---|---|
@@ -21,6 +21,7 @@ read-surface pass (text/contract) · 📜 added in the agent-messages pass.
 Outside the grid — the only agent command that isn't CRUD-shaped:
 
 - **agent**: `providers` ✅ — the static provider catalog.
+- **agent**: `usage [provider]` 📊 — subscription quota per provider (Codex via the local `codex app-server` JSON-RPC, Claude via its OAuth usage endpoint). Not CRUD-shaped: it reads an external account, not a YACO object.
 - **agent**: `mark-crashed` — internal, called by the wrapper EXIT trap (not a user command): generation/sentinel-guarded rewrite of a session state file to `crashed` + `exitCode`. See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
 
 A worktree is a git object, so YACO adds **no** worktree read command: `git
