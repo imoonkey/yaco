@@ -45,6 +45,13 @@ export function shellSessionsDir(): string {
   return join(getYacoHome(), "shell-sessions");
 }
 
+/** ${YACO_HOME}/cache/usage-<provider>.json — TTL cache for one provider's
+ *  quota probe. One file per provider so concurrent probes never read-modify-
+ *  write the same file. */
+export function usageCacheFile(provider: string): string {
+  return join(getYacoHome(), "cache", `usage-${provider}.json`);
+}
+
 /** ${YACO_HOME}/channels — messaging channel state root. */
 export function channelsDir(): string {
   return join(getYacoHome(), "channels");

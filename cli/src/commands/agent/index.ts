@@ -7,6 +7,7 @@
  *    list [--all] [--path <p>] [--reconcile]              List live sessions
  *    status <name> [--reconcile]                          Inspect one session
  *    whoami                                                Print current agent handle
+ *    usage [provider]                                     Report subscription quota
  *    kill <name> | --all                                  Kill a session
  *    rename <old> <new>                                   Rename an idle session
  *    hooks install                                        Install hook configs
@@ -34,6 +35,7 @@ import { whoami } from "./whoami.ts";
 import { HISTORY_USAGE, parseHistoryArgs, runHistory, renderHistory } from "./history.ts";
 import { runSummaries, renderSummaries } from "./summaries.ts";
 import { runProviders, renderProviders } from "./providers.ts";
+import { parseUsageArgs, runUsage, renderUsage, USAGE_USAGE } from "./usage.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
 import { parseMessagesArgs, runMessages, renderMessages, MESSAGES_USAGE } from "./messages.ts";
 import {
@@ -61,6 +63,7 @@ Usage:
   yaco agent history [--path <project-path>] [--since <iso>] [--limit <n>] [--json]
   yaco agent summaries --path <project-path> [--json]
   yaco agent providers [--json]
+  yaco agent usage [provider] [--fresh] [--json]
   yaco agent output-cursor <name> [--json]
   yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>] [--json]
   yaco agent messages <name> [--meta|--index <i>|--summary] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
@@ -528,6 +531,16 @@ export async function handleAgent(
       }
       const catalog = runProviders();
       return dual(opts.json, catalog, () => renderProviders(catalog));
+    }
+
+    case "usage": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: `${USAGE_USAGE}\n` });
+      }
+      const args = parseUsageArgs(rest);
+      const json = args.json || opts.json;
+      const entries = await runUsage(args);
+      return dual(json, entries, () => renderUsage(entries));
     }
 
     case "output-cursor": {

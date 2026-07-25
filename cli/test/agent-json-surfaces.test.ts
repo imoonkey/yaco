@@ -31,7 +31,7 @@ function runJson(
 }
 
 describe("agent help envelopes", () => {
-  for (const sub of ["history", "summaries", "providers"]) {
+  for (const sub of ["history", "summaries", "providers", "usage"]) {
     it(`\`agent ${sub} --help --json\` returns a success envelope`, () => {
       const { status, data } = runJson(["agent", sub, "--help", "--json"]);
       expect(status).toBe(0);

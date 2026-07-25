@@ -15,7 +15,7 @@
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,6 +74,37 @@ describe("text-render sweep — ordinary commands render {text} in text mode", (
     await expectTextEnvelope(["agent", "providers"]);
     await expectTextEnvelope(["agent", "history", "--path", path]);
     await expectTextEnvelope(["agent", "summaries", "--path", path]);
+  });
+
+  it("agent usage", async () => {
+    // Served from a seeded cache so the sweep stays hermetic: no app-server
+    // spawn, no network. Both path resolvers read the environment at call
+    // time, so pointing them at a temp home is enough.
+    const home = tempDir();
+    const yacoHome = join(home, ".yaco");
+    mkdirSync(join(yacoHome, "cache"), { recursive: true });
+    // The cache binds entries to the mtime of the provider's credential file,
+    // and refuses to serve any entry when there is no file to bind to.
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    const credentials = join(home, ".claude", ".credentials.json");
+    writeFileSync(credentials, JSON.stringify({ claudeAiOauth: { accessToken: "x" } }));
+    writeFileSync(
+      join(yacoHome, "cache", "usage-claude.json"),
+      JSON.stringify({
+        credentialGeneration: statSync(credentials).mtimeMs,
+        checkedAt: new Date().toISOString(),
+        windows: [{ window: "weekly", percent: 42, resetsAt: "2026-07-30T02:57:02.000Z" }],
+      }),
+    );
+    const restore = { home: process.env["HOME"], yacoHome: process.env["YACO_HOME"] };
+    process.env["HOME"] = home;
+    process.env["YACO_HOME"] = yacoHome;
+    try {
+      await expectTextEnvelope(["agent", "usage", "claude"]);
+    } finally {
+      process.env["HOME"] = restore.home;
+      process.env["YACO_HOME"] = restore.yacoHome;
+    }
   });
 
   it("task set / validate / attach / detach / archive / rm", async () => {
