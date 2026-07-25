@@ -1,20 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Mic, Square, LoaderCircle, Wand } from 'lucide-react'
-import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
 import { TargetSelector } from './TargetSelector'
 import type { VoiceInstance } from './GlobalVoiceControl'
-import { writeTextToClipboard } from '../lib/clipboard'
 import type { InteractionState, CapabilityState, AppendText, FormatResult } from '../hooks/useVoice'
 
 // The one compose surface for terminal/editor text entry: type, paste, or
 // record (one take at a time, inserted at the caret). Insert sends the draft to
 // the run's target (chosen via the header TargetSelector); ⌘/Ctrl+Enter is the
 // send key (plain Enter is a newline, so IME candidate-selection Enter never
-// mis-fires). Format polishes the whole draft via the LLM formatter (Undo via
-// the toast action). The tray only closes via the X / Esc — never an outside
-// click — and stashes the draft on the clipboard on any close so a glitched
-// insert can't lose it.
+// mis-fires). Format polishes the whole draft via the LLM formatter (Undo sits
+// next to it). The tray only closes via the X / Esc — never an outside click.
+// The clipboard is only ever touched by the explicit Copy button.
 export function ComposeTray({
   target,
   instances,
@@ -128,29 +125,14 @@ export function ComposeTray({
     caretRef.current = { start: el.selectionStart, end: el.selectionEnd }
   }, [])
 
-  // Stash the draft on the clipboard whenever the tray closes with content, so a
-  // glitched insert (WS dropped, session detached) never silently loses it.
-  const backupDraft = useCallback(() => {
-    if (!editText.trim()) return
-    void writeTextToClipboard(editText).then(ok => {
-      if (ok) toast('Draft copied to clipboard', { duration: 1500 })
-    })
-  }, [editText])
-
   const takeInFlight = state === 'requesting_permission' || state === 'recording' || state === 'transcribing'
   const isRecoverable = state === 'recoverable'
   const canInsert = !takeInFlight && !isRecoverable && editText.trim() !== ''
 
   const handleConfirm = useCallback(() => {
     if (!canInsert) return
-    backupDraft()
     onConfirm(editText)
-  }, [canInsert, backupDraft, onConfirm, editText])
-
-  const handleClose = useCallback(() => {
-    backupDraft()
-    onClose()
-  }, [backupDraft, onClose])
+  }, [canInsert, onConfirm, editText])
 
   // Format the whole draft via the LLM formatter; replace in place and keep the
   // pre-format text so a flat Undo button (next to Format) can restore it.
@@ -190,7 +172,7 @@ export function ComposeTray({
 
   return (
     <DialogShell
-      onClose={handleClose}
+      onClose={onClose}
       dismissOnOverlayClick={false}
       overlayBg="var(--sol-overlay-bg)"
       overlayClassName="z-[1000] items-center justify-center"
@@ -210,7 +192,7 @@ export function ComposeTray({
             instances={instances}
             onSelect={onSelectTarget}
           />
-          <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>
+          <button style={CLOSE_BTN_STYLE} onClick={onClose} aria-label="Close"><X size={14} /></button>
         </div>
 
         <textarea

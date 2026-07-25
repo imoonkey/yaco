@@ -8,10 +8,10 @@ import {
 } from './helpers/workspace'
 import { resolveDevPorts } from '../../e2ePorts'
 
-// Drives the real ComposeTray via a fake capture session + stubbed voice API,
-// and verifies the defensive clipboard backup: whenever the tray closes with
-// edited content (Insert / Discard), the draft lands on the clipboard so a
-// glitched insert can never silently lose carefully-edited text.
+// Drives the real ComposeTray via a fake capture session + stubbed voice API.
+// The clipboard is only ever written by the explicit Copy button — closing the
+// tray (Insert / X) must leave it untouched, so a draft can never leak into an
+// unrelated paste.
 //
 // The fake capture hook is gated on import.meta.env.DEV (voiceCapture.ts), so it
 // only works against the dev server — the default isolated suite serves a static
@@ -101,34 +101,36 @@ async function recordToCompose(page: Page): Promise<void> {
   await expect(page.getByLabel('Compose input')).toHaveValue(/original transcript/, { timeout: 10_000 })
 }
 
-test('Insert copies the edited draft to the clipboard as a backup', async ({ page }) => {
+test('Insert leaves the clipboard untouched', async ({ page }) => {
   await stubVoice(page, 'original transcript')
   await openFileForVoice(page)
+  await page.evaluate(() => navigator.clipboard.writeText('pre-existing clipboard'))
   await recordToCompose(page)
 
-  const edited = 'carefully edited QA backup text'
-  await page.getByLabel('Compose input').fill(edited)
-  await page.getByRole('button', { name: 'Insert' }).click()
+  await page.getByLabel('Compose input').fill('carefully edited QA text')
+  await page.getByRole('button', { name: 'Insert', exact: true }).click()
 
-  // Tray closes…
   await expect(page.getByLabel('Compose input')).toBeHidden({ timeout: 5_000 })
-  // …and the draft is on the clipboard even if the insert itself glitched.
-  const clip = await page.evaluate(() => navigator.clipboard.readText())
-  expect(clip).toBe(edited)
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('pre-existing clipboard')
 })
 
-test('Close (X) still preserves the draft on the clipboard', async ({ page }) => {
+test('Close (X) leaves the clipboard untouched; only Copy writes to it', async ({ page }) => {
   await stubVoice(page, 'original transcript')
   await openFileForVoice(page)
+  await page.evaluate(() => navigator.clipboard.writeText('pre-existing clipboard'))
   await recordToCompose(page)
 
-  const edited = 'discarded but recoverable text'
+  const edited = 'draft that must not leak into a paste'
   await page.getByLabel('Compose input').fill(edited)
-  await page.getByRole('button', { name: 'Close' }).click()
-
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByLabel('Compose input')).toBeHidden({ timeout: 5_000 })
-  const clip = await page.evaluate(() => navigator.clipboard.readText())
-  expect(clip).toBe(edited)
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('pre-existing clipboard')
+
+  // The explicit Copy button is the one path that writes the draft.
+  await recordToCompose(page)
+  await page.getByLabel('Compose input').fill(edited)
+  await page.getByRole('button', { name: 'Copy', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(edited)
 })
 
 test('plain Enter inserts a newline; only Cmd/Ctrl+Enter sends', async ({ page }) => {
