@@ -19,7 +19,7 @@ UI_DIR="$APP_DIR/ui"
 # Unit/label names derive from `name`, so this table is the single place a
 # service is added or renamed.
 SERVICES=(
-  "server|$SERVER_DIR|dev|YACO backend (Hono + tsx watch)"
+  "server|$SERVER_DIR|start|YACO backend (Hono)"
   "ui|$UI_DIR|dev|YACO frontend (Vite dev)"
   "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)"
 )
@@ -84,6 +84,8 @@ install_linux() {
 Description=$(svc_desc "$s")
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -92,8 +94,6 @@ Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:
 ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
 

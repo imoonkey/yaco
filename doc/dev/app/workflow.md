@@ -71,21 +71,21 @@ The app server also prefers the installed binary
 when started by npm scripts, so live Claude/Codex behavior only changes after
 `tools/install.sh` rebuilds that binary and the service is restarted.
 
-> ⚠️ `tsx watch` only reliably reloads on changes to the entry file (`app/server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, redeployed, behavior unchanged". When in doubt, `touch app/server/src/index.ts` to force a respawn, or check `ps -o pid,etime,cmd -p $(pgrep -f 'tsx.*src/index.ts' | tail -1)` to see how old the running child is.
+> ⚠️ Foreground `npm run dev:server` uses `tsx watch`, which only reliably reloads on changes to the entry file (`app/server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, behavior unchanged". When in doubt, restart the foreground command.
 
-The backend starts runtime watchers only after `:3001` is successfully bound. If two `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing the project file watchers; the active server keeps the `${YACO_HOME:-~/.yaco}/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
+The backend starts runtime watchers only after `:3001` is successfully bound. If two foreground `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing the project file watchers; the active server keeps the `${YACO_HOME:-~/.yaco}/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
 
 `npm run start:app` is the intended local shape for installed/mobile use: it builds `app/ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
 ## Long-running services (systemd / launchd + Tailscale)
 
-Both desktop (Linux) and laptop (macOS) run the dev servers as long-running OS-managed services, kept alive across reboots, and expose the UI over the Tailnet at `https://<host>.tailnet-example.ts.net/` (`desktop` and `laptop` hostnames).
+Both desktop (Linux) and laptop (macOS) run YACO as long-running OS-managed services, kept alive across reboots. The backend uses `npm start`, not `tsx watch`, so an OOM or other backend exit reaches the service manager and triggers `Restart=on-failure`/`KeepAlive`. Use the foreground commands above when server hot reload is needed.
 
 Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, and log paths all derive from it, so that table is the only place to add or rename one:
 
 | Service | Runs | Purpose |
 |---|---|---|
-| `yaco-server` | `npm run dev` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` |
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` |
 | `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) |
 | `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source |
 

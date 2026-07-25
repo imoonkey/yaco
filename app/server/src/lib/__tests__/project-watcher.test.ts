@@ -45,7 +45,12 @@ vi.mock('../attention-runtime', () => ({
   notifyAttentionTaskChange: vi.fn(),
 }))
 
-import { startProjectWatchers, stopProjectWatchers, hardVerdict } from '../project-watcher'
+import {
+  canonicalIgnorePath,
+  startProjectWatchers,
+  stopProjectWatchers,
+  hardVerdict,
+} from '../project-watcher'
 
 function writeSession(handle: string, sessionPath: string): void {
   writeFileSync(join(mock.sessionsDir, `${handle}.json`), JSON.stringify({
@@ -169,10 +174,10 @@ describe('hardVerdict (watch-prune rules)', () => {
     expect(hardVerdict('.git/logs/HEAD')).toBe(true)
   })
 
-  it('force-keeps .worktrees paths except hard-pruned runtime dirs', () => {
+  it('keeps worktree roots but defers their contents to normal ignore rules', () => {
     expect(hardVerdict('.worktrees')).toBe(false)
     expect(hardVerdict('.worktrees/wt')).toBe(false)
-    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBe(false)
+    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBeUndefined()
     expect(hardVerdict('.worktrees/wt/logs/traffic/request.json')).toBe(true)
   })
 
@@ -180,5 +185,18 @@ describe('hardVerdict (watch-prune rules)', () => {
     expect(hardVerdict('src/index.ts')).toBeUndefined()
     expect(hardVerdict('dist')).toBeUndefined()
     expect(hardVerdict('plan/tasks/x.json')).toBeUndefined()
+  })
+})
+
+describe('canonicalIgnorePath', () => {
+  it('applies root gitignore rules inside each worktree', () => {
+    expect(canonicalIgnorePath('src/index.ts')).toBe('src/index.ts')
+    expect(canonicalIgnorePath('.worktrees/task-a/src/index.ts')).toBe('src/index.ts')
+    expect(canonicalIgnorePath('.worktrees/task-a/data/cache.db')).toBe('data/cache.db')
+  })
+
+  it('keeps worktree container paths outside root gitignore matching', () => {
+    expect(canonicalIgnorePath('.worktrees')).toBeNull()
+    expect(canonicalIgnorePath('.worktrees/task-a')).toBeNull()
   })
 })

@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-07-25: Backend OOM recovery and worktree watcher pruning
+
+**What changed:**
+- Long-running systemd/launchd backend services now use `npm start`; foreground development keeps `npm run dev:server` and `tsx watch`.
+- Recursive project watching now applies root `.gitignore` rules inside `.worktrees/<slug>/`, preserving source/worktree refresh while pruning repeated ignored data and virtualenv trees.
+- The systemd restart-limit keys now live in `[Unit]`, where systemd recognizes them.
+
+**Why:**
+- The desktop Node child exhausted its roughly 4.1 GB V8 heap while the `tsx watch` parent stayed alive, leaving Tailscale Serve returning 502 and preventing `Restart=on-failure`.
+- The server held about 163,801 inotify watches because `.worktrees` bypassed normal ignore matching; Chokidar's in-memory index drove most of the heap pressure.
+
+**Key files:** `app/scripts/services.sh`, `app/server/src/lib/project-watcher.ts`, `app/server/src/lib/__tests__/project-watcher.test.ts`, `doc/dev/app/workflow.md`, `doc/main/app/backend/libs.md`.
+**Verification:** server 758/758; project-watcher 12/12; UI lint and production build green; shell syntax, doc links, and `git diff --check` green; live watch count fell from 163,801 to about 73,820 and Node RSS from 3.5–3.8 GB to about 1.4 GB; Tailnet `/`, built JS, and `/api/health` returned HTTP 200. The unified `scripts/verify.sh` remains red on two pre-existing CLI Stop-debounce timing tests (`hook-event.test.ts`), reproduced unchanged in isolation and unrelated to these app/service files.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-07-25: `yaco agent usage` — normalized Claude + Codex subscription quota
 
 **What changed:**

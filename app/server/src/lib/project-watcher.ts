@@ -67,10 +67,9 @@ function toRel(projectPath: string, absPath: string): string | null {
  *  (`logs/traffic`, `logs/usage`) are pruned because parent-project watchers cannot
  *  rely on a child repo's `.gitignore`. `.git` metadata (HEAD/index/refs) is kept for
  *  the `git` channel, except transient index locks that git may create while
- *  answering status. The `.worktrees` subtree is force-kept — it is gitignored, but
- *  the app serves per-worktree filetree/git, so it must stay watched (its
- *  node_modules, runtime logs, and .git logs dirs are still pruned by the rules
- *  above). */
+ *  answering status. Worktree container roots are force-kept because the app
+ *  serves per-worktree filetree/git; their contents defer to the root repo's
+ *  gitignore after canonicalIgnorePath strips `.worktrees/<slug>/`. */
 export function hardVerdict(rel: string): boolean | undefined {
   const segs = rel.split('/')
   if (segs.includes('node_modules')) return true
@@ -84,8 +83,18 @@ export function hardVerdict(rel: string): boolean | undefined {
     if (segs[segs.length - 1] === 'index.lock') return true
     return sub === 'objects' || sub === 'logs'
   }
-  if (rel === '.worktrees' || rel.startsWith('.worktrees/')) return false
+  if (rel === '.worktrees' || /^\.worktrees\/[^/]+$/.test(rel)) return false
   return undefined
+}
+
+/** Map a worktree path back to the repo-relative path used by root gitignore
+ * rules. The worktree container itself has no canonical counterpart and must
+ * stay visible so its nested source paths can be watched. */
+export function canonicalIgnorePath(rel: string): string | null {
+  if (rel === '.worktrees') return null
+  const match = /^\.worktrees\/[^/]+(?:\/(.+))?$/.exec(rel)
+  if (!match) return rel
+  return match[1] ?? null
 }
 
 /** chokidar `ignored` predicate: prunes a directory from the recursive walk so
@@ -106,8 +115,10 @@ function makeIgnored(projectPath: string): (absPath: string, stats?: Stats) => b
     const hard = hardVerdict(rel)
     if (hard !== undefined) return hard
     if (!stats) return false // defer the gitignore decision to the stats call
+    const ignorePath = canonicalIgnorePath(rel)
+    if (ignorePath === null) return false
     const ig = projectIgnores.get(projectPath)
-    return !!ig && ig.ignores(stats.isDirectory() ? rel + '/' : rel)
+    return !!ig && ig.ignores(stats.isDirectory() ? ignorePath + '/' : ignorePath)
   }
 }
 
