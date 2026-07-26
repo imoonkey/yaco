@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-07-26: Mobile usage indicator
+
+**What changed:**
+- Mobile chrome gained a usage icon carrying a tone-colored badge with the peak percent across providers: portrait header left of the bell, landscape right margin between the bell and the theme toggle. Tapping it opens a single-column bottom sheet with the per-provider cards and the same one global refresh.
+- The desktop rail's data shaping (`usageModel.ts`) and card rendering (`UsageCards.tsx`) were extracted so the popover (two columns) and the sheet (one) render the same windows from the same `useUsage()` state.
+- `DialogShell` gained a `sheet` animation (`panel-slide-up` / new `panel-slide-down`) so the bottom sheet reuses the house dialog — overlay, Escape, focus trap, animated close.
+- The portrait `PaneSwitch` became label-only with tighter spacing and truncation.
+
+**Why:**
+- Quotas were desktop-only, so the phone — the surface most used to check on running agents — could not see them.
+- Sharing the model and cards makes the two surfaces identical by construction rather than by convention.
+- The portrait header already overflowed at 390px (the mute icon overlapped the "Terminal" label); a fourth chrome icon forced the fix, and dropping the four pane glyphs bought the room without truncating labels.
+
+**Key files:** `app/ui/src/components/MobileUsageIndicator.tsx`, `app/ui/src/components/usageModel.ts`, `app/ui/src/components/UsageCards.tsx`, `app/ui/src/components/UsageQuotaRail.tsx`, `app/ui/src/components/DialogShell.tsx`, `app/ui/src/workspace/MobilePanelProjection.tsx`, `app/ui/tests/e2e/usage-quota.spec.ts`.
+**Verification:** `npx tsc -b` and `npx eslint src tests` clean; `npx vitest run src/` 1126 passed (89 files) including 3 new `MobileUsageIndicator` tests; mobile/landscape/persistence e2e specs 31 passed, including a new 390×844 case asserting the badge peak, both providers in the sheet, equal-width single-column cards, refresh, and close. Visually checked at 390×844 and 667×375 in light and dark. Three full-suite e2e failures (`session-search.spec.ts:103`, `session-search.spec.ts:178`, `workspace.spec.ts:158`) reproduce on a clean tree and are unrelated.
+**Commit:** 4973e80c
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-07-25: Provider quota rail in the desktop app header
 
 **What changed:**

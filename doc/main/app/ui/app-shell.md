@@ -9,6 +9,7 @@ Top-level application chrome: top bar, clock, project selection, rhythm pulse, a
 - Project selection and ordering
 - Single Workspace rendering keyed by active project
 - The App-owned top-bar slot the workspace portals its global voice control into
+- The mobile usage indicator node handed down to the workspace (the mobile chrome that places it is [Mobile](mobile.md)'s)
 
 ## Does Not Own
 
