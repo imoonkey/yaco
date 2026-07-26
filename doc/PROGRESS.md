@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-07-26: Service memory limits rolled out from the SERVICES table
+
+**What changed:**
+- Ran `app/scripts/services.sh install`, so the generated systemd units now carry `MemoryHigh`/`MemoryMax` themselves, and deleted the hand-written `~/.config/systemd/user/yaco-{server,ui-build}.service.d/memory.conf` drop-ins that had been holding the values since the fix landed. Supersedes the **Next** of the entry below.
+- `yaco-ui` came through `install` still `disabled` + `inactive`, confirming the new `autostart=no` path both skips enabling and actively disables a demoted unit.
+
+**Why:**
+- Two sources for the same limit is one that drifts. The table is the owner; the drop-ins were only a stopgap so the ceiling existed before `install` could be run safely.
+
+**Key files:** `~/.config/systemd/user/yaco-*.service` (generated, untracked)
+**Verification:** `DropInPaths=` empty and the live cgroups read `memory.max=2516582400` / `memory.high=1887436800` (server) and `1073741824` / `734003200` (ui-build) — `daemon-reload` applied them **without a restart**, so `yaco-server` kept pid 4066578 and no WebSocket dropped. Tailnet mapping, 9 tmux sessions, and `/api/health` (0.5-3.8ms) all unaffected.
+**Commit:** doc-only; the code that generates this shipped in e0104d17
+**Next:** None
+**Blockers:** None
+
 ## 2026-07-26: Backend event-loop stalls — bound the watcher, the heap, and the services
 
 **What changed:**
