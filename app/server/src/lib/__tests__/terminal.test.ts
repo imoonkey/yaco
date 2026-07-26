@@ -83,15 +83,23 @@ const {
 } = await import('../terminal')
 import { PtyCapacityError, markDegraded, __resetForTests as resetPtyCapacity } from '../pty-capacity'
 
+/** Fake node-pty handle whose `emit` reaches only the currently-subscribed
+ *  listeners — node-pty drops data emitted while nobody is listening, which is
+ *  exactly the behaviour attachSession's startup buffer exists to cover. */
 function createPty() {
+  const listeners = new Set<(data: string) => void>()
   return {
     pid: 12345,
     destroy: vi.fn(),
     kill: vi.fn(),
-    onData: vi.fn(),
+    onData: vi.fn((listener: (data: string) => void) => {
+      listeners.add(listener)
+      return { dispose: () => listeners.delete(listener) }
+    }),
     onExit: vi.fn(),
     resize: vi.fn(),
     write: vi.fn(),
+    emit: (data: string) => { for (const listener of listeners) listener(data) },
   }
 }
 
@@ -158,6 +166,28 @@ describe('attachSession', () => {
       persistent: false,
       proc,
     })
+  })
+
+  it('captures tmux output emitted while the post-attach resize is in flight', async () => {
+    const proc = createPty()
+    spawnMock.mockReturnValue(proc)
+    aliveTmuxSessions.add('worker')
+    const tmuxImpl = tmuxSpawnMock.getMockImplementation()!
+    tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) => {
+      if (args[0] === 'resize-window') proc.emit('\x1b[2J\x1b[Hredraw\x1b[c')
+      return tmuxImpl(cmd, args)
+    })
+
+    const attached = await attachSession('worker', 120, 40)
+
+    expect(attached.initialData).toBe('\x1b[2J\x1b[Hredraw\x1b[c')
+
+    // The buffer stops at return, so the caller's subscriber owns every later
+    // chunk exactly once.
+    const live: string[] = []
+    proc.onData(chunk => live.push(chunk))
+    proc.emit('tick')
+    expect(live).toEqual(['tick'])
   })
 
   it('uses a namespace import for node-pty so tsx/ESM gets a real spawn function', async () => {

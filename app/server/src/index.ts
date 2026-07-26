@@ -441,11 +441,16 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     initialPalette,
   )
 
-  const dataSub = proc.onData((data: string) => {
+  const forward = (data: string) => {
     const result = oscResponder.handle(data)
     for (const response of result.responses) proc.write(response)
     if (result.output && ws.readyState === WebSocket.OPEN) ws.send(result.output)
-  })
+  }
+
+  const dataSub = proc.onData(forward)
+  // Flush what tmux emitted before this subscription existed (its attach
+  // repaint and capability queries), ahead of any live output.
+  if (attached.initialData) forward(attached.initialData)
 
   const exitSub = proc.onExit(() => {
     void reconcileShellSessionExit(sessionName).catch(err => {
@@ -467,9 +472,6 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
   ws.on('pong', () => { conn.alive = true })
   console.log(`[ws] terminal attached: ${sessionName} (pid=${proc.pid})`)
 
-  if (attached.initialData && ws.readyState === WebSocket.OPEN) {
-    ws.send(attached.initialData)
-  }
   // Reset terminal modes that buffer replay may have restored from a prior
   // TUI session (e.g. mouse tracking, hidden cursor from Claude Code).
   // Sent unconditionally — even empty buffers may follow a session where

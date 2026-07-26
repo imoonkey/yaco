@@ -411,6 +411,15 @@ export async function attachSession(sessionName: string, cols: number, rows: num
     env: buildChildProcessEnv(),
   })
 
+  // tmux repaints the whole pane — and asks the terminal for its capabilities
+  // (DA1/DA2/XTVERSION/OSC 10-11) — within ~30ms of attach, while the tmux
+  // calls below are still in flight. node-pty drops whatever it emits before a
+  // listener exists, so capture it here and hand it to the caller: without this
+  // the pane shows only the app's own incremental redraws, and tmux waits out
+  // its 5s query timeout before repainting.
+  let initialData = ''
+  const buffer = proc.onData((chunk: string) => { initialData += chunk })
+
   // Force window to this client's size. WINDOW_SIZE_POLICY is supposed to do
   // this on attach, but a fresh attach isn't always counted as "latest active"
   // until the user types — so a previously-attached small client (or a zombie
@@ -428,8 +437,11 @@ export async function attachSession(sessionName: string, cols: number, rows: num
     console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
   }
 
+  // Dispose synchronously with the return so the caller's own subscription
+  // takes over in the same tick — no window for a dropped chunk.
+  buffer.dispose()
   return {
-    initialData: '',
+    initialData,
     persistent: false,
     proc,
   }
