@@ -83,11 +83,22 @@ Both desktop (Linux) and laptop (macOS) run YACO as long-running OS-managed serv
 
 Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, and log paths all derive from it, so that table is the only place to add or rename one:
 
-| Service | Runs | Purpose |
-|---|---|---|
-| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` |
-| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) |
-| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source |
+| Service | Runs | Purpose | MemoryHigh / Max |
+|---|---|---|---|
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 1800M / 2400M |
+| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 700M / 1G |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 700M / 1G |
+
+The memory bounds are part of the service contract, not a nicety. These are
+long-lived Node processes sharing a box with agent fleets; once one is big enough
+to be paged out, every major GC turns into a swap-in storm that stalls its event
+loop for **seconds** — on `yaco-server` that freezes every attached terminal and
+every API call at once, since they all share one loop. A kill + `Restart=on-failure`
+is strictly better. `MemoryMax` is the cgroup ceiling; the backend additionally caps
+V8 with `--max-old-space-size=1536` in `app/server/package.json`, so it normally
+dies on the heap cap first with a clean OOM trace rather than a SIGKILL. Limits are
+emitted from the `SERVICES` table, so `services.sh install` is what applies a change.
+(launchd has no equivalent, so the macOS plists carry the V8 cap only.)
 
 | Platform | Manager | Unit/Plist location |
 |---|---|---|

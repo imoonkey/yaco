@@ -15,18 +15,29 @@ APP_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$APP_DIR/server"
 UI_DIR="$APP_DIR/ui"
 
-# The canonical service set, as `name|working dir|npm script|description`.
+# The canonical service set, as `name|working dir|npm script|description|MemoryHigh|MemoryMax`.
 # Unit/label names derive from `name`, so this table is the single place a
 # service is added or renamed.
+#
+# The memory bounds matter as much as the restart policy. These are long-lived
+# Node processes on a box that also runs agent fleets; once one is large enough
+# to be paged out, every major GC becomes a swap-in storm that stalls the whole
+# event loop for seconds — which on `server` freezes every attached terminal.
+# Killing and restarting is strictly better than that. MemoryMax is a cgroup
+# ceiling; the backend additionally caps V8 itself via `--max-old-space-size`
+# in `app/server/package.json`, so it usually dies on the heap cap first with a
+# clean OOM trace instead of a SIGKILL.
 SERVICES=(
-  "server|$SERVER_DIR|start|YACO backend (Hono)"
-  "ui|$UI_DIR|dev|YACO frontend (Vite dev)"
-  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)"
+  "server|$SERVER_DIR|start|YACO backend (Hono)|1800M|2400M"
+  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|700M|1G"
+  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|700M|1G"
 )
 svc_name()  { cut -d'|' -f1 <<<"$1"; }
 svc_dir()   { cut -d'|' -f2 <<<"$1"; }
 svc_script(){ cut -d'|' -f3 <<<"$1"; }
 svc_desc()  { cut -d'|' -f4 <<<"$1"; }
+svc_mem_high(){ cut -d'|' -f5 <<<"$1"; }
+svc_mem_max() { cut -d'|' -f6 <<<"$1"; }
 
 # Canonical tailnet mapping: `/` serves the built bundle — over a high-RTT link
 # Vite dev's unbundled module graph costs ~7x the requests — and DEV_SERVE_PORT
@@ -94,6 +105,8 @@ Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:
 ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
+MemoryHigh=$(svc_mem_high "$s")
+MemoryMax=$(svc_mem_max "$s")
 StandardOutput=journal
 StandardError=journal
 
