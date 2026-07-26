@@ -145,6 +145,31 @@ Terminal mounts immediately when its `instanceId` has a non-empty binding (`term
 
 Auto-close: the provider keeps a **per-session miss-count map**. Each poll, every bound session absent from the live handles increments its count; at **2 consecutive misses** the bound terminal tab(s) close (the session goes to History). A single transient miss (e.g., a race between state-file write and API read) is tolerated. A persisted binding is pre-seeded at miss-count 1, so a session that died between reloads is dropped on the first confirming poll. Explicitly killed sessions close their tab the same way (they leave the live set). -> See: [Terminal Tabs](#terminal-tabs).
 
+### Keep-alive across a tab switch
+
+A group does **not** unmount a terminal when you switch tabs. `PanelGroup` keeps the
+recently visited terminal tabs mounted (MRU, capped at 6 bodies per group) and renders the
+inactive ones `invisible` + `inert`; only the active one carries `data-instance-id` /
+`data-panel-leaf` / the focus markers, so exactly one leaf per group stays resolvable.
+Editors still mount only when active — their content lives in the shared per-path buffer,
+so remounting one is free, while remounting a terminal means a fresh wss handshake plus a
+tmux attach (~1s on a remote browser). Desktop only by construction: mobile renders through
+`MobilePanelProjection`, which never mounts `PanelGroup`.
+
+Two rules keep an off-screen pane harmless, both driven by the `visible` flag that
+`PanelInstance` publishes:
+
+- **It cannot take input.** `inert` is what enforces this — Chromium keeps a focused
+  descendant focused, and keeps delivering `keydown` to it, when an ancestor merely turns
+  invisible, so a terminal hidden behind a tab that claims no focus would otherwise go on
+  swallowing keystrokes into a live PTY.
+- **It cannot size its PTY.** Attaching or resizing applies `tmux resize-window`, which
+  would resize the window under another device viewing the same session. A hidden pane
+  refits locally (so it is correctly sized the moment it is shown) but sends no resize, and
+  `createWs` — the single socket-creation funnel — refuses to attach a hidden pane at all
+  (mount, effect re-run, wake, or a backoff armed before the hide). The visible edge takes
+  focus, sends the size the pane reached while hidden, and resumes a dropped connection.
+
 ### Connection Lifecycle
 
 The terminal component splits into two effects:

@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-07-26: Switching a terminal tab stops costing a second
+
+**What changed:**
+- `PanelGroup` keeps recently visited TERMINAL tabs mounted (MRU, cap 6 bodies/group) and renders the inactive ones `invisible` + `inert`; only the active wrapper carries `data-instance-id` / `data-panel-leaf` / the focus markers. Editors still mount only when active. Desktop only by construction — mobile goes through `MobilePanelProjection`.
+- `Terminal` gained a `visible` flag (published on `PanelInstance` by `PanelHost`): the visible edge takes focus, sends the size the pane reached while hidden, and resumes a dropped socket; while hidden it refits locally but sends no resize, and `createWs` refuses to attach at all.
+- `attachSession()` batches its tmux commands into one invocation each (`;` separates commands in argv) and no longer awaits the post-spawn resize. The startup buffer from 89d43ea4 and `AttachedSession.initialData` are gone — with nothing awaited between the spawn and the return, the caller's subscription (a microtask later) already precedes every PTY I/O turn.
+
+**Why:**
+- A group mounted only its active tab, so switching disposed the xterm, closed the WebSocket, and let the server kill the PTY and detach tmux. Switching back paid ~3 RTT of wss handshake — the browser is 107ms away over Tailscale — plus a ~110ms attach. Measured decomposition of the ~1s: 330ms handshake + 110ms attach + 55ms for the paint to come back + xterm rebuild.
+- Every tmux CLI call costs ~30ms whatever it carries (client startup + server round trip), and five of them sat on the attach path.
+- Two hazards the keep-alive introduced, both found by the codex reviewer and both reproduced before fixing: Chromium keeps a focused descendant focused (and keeps delivering `keydown`) when an ancestor merely turns `visibility:hidden`, so a hidden terminal swallowed keystrokes into a live PTY; and a hidden pane's resize or re-attach ran `tmux resize-window`, resizing the window under another device viewing the same session (reviewer measured 120x39 → 90x29 on tmux 3.5a).
+
+**Key files:** `app/ui/src/workspace/{PanelGroup,PanelHost,panelInstance,panelLayoutModel}.*`, `app/ui/src/components/Terminal.tsx`, `app/ui/src/workspace/panels/TerminalPanel.tsx`, `app/server/src/lib/terminal.ts`, `app/server/src/index.ts`
+**Verification:** Server WS-open-to-first-byte against the restarted live server: 103–124ms → 39–68ms (agent sessions), ~80ms for shell sessions. `tests/e2e/terminal-keepalive.spec.ts` pins that a switch opens NO new WebSocket, keeps the scrollback, moves focus, and leaks no keystroke into a hidden pane. Every added test was verified to FAIL without its fix (including one first-draft test that was vacuous and got fixed). Full Playwright suite 187 passed / 1 flaky / 4 failed — the same 4 fail on the pre-change source, so they predate this work. `scripts/verify.sh` green.
+**Commits:** d48df0f1, 211fa680
+**Next:** A socket the server accepts in the same instant its pane hides has already sized the window; the client detaches immediately and tmux restores the visible client's geometry. Removing that transient needs the server to defer tmux sizing until the first client resize. Separately: the 4 pre-existing e2e failures on main are unowned.
+**Blockers:** None
+
 ## 2026-07-26: Terminal tabs paint on attach instead of 5s later
 
 **What changed:**
