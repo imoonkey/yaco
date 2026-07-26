@@ -44,6 +44,15 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/sessions/:handle/resume` | Resume with optional prompt |
 | POST | `/api/sessions/:handle/close` | Close session (shell or agent — `yaco agent kill <handle>` for the latter) |
 
+### Usage
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/usage` | Run `yaco agent usage --json`, validate and unwrap the CLI envelope to `ProviderUsage[]` |
+| POST | `/api/usage/refresh` | Run `yaco agent usage --fresh --json` to force both provider probes |
+
+Both routes preserve partial-provider results from the CLI and allow the probes' bounded 25-second runtime. A total CLI failure maps `USAGE`/`INVALID` → 400, `NOT_FOUND` → 404, `CONFLICT`/`LOCK` → 409, `RATE_LIMIT` → 429, and unknown failures → 500.
+
 ### Files
 
 All file routes support a `?worktree=<abspath>` query param — when present, `withProject` resolves operations to that worktree's checkout. The value is an absolute path that must `realpath`-match a `git worktree list` entry of the project root (else 404); see [middleware/project.ts](libs.md).

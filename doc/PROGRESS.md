@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-07-25: Provider quota rail in the desktop app header
+
+**What changed:**
+- Added validated `GET /api/usage` and forced `POST /api/usage/refresh` proxies over `yaco agent usage --json`, including CLI failure-to-HTTP mapping and a 25-second probe timeout.
+- Added a single-line desktop quota rail: Claude Session/Weekly/Fable and Codex Weekly stay visible as percentage-filled cells; all provider windows, including Fable and Codex Spark, remain available in the details popover with exact reset/check times and partial errors.
+- Added 60-second cached polling plus one global fresh refresh; refresh sequencing prevents an overlapping poll from replacing the fresh result or blanking the previous data.
+
+**Why:**
+- Subscription limits are operational state that should be visible without opening each provider TUI, while still preserving the provider-owned window/scope contract rather than inventing common buckets.
+
+**Key files:** `app/server/src/routes/usage.ts`, `app/ui/src/components/UsageQuotaRail.tsx`, `app/ui/src/hooks/useApi.ts`, `app/ui/tests/e2e/usage-quota.spec.ts`.
+**Verification:** `bash scripts/verify.sh` passed (CLI 1122, server 762, UI lint, production build); focused UI unit tests and the Chromium usage refresh flow passed; responsive inspection at 1100/1280/1440px showed no clipping.
+**Commit:** 62680ee9
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-07-25: Backend OOM recovery and worktree watcher pruning
 
 **What changed:**

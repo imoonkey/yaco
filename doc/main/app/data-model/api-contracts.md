@@ -75,6 +75,7 @@ Each frontend hook has a safety-net polling interval in case SSE disconnects:
 | Hook | Fallback interval | SSE channel |
 |------|-------------------|-------------|
 | `useProjects()` | 60s | `projects` |
+| `useUsage()` | 60s | — |
 | `useProgress()` | 30s | `progress` |
 | `useSessions()` | 30s | `sessions` |
 | `useFileTree()` | 60s | `filetree` |

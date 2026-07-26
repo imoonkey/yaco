@@ -97,7 +97,7 @@ type GroupTab =
 
 - `FileStatus`, `FileState`, `GroupTab`, `TabsNode`, `FocusedPane`, `WorkspaceLayout`, `DEFAULT_LAYOUT`, `PersistedState` (`EditorView` survives only as the legacy migration-input descriptor)
 
-## useApi.ts (~386 lines)
+## useApi.ts (536 lines)
 
 Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=<abspath>` (url-encoded) to any API URL when a worktree is selected — the value is the worktree's absolute path, validated server-side against `git worktree list`. Used by all file/git hooks. `usePolling` catch block sets `loading=false` on error (retains previous `data`) — prevents stuck loading state after transient network failures (e.g., sleep/wake).
 
@@ -106,6 +106,7 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 | Hook | Returns | SSE Channel | Fallback |
 |------|---------|-------------|----------|
 | `useProjects()` | `Project[]` | `projects` | 60s |
+| `useUsage()` | `ProviderUsage[]` | — | 60s |
 | `useProgress()` | `ProgressEntry[]` | `progress` | 30s |
 | `useSessions(project?)` | `AgentSession[]` | `sessions` | 30s |
 | `useFileTree(project, worktree?)` | `FileNode[]` | `filetree` | 60s |
@@ -113,7 +114,9 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 | `useGitStatus(project, worktree?)` | `{ changes: GitChange[], stale: boolean }` | `git` | 30s |
 | `useHistory(project)` | `HistorySession[]` | — | — |
 
-All data hooks return `{ data, error, refresh }`.
+Most data hooks return `{ data, error, refresh }`.
+
+`useUsage` returns `{ data, error, loading, refreshing, refresh }`. Its ordinary load calls cached `GET /api/usage`; `refresh()` calls `POST /api/usage/refresh`. Separate poll and refresh sequence counters make manual refresh authoritative over an overlapping poll, while the last successful `data` stays rendered during either request.
 
 `useHistory` is on-demand only — not polled, not SSE-driven. Fetches when `refresh()` is called (first History tab open, after resume/close/rename). Returns `{ data, error, loading, refresh }`.
 

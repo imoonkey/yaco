@@ -73,6 +73,25 @@ interface AgentSession {
 }
 ```
 
+### Usage Quota
+
+```typescript
+interface UsageWindow {
+  window: string          // provider-owned identity, not a guessed common enum
+  scope?: string          // model-scoped limit when reported
+  percent: number
+  resetsAt?: string       // ISO 8601; omitted when the provider did not report it
+}
+
+interface ProviderUsage {
+  provider: string
+  plan?: string
+  checkedAt: string       // ISO 8601
+  windows: UsageWindow[]
+  error?: { code: string; message: string }
+}
+```
+
 ### File System
 
 ```typescript
