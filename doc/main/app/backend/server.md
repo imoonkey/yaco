@@ -55,7 +55,7 @@ Flow:
 3. Parse `cols`, `rows`, and validated attach-time terminal palette params (`fg`, `bg`, `cursor`)
 4. Call `attachSession(name, cols, rows)` to get a PTY handle. `attachSession` calls `assertCanSpawn()` from `pty-capacity.ts` and spawns a new `tmux attach-session` client for shell and agent sessions alike
 5. Each socket owns one `TerminalConnection` record; `cleanupConnection()` is the single path that disposes subs, calls `releaseSession()`, and removes the record — `proc.onExit`, `ws.on('close')`, `ws.on('error')`, and shutdown all route through it
-6. Send scrollback buffer (`initialData`) if present. Shell and agent scrollback is tmux-managed; the server does not keep an in-process shell buffer
+6. Subscribe to PTY output, then immediately flush `attached.initialData` — what tmux emitted before that subscription existed — through the same responder path, so tmux's attach repaint and capability queries land ahead of live output. This is a startup buffer, not scrollback: shell and agent scrollback is tmux-managed and the server keeps no in-process shell buffer. -> See: [libs.md#terminalts-460-lines](./libs.md#terminalts-460-lines)
 7. For Codex sessions, build a server-side OSC color responder from the trusted agent state file (`provider === 'codex'`) and attach-time palette
 8. Pipe PTY output through the OSC responder before WebSocket; Codex OSC 10/11/12 pure color queries are consumed and answered directly with `proc.write()`, while normal output continues to the browser
 9. Pipe WebSocket `{ type: 'input', data }` keystrokes to PTY

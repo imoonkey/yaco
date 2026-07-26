@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-07-26: Terminal tabs paint on attach instead of 5s later
+
+**What changed:**
+- `attachSession()` subscribes to the PTY in the same tick as `pty.spawn()`, buffers what tmux emits while the `resize-window` / `set-option` round-trips are in flight, and returns it as `initialData` — disposing that subscription synchronously with the `return` so the caller's own subscription takes over without a gap.
+- The WS handler routes `initialData` through the same `forward()` as live output (OSC responder included) right after registering `proc.onData`, instead of `ws.send()`-ing it raw further down.
+
+**Why:**
+- Opening or switching to a terminal tab showed a blank pane for ~5s — only the regions the running TUI repainted itself were visible. Measured at the WS: nothing but 15-byte incremental writes until a 1.4 KB full repaint at **+5072ms**.
+- Cause: node-pty emits data whether or not anyone is listening, and `proc.onData` was registered only after `await attachSession(...)` returned — two tmux subprocess round-trips later. tmux's attach burst lands at **~30ms** and carries both the full repaint and its capability queries (`\e[c`, `\e[>c`, `\e[>q`, `\e]10;?`, `\e]11;?`); all of it was dropped. With the queries lost, tmux then sat out its 5s query timeout before repainting on its own — that timeout, not any app logic, was what eventually filled the screen.
+- Routing the buffer through the OSC responder (rather than raw) keeps the server the one answering tmux's color queries for Codex sessions, as it already is for live output.
+
+**Key files:** `app/server/src/lib/terminal.ts`, `app/server/src/index.ts`, `app/server/src/lib/__tests__/terminal.test.ts`
+**Verification:** Same WS probe against the restarted live server: full 4523-byte repaint at **+95ms** (was +5072ms). Isolated the mechanism first with a bare node-pty attach — subscribing immediately captures the burst at +32ms, subscribing 100ms late loses it entirely. New regression test drives a fake pty with real "no listener → dropped" semantics and asserts the burst is captured once and live output exactly once. `app/server` 778/778, `tsc` at its 77-error baseline (unchanged).
+**Commit:** 89d43ea4
+**Next:** tmux still issues a redundant repaint at its 5s timeout when a query goes unanswered (harmless — the screen is already correct). Worth checking whether xterm.js answers DA2/XTVERSION if it ever matters.
+**Blockers:** None
+
 ## 2026-07-26: Fix the WeChat turn-off deadlock
 
 **What changed:**
