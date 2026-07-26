@@ -447,10 +447,9 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     if (result.output && ws.readyState === WebSocket.OPEN) ws.send(result.output)
   }
 
+  // Subscribed on the microtask that resumed the await above, so tmux's attach
+  // repaint — the first pty I/O turn — lands here rather than in the void.
   const dataSub = proc.onData(forward)
-  // Flush what tmux emitted before this subscription existed (its attach
-  // repaint and capability queries), ahead of any live output.
-  if (attached.initialData) forward(attached.initialData)
 
   const exitSub = proc.onExit(() => {
     void reconcileShellSessionExit(sessionName).catch(err => {

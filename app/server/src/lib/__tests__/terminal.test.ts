@@ -17,13 +17,16 @@ const {
 const tmuxStdin: string[] = []
 
 /** Adapt a `{ status, stderr, error? }` verdict from tmuxSpawnMock into the
- *  slice of the ChildProcess surface that terminal.ts consumes. */
-function fakeTmuxChild(result: { status: number | null; stderr?: string; error?: Error }) {
+ *  slice of the ChildProcess surface that terminal.ts consumes. `hang: true`
+ *  models a tmux round trip that never comes back, so a test can prove a caller
+ *  does not wait for one. */
+function fakeTmuxChild(result: { status: number | null; stderr?: string; error?: Error; hang?: boolean }) {
   const stderr = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
   const stdin = Object.assign(new EventEmitter(), {
     end: vi.fn((input?: string) => { tmuxStdin.push(String(input ?? '')) }),
   })
   const child = Object.assign(new EventEmitter(), { stderr, stdin })
+  if (result.hang) return child
   queueMicrotask(() => {
     if (result.stderr) stderr.emit('data', result.stderr)
     if (result.error) child.emit('error', result.error)
@@ -84,8 +87,7 @@ const {
 import { PtyCapacityError, markDegraded, __resetForTests as resetPtyCapacity } from '../pty-capacity'
 
 /** Fake node-pty handle whose `emit` reaches only the currently-subscribed
- *  listeners — node-pty drops data emitted while nobody is listening, which is
- *  exactly the behaviour attachSession's startup buffer exists to cover. */
+ *  listeners, like node-pty: output emitted while nobody is listening is dropped. */
 function createPty() {
   const listeners = new Set<(data: string) => void>()
   return {
@@ -162,32 +164,34 @@ describe('attachSession', () => {
       name: 'xterm-256color',
     }))
     expect(attached).toEqual({
-      initialData: '',
       persistent: false,
       proc,
     })
   })
 
-  it('captures tmux output emitted while the post-attach resize is in flight', async () => {
+  it('returns without waiting for the post-spawn resize round trip', async () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
     aliveTmuxSessions.add('worker')
     const tmuxImpl = tmuxSpawnMock.getMockImplementation()!
-    tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) => {
-      if (args[0] === 'resize-window') proc.emit('\x1b[2J\x1b[Hredraw\x1b[c')
-      return tmuxImpl(cmd, args)
-    })
+    tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) =>
+      args[0] === 'resize-window' ? { status: 0, stderr: '', hang: true } : tmuxImpl(cmd, args),
+    )
 
+    // Would time out if attachSession awaited the resize: the browser is waiting
+    // for tmux's attach repaint, which must not queue behind a subprocess.
     const attached = await attachSession('worker', 120, 40)
+    expect(attached.proc).toBe(proc)
 
-    expect(attached.initialData).toBe('\x1b[2J\x1b[Hredraw\x1b[c')
-
-    // The buffer stops at return, so the caller's subscriber owns every later
-    // chunk exactly once.
-    const live: string[] = []
-    proc.onData(chunk => live.push(chunk))
-    proc.emit('tick')
-    expect(live).toEqual(['tick'])
+    // Resize + the window-size policy restore ride ONE tmux client: a second
+    // invocation would put another ~30ms subprocess (and another ordering surface)
+    // on the attach path.
+    const resizeCalls = tmuxSpawnMock.mock.calls.filter(([, args]) => (args as string[])[0] === 'resize-window')
+    expect(resizeCalls).toHaveLength(1)
+    expect(resizeCalls[0][1]).toEqual([
+      'resize-window', '-t', '=worker:', '-x', '120', '-y', '40', ';',
+      'set-option', '-t', '=worker:', 'window-size', 'latest',
+    ])
   })
 
   it('uses a namespace import for node-pty so tsx/ESM gets a real spawn function', async () => {
@@ -219,16 +223,15 @@ describe('attachSession', () => {
     ])
   })
 
-  it('enables tmux mouse for YACO-managed shell sessions', async () => {
+  it('configures YACO-managed shell sessions in one tmux invocation', async () => {
     const shellName = await startShellSession('/tmp/project', 'workflow', 'shell-1')
 
     expect(tmuxSpawnMock).toHaveBeenCalledWith('tmux', [
-      'set-option',
-      '-t',
-      `=${shellName}:`,
-      'mouse',
-      'on',
+      'set-option', '-t', `=${shellName}:`, 'mouse', 'on', ';',
+      'set-option', '-t', `=${shellName}:`, 'status', 'off', ';',
+      'set-option', '-t', `=${shellName}:`, 'window-size', 'latest',
     ], expect.objectContaining({ env: expect.anything() }))
+    expect(tmuxSpawnMock.mock.calls.filter(([, args]) => (args as string[])[0] === 'set-option')).toHaveLength(1)
   })
 
   it('reattaches shell sessions through tmux attach clients', async () => {
@@ -240,11 +243,9 @@ describe('attachSession', () => {
     const attached = await attachSession(shellName, 80, 24)
 
     expect(tmuxSpawnMock).toHaveBeenCalledWith('tmux', [
-      'set-option',
-      '-t',
-      `=${shellName}:`,
-      'mouse',
-      'on',
+      'set-option', '-t', `=${shellName}:`, 'mouse', 'on', ';',
+      'set-option', '-t', `=${shellName}:`, 'status', 'off', ';',
+      'set-option', '-t', `=${shellName}:`, 'window-size', 'latest',
     ], expect.objectContaining({ env: expect.anything() }))
     expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'shell-1'], expect.objectContaining({
       cols: 80,
@@ -252,7 +253,6 @@ describe('attachSession', () => {
       name: 'xterm-256color',
     }))
     expect(attached).toEqual({
-      initialData: '',
       persistent: false,
       proc,
     })

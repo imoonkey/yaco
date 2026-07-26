@@ -46,7 +46,6 @@ interface ShellSession {
 type TmuxSessionState = 'live' | 'missing' | 'unknown'
 
 export interface AttachedSession {
-  initialData: string
   persistent: boolean
   proc: IPty
 }
@@ -262,21 +261,20 @@ export async function pasteTextToSession(sessionName: string, text: string): Pro
   }
 }
 
+/** Apply the shell-session options in ONE tmux invocation. A tmux call costs ~30ms
+ *  (client startup + server round trip) whatever it carries, and this runs on the
+ *  attach path — so the options ride a single client as `;`-separated commands
+ *  instead of paying that cost three times. */
 async function configureShellTmuxSession(name: string): Promise<void> {
+  const target = tmuxPaneTarget(name)
   try {
-    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'mouse', 'on'])
+    await runTmux([
+      'set-option', '-t', target, 'mouse', 'on', ';',
+      'set-option', '-t', target, 'status', 'off', ';',
+      'set-option', '-t', target, 'window-size', WINDOW_SIZE_POLICY,
+    ])
   } catch (e) {
-    console.warn(`[terminal] failed to enable tmux mouse for ${name}:`, e)
-  }
-  try {
-    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'status', 'off'])
-  } catch (e) {
-    console.warn(`[terminal] failed to hide tmux status for ${name}:`, e)
-  }
-  try {
-    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'window-size', WINDOW_SIZE_POLICY])
-  } catch (e) {
-    console.warn(`[terminal] failed to set tmux window-size for ${name}:`, e)
+    console.warn(`[terminal] failed to configure tmux session ${name}:`, e)
   }
 }
 
@@ -411,14 +409,12 @@ export async function attachSession(sessionName: string, cols: number, rows: num
     env: buildChildProcessEnv(),
   })
 
-  // tmux repaints the whole pane — and asks the terminal for its capabilities
-  // (DA1/DA2/XTVERSION/OSC 10-11) — within ~30ms of attach, while the tmux
-  // calls below are still in flight. node-pty drops whatever it emits before a
-  // listener exists, so capture it here and hand it to the caller: without this
-  // the pane shows only the app's own incremental redraws, and tmux waits out
-  // its 5s query timeout before repainting.
-  let initialData = ''
-  const buffer = proc.onData((chunk: string) => { initialData += chunk })
+  // NOTHING may be awaited between the spawn above and the return below. node-pty
+  // drops output emitted while no listener is attached, and tmux sends the whole
+  // attach repaint ~30ms in; the caller subscribes on the microtask that resumes its
+  // `await attachSession(...)`, which still precedes every pty I/O callback. An await
+  // here would put a real I/O turn in that gap and swallow the repaint — the terminal
+  // then stays blank until tmux redraws for some other reason.
 
   // Force window to this client's size. WINDOW_SIZE_POLICY is supposed to do
   // this on attach, but a fresh attach isn't always counted as "latest active"
@@ -427,21 +423,26 @@ export async function attachSession(sessionName: string, cols: number, rows: num
   // bypasses the policy.
   //
   // Side effect: tmux's `resize-window -x -y` automatically flips
-  // `window-size` to `manual` (documented). Restore the policy immediately so
-  // future client size changes (laptop pane resize, device switch) still
-  // auto-resize the window.
-  try {
-    await runTmux(['resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows)])
-    await runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', WINDOW_SIZE_POLICY])
-  } catch (e) {
-    console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
-  }
+  // `window-size` to `manual` (documented). Restore the policy in the same
+  // invocation so future client size changes (laptop pane resize, device
+  // switch) still auto-resize the window.
+  //
+  // NOT awaited: tmux repaints the whole pane ~30ms after attach and the browser
+  // is waiting for exactly that, so holding the return for two more subprocess
+  // round trips (~60ms) delays the paint by more than it took to produce. The pty
+  // spawned at this client's size already, so the resize is a no-op in the common
+  // case and produces no second repaint.
+  void runTmux([
+    'resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows), ';',
+    'set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', WINDOW_SIZE_POLICY,
+  ]).catch((e: unknown) => {
+    // tmux stops the sequence at the first failing command, so this covers either
+    // the resize or the policy restore — and a failed restore leaves the window
+    // pinned to `manual` until the next attach.
+    console.warn(`[terminal] failed to resize window / restore sizing policy for ${sessionName}:`, e)
+  })
 
-  // Dispose synchronously with the return so the caller's own subscription
-  // takes over in the same tick — no window for a dropped chunk.
-  buffer.dispose()
   return {
-    initialData,
     persistent: false,
     proc,
   }
