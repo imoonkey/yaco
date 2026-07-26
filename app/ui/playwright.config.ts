@@ -28,9 +28,8 @@ const apiServerEnv: Record<string, string> = {
   WORKFLOW_PORT: String(API_PORT),
   // Never start the messaging channels in e2e: they launch headless Chromes
   // (puppeteer) that orphan when Playwright kills the server and pile up. Disable
-  // explicitly so an inherited WHATSAPP_ENABLED/WECHAT_ENABLED=1 can't leak in.
-  WHATSAPP_ENABLED: '0',
-  WECHAT_ENABLED: '0',
+  // Channels are off by default: they read ${YACO_HOME}/channels/enabled.json,
+  // and each run gets a throwaway YACO_HOME where that file does not exist.
 }
 if (yacoHome) {
   apiServerEnv.YACO_HOME = yacoHome

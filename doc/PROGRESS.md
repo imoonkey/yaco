@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-07-26: Messaging channels switch on and off from the UI
+
+**What changed:**
+- `channels/enabled.ts` persists `{ wechat, whatsapp }` to `${YACO_HOME}/channels/enabled.json`. Absent/unreadable/malformed reads as every channel OFF, and only a literal `true` enables one; writes are read-modify-write + temp/rename.
+- `POST /api/{wechat,whatsapp}/enabled` takes `{enabled}`, persists it, then boots the channel or shuts it down. `WHATSAPP_ENABLED` / `WECHAT_ENABLED` are gone — the file is the only source of truth, and boot reads it too.
+- The channel dialog gained the switch, and now separates two operations that were previously conflated by having only one: **Turn off** stops the channel and frees its memory while keeping the pairing on disk, **Unlink** (was "Logout") drops the pairing and forces a fresh QR. Both carry hover text saying which is which.
+- `ChannelsHeaderButton` now always renders. It used to return null when no channel was enabled, which — once the switch moved into the dialog — would have left no way to turn one back on.
+
+**Why:**
+- Toggling a channel meant editing `app/server/.env` and restarting the backend. The cost is worth managing at runtime: WhatsApp's puppeteer Chrome is 12 processes and **452 MB of the server cgroup's anonymous memory** (measured 772 MB → 320 MB), and it is charged against `yaco-server`'s `MemoryMax` because those processes are its children.
+- Off had to mean "release resources", not "log out". The existing `logoutWhatsApp()` does `rm -rf` on the session dir, so reusing it would have forced a QR scan on every re-enable; `shutdownWhatsApp()` destroys the client and leaves the pairing, which is what a switch should do.
+
+**Key files:** `app/server/src/lib/channels/enabled.ts`, `app/server/src/routes/{whatsapp,wechat}.ts`, `app/server/src/index.ts`, `app/ui/src/components/WeChatLoginDialog.tsx`, `app/ui/playwright.config.ts`
+
+**Verification:** Full cycle against the live server: off → 12 Chrome processes to 0, cgroup anon 772 MB → 320 MB, `channels/whatsapp/session/` intact, file reads `{"wechat":true,"whatsapp":false}`; on → back to `phase=ready` with **no QR at any point** and the same `boundChat`. 7 new unit tests (one deliberately anchors the others by proving the reader looks where the fixture writes, since "off" is also what a not-found file returns). `app/server` 771/771, `app/ui` 1126/1126, both typechecks clean, all doc links and anchors resolve.
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-07-26: Service memory limits resized from cgroup peaks, swap forbidden
 
 **What changed:**

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ComponentType } from 'react'
-import { X, MessagesSquare, RefreshCw } from 'lucide-react'
+import { X, MessagesSquare, Power, RefreshCw } from 'lucide-react'
 import { DialogShell } from './DialogShell'
 import { WeChatIcon, WhatsAppIcon } from './BrandIcons'
 
@@ -25,8 +25,6 @@ interface ChannelConfig {
   id: string
   /** Title shown in the dialog header and tooltip. */
   label: string
-  /** Env var that must be set on the server for the dialog to be useful. */
-  envVar: string
   /** Brand icon component for the dropdown row. */
   Icon: ComponentType<{ size?: number; strokeWidth?: number }>
   /** Phases to keep polling fast for (1.5s). Other phases poll every 5s. */
@@ -39,7 +37,6 @@ const CHANNELS: Record<string, ChannelConfig> = {
   wechat: {
     id: 'wechat',
     label: 'WeChat',
-    envVar: 'WECHAT_ENABLED',
     Icon: WeChatIcon,
     livePhases: ['awaiting-qr', 'awaiting-scan', 'authenticating'],
     qrHint: 'Scan with WeChat to complete login (enlarge the window for better scan reliability)',
@@ -47,7 +44,6 @@ const CHANNELS: Record<string, ChannelConfig> = {
   whatsapp: {
     id: 'whatsapp',
     label: 'WhatsApp',
-    envVar: 'WHATSAPP_ENABLED',
     Icon: WhatsAppIcon,
     livePhases: ['awaiting-qr', 'authenticating'],
     qrHint: 'Scan with WhatsApp → Settings → Linked devices → Link a device',
@@ -65,6 +61,15 @@ async function postLogin(channel: string): Promise<void> {
 
 async function postLogout(channel: string): Promise<void> {
   await fetch(`/api/${channel}/logout`, { method: 'POST' })
+}
+
+async function postEnabled(channel: string, enabled: boolean): Promise<void> {
+  const r = await fetch(`/api/${channel}/enabled`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
 }
 
 function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onClose: () => void }) {
@@ -101,6 +106,18 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
     setBusy(true)
     try {
       await postLogin(channel.id)
+      setStatus(await fetchStatus(channel.id))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleToggle = async (enabled: boolean) => {
+    setBusy(true)
+    try {
+      await postEnabled(channel.id, enabled)
       setStatus(await fetchStatus(channel.id))
     } catch (e) {
       setError((e as Error).message)
@@ -147,8 +164,23 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
         {!status && <div className="text-ui-md" style={{ color: 'var(--sol-text)' }}>Loading status…</div>}
 
         {status && !status.enabled && (
-          <div className="text-ui-md" style={{ color: 'var(--sol-warning)' }}>
-            {channel.envVar}=1 not set on the server. Restart with that env to use this dialog.
+          <div className="space-y-3">
+            <div className="text-ui-md" style={{ color: 'var(--sol-text)' }}>
+              This channel is off — it holds no connection and uses no memory.
+              Turning it on restores the existing pairing; no QR scan is needed
+              unless you unlinked it.
+            </div>
+            <button
+              onClick={() => handleToggle(true)}
+              disabled={busy}
+              className="text-ui-md px-3 h-8 rounded border cursor-pointer disabled:opacity-50"
+              style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
+            >
+              {busy ? 'Turning on…' : `Turn on ${channel.label}`}
+            </button>
+            {error && (
+              <div className="text-ui-sm" style={{ color: 'var(--sol-red)' }}>{error}</div>
+            )}
           </div>
         )}
 
@@ -217,14 +249,24 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
           className="flex items-center justify-end gap-2 px-4 h-12"
           style={{ borderTop: '1px solid var(--sol-tab-bg)' }}
         >
+          <button
+            onClick={() => handleToggle(false)}
+            disabled={busy}
+            title="Stop the channel and free its memory. The pairing is kept, so turning it back on needs no QR scan."
+            className="text-ui-md px-3 h-8 rounded border cursor-pointer disabled:opacity-50 mr-auto"
+            style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
+          >
+            <span className="inline-flex items-center gap-1"><Power size={12} />Turn off</span>
+          </button>
           {status.loggedIn && (
             <button
               onClick={handleLogout}
               disabled={busy}
+              title="Drop the pairing entirely. The next login needs a fresh QR scan."
               className="text-ui-md px-3 h-8 rounded border cursor-pointer disabled:opacity-50"
-              style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
+              style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-red)' }}
             >
-              Logout
+              Unlink
             </button>
           )}
           <button
@@ -252,8 +294,10 @@ function StatusRow({ label, value }: { label: string, value: string }) {
 }
 
 /** Single merged header trigger for all messaging channels. Opens a dropdown
- *  to pick a channel, then shows that channel's login dialog. Renders nothing
- *  until at least one channel is enabled on the server. */
+ *  to pick a channel, then shows that channel's dialog, where the channel can
+ *  be switched on or off. Always renders: the on/off switch lives inside, so
+ *  hiding the trigger while every channel is off would leave no way to turn one
+ *  back on. */
 export function ChannelsHeaderButton() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState<ChannelConfig | null>(null)
@@ -276,8 +320,7 @@ export function ChannelsHeaderButton() {
   // refresh() sets state only after its await — no synchronous cascading render.
   useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
-  const channels = Object.values(CHANNELS).filter(c => statuses[c.id]?.enabled)
-  if (channels.length === 0) return null
+  const channels = Object.values(CHANNELS)
   const anyLoggedIn = channels.some(c => statuses[c.id]?.loggedIn)
 
   return (
@@ -317,6 +360,9 @@ export function ChannelsHeaderButton() {
                 <c.Icon size={14} strokeWidth={2.5} />
               </span>
               <span style={{ color: 'var(--sol-text)' }}>{c.label}</span>
+              {!statuses[c.id]?.enabled && (
+                <span className="ml-auto text-ui-sm" style={{ color: 'var(--sol-text-faint)' }}>off</span>
+              )}
             </button>
           ))}
         </DialogShell>

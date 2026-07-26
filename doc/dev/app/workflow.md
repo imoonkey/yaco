@@ -257,7 +257,7 @@ holds for the **main checkout too**, not just worktrees.
   under machine load. `tests/e2e/preclean.mjs` wipes the ephemeral home pre-boot
   (web servers start before `globalSetup`); the server reads the build dir from
   `YACO_UI_DIST` (= `dist-e2e`) so it never clobbers `app/ui/dist`. Channels are
-  disabled (`WHATSAPP_ENABLED/WECHAT_ENABLED=0`) so no orphan puppeteer Chromes.
+  disabled — each run gets a throwaway `YACO_HOME` with no `channels/enabled.json`, so no orphan puppeteer Chromes.
 - **Self-provisioned fixtures.** `tests/e2e/helpers/workspace.ts`:
   `provisionWorkspace(page, request, { files?, tasks? })` / `createFixtureProject`
   / `createWorktreeFixture` / `createExternalWorktreeFixture` / `createBinaryFixture`

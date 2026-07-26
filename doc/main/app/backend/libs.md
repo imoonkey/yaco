@@ -433,18 +433,29 @@ Channel-agnostic core that powers both `wechat/` and `whatsapp/`. Each per-chann
   Returns ZERO TUI noise because the CLI reads structured provider logs, not the PTY byte stream.
 - **`channels/keys.ts`** — `sendEscape(handle)` → `tmux send-keys -t <handle> Escape`. Single Esc only (double-Esc opens Claude's message-backtrack dialog). Used by the router to cancel an AskUserQuestion TUI dialog so the agent unblocks and the user can answer through the channel as a normal next-turn prompt.
 
-### wechat/ (env-gated by `WECHAT_ENABLED=1`)
+### channels/enabled.ts
 
-Bridges WeChat to yaco agent sessions via `weixin-agent-sdk`. When `WECHAT_ENABLED` is unset, no SDK boot, no behavior change. Most logic lives in `channels/`; this directory is the SDK adapter + login flow.
+Which messaging channels are switched on, persisted to
+`${YACO_HOME:-~/.yaco}/channels/enabled.json` as `{ wechat, whatsapp }`.
+
+**Exports**: `readChannelEnabled()`, `isChannelEnabled(id)`, `setChannelEnabled(id, enabled)`, `CHANNEL_IDS`, `isChannelId()`
+
+- **Absent, unreadable, or malformed reads as every channel OFF**, and only a literal `true` enables one. A channel holds a browser or an SDK connection for the process lifetime, so the failure direction has to be "no surprise connection" — on a fresh machine, and in a test whose throwaway `YACO_HOME` has no such file.
+- `setChannelEnabled` is read-modify-write (toggling one channel cannot clear the other) and writes temp + rename, so a crash mid-write cannot leave a truncated file that would read back as everything-off.
+- Consumed by `index.ts` at boot and by the `enabled` routes at runtime; there is no env fallback, so the file is the single source of truth.
+
+### wechat/ (gated by the `wechat` switch)
+
+Bridges WeChat to yaco agent sessions via `weixin-agent-sdk`. When the switch is off, no SDK boot. Most logic lives in `channels/`; this directory is the SDK adapter + login flow.
 
 - **`wechat/index.ts`** — `initWeChat()` boots the bot if a WeChat account is logged in. `sweepStaleTaps()` reaps orphan FIFOs from prior crashes. `shutdownWeChat()` aborts the bot + drops all taps.
 - **`wechat/agent.ts`** — implements the SDK `Agent` interface. Per-conversation FIFO queue serializes inbound messages (SDK can fire `chat()` concurrently; the bound agent session is single-threaded). The SDK is request/response (one inbound → one outbound text), so the wechat adapter passes a callback that **collects all router reply chunks into an array and joins with `\n\n`** before returning a single `ChatResponse.text` — losing per-chunk streaming UX but preserving the SDK contract. File-attachment replies degrade to a `[附件: filename]` placeholder (the SDK has no media surface).
 - **`wechat/state.ts`** / **`wechat/auth.ts`** / **`wechat/router.ts`** — thin adapters over the `channels/` factories with scope='wechat' (env keys: `WECHAT_CONVERSATION_WHITELIST`). `wechat/router.ts` exports a chunk-aggregating `passthroughText` shim for legacy callers.
 - **`wechat/login-flow.ts`** — manages the SDK's `login()` flow. Monkey-patches `console.log` for the duration of the SDK call to capture the QR ASCII (qrcode-terminal output is sent via `console.log` directly, not the user-supplied log callback). Exposes `LoginState { phase, qrAscii?, accountId?, error? }` to the route. Login flow is single-flight via a synchronously-claimed `inflight` slot.
 
-### whatsapp/ (env-gated by `WHATSAPP_ENABLED=1`)
+### whatsapp/ (gated by the `whatsapp` switch)
 
-Bridges WhatsApp to yaco agent sessions via `whatsapp-web.js` (puppeteer-driven WhatsApp Web client with `LocalAuth` session persistence). When `WHATSAPP_ENABLED` is unset, no client boot, no behavior change.
+Bridges WhatsApp to yaco agent sessions via `whatsapp-web.js` (puppeteer-driven WhatsApp Web client with `LocalAuth` session persistence). When the switch is off, no client boot.
 
 Architectural difference from WeChat: the bot has no separate identity — it IS the user's WhatsApp account. To prevent the bot from auto-replying to all the user's contacts, the listener filters the `message_create` event stream down to **self-chat only** (the user's "Message yourself" chat). The first chat the user types in is TOFU-bound and persisted; subsequent messages from any other chat are silently dropped. `WHATSAPP_CHAT_JID` env is an explicit override.
 

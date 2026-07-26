@@ -33,6 +33,7 @@ import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runti
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
+import { readChannelEnabled } from './lib/channels/enabled.js'
 import {
   attachSession,
   pasteTextToSession,
@@ -263,11 +264,12 @@ async function startRuntime(): Promise<void> {
   await startAttentionEngine()
   setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
-  if (process.env.WECHAT_ENABLED === '1') {
+  const channels = readChannelEnabled()
+  if (channels.wechat) {
     await initWeChat()
   }
 
-  if (process.env.WHATSAPP_ENABLED === '1') {
+  if (channels.whatsapp) {
     // Don't await — WhatsApp init can take 10-30s while puppeteer launches Chrome
     // and the LocalAuth session reconnects. Fire-and-forget so the HTTP server
     // becomes available immediately; status route reports progress.
