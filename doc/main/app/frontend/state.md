@@ -87,7 +87,7 @@ Orthogonal state (`mobilePane`, the flat `layout` visibility/sizes, `recentFiles
 
 -> See: `WorkspaceProvider.tsx` (the three visibility `useLayoutEffect`s) and the `persistedVisibilityConsistency`/`runtimeVisibilityStorm` regression tests.
 
--> See: [hooks.md](hooks.md#uselayoutstatets) for the reducer API, and `plan/all/20260612_panel-vscode-tabs/design.md` for the full model.
+-> See: [hooks.md](hooks.md#decomposed-into) for the reducer API, and `plan/all/20260612_panel-vscode-tabs/design.md` for the full model.
 
 ## File Buffers — global by path (shared document model)
 

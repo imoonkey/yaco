@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-07-26: Backend event-loop stalls — bound the watcher, the heap, and the services
+
+**What changed:**
+- Worktree contents are no longer walked by their parent project's chokidar watcher. `hardVerdict` prunes below `.worktrees/<slug>` (the container and slug dirs stay, so the `worktrees` channel still sees checkouts appear and disappear), and `withProject` arms a watcher for the checkout a request actually resolves via `?worktree=`, capped at 3 with LRU eviction that never unwatches a registered project. The middleware does not await the arm.
+- Every tmux invocation in `app/server` moved from `spawnSync` to `spawn`; `attachSession`, `listShellSessions`, `startShellSession`, `closeShellSession`, `reconcileShellSessionExit`, and `pasteTextToSession` became async, and the WS connection handler now releases the PTY if the socket closes mid-attach. Text pastes joined the per-session paste queue that image pastes already used.
+- `app/server` starts under `--max-old-space-size=1536`; the `SERVICES` table in `app/scripts/services.sh` gained `MemoryHigh`/`MemoryMax` and an `autostart` column, and `install` now enables only the autostart services (and actively disables a demoted one, so install is declarative rather than additive).
+- `yaco-ui` (Vite dev) was demoted to on-demand. It is not on any serving path — `/` is `dist` from `yaco-server`, kept current by `yaco-ui-build`.
+- Four dead doc anchors found by an anchor sweep were repaired (`hooks.md#uselayoutstatets`, `libs.md#ttsts`, `libs.md#worktreets`, `workflow.md#desktop-serves-the-production-build`). `check-docs.py` validates links but not heading anchors.
+
+**Why:**
+- Terminals froze for seconds and the session list took 10s+. An empty `/api/health` — a `return {ok:true}` route — measured **12.1s**, which is the whole Node process stopped, not a network or route problem; Tailscale TTFB was 40ms throughout. The process held **108,760 inotify watches** and 1.68GB RSS with 907MB paged out, and had already hard-OOMed twice. `.worktrees` was 16,374 of 21,032 watched directories (51 checkouts of `quant`), and chokidar v3 watches every *file* too, which is where the other ~88k went.
+- Synchronous tmux spawns cost 39-135ms each on this box, and each one is dead time for every other terminal and request, since they share one event loop.
+- Vite dev had been resident and idle for 16 days at 400MB RSS + 384MB swap on a box that shares memory with agent fleets.
+
+**Key files:** `app/server/src/lib/project-watcher.ts`, `app/server/src/middleware/project.ts`, `app/server/src/lib/terminal.ts`, `app/server/src/index.ts`, `app/server/src/routes/sessions.ts`, `app/server/package.json`, `app/scripts/services.sh`, `doc/dev/app/workflow.md`, `doc/main/app/backend/libs.md`, `doc/main/app/README.md`
+
+**Verification:** watches 108,760 -> 17,188; RSS 1.68GB -> 330MB; swap 907MB -> 0. `/api/health` over a 90s 4Hz probe went from p99 multi-second / max 12.1s (~36% of wall clock stalled) to p99 0.583s / max 0.709s. On-demand worktree watching verified live: the request returned in 41ms, watches rose by 1,930, and a write inside that checkout produced `filetree` SSE. `app/server` 764/764 vitest, `cli` 1135/1135 bun test, `tsc` at its 18-error baseline, all doc links and anchors resolve.
+
+**Commit:** efc27e41..HEAD
+**Next:** run `app/scripts/services.sh install` at a quiet moment to fold the hand-written systemd drop-ins into the generated units, then delete `~/.config/systemd/user/yaco-{server,ui-build}.service.d/memory.conf`.
+**Blockers:** None
+
 ## 2026-07-26: Mobile usage indicator
 
 **What changed:**

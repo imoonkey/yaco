@@ -15,9 +15,15 @@ APP_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$APP_DIR/server"
 UI_DIR="$APP_DIR/ui"
 
-# The canonical service set, as `name|working dir|npm script|description|MemoryHigh|MemoryMax`.
+# The canonical service set, as
+# `name|working dir|npm script|description|MemoryHigh|MemoryMax|autostart`.
 # Unit/label names derive from `name`, so this table is the single place a
-# service is added or renamed.
+# service is added, renamed, or moved between always-on and on-demand.
+#
+# autostart=no still generates the unit/plist — `install` just does not enable or
+# start it. That is for services only a person actively editing needs: they cost
+# a resident Node process around the clock otherwise, and this box shares memory
+# with agent fleets.
 #
 # The memory bounds matter as much as the restart policy. These are long-lived
 # Node processes on a box that also runs agent fleets; once one is large enough
@@ -28,9 +34,9 @@ UI_DIR="$APP_DIR/ui"
 # in `app/server/package.json`, so it usually dies on the heap cap first with a
 # clean OOM trace instead of a SIGKILL.
 SERVICES=(
-  "server|$SERVER_DIR|start|YACO backend (Hono)|1800M|2400M"
-  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|700M|1G"
-  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|700M|1G"
+  "server|$SERVER_DIR|start|YACO backend (Hono)|1800M|2400M|yes"
+  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|700M|1G|no"
+  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|700M|1G|yes"
 )
 svc_name()  { cut -d'|' -f1 <<<"$1"; }
 svc_dir()   { cut -d'|' -f2 <<<"$1"; }
@@ -38,6 +44,7 @@ svc_script(){ cut -d'|' -f3 <<<"$1"; }
 svc_desc()  { cut -d'|' -f4 <<<"$1"; }
 svc_mem_high(){ cut -d'|' -f5 <<<"$1"; }
 svc_mem_max() { cut -d'|' -f6 <<<"$1"; }
+svc_autostart(){ cut -d'|' -f7 <<<"$1"; }
 
 # Canonical tailnet mapping: `/` serves the built bundle — over a high-RTT link
 # Vite dev's unbundled module graph costs ~7x the requests — and DEV_SERVE_PORT
@@ -49,6 +56,10 @@ DEV_SERVE_PORT=8741
 if [ "$OS" = linux ]; then
   UNIT_DIR="$HOME/.config/systemd/user"
   UNITS=(); for s in "${SERVICES[@]}"; do UNITS+=("yaco-$(svc_name "$s").service"); done
+  # Subset `install` enables; the rest are generated but left for on-demand start.
+  AUTO_UNITS=(); for s in "${SERVICES[@]}"; do
+    [ "$(svc_autostart "$s")" = yes ] && AUTO_UNITS+=("yaco-$(svc_name "$s").service")
+  done
 else
   PLIST_DIR="$HOME/Library/LaunchAgents"
   LOG_DIR="$HOME/Library/Logs"
@@ -115,9 +126,18 @@ WantedBy=default.target
 EOF
   done
   systemctl --user daemon-reload
-  systemctl --user enable --now "${UNITS[@]}"
+  systemctl --user enable --now "${AUTO_UNITS[@]}"
   echo "Installed and started:"
-  for u in "${UNITS[@]}"; do echo "  $UNIT_DIR/$u"; done
+  for u in "${AUTO_UNITS[@]}"; do echo "  $UNIT_DIR/$u"; done
+  # Declarative, not additive: a unit demoted to autostart=no must lose the
+  # enablement a previous install gave it, or it silently keeps coming back at
+  # boot. Not --now, so an install never kills a session someone is using.
+  for s in "${SERVICES[@]}"; do
+    [ "$(svc_autostart "$s")" = yes ] && continue
+    local n; n="$(svc_name "$s")"
+    systemctl --user disable "yaco-$n.service" >/dev/null 2>&1 || true
+    echo "  $UNIT_DIR/yaco-$n.service  (on demand: systemctl --user start yaco-$n)"
+  done
   configure_serve
 }
 
@@ -171,13 +191,17 @@ install_macos() {
 </plist>
 EOF
     # Reload: bootout if already loaded, then bootstrap (also starts due to RunAtLoad).
+    # An autostart=no service gets its plist written but is left unloaded, so it
+    # neither runs now nor at login until someone bootstraps it deliberately.
     launchctl bootout "gui/$UID/$label" 2>/dev/null || true
-    launchctl bootstrap "gui/$UID" "$plist"
+    [ "$(svc_autostart "$s")" = yes ] && launchctl bootstrap "gui/$UID" "$plist"
   done
-  echo "Installed and started:"
+  echo "Installed:"
   for s in "${SERVICES[@]}"; do
     local n; n="$(svc_name "$s")"
-    echo "  $PLIST_DIR/com.yaco.$n.plist  (logs: $LOG_DIR/yaco-$n.log)"
+    local on_demand=""
+    [ "$(svc_autostart "$s")" = yes ] || on_demand="  (on demand: launchctl bootstrap gui/\$UID $PLIST_DIR/com.yaco.$n.plist)"
+    echo "  $PLIST_DIR/com.yaco.$n.plist  (logs: $LOG_DIR/yaco-$n.log)$on_demand"
   done
   configure_serve
 }

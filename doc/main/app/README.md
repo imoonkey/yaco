@@ -26,7 +26,7 @@ Hono Server (Node.js :3001)
   Filesystem + tmux/yaco-agent + node-pty
 ```
 
-The Hono backend can serve the built React app from `ui/dist`, so the app shell, API, WebSocket terminal, and SSE notifications share one origin on `:3001`.
+The Hono backend serves the built React app from `ui/dist`, so the app shell, API, WebSocket terminal, and SSE notifications share one origin on `:3001`. That is the **only** delivery path for a running instance — the Vite dev server is a development tool started on demand for HMR, never part of the running system, so nothing in `app/server` may depend on it being up. -> See: [dev/app/workflow.md](../../dev/app/workflow.md#long-running-services-systemd--launchd--tailscale).
 
 ## Documentation Map
 

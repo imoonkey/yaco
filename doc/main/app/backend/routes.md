@@ -184,7 +184,7 @@ Flow: validate → blank `text` → `204` → paraphrase into spoken text when k
 (`rewriteForSpeech`, raw text otherwise) → re-validate (trim + re-cap, raw on empty) →
 `synthesizeSpeech` (edge-tts) → `200 audio/mpeg` bytes (`Cache-Control: no-store`). The
 client plays the mp3 and degrades to browser TTS on any non-200. -> See:
-[../ui/notifications.md § Voice read-back](../ui/notifications.md#voice-read-back-tts), [libs.md § tts.ts](libs.md#ttsts).
+[../ui/notifications.md § Voice read-back](../ui/notifications.md#voice-read-back-tts), [libs.md § tts.ts](libs.md#ttsts-100-lines).
 
 **Error responses** — stable JSON `{ "error": "<message>" }`:
 
@@ -229,7 +229,7 @@ All task routes spawn `yaco task <sub> --json` (canonical CLI surface) and parse
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/worktrees/:project` | `{ worktrees: WorktreeInfo[] }` — every entry of `git worktree list --porcelain` run in the project root, **including the primary checkout and worktrees created outside `.worktrees/`** (git is the source of truth, not `tasks.json`). Each `WorktreeInfo` = `{ id, name, branch, head, isPrimary, dirty, ahead, behind }`: `id` is the worktree's absolute path (stable identity); `name` is `"<repo> (primary)"` for the primary, else the directory basename; `branch` is `task/foo`/`(detached)`/`(bare)`; `head` is the short sha; `dirty`/`ahead`/`behind` come from `git status` + `git rev-list --left-right main...HEAD`. Shares `listRegisteredWorktrees()` + `worktreeStatus()` with the task-badge enrichment (see [libs.md § worktree.ts](libs.md#worktreets)) |
+| GET | `/api/worktrees/:project` | `{ worktrees: WorktreeInfo[] }` — every entry of `git worktree list --porcelain` run in the project root, **including the primary checkout and worktrees created outside `.worktrees/`** (git is the source of truth, not `tasks.json`). Each `WorktreeInfo` = `{ id, name, branch, head, isPrimary, dirty, ahead, behind }`: `id` is the worktree's absolute path (stable identity); `name` is `"<repo> (primary)"` for the primary, else the directory basename; `branch` is `task/foo`/`(detached)`/`(bare)`; `head` is the short sha; `dirty`/`ahead`/`behind` come from `git status` + `git rev-list --left-right main...HEAD`. Shares `listRegisteredWorktrees()` + `worktreeStatus()` with the task-badge enrichment (see [libs.md § worktree.ts](libs.md#worktreets-160-lines)) |
 
 ### Search
 

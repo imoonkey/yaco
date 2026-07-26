@@ -97,7 +97,7 @@ The build pipeline writes precompressed `.br` (brotli q11) and `.gz` (gzip 9) si
 Two subtle invariants:
 
 - **Suffix guard checks the resolved path, not the raw URL.** Direct requests like `/assets/foo.js.br` (or the percent-encoded `/assets/foo.js%2ebr`) must 404 — otherwise a client could fetch raw compressed bytes and mis-interpret them as identity. The check sits **after** `resolveUiPath` (i.e. post-`decodeURIComponent`) so encoded variants can't bypass it.
-- **Compressed-sibling reads fall back to identity on ENOENT.** `stat` then `readFile` is racy: a concurrent build can rewrite `dist/` between the two calls — routinely so on desktop, where `vite build --watch` rebuilds on every UI source change (see [dev/workflow.md](../../../dev/app/workflow.md#desktop-serves-the-production-build)). If the chosen `.br`/`.gz` vanishes mid-flight, the handler re-reads the base file, drops `Content-Encoding`, and returns 200. ENOENT on the base file itself is a genuine miss → returns null so the SPA fallback runs.
+- **Compressed-sibling reads fall back to identity on ENOENT.** `stat` then `readFile` is racy: a concurrent build can rewrite `dist/` between the two calls — routinely so on desktop, where `vite build --watch` rebuilds on every UI source change (see [dev/workflow.md](../../../dev/app/workflow.md#tailnet-mapping---serves-the-built-bundle)). If the chosen `.br`/`.gz` vanishes mid-flight, the handler re-reads the base file, drops `Content-Encoding`, and returns 200. ENOENT on the base file itself is a genuine miss → returns null so the SPA fallback runs.
 
 Negotiation only applies to UI routes (`/`, `/assets/*`, and the index fallback). The `/api/*` routes — including the SSE streams — are untouched so each line can flush immediately.
 

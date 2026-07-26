@@ -81,13 +81,29 @@ The backend starts runtime watchers only after `:3001` is successfully bound. If
 
 Both desktop (Linux) and laptop (macOS) run YACO as long-running OS-managed services, kept alive across reboots. The backend uses `npm start`, not `tsx watch`, so an OOM or other backend exit reaches the service manager and triggers `Restart=on-failure`/`KeepAlive`. Use the foreground commands above when server hot reload is needed.
 
-Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, and log paths all derive from it, so that table is the only place to add or rename one:
+Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, log paths, memory bounds, and autostart all derive from it, so that table is the only place to add, rename, or demote one:
 
-| Service | Runs | Purpose | MemoryHigh / Max |
-|---|---|---|---|
-| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 1800M / 2400M |
-| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 700M / 1G |
-| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 700M / 1G |
+| Service | Runs | Purpose | MemoryHigh / Max | Autostart |
+|---|---|---|---|---|
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 1800M / 2400M | yes |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 700M / 1G | yes |
+| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 700M / 1G | **no — on demand** |
+
+**Vite dev is on demand.** Nothing in the normal path touches it: `/` serves `dist`
+from `yaco-server`, and `yaco-ui-build` is what keeps `dist` current. It is needed
+only while actively editing UI code and wanting HMR at `:8741`. Left enabled it is
+a resident Node process around the clock — one instance here accumulated 400 MB RSS
+and 384 MB of swap over 16 idle days, on a box that shares memory with agent fleets.
+`install` generates its unit but neither enables nor starts it:
+
+```bash
+systemctl --user start yaco-ui     # Linux — start it for an HMR session
+systemctl --user stop  yaco-ui     # and stop it when done
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.yaco.ui.plist   # macOS
+```
+
+`services.sh start|stop|restart` still act on **all** three, Vite included — they
+mean "everything". Autostart is the thing the table controls.
 
 The memory bounds are part of the service contract, not a nicety. These are
 long-lived Node processes sharing a box with agent fleets; once one is big enough
@@ -108,7 +124,7 @@ emitted from the `SERVICES` table, so `services.sh install` is what applies a ch
 All are wrapped by `app/scripts/services.sh` (auto-detects OS):
 
 ```bash
-app/scripts/services.sh install   # one-time: generate units/plists, enable, start, and set the tailnet mapping
+app/scripts/services.sh install   # one-time: generate units/plists, enable+start the autostart ones, set the tailnet mapping
 app/scripts/services.sh           # status (default)
 app/scripts/services.sh start     # start all
 app/scripts/services.sh stop      # stop all (free :3001 / :5173 for foreground npm run dev)
@@ -127,7 +143,7 @@ Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` 
 | URL | → | Serves |
 |---|---|---|
 | `https://<host>.tailnet-example.ts.net/` | `:3001` | Built `app/ui/dist`, via the Hono server |
-| `https://<host>.tailnet-example.ts.net:8741` | `:5173` | Vite dev — HMR intact over the tailnet |
+| `https://<host>.tailnet-example.ts.net:8741` | `:5173` | Vite dev — HMR intact over the tailnet. 502s unless `yaco-ui` is started (on demand, above) |
 
 **Why `/` is not Vite.** These machines are reached over the tailnet at ~110 ms RTT, and Vite dev's unbundled module graph pays that per waterfall level. Measured from the laptop against desktop, real Chrome, cold cache: Vite dev **208 requests / 2.4 MB / 2.5 s** to first paint, against **31 requests / 643 KB / 1.0 s** for the built bundle.
 
