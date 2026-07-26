@@ -1,6 +1,6 @@
 ---
 name: discuss
-description: Discuss with the user inside a markdown doc — reply in place to their `>`-marked comments, keeping multi-round Q&A navigable from the preview. Use when the user runs `/discuss`, or says they left notes / questions / comments in a doc to answer inline rather than in chat.
+description: Reply in place to `>`-marked comments inside a markdown doc, keeping multi-round Q&A navigable. Use when the user runs `/discuss` or left notes/questions in a doc to answer inline rather than in chat.
 ---
 
 # Discuss

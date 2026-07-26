@@ -1,6 +1,6 @@
 ---
 name: simplify-code-arch
-description: Subtractive-KISS implementation discipline — write code pre-collapsed so no cleanup pass is needed later. Use whenever implementing or designing code, BEFORE adding any class, interface, registry, config knob, container dataclass, mode, or recorded field; when reviewing your own diff; and when planning a subtraction pass over existing code.
+description: Subtractive-KISS discipline — write code pre-collapsed so no cleanup pass is needed. Use when implementing or designing code, BEFORE adding any abstraction (class, registry, config knob, mode), when reviewing your own diff, or planning a subtraction pass.
 ---
 
 # Simplify Code Architecture

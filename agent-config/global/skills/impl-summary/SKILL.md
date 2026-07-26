@@ -1,6 +1,6 @@
 ---
 name: impl-summary
-description: Write an implementation summary for landed work — top-down outcome, before/after structure, major changes by module — never a chronological commit/task log. Use when a milestone or multi-phase implementation lands (tail of /implement or an orchestration session), or whenever asked to summarize implemented work.
+description: Write an implementation summary for landed work — top-down outcome and structure, never a chronological commit log. Use when a milestone lands or when asked to summarize implemented work.
 ---
 
 # Implementation Summary

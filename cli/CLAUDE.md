@@ -24,29 +24,6 @@ binary (`~/.local/bin/yaco` by default), so run `bun run reinstall` before live
 Claude/Codex lifecycle checks or after hook/runtime changes. `bun run
 test:integration` does this automatically.
 
-Installed form:
-
-```bash
-yaco <area> <command> [args]
-yaco agent start claude
-yaco task validate --json
-yaco doctor --json
-```
-
-## Areas
-
-The dispatcher routes argv from `src/main.ts` to these live areas:
-
-- `agent` — Claude/Codex tmux session lifecycle.
-- `task` — task graph mutation, validation, archive, locking.
-- `worktree` — slug-keyed git worktree create/merge/cleanup.
-- `align` — status-file polling for multi-agent alignment.
-- `init` — multi-tool project symlinks.
-- `install` — bootstrap hooks, wrapper, global config links, registry.
-- `doctor` — install health checks.
-- `paths` — runtime and repo path resolution.
-- `project` — cwd-keyed metadata rekeying after project moves.
-
 ## Contracts
 
 - `--json` success writes exactly one `{ok:true,data:...}` line to stdout.

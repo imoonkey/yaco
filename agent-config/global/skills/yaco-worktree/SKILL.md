@@ -1,6 +1,6 @@
 ---
 name: yaco-worktree
-description: Manage the git worktree lifecycle for task-isolated execution via the `yaco worktree` CLI — resolve a leaf's cwd off its merge target, create/reuse, merge up the worktree/branch DAG (native git for child→parent, `yaco worktree merge` for →main), resolve conflicts, clean up, and provision shared deps. Use when a task carries a `worktree` slug or /orchestrate needs an isolated checkout.
+description: Git worktree lifecycle for task-isolated execution via the `yaco worktree` CLI — create/reuse, merge up the worktree/branch DAG, clean up. Use when a task carries a `worktree` slug or /orchestrate needs an isolated checkout.
 metadata:
   yaco-dependent: "true"
 ---

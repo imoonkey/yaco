@@ -11,19 +11,6 @@ React/Vite frontend.
 - [../doc/progress/app.md](../doc/progress/app.md) — imported app history.
 - [../doc/main/architecture.md](../doc/main/architecture.md) — cross-component contracts with `cli/` and `agent-config/`.
 
-## Commands
-
-Run from the monorepo root unless noted:
-
-```bash
-npm run dev
-npm run build
-npm run start:app
-cd app/server && npm test
-cd app/ui && npm run lint
-cd app/ui && npx playwright test
-```
-
 ## Local Shape
 
 - `server/` — Hono API, SSE, WebSocket terminal, filesystem/tmux/yaco integration.
