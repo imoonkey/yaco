@@ -49,6 +49,7 @@ type WorkspaceProps = {
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
   notificationBell?: ReactNode
+  usageIndicator?: ReactNode
   // App-owned, stable top-bar slot (a ref'd <span> left of the bell) the desktop
   // GlobalVoiceControl is portaled into — voice state lives inside this provider
   // but the slot is App chrome (design: §G + the App-top-bar-portal trade-off).

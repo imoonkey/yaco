@@ -16,7 +16,7 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Related Code
 
-`ui/src/hooks/useIsMobile.ts`, `ui/src/components/LandscapeNav.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/MobilePanelProjection.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+`ui/src/hooks/useIsMobile.ts`, `ui/src/components/LandscapeNav.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/components/MobileUsageIndicator.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/MobilePanelProjection.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
 
 ## Breakpoint
 
@@ -35,7 +35,7 @@ On mobile, the Workspace collapses from multi-column to a single full-width pane
 
 ### Portrait
 
-Top PaneSwitch bar (`py-2`, ~36px) with lucide icons + text labels: Browse | Editor | Tasks | Terminal + notification bell + theme toggle. Increased padding (from `py-0.5`) for better tap targets.
+Top PaneSwitch bar (`py-2`, ~36px) with text labels: Browse | Editor | Tasks | Terminal, then the usage indicator, notification bell, and theme toggle. Increased padding (from `py-0.5`) for better tap targets. The segments are label-only and truncate under pressure — glyphs plus four labels plus the chrome icons overflow a 390px header.
 
 ### Landscape
 
@@ -43,7 +43,7 @@ Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
 
 - **Toggle button**: 32×32px glass pill, positioned at the inner edge of the left margin (`calc(margin - 34px)`), below iPhone rounded corners (`top: max(env(safe-area-inset-top), 24px)`). Always visible.
 - **Nav panel**: appears on toggle tap. Glass background with backdrop-blur, horizontal row of 4 pane icons + theme toggle expanding to the RIGHT from the toggle. Active pane highlighted in blue. Dismissed on Escape, click outside, or pane selection. Uses `menu-enter` animation.
-- **Notification bell + theme toggle**: standalone in the right margin at the inner edge, mirroring the toggle's vertical position. Bell panel opens naturally toward screen center.
+- **Notification bell, usage indicator, theme toggle**: standalone in the right margin at the inner edge, stacked 36px apart from the toggle's vertical position. Bell panel and usage sheet open naturally toward screen center.
 - **Equal margins**: both sides use `max(env(safe-area-inset-left), env(safe-area-inset-right), 36px)` — symmetric regardless of Dynamic Island orientation. Icons positioned at inner margin edge to maximize distance from iPhone rounded corners.
 - **Content area**: full height, no extra padding (margins on outer container handle clearance).
 

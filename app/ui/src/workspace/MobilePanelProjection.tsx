@@ -9,7 +9,7 @@
 //
 // What stays MOBILE-specific (and out of the desktop tree renderer): the
 // safe-area insets, the portrait `PaneSwitch` vs landscape `LandscapeNav`, and
-// the notification-bell + theme-toggle placement. This file owns that chrome.
+// the notification-bell + usage + theme-toggle placement. This file owns that chrome.
 //
 // Active-pane model: the projection reads the model field
 // `panelLayout.mobile.activeDock` (a `MobileDock`), mirroring how
@@ -19,7 +19,7 @@
 // `MobileDock` ⇄ `MobilePane` conversion is the only place the two vocabularies
 // meet (`mobileDockToPane` for the switch UI, the provider's mirror for writes).
 import { useCallback, useMemo, useState, type ReactNode, type RefObject } from 'react'
-import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal, X, AlertTriangle, FileDiff } from 'lucide-react'
+import { Sun, Moon, X, AlertTriangle, FileDiff } from 'lucide-react'
 import { PaneSwitch } from '../components/PaneSwitch'
 import { LandscapeNav } from '../components/LandscapeNav'
 import { toggleTheme } from '../lib/theme'
@@ -48,12 +48,13 @@ export type MobilePanelProjectionProps = {
 
 // Portrait pane-switcher options, in mobile dock order. Ids are `MobilePane`
 // (the value `PaneSwitch`/`setMobilePane` speak); labels match `LandscapeNav` so
-// either chrome names the panes identically.
-const PANE_OPTIONS: { id: MobilePane; label: string; icon: ReactNode }[] = [
-  { id: 'files', label: 'Browse', icon: <FolderOpen size={13} /> },
-  { id: 'editor', label: 'Editor', icon: <FileCode size={13} /> },
-  { id: 'tasks', label: 'Tasks', icon: <ListTodo size={13} /> },
-  { id: 'terminal', label: 'Terminal', icon: <SquareTerminal size={13} /> },
+// either chrome names the panes identically. Labels only — a phone header holds
+// four labelled segments OR labels plus glyphs, not both.
+const PANE_OPTIONS: { id: MobilePane; label: string }[] = [
+  { id: 'files', label: 'Browse' },
+  { id: 'editor', label: 'Editor' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'terminal', label: 'Terminal' },
 ]
 
 // Per-browse-panel mobile section chrome, mirroring the legacy mobile slots: the
@@ -83,7 +84,7 @@ const MARGIN_RIGHT = 'calc(max(env(safe-area-inset-left, 0px), env(safe-area-ins
 const MARGIN_TOP = 'max(env(safe-area-inset-top, 0px), 24px)'
 
 export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCapture }: MobilePanelProjectionProps) {
-  const { viewport, notificationBell } = useWorkspaceEnv()
+  const { viewport, notificationBell, usageIndicator } = useWorkspaceEnv()
   const { isLandscape, isTouch } = viewport
   const { panelLayout, layout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
@@ -202,11 +203,18 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
               >
                 {notificationBell}
               </div>
-              {/* Theme toggle — right margin, below the bell. */}
+              {/* Usage quota — right margin, below the bell. */}
+              <div
+                className="absolute z-50 flex items-center justify-center"
+                style={{ top: `calc(${MARGIN_TOP} + 36px)`, right: MARGIN_RIGHT, width: 32, height: 32 }}
+              >
+                {usageIndicator}
+              </div>
+              {/* Theme toggle — right margin, below the usage icon. */}
               <button
                 className="absolute z-50 flex items-center justify-center rounded-lg cursor-pointer theme-toggle-single"
                 style={{
-                  top: `calc(${MARGIN_TOP} + 36px)`,
+                  top: `calc(${MARGIN_TOP} + 72px)`,
                   right: MARGIN_RIGHT,
                   width: 32,
                   height: 32,
@@ -222,14 +230,15 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
               </button>
             </>
           ) : (
-            <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-2 flex items-center gap-2" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-              <div className="flex-1 min-w-0 max-w-[80%]">
+            <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-2 flex items-center gap-1.5" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+              <div className="flex-1 min-w-0">
                 <PaneSwitch
                   options={PANE_OPTIONS}
                   value={activePane}
                   onChange={(v) => setMobilePane(v as MobilePane)}
                 />
               </div>
+              {usageIndicator}
               {notificationBell}
               <button className="theme-toggle-single shrink-0 rounded p-1 cursor-pointer text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme" style={{ transition: 'color 120ms' }}>
                 <Sun size={14} strokeWidth={2.5} className="icon-sun" />

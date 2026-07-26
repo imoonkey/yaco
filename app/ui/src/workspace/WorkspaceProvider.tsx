@@ -78,6 +78,7 @@ export type WorkspaceProviderProps = {
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
   notificationBell?: ReactNode
+  usageIndicator?: ReactNode
   children: ReactNode
 }
 
@@ -112,7 +113,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     attentionTaskIds, projectSessionCounts,
     onProjectSelect, onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
     ackSession, onVisibilityReport,
-    attachIntent, clearAttachIntent, notificationBell, children,
+    attachIntent, clearAttachIntent, notificationBell, usageIndicator, children,
   } = props
   // The attention active-viewing guard (App → useAttention) is fed by the
   // visibility report below; `ackSession` lets a parent's "Mark subtree read" fan
@@ -790,7 +791,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     viewport: { isMobile, isLandscape, isTouch },
     projects, activeProject, worktrees, activeWorktree,
     badgesByProject, badgesBySession, readySessionKeys, attentionTaskIds,
-    projectSessionCounts, notificationBell,
+    projectSessionCounts, notificationBell, usageIndicator,
     selectProject: onProjectSelect,
     selectWorktree: onWorktreeSelect,
     reorderProjects: onProjectReorder,
@@ -800,7 +801,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }), [
     projectName, projectPath, worktree, effectivePath, isMobile, isLandscape, isTouch,
     projects, activeProject, worktrees, activeWorktree, badgesByProject, badgesBySession,
-    readySessionKeys, attentionTaskIds, projectSessionCounts, notificationBell,
+    readySessionKeys, attentionTaskIds, projectSessionCounts, notificationBell, usageIndicator,
     onProjectSelect, onWorktreeSelect,
     onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
   ])

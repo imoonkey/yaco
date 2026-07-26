@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { provisionWorkspace, type FixtureProject } from './helpers/workspace'
 
 const initialUsage = [
   {
@@ -86,4 +87,49 @@ test('quota rail stays visible and updates after the single global refresh', asy
   await expect(details.getByText('11% used', { exact: true })).toBeVisible()
   await expect(page.getByText('Usage unavailable', { exact: true })).toHaveCount(0)
   await expect(details).toBeVisible()
+})
+
+// Mobile carries the same quota data through a header icon + bottom sheet: the
+// desktop rail does not fit a phone, so the icon is the glance surface (peak
+// percent) and the sheet holds the per-provider cards.
+test('mobile surfaces the peak quota on a header icon and the cards in its sheet', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route(/\/api\/usage(?:\/refresh)?$/, async (route) => {
+    const payload = route.request().method() === 'POST' ? refreshedUsage : initialUsage
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) })
+  })
+
+  let fixture: FixtureProject | null = null
+  try {
+    fixture = await provisionWorkspace(page, request)
+
+    await expect(page.locator('.usage-quota-summary')).toHaveCount(0)
+    const icon = page.getByRole('button', { name: /^Usage\. / })
+    await expect(icon).toBeVisible()
+    // Claude weekly (100%) is the peak across both providers.
+    await expect(icon.locator('..')).toHaveText('100')
+
+    await icon.click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByText('Weekly · Fable', { exact: true })).toBeVisible()
+    await expect(sheet.getByText('Weekly · Codex Spark', { exact: true })).toBeVisible()
+    // Single column on a phone: every card spans the sheet's content width.
+    const cardWidths = await sheet.locator('.usage-quota-card').evaluateAll((cards) => (
+      cards.map((card) => Math.round(card.getBoundingClientRect().width))
+    ))
+    expect(cardWidths.length).toBe(2)
+    expect(new Set(cardWidths).size).toBe(1)
+
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/api/usage/refresh') && response.status() === 200),
+      sheet.getByRole('button', { name: 'Refresh usage' }).click(),
+    ])
+    await expect(sheet.getByText('11% used', { exact: true })).toBeVisible()
+
+    await sheet.getByRole('button', { name: 'Close usage details' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  } finally {
+    await fixture?.dispose().catch(() => undefined)
+  }
 })

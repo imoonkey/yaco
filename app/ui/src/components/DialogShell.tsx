@@ -14,11 +14,13 @@ const GLASS_BASE: CSSProperties = {
 const ENTER_ANIM = {
   dialog: 'none',
   panel: 'panel-slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  sheet: 'panel-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
 } as const
 
 const EXIT_ANIM = {
   dialog: 'dialog-exit 200ms ease-in both',
   panel: 'panel-slide-out 200ms ease-in both',
+  sheet: 'panel-slide-down 200ms ease-in both',
 } as const
 
 // --- Stack tracking: only the topmost shell handles Escape/Tab ---
@@ -54,7 +56,7 @@ export function DialogShell({
   overlayClassName?: string
   className?: string
   style?: CSSProperties
-  animation?: 'dialog' | 'panel'
+  animation?: 'dialog' | 'panel' | 'sheet'
   autoFocusRef?: RefObject<HTMLElement | null>
   restoreFocus?: boolean
   dismissOnOverlayClick?: boolean

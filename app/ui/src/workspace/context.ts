@@ -77,6 +77,8 @@ export type WorkspaceEnv = {
   attentionTaskIds: AttentionTaskIds
   projectSessionCounts: Record<string, { active: number; total: number }>
   notificationBell?: ReactNode
+  /** Mobile-only usage chrome (App-owned) — the peak-quota icon + its sheet. */
+  usageIndicator?: ReactNode
   // Project-management callbacks (not panel layout state).
   selectProject: (name: string) => void
   // id = the worktree's absolute path; null = the primary checkout.

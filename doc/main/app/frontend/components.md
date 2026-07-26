@@ -193,6 +193,7 @@ Single-workspace shell. Manages project selection, the attention feed, and brows
 **Responsibilities**:
 - Project selection and ordering (project list lives in workspace sidebar)
 - Desktop header bar with the `UsageQuotaRail`, notification bell, channels, theme, voice, and clock controls
+- Mobile chrome nodes handed to the workspace: the notification bell and the `MobileUsageIndicator` (icon + bottom sheet over the same `useUsage()` state)
 - Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching (holding `Cmd` reveals index hints in `ProjectList`)
 - Server-projected attention feed via `useAttention` (bell sections, badges, interrupts)
 - Attention routing (click toast / OS notification / bell row → project + session via `attachIntent`); derives the active-viewing target from the workspace visibility report

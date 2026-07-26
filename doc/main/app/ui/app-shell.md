@@ -18,7 +18,7 @@ Top-level application chrome: top bar, clock, project selection, rhythm pulse, a
 
 ## Related Code
 
-`ui/src/App.tsx`, `ui/src/components/UsageQuotaRail.tsx`, `ui/index.html`, `ui/public/manifest.webmanifest`
+`ui/src/App.tsx`, `ui/src/components/UsageQuotaRail.tsx`, `ui/src/components/MobileUsageIndicator.tsx`, `ui/src/components/UsageCards.tsx`, `ui/src/components/usageModel.ts`, `ui/index.html`, `ui/public/manifest.webmanifest`
 
 ## Shell Architecture
 
@@ -36,6 +36,12 @@ Top bar (hidden on mobile via `useIsMobile()` conditional rendering, 40px height
 The desktop rail consumes only the normalized provider/window contract from `yaco agent usage`: Claude Session, Weekly, and Fable plus Codex Weekly stay visible; scoped Codex Spark remains in the details popover. Each visible cell is a left-to-right percentage fill, while the details view preserves every reported window, plan, provider error, check time, and exact reset time.
 
 The rail loads cached usage on mount, polls every 60 seconds, and exposes one global refresh that forces both providers. A manual refresh owns its result epoch: an overlapping poll cannot replace the fresh result or make the previous quota disappear while refresh is in flight. -> See: [frontend hooks](../frontend/hooks.md#useapits-536-lines) and [usage routes](../backend/routes.md#usage).
+
+Grouping, tones, ordering and time formatting live in `usageModel.ts`; the per-provider cards (`UsageCards`) are shared by the desktop popover (two columns) and the mobile sheet (one), so both surfaces show the same windows from the same `useUsage()` state.
+
+### Mobile Usage Indicator
+
+Mobile has no top bar, so `App.tsx` passes a `usageIndicator` node into the workspace (like `notificationBell`) and `MobilePanelProjection` places it in its chrome: in the portrait header left of the bell, and in the landscape right margin between the bell and the theme toggle. The collapsed surface is one icon carrying a badge with the peak percent across providers (tone-colored, absent when usage is unavailable); tapping it opens a bottom sheet (`DialogShell` `animation="sheet"`) with the single-column cards plus the same global refresh. The portrait `PaneSwitch` is label-only for this reason — four labelled segments and four chrome icons do not both fit a phone header.
 
 ### Global Voice Control
 

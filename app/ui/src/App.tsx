@@ -5,6 +5,7 @@ import { useProjectWorktrees } from './hooks/useProjectWorktrees'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { UsageQuotaRail } from './components/UsageQuotaRail'
+import { MobileUsageIndicator } from './components/MobileUsageIndicator'
 import { NotificationBell } from './components/NotificationBell'
 import { ChannelsHeaderButton } from './components/WeChatLoginDialog'
 import { useAttention, type AttentionItem } from './hooks/useAttention'
@@ -437,6 +438,7 @@ function App() {
             attachIntent={attachIntent}
             clearAttachIntent={() => setAttachIntent(null)}
             notificationBell={<NotificationBell {...notificationBellProps} size={14} />}
+            usageIndicator={<MobileUsageIndicator state={usage} />}
             voiceSlot={voiceSlot}
           />
         )}
