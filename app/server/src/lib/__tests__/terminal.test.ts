@@ -129,6 +129,11 @@ describe('attachSession', () => {
         const name = target.replace(/^=/, '').replace(/:$/, '')
         return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: aliveTmuxSessions.has(name) ? '' : 'no such session' }
       }
+      if (action === 'resize-window') {
+        const target = args[args.indexOf('-t') + 1]
+        const name = target.replace(/^=/, '').replace(/:$/, '')
+        return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: aliveTmuxSessions.has(name) ? '' : 'no such session' }
+      }
       if (action === 'load-buffer' || action === 'paste-buffer' || action === 'delete-buffer') {
         return { status: 0, stdout: '', stderr: '' }
       }

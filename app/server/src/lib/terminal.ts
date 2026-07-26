@@ -12,13 +12,11 @@ import { shellSessionsDir } from '@yaco/cli/core/paths'
 
 export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
 
-/** tmux window sizing across attached clients. `smallest` fits the window to the
- *  narrowest attached client and only changes when a client attaches, detaches,
- *  or resizes. `latest` — sizing to whichever client most recently went active —
- *  makes two devices on one session fight: every switch resizes the window, and
- *  a resize costs a full-screen repaint pushed to BOTH clients plus a TUI
- *  relayout. A stable smaller window beats a thrashing correctly-sized one. */
-const WINDOW_SIZE_POLICY = 'smallest'
+/** tmux window sizing across attached clients: the window follows whichever
+ *  client most recently became active, so the device you are currently using
+ *  sees content fit to its own screen. With a single attached client — the
+ *  normal case — this is simply that client's size. */
+const WINDOW_SIZE_POLICY = 'latest'
 
 export type TerminalTextPasteErrorCode = 'too-large' | 'tmux-failed'
 
@@ -275,6 +273,11 @@ async function configureShellTmuxSession(name: string): Promise<void> {
   } catch (e) {
     console.warn(`[terminal] failed to hide tmux status for ${name}:`, e)
   }
+  try {
+    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'window-size', WINDOW_SIZE_POLICY])
+  } catch (e) {
+    console.warn(`[terminal] failed to set tmux window-size for ${name}:`, e)
+  }
 }
 
 async function nextShellSessionName(): Promise<string> {
@@ -394,23 +397,12 @@ export async function reconcileShellSessionExit(name: string): Promise<boolean> 
   return true
 }
 
-/** Spawn a PTY attached to a tmux session. The PTY carries this client's
- *  cols/rows, and WINDOW_SIZE_POLICY makes tmux recompute the window from all
- *  attached clients on every attach and detach — so no explicit resize is needed.
- *  (An explicit `resize-window` would in fact defeat it: tmux documents that it
- *  flips `window-size` to `manual`.) The policy is set per session rather than on
- *  the server global because a session-local value — which sessions created by
- *  earlier builds carry — wins over the global. */
+/** Spawn a PTY attached to a tmux session. */
 export async function attachSession(sessionName: string, cols: number, rows: number): Promise<AttachedSession> {
   validateSessionName(sessionName)
   assertCanSpawn()
   await pushClipboardEnvToTmux()
   if (readShellState(sessionName)) await configureShellTmuxSession(sessionName)
-  try {
-    await runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', WINDOW_SIZE_POLICY])
-  } catch (e) {
-    console.warn(`[terminal] failed to set tmux window-size for ${sessionName}:`, e)
-  }
 
   const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
     name: 'xterm-256color',
@@ -418,6 +410,23 @@ export async function attachSession(sessionName: string, cols: number, rows: num
     rows,
     env: buildChildProcessEnv(),
   })
+
+  // Force window to this client's size. WINDOW_SIZE_POLICY is supposed to do
+  // this on attach, but a fresh attach isn't always counted as "latest active"
+  // until the user types — so a previously-attached small client (or a zombie
+  // from a leaked node-pty) can clamp the window. Explicit resize-window
+  // bypasses the policy.
+  //
+  // Side effect: tmux's `resize-window -x -y` automatically flips
+  // `window-size` to `manual` (documented). Restore the policy immediately so
+  // future client size changes (laptop pane resize, device switch) still
+  // auto-resize the window.
+  try {
+    await runTmux(['resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows)])
+    await runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', WINDOW_SIZE_POLICY])
+  } catch (e) {
+    console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
+  }
 
   return {
     initialData: '',

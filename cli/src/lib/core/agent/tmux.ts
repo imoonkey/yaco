@@ -201,8 +201,9 @@ export function createSession(handle: string, command: string, cwd?: string): vo
   // `VAR=val` token would be exec'd by tmux as a program and the pane would die.
   const yacoBin = [selfInvocation().command, ...selfInvocation().args].join(" ");
   const yacoBinArg = yacoBin.length > 0 ? `-e "YACO_BIN=${yacoBin}" ` : "";
-  // -x/-y is the initial detached size, kept roomy so a detached session's TUI
-  // lays out for a real screen rather than a default 80x24.
+  // -x/-y is the initial detached size; window-size=latest sizes the window
+  // to whatever client most recently became active — so the device you're
+  // currently using always sees content fit to its own screen.
   execSync(
     `${cgroupEscapePrefix()}tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`,
     { stdio: "pipe", cwd: projectPath, timeout: EXEC_TIMEOUT_MS },
@@ -211,12 +212,7 @@ export function createSession(handle: string, command: string, cwd?: string): vo
   execSync(`tmux set-option -t ${paneTarget(handle)} status off`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
   execSync(`tmux set-option -t ${paneTarget(handle)} focus-events on`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
   execSync(`tmux set-option -t ${paneTarget(handle)} allow-passthrough on`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
-  // `smallest` fits the window to the narrowest attached client and only changes
-  // on attach, detach, or resize. `latest` — tracking whichever client most
-  // recently went active — makes two devices on one session fight: every switch
-  // resizes the window, and a resize costs a full-screen repaint pushed to BOTH
-  // clients plus a TUI relayout.
-  execSync(`tmux set-option -t ${paneTarget(handle)} window-size smallest`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
+  execSync(`tmux set-option -t ${paneTarget(handle)} window-size latest`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
   execSync(`tmux set -t ${paneTarget(handle)} mouse on`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
 }
 
