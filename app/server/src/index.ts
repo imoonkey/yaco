@@ -40,6 +40,7 @@ import {
   releaseSession,
   setShellSessionChangeCallback,
   TerminalTextPasteError,
+  type AttachedSession,
 } from './lib/terminal.js'
 import { writeImageToClipboard, ClipboardWriteError } from './lib/clipboard-write.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
@@ -305,7 +306,7 @@ type PtySubscription = ReturnType<IPty['onData']>
 
 type TerminalConnection = {
   sessionName: string
-  attached: ReturnType<typeof attachSession>
+  attached: AttachedSession
   dataSub: PtySubscription
   exitSub: PtySubscription
   alive: boolean
@@ -313,11 +314,23 @@ type TerminalConnection = {
 }
 
 const connections = new Map<WebSocket, TerminalConnection>()
-// Serialize image pastes per terminal session so a rapid re-paste never spawns
-// a second xclip owner while the previous one is still being read — that churn
-// is what makes the agent's `xclip -o` read fail and fall through to the
-// wl-paste path that hangs on Mutter's X11->Wayland bridge.
-const imagePasteChains = new Map<string, Promise<void>>()
+// Serialize pastes per terminal session. For images, a rapid re-paste must never
+// spawn a second xclip owner while the previous one is still being read — that
+// churn is what makes the agent's `xclip -o` read fail and fall through to the
+// wl-paste path that hangs on Mutter's X11->Wayland bridge. For text, tmux
+// load-buffer/paste-buffer is a multi-step subprocess sequence, so two overlapping
+// pastes could otherwise interleave in the pane.
+const pasteChains = new Map<string, Promise<void>>()
+
+/** Append `run` to a session's paste queue, keeping the map free of settled
+ *  entries so it never retains one promise per session name forever. */
+function queuePaste(sessionName: string, run: () => Promise<void>): void {
+  const next = (pasteChains.get(sessionName) ?? Promise.resolve()).then(run)
+  pasteChains.set(sessionName, next)
+  void next.then(() => {
+    if (pasteChains.get(sessionName) === next) pasteChains.delete(sessionName)
+  })
+}
 // After Ctrl+V the agent reads the clipboard asynchronously and gives no
 // signal when it is done, so we hold the queue this long before the next paste
 // may replace the X11 owner. This is a best-effort bound, not a hard guarantee:
@@ -398,10 +411,10 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
   })
 })
 
-wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, initialPalette: TerminalPalette) => {
-  let attached: ReturnType<typeof attachSession>
+wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, initialPalette: TerminalPalette) => {
+  let attached: AttachedSession
   try {
-    attached = attachSession(sessionName, cols, rows)
+    attached = await attachSession(sessionName, cols, rows)
   } catch (err) {
     if (err instanceof PtyCapacityError) {
       console.warn(`[ws] pty capacity reject: ${sessionName}`)
@@ -410,6 +423,13 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
     }
     console.error(`[ws] failed to attach: ${sessionName}`, err)
     try { ws.close(4003, 'attach_failed') } catch { /* noop */ }
+    return
+  }
+
+  // The client can disconnect while the attach is in flight; without this the
+  // PTY would be orphaned, since no 'close' handler is registered yet.
+  if (ws.readyState !== WebSocket.OPEN) {
+    releaseSession(sessionName, attached)
     return
   }
 
@@ -426,7 +446,9 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
   })
 
   const exitSub = proc.onExit(() => {
-    reconcileShellSessionExit(sessionName)
+    void reconcileShellSessionExit(sessionName).catch(err => {
+      console.warn(`[ws] failed to reconcile shell exit for ${sessionName}:`, err)
+    })
     if (ws.readyState === WebSocket.OPEN) ws.close(4001, 'session_ended')
     cleanupConnection(ws)
   })
@@ -477,15 +499,18 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
           return
         }
         if (msg.type === 'text-paste' && typeof msg.data === 'string') {
-          try {
-            pasteTextToSession(sessionName, msg.data)
-          } catch (err: unknown) {
-            const message = err instanceof TerminalTextPasteError ? `${err.code}: ${err.message}` : String(err)
-            console.warn(`[ws] text-paste failed for ${sessionName}: ${message}`)
-            if (!(err instanceof TerminalTextPasteError && err.code === 'too-large')) {
-              proc.write(msg.data)
+          const text = msg.data
+          queuePaste(sessionName, async () => {
+            try {
+              await pasteTextToSession(sessionName, text)
+            } catch (err: unknown) {
+              const message = err instanceof TerminalTextPasteError ? `${err.code}: ${err.message}` : String(err)
+              console.warn(`[ws] text-paste failed for ${sessionName}: ${message}`)
+              if (!(err instanceof TerminalTextPasteError && err.code === 'too-large')) {
+                proc.write(text)
+              }
             }
-          }
+          })
           return
         }
         if (msg.type === 'image-paste' && typeof msg.mime === 'string' && typeof msg.base64 === 'string') {
@@ -497,22 +522,17 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
           // wl-paste fallback). Serialized per session so re-pastes don't race.
           const mime = msg.mime
           const bytes = Buffer.from(msg.base64, 'base64')
-          const prev = imagePasteChains.get(sessionName) ?? Promise.resolve()
-          const next = prev.then(async () => {
-            await writeImageToClipboard(mime, bytes)
-            proc.write('\x16')
-            // Keep the queue pending across the agent's read so a back-to-back
-            // paste can't replace the X11 owner while it is still being read.
-            await new Promise(resolve => setTimeout(resolve, IMAGE_PASTE_READ_WINDOW_MS))
-          }).catch((err: unknown) => {
-            const message = err instanceof ClipboardWriteError ? `${err.code}: ${err.message}` : String(err)
-            console.warn(`[ws] image-paste failed for ${sessionName}: ${message}`)
-          })
-          imagePasteChains.set(sessionName, next)
-          // Drop the entry once it settles (unless a newer paste replaced it) so
-          // the map doesn't retain one promise per session name forever.
-          void next.then(() => {
-            if (imagePasteChains.get(sessionName) === next) imagePasteChains.delete(sessionName)
+          queuePaste(sessionName, async () => {
+            try {
+              await writeImageToClipboard(mime, bytes)
+              proc.write('\x16')
+              // Keep the queue pending across the agent's read so a back-to-back
+              // paste can't replace the X11 owner while it is still being read.
+              await new Promise(resolve => setTimeout(resolve, IMAGE_PASTE_READ_WINDOW_MS))
+            } catch (err: unknown) {
+              const message = err instanceof ClipboardWriteError ? `${err.code}: ${err.message}` : String(err)
+              console.warn(`[ws] image-paste failed for ${sessionName}: ${message}`)
+            }
           })
           return
         }

@@ -3,7 +3,7 @@ import type { IPty } from 'node-pty'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { discoverClipboardEnv } from './clipboard-env'
@@ -11,6 +11,14 @@ import { assertCanSpawn } from './pty-capacity'
 import { shellSessionsDir } from '@yaco/cli/core/paths'
 
 export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
+
+/** tmux window sizing across attached clients. `smallest` fits the window to the
+ *  narrowest attached client and only changes when a client attaches, detaches,
+ *  or resizes. `latest` — sizing to whichever client most recently went active —
+ *  makes two devices on one session fight: every switch resizes the window, and
+ *  a resize costs a full-screen repaint pushed to BOTH clients plus a TUI
+ *  relayout. A stable smaller window beats a thrashing correctly-sized one. */
+const WINDOW_SIZE_POLICY = 'smallest'
 
 export type TerminalTextPasteErrorCode = 'too-large' | 'tmux-failed'
 
@@ -157,17 +165,26 @@ function writeShellState(state: ShellSession): void {
   renameSync(tmpPath, path)
 }
 
-function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): { status: number | null; stderr: string; error?: Error } {
-  const result = spawnSync('tmux', args, {
-    encoding: 'utf-8',
-    env,
-    input,
+interface TmuxResult {
+  status: number | null
+  stderr: string
+  error?: Error
+}
+
+/** Run tmux off the event loop. Every tmux call here sits on a request or
+ *  WebSocket path, so a synchronous spawn would stall the whole server — including
+ *  every other terminal's output — for the duration of the subprocess. */
+function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): Promise<TmuxResult> {
+  return new Promise((resolve) => {
+    const child = spawn('tmux', args, { env })
+    let stderr = ''
+    child.stderr.setEncoding('utf-8')
+    child.stderr.on('data', (chunk: string) => { stderr += chunk })
+    child.on('error', (error: Error) => resolve({ status: null, stderr, error }))
+    child.on('close', (status) => resolve({ status, stderr }))
+    child.stdin.on('error', () => { /* closed before we could write */ })
+    child.stdin.end(input ?? '')
   })
-  return {
-    status: result.status,
-    stderr: String(result.stderr ?? ''),
-    error: result.error,
-  }
 }
 
 // Push the discovered Linux graphical-session env (DISPLAY, XAUTHORITY,
@@ -179,14 +196,14 @@ function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: stri
 // processes still use their original env until they restart; this only fixes
 // future spawns.
 let pushedClipboardEnvToTmux = false
-function pushClipboardEnvToTmux(): void {
+async function pushClipboardEnvToTmux(): Promise<void> {
   if (pushedClipboardEnvToTmux) return
   const clip = discoverClipboardEnv()
   if (!clip.DISPLAY || !clip.XAUTHORITY) return
   const env = buildChildProcessEnv()
   for (const [k, v] of Object.entries(clip)) {
     if (!v) continue
-    const result = tmux(['set-environment', '-g', k, v], env)
+    const result = await tmux(['set-environment', '-g', k, v], env)
     if (result.status !== 0) {
       console.warn(`[terminal] tmux set-environment -g ${k} failed: ${result.stderr.trim() || `exit ${result.status}`}`)
       return
@@ -195,9 +212,9 @@ function pushClipboardEnvToTmux(): void {
   pushedClipboardEnvToTmux = true
 }
 
-function checkTmuxSession(name: string): TmuxSessionState {
+async function checkTmuxSession(name: string): Promise<TmuxSessionState> {
   validateSessionName(name)
-  const result = tmux(['has-session', '-t', name])
+  const result = await tmux(['has-session', '-t', name])
   if (result.error) {
     console.warn(`[terminal] tmux has-session failed for ${name}: ${result.error.message}`)
     return 'unknown'
@@ -209,15 +226,15 @@ function checkTmuxSession(name: string): TmuxSessionState {
   return 'unknown'
 }
 
-function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): void {
-  const result = tmux(args, env, input)
+async function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): Promise<void> {
+  const result = await tmux(args, env, input)
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`tmux ${args[0]} failed: ${result.stderr.trim() || `exit ${result.status}`}`)
   }
 }
 
-export function pasteTextToSession(sessionName: string, text: string): void {
+export async function pasteTextToSession(sessionName: string, text: string): Promise<void> {
   validateSessionName(sessionName)
   if (!text) return
 
@@ -231,11 +248,11 @@ export function pasteTextToSession(sessionName: string, text: string): void {
 
   const bufferName = `yaco-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
   try {
-    runTmux(['load-buffer', '-b', bufferName, '-'], process.env, text)
+    await runTmux(['load-buffer', '-b', bufferName, '-'], process.env, text)
     try {
-      runTmux(['paste-buffer', '-p', '-t', tmuxPaneTarget(sessionName), '-b', bufferName])
+      await runTmux(['paste-buffer', '-p', '-t', tmuxPaneTarget(sessionName), '-b', bufferName])
     } finally {
-      const cleanup = tmux(['delete-buffer', '-b', bufferName])
+      const cleanup = await tmux(['delete-buffer', '-b', bufferName])
       if (cleanup.status !== 0) {
         console.warn(`[terminal] failed to delete tmux paste buffer ${bufferName}: ${cleanup.stderr.trim() || `exit ${cleanup.status}`}`)
       }
@@ -247,36 +264,33 @@ export function pasteTextToSession(sessionName: string, text: string): void {
   }
 }
 
-function configureShellTmuxSession(name: string): void {
+async function configureShellTmuxSession(name: string): Promise<void> {
   try {
-    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'mouse', 'on'])
+    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'mouse', 'on'])
   } catch (e) {
     console.warn(`[terminal] failed to enable tmux mouse for ${name}:`, e)
   }
   try {
-    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'status', 'off'])
+    await runTmux(['set-option', '-t', tmuxPaneTarget(name), 'status', 'off'])
   } catch (e) {
     console.warn(`[terminal] failed to hide tmux status for ${name}:`, e)
   }
-  try {
-    // `latest` = window follows whichever client most recently became active,
-    // so each device sees content fit to its own screen.
-    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'window-size', 'latest'])
-  } catch (e) {
-    console.warn(`[terminal] failed to set tmux window-size for ${name}:`, e)
-  }
 }
 
-function nextShellSessionName(): string {
+async function nextShellSessionName(): Promise<string> {
   let index = 1
-  while (checkTmuxSession(`shell-${index}`) === 'live') index += 1
+  while (await checkTmuxSession(`shell-${index}`) === 'live') index += 1
   return `shell-${index}`
 }
 
-export function listShellSessions(): ShellSessionSummary[] {
+export async function listShellSessions(): Promise<ShellSessionSummary[]> {
+  const states = readShellStates()
+  const checked = await Promise.all(
+    states.map(async state => ({ state, tmuxState: await checkTmuxSession(state.name) })),
+  )
+
   const liveSessions: ShellSession[] = []
-  for (const state of readShellStates()) {
-    const tmuxState = checkTmuxSession(state.name)
+  for (const { state, tmuxState } of checked) {
     if (tmuxState === 'live' || tmuxState === 'unknown') {
       liveSessions.push(state)
     } else if (tmuxState === 'missing') {
@@ -292,16 +306,16 @@ export function listShellSessions(): ShellSessionSummary[] {
   }))
 }
 
-export function getShellSessionCount(): number {
-  return listShellSessions().length
+export async function getShellSessionCount(): Promise<number> {
+  return (await listShellSessions()).length
 }
 
-export function startShellSession(cwd: string, project: string, requestedName?: string): string {
-  const name = requestedName?.trim() || nextShellSessionName()
+export async function startShellSession(cwd: string, project: string, requestedName?: string): Promise<string> {
+  const name = requestedName?.trim() || await nextShellSessionName()
   validateSessionName(name)
 
   const existingState = readShellState(name)
-  const tmuxState = checkTmuxSession(name)
+  const tmuxState = await checkTmuxSession(name)
 
   if (existingState && tmuxState === 'missing') {
     removeShellState(name)
@@ -333,7 +347,7 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     `unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}'); ` +
     `exec ${shellQuote(shell)} -li`
   try {
-    runTmux([
+    await runTmux([
       'new-session',
       '-d',
       '-s',
@@ -347,19 +361,19 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     throw e
   }
 
-  configureShellTmuxSession(name)
+  await configureShellTmuxSession(name)
   onSessionChange?.()
   return name
 }
 
-export function closeShellSession(name: string): boolean {
+export async function closeShellSession(name: string): Promise<boolean> {
   validateSessionName(name)
   const state = readShellState(name)
   if (!state) return false
 
-  const tmuxState = checkTmuxSession(name)
+  const tmuxState = await checkTmuxSession(name)
   if (tmuxState === 'live') {
-    runTmux(['kill-session', '-t', name])
+    await runTmux(['kill-session', '-t', name])
   } else if (tmuxState === 'unknown') {
     throw new Error(`Cannot determine tmux session state: ${name}`)
   }
@@ -368,24 +382,35 @@ export function closeShellSession(name: string): boolean {
   return true
 }
 
-export function reconcileShellSessionExit(name: string): boolean {
+export async function reconcileShellSessionExit(name: string): Promise<boolean> {
   validateSessionName(name)
   const state = readShellState(name)
   if (!state) return false
 
-  if (checkTmuxSession(name) !== 'missing') return false
+  if (await checkTmuxSession(name) !== 'missing') return false
 
   removeShellState(name)
   onSessionChange?.()
   return true
 }
 
-/** Spawn a PTY attached to a tmux session. */
-export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
+/** Spawn a PTY attached to a tmux session. The PTY carries this client's
+ *  cols/rows, and WINDOW_SIZE_POLICY makes tmux recompute the window from all
+ *  attached clients on every attach and detach — so no explicit resize is needed.
+ *  (An explicit `resize-window` would in fact defeat it: tmux documents that it
+ *  flips `window-size` to `manual`.) The policy is set per session rather than on
+ *  the server global because a session-local value — which sessions created by
+ *  earlier builds carry — wins over the global. */
+export async function attachSession(sessionName: string, cols: number, rows: number): Promise<AttachedSession> {
   validateSessionName(sessionName)
   assertCanSpawn()
-  pushClipboardEnvToTmux()
-  if (readShellState(sessionName)) configureShellTmuxSession(sessionName)
+  await pushClipboardEnvToTmux()
+  if (readShellState(sessionName)) await configureShellTmuxSession(sessionName)
+  try {
+    await runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', WINDOW_SIZE_POLICY])
+  } catch (e) {
+    console.warn(`[terminal] failed to set tmux window-size for ${sessionName}:`, e)
+  }
 
   const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
     name: 'xterm-256color',
@@ -393,23 +418,6 @@ export function attachSession(sessionName: string, cols: number, rows: number): 
     rows,
     env: buildChildProcessEnv(),
   })
-
-  // Force window to this client's size. `window-size latest` is supposed to
-  // do this on attach, but a fresh attach isn't always counted as "latest
-  // active" until the user types — so a previously-attached small client
-  // (or a zombie from a leaked node-pty) can clamp the window. Explicit
-  // resize-window bypasses the policy.
-  //
-  // Side effect: tmux's `resize-window -x -y` automatically flips
-  // `window-size` to `manual` (documented). Restore `latest` immediately
-  // so future client size changes (laptop pane resize, device switch)
-  // still auto-resize the window.
-  try {
-    runTmux(['resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows)])
-    runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', 'latest'])
-  } catch (e) {
-    console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
-  }
 
   return {
     initialData: '',

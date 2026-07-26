@@ -26,8 +26,7 @@ function invalidateSessionsCache(): void {
 }
 
 async function buildSessionsResponse(projectName: string | null): Promise<unknown[]> {
-  const shellSessions = listShellSessions()
-  const projects = await loadProjects()
+  const [shellSessions, projects] = await Promise.all([listShellSessions(), loadProjects()])
 
   // Read state files (always fresh — picks up new sessions immediately).
   // This is a PURE read; it never mutates state. Stale state files (stuck at
@@ -90,7 +89,7 @@ app.post('/start', async (c) => {
     const project = bestProject?.name ?? cwd.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
 
     if (provider === 'shell') {
-      const shellName = startShellSession(cwd, project, name)
+      const shellName = await startShellSession(cwd, project, name)
       invalidateSessionsCache()
       return c.json({ name: shellName })
     }
@@ -161,7 +160,7 @@ app.post('/:handle/rename', async (c) => {
 app.post('/:handle/close', async (c) => {
   const handle = c.req.param('handle')
   try {
-    if (closeShellSession(handle)) {
+    if (await closeShellSession(handle)) {
       invalidateSessionsCache()
       return c.json({})
     }
