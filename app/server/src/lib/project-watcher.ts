@@ -67,9 +67,11 @@ function toRel(projectPath: string, absPath: string): string | null {
  *  (`logs/traffic`, `logs/usage`) are pruned because parent-project watchers cannot
  *  rely on a child repo's `.gitignore`. `.git` metadata (HEAD/index/refs) is kept for
  *  the `git` channel, except transient index locks that git may create while
- *  answering status. Worktree container roots are force-kept because the app
- *  serves per-worktree filetree/git; their contents defer to the root repo's
- *  gitignore after canonicalIgnorePath strips `.worktrees/<slug>/`. */
+ *  answering status. The worktree container and each slug directory are force-kept
+ *  so the `worktrees` channel still sees a checkout appear or disappear, but
+ *  everything BELOW a slug is pruned — worktree contents are watched on demand
+ *  (see `ensureWorktreeWatched`), so only the checkouts actually open in the UI
+ *  cost watches instead of all of them. */
 export function hardVerdict(rel: string): boolean | undefined {
   const segs = rel.split('/')
   if (segs.includes('node_modules')) return true
@@ -84,6 +86,7 @@ export function hardVerdict(rel: string): boolean | undefined {
     return sub === 'objects' || sub === 'logs'
   }
   if (rel === '.worktrees' || /^\.worktrees\/[^/]+$/.test(rel)) return false
+  if (rel.startsWith('.worktrees/')) return true
   return undefined
 }
 
@@ -391,6 +394,38 @@ export async function watchProject(project: Project): Promise<void> {
   }
 }
 
+/** Worktree checkouts holding an on-demand watcher, least-recently-used first. */
+const watchedWorktrees: string[] = []
+/** How many worktree checkouts may hold a watcher at once. A checkout is a full
+ *  copy of the repo, so this is the cap on what worktrees cost in inotify watches
+ *  and chokidar bookkeeping regardless of how many exist on disk. */
+const MAX_WATCHED_WORKTREES = 3
+
+/** Arm a watcher for a worktree checkout the UI is actually viewing, evicting the
+ *  least-recently-used one past the cap. Parent project watchers prune
+ *  `.worktrees/<slug>/**`, so this is what gives a worktree live filetree/git SSE.
+ *  Fire-and-forget: callers must not await the initial scan on a request path. */
+export async function ensureWorktreeWatched(path: string): Promise<void> {
+  const at = watchedWorktrees.indexOf(path)
+  if (at !== -1) watchedWorktrees.splice(at, 1)
+  watchedWorktrees.push(path)
+
+  while (watchedWorktrees.length > MAX_WATCHED_WORKTREES) {
+    const evicted = watchedWorktrees.shift()
+    // A registered project sharing this path owns its own watcher for the whole
+    // session — evicting it would silently kill that project's SSE.
+    if (evicted && !(await loadProjects()).some(p => p.path === evicted)) {
+      unwatchProject(evicted)
+    }
+  }
+
+  await watchProject({ name: path, path })
+}
+
+export function __watchedWorktreesForTests(): string[] {
+  return [...watchedWorktrees]
+}
+
 /** Stop watching a single project (e.g. when it is removed from the registry). */
 export function unwatchProject(path: string): void {
   armGeneration.delete(path) // abort an in-flight arm
@@ -421,6 +456,7 @@ export function stopProjectWatchers(): void {
   for (const w of globalWatchers) w.close()
   globalWatchers.length = 0
   armGeneration.clear()
+  watchedWorktrees.length = 0
   for (const w of projectWatchers.values()) void w.close()
   projectWatchers.clear()
   for (const timer of debounceTimers.values()) clearTimeout(timer)

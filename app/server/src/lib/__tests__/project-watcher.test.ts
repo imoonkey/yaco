@@ -47,9 +47,11 @@ vi.mock('../attention-runtime', () => ({
 
 import {
   canonicalIgnorePath,
+  ensureWorktreeWatched,
   startProjectWatchers,
   stopProjectWatchers,
   hardVerdict,
+  __watchedWorktreesForTests,
 } from '../project-watcher'
 
 function writeSession(handle: string, sessionPath: string): void {
@@ -174,10 +176,10 @@ describe('hardVerdict (watch-prune rules)', () => {
     expect(hardVerdict('.git/logs/HEAD')).toBe(true)
   })
 
-  it('keeps worktree roots but defers their contents to normal ignore rules', () => {
+  it('keeps worktree roots but prunes their contents, which are watched on demand', () => {
     expect(hardVerdict('.worktrees')).toBe(false)
     expect(hardVerdict('.worktrees/wt')).toBe(false)
-    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBeUndefined()
+    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBe(true)
     expect(hardVerdict('.worktrees/wt/logs/traffic/request.json')).toBe(true)
   })
 
@@ -198,5 +200,60 @@ describe('canonicalIgnorePath', () => {
   it('keeps worktree container paths outside root gitignore matching', () => {
     expect(canonicalIgnorePath('.worktrees')).toBeNull()
     expect(canonicalIgnorePath('.worktrees/task-a')).toBeNull()
+  })
+})
+
+describe('ensureWorktreeWatched', () => {
+  let root: string
+
+  async function makeWorktree(slug: string): Promise<string> {
+    const path = join(root, slug)
+    mkdirSync(join(path, 'src'), { recursive: true })
+    writeFileSync(join(path, 'src', 'app.ts'), 'export {}')
+    await ensureWorktreeWatched(path)
+    return path
+  }
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'workflow-worktree-watch-'))
+    mock.projects = []
+    mock.emitCalls = []
+  })
+
+  afterEach(() => {
+    stopProjectWatchers()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('evicts the least-recently-used checkout past the cap', async () => {
+    const a = await makeWorktree('a')
+    const b = await makeWorktree('b')
+    const c = await makeWorktree('c')
+    expect(__watchedWorktreesForTests()).toEqual([a, b, c])
+
+    // Re-viewing `a` makes `b` the least-recently-used, so a fourth checkout
+    // must evict `b` — not `a`, which the cap-order alone would have dropped.
+    await ensureWorktreeWatched(a)
+    const d = await makeWorktree('d')
+
+    expect(__watchedWorktreesForTests()).toEqual([c, a, d])
+  })
+
+  it('never evicts a registered project that shares the path', async () => {
+    const a = await makeWorktree('a')
+    mock.projects = [{ name: 'a', path: a }]
+    await makeWorktree('b')
+    await makeWorktree('c')
+    await makeWorktree('d')
+
+    // `a` leaves the on-demand queue, but its watcher belongs to the registered
+    // project for the whole session, so writes there must still emit.
+    expect(__watchedWorktreesForTests()).not.toContain(a)
+    mock.emitCalls = []
+    writeFileSync(join(a, 'src', 'app.ts'), 'export const x = 1')
+
+    await vi.waitFor(() => {
+      expect(mock.emitCalls).toContain('filetree')
+    }, { timeout: 2000 })
   })
 })

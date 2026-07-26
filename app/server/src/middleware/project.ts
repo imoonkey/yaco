@@ -4,6 +4,7 @@ import { createMiddleware } from 'hono/factory'
 import { fail } from '../lib/response'
 import { loadProjects, type Project } from '../lib/projects'
 import { listRegisteredWorktrees } from '../lib/worktree'
+import { ensureWorktreeWatched } from '../lib/project-watcher'
 
 export type ProjectEnv = { Variables: { project: Project } }
 
@@ -49,7 +50,16 @@ export const withProject = createMiddleware<ProjectEnv>(async (c, next) => {
     // snapshot/status key = proj.path; colocated key = realpath(proj.path)) is
     // identical whether or not `?worktree=<primary>` is passed.
     const projectRoot = await canonicalize(proj.path)
-    c.set('project', resolved === projectRoot ? proj : { ...proj, path: resolved })
+    if (resolved === projectRoot) {
+      c.set('project', proj)
+    } else {
+      // Arm this checkout's watcher so its filetree/git SSE goes live. Not
+      // awaited — the initial scan must never sit in front of the response.
+      void ensureWorktreeWatched(resolved).catch(err => {
+        console.warn(`[project] failed to watch worktree ${resolved}:`, err)
+      })
+      c.set('project', { ...proj, path: resolved })
+    }
   } else {
     c.set('project', proj)
   }
