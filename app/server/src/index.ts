@@ -21,6 +21,7 @@ import { voiceRoutes } from './routes/voice.js'
 import { searchRoutes } from './routes/search.js'
 import { autocompleteRoutes } from './routes/autocomplete.js'
 import { taskRoutes } from './routes/tasks.js'
+import { usageRoutes } from './routes/usage.js'
 import { worktreeRoutes } from './routes/worktrees.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
@@ -238,6 +239,7 @@ app.route('/api/voice', voiceRoutes)
 app.route('/api/search', searchRoutes)
 app.route('/api/autocomplete', autocompleteRoutes)
 app.route('/api/tasks', taskRoutes)
+app.route('/api/usage', usageRoutes)
 app.route('/api/worktrees', worktreeRoutes)
 app.route('/api/wechat', wechatRoutes)
 app.route('/api/whatsapp', whatsappRoutes)

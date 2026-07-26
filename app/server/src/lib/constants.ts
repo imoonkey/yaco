@@ -60,6 +60,9 @@ export const RAW_FILE_SIZE_LIMIT = 20_000_000
 /** Timeout for `yaco agent send/kill/rename` commands (ms) */
 export const YACO_AGENT_COMMAND_TIMEOUT_MS = 5_000
 
+/** Usage probes may legitimately consume the providers' 15–20s timeouts. */
+export const YACO_AGENT_USAGE_TIMEOUT_MS = 25_000
+
 /** Timeout for `yaco agent start` command (ms) */
 export const YACO_AGENT_START_TIMEOUT_MS = 15_000
 

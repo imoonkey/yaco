@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider, HistorySession } from '../types'
+import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider, HistorySession, ProviderUsage } from '../types'
 import { useSSERefresh } from './useSSE'
 import { ApiError } from '../lib/apiError'
 
@@ -101,6 +101,77 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
 export function useProjects() {
   const fetcher = useCallback(() => fetchJson<Project[]>('/projects'), [])
   return usePolling(fetcher, 60_000, 'projects')
+}
+
+interface UsageState {
+  data: ProviderUsage[] | null
+  error: Error | null
+  loading: boolean
+  refreshing: boolean
+  refresh: () => Promise<void>
+}
+
+export function useUsage(): UsageState {
+  const [data, setData] = useState<ProviderUsage[] | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const pollSeqRef = useRef(0)
+  const refreshSeqRef = useRef(0)
+  const refreshInFlightRef = useRef(false)
+
+  const loadUsage = useCallback(async () => {
+    if (refreshInFlightRef.current) return
+    const seq = ++pollSeqRef.current
+    const refreshSeq = refreshSeqRef.current
+    try {
+      const result = await fetchJson<ProviderUsage[]>('/usage')
+      if (seq !== pollSeqRef.current) return
+      if (refreshInFlightRef.current || refreshSeq !== refreshSeqRef.current) return
+      setData(result)
+      setError(null)
+    } catch (e) {
+      if (seq !== pollSeqRef.current || refreshSeq !== refreshSeqRef.current) return
+      setError(e instanceof Error ? e : new Error(String(e)))
+    } finally {
+      if (seq === pollSeqRef.current) setLoading(false)
+    }
+  }, [])
+
+  const refreshUsage = useCallback(async () => {
+    const seq = ++refreshSeqRef.current
+    refreshInFlightRef.current = true
+    setRefreshing(true)
+    try {
+      const result = await postJson<ProviderUsage[]>('/usage/refresh')
+      if (seq !== refreshSeqRef.current) return
+      setData(result)
+      setError(null)
+    } catch (e) {
+      if (seq !== refreshSeqRef.current) return
+      setError(e instanceof Error ? e : new Error(String(e)))
+    } finally {
+      if (seq === refreshSeqRef.current) {
+        refreshInFlightRef.current = false
+        setRefreshing(false)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadUsage()
+  }, [loadUsage])
+
+  // Keep a compact 60s polling rhythm for header freshness, even while a manual
+  // refresh may be in flight. Keep data from the previous tick so percentages
+  // never disappear as a fresh request races.
+  useEffect(() => {
+    const id = setInterval(() => { void loadUsage() }, 60_000)
+    return () => clearInterval(id)
+  }, [loadUsage])
+
+  return { data, error, loading, refreshing, refresh: refreshUsage }
 }
 
 export function useProgress() {

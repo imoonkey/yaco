@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Workspace } from './components/Workspace'
-import { useProjects, useSessions, removeProject, reorderProjects } from './hooks/useApi'
+import { useProjects, useSessions, useUsage, removeProject, reorderProjects } from './hooks/useApi'
 import { useProjectWorktrees } from './hooks/useProjectWorktrees'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { UsageQuotaRail } from './components/UsageQuotaRail'
 import { NotificationBell } from './components/NotificationBell'
 import { ChannelsHeaderButton } from './components/WeChatLoginDialog'
 import { useAttention, type AttentionItem } from './hooks/useAttention'
@@ -125,6 +126,7 @@ function App() {
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: allSessions } = useSessions()
+  const usage = useUsage()
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<Project | null>(null)
 
@@ -395,6 +397,7 @@ function App() {
       {!isMobile && (
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
           <span className="text-ui-lg font-semibold">{activeProject || 'YACO'}</span>
+          <UsageQuotaRail state={usage} />
           <span className="flex items-center gap-2">
             <span ref={setVoiceSlot} className="flex items-center" />
             <NotificationBell {...notificationBellProps} />

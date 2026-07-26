@@ -35,6 +35,26 @@ export interface AgentSession {
   parentSession?: string
 }
 
+export interface UsageWindow {
+  window: string
+  scope?: string
+  percent: number
+  resetsAt?: string
+}
+
+export interface UsageError {
+  code: string
+  message: string
+}
+
+export interface ProviderUsage {
+  provider: string
+  plan?: string
+  checkedAt: string
+  windows: UsageWindow[]
+  error?: UsageError
+}
+
 export interface ProgressEntry {
   id: string
   agent: 'claude' | 'codex'
