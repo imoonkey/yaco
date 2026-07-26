@@ -23,6 +23,13 @@ const QR_FILE = join(QR_DIR, 'qr.txt')
 
 let state: LoginState = { phase: 'idle' }
 let inflight: Promise<void> | null = null
+/** Bumped by every start and every cancel. The SDK's login promise cannot be
+ *  aborted — it resolves only when the user finally scans, or never — so a
+ *  cancelled flow is instead ABANDONED: it keeps running, but a stale
+ *  generation makes it stop writing state or touching the channel. Without
+ *  this, `inflight` stays set for as long as an unscanned QR is on screen, and
+ *  anything guarding on it (turn off, logout) is unreachable forever. */
+let generation = 0
 
 export function getLoginState(): LoginState {
   return { ...state }
@@ -49,6 +56,9 @@ async function persistQrText(text: string): Promise<void> {
 export function startLogin(): LoginState {
   if (inflight) return getLoginState()
 
+  const gen = ++generation
+  const isStale = (): boolean => gen !== generation
+
   setState({
     phase: 'awaiting-qr',
     startedAt: new Date().toISOString(),
@@ -71,7 +81,7 @@ export function startLogin(): LoginState {
 
     const flushQr = () => {
       pendingFlush = null
-      if (!qrCapture) return
+      if (isStale() || !qrCapture) return
       const captured = qrCapture
       setState({ phase: 'awaiting-qr', qrAscii: captured })
       void persistQrText(captured).catch(() => undefined)
@@ -93,22 +103,30 @@ export function startLogin(): LoginState {
       const accountId = await sdkLogin({
         log: (msg) => {
           console.log(`[wechat-login] ${msg}`)
-          if (/scanned|已扫码|已扫描/.test(msg)) {
+          if (!isStale() && /scanned|已扫码|已扫描/.test(msg)) {
             setState({ phase: 'awaiting-scan' })
           }
         },
       })
+      // A cancelled flow must not resurrect the channel the user just stopped.
+      if (isStale()) return
       setState({ phase: 'logged-in', accountId, qrAscii: undefined })
       if (!isInitialized()) {
         await initWeChat()
       }
     } catch (err) {
+      if (isStale()) return
       console.error('[wechat-login] flow failed:', err)
       setState({ phase: 'failed', error: (err as Error).message })
     } finally {
-      console.log = origConsoleLog
       if (pendingFlush) clearTimeout(pendingFlush)
-      inflight = null
+      // Only the active flow owns `console.log` and `inflight`. A stale flow
+      // restoring its saved original would drop the interceptor a newer flow
+      // installed on top of it, breaking that flow's QR capture.
+      if (!isStale()) {
+        console.log = origConsoleLog
+        inflight = null
+      }
       resolve()
     }
   })()
@@ -116,13 +134,13 @@ export function startLogin(): LoginState {
   return getLoginState()
 }
 
-/** True when a login flow is currently in progress. */
-export function isLoginInflight(): boolean {
-  return inflight !== null
-}
-
-/** Reset the login flow back to idle (does not log out). */
+/** Abandon any in-flight login and reset to idle. Does not log out.
+ *
+ *  Always succeeds. A stop action — cancel, turn off, log out — must preempt a
+ *  running login rather than be refused by it: the login can sit unscanned
+ *  indefinitely, so refusing leaves the user with no way out at all. */
 export function resetLoginState(): void {
-  if (inflight) return
+  generation += 1
+  inflight = null
   state = { phase: 'idle' }
 }

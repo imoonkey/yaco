@@ -298,7 +298,7 @@ Gated by the `wechat` switch in `${YACO_HOME:-~/.yaco}/channels/enabled.json` (s
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/wechat/status` | Returns `{ enabled, initialized, loggedIn, auth: { mode, whitelist, tofuBound }, login: { phase, qrAscii?, accountId?, error? } }`. Phase ∈ `idle`, `awaiting-qr`, `awaiting-scan`, `logged-in`, `failed`. |
-| POST | `/api/wechat/enabled` | Body `{enabled}`. Persists the switch, then boots or shuts down the SDK connection. Off keeps credentials, so switching back on needs no QR; dropping the account is `/logout`. 409 while a login flow is in flight. |
+| POST | `/api/wechat/enabled` | Body `{enabled}`. Persists the switch, then boots or shuts down the SDK connection. Off keeps credentials, so switching back on needs no QR; dropping the account is `/logout`. Off also **cancels any in-flight login** rather than refusing — see below. |
 | POST | `/api/wechat/login` | Starts SDK QR-code login in the background (idempotent — concurrent calls reuse the in-flight flow). Returns the current `LoginState`. 400 when the channel is off. |
 | POST | `/api/wechat/login/reset` | Resets the login state to `idle` (no-op if a login is in flight). |
 | POST | `/api/wechat/logout` | Shuts the bot down + calls SDK logout(). 409 if a login flow is active. |

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-07-26: Fix the WeChat turn-off deadlock
+
+**What changed:**
+- `resetLoginState()` now always succeeds. It bumps a generation counter and drops `inflight`; the abandoned SDK login keeps running but a stale generation stops it writing state, calling `initWeChat()`, or restoring the `console.log` interceptor a newer flow installed over it.
+- `POST /api/wechat/enabled {false}` and `POST /api/wechat/logout` cancel an in-flight login instead of returning 409. `isLoginInflight()` had no remaining callers and was deleted.
+
+**Why:**
+- Turning WeChat off while its QR was on screen returned `409 login flow in progress; cancel it first` — and there was no way to cancel: `resetLoginState()` opened with `if (inflight) return`, so `POST /login/reset` was a no-op in exactly the state it was needed. `sdkLogin()` resolves only when the user scans, so an unscanned QR held `inflight` forever. The channel could not be stopped by any route.
+- The guard was inverted in principle, not just incomplete. A stop action is the user's explicit instruction to end what is running; gating it on "something is running" can only ever produce a trap. `/logout` carried the same guard before this work — the new `/enabled` inherited it by being modelled on it.
+
+**Key files:** `app/server/src/lib/wechat/login-flow.ts`, `app/server/src/routes/wechat.ts`
+**Verification:** Reproduced against the live server — with `phase=awaiting-qr` and a QR present, turn-off previously returned 409 and now returns `enabled=false, phase=idle` and persists; logout likewise; re-enabling and logging in again reaches `awaiting-qr`, proving the slot is released rather than wedged. 6 new unit tests drive a `sdkLogin` that never settles (the real unscanned-QR state); 4 of them were confirmed to **fail against the old `resetLoginState`** and pass after, so they discriminate. `app/server` 777/777, `tsc` at its 18-error baseline.
+**Commit:** pending
+**Next:** The primary button still renders as a disabled "Re-scan" while a QR is live, so abandoning a login in place (without toggling the channel off and on) has no affordance. `/wechat/login/reset` now works and could back one; WhatsApp has no equivalent route, so doing it symmetrically needs a decision first.
+**Blockers:** None
+
 ## 2026-07-26: Messaging channels switch on and off from the UI
 
 **What changed:**

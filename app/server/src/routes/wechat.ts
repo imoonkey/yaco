@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { isLoggedIn, logout as sdkLogout } from 'weixin-agent-sdk'
 import { getAuthSnapshot } from '../lib/wechat/auth'
 import { isInitialized, shutdownWeChat } from '../lib/wechat'
-import { getLoginState, startLogin, resetLoginState, isLoginInflight } from '../lib/wechat/login-flow'
+import { getLoginState, startLogin, resetLoginState } from '../lib/wechat/login-flow'
 import { fail } from '../lib/response'
 import { isChannelEnabled, setChannelEnabled } from '../lib/channels/enabled'
 import { initWeChat } from '../lib/wechat'
@@ -25,14 +25,15 @@ app.get('/status', (c) => {
 app.post('/enabled', async (c) => {
   const { enabled } = await c.req.json<{ enabled?: unknown }>()
   if (typeof enabled !== 'boolean') return fail(c, 400, 'enabled must be a boolean')
-  if (!enabled && isLoginInflight()) {
-    return fail(c, 409, 'login flow in progress; cancel it first')
-  }
 
   setChannelEnabled('wechat', enabled)
   if (enabled) {
     await initWeChat()
   } else {
+    // Preempt, never refuse. An unscanned QR keeps the login flow in flight
+    // indefinitely, so gating "off" on it would strand the user with a channel
+    // they cannot stop.
+    resetLoginState()
     shutdownWeChat()
   }
   return c.json({ enabled, login: getLoginState() })
@@ -53,9 +54,7 @@ app.post('/login/reset', (c) => {
 /** Drop the account credentials. The next login needs a fresh QR scan — to
  *  merely stop the channel, use `/enabled`. */
 app.post('/logout', (c) => {
-  if (isLoginInflight()) {
-    return fail(c, 409, 'login flow in progress; cancel it first')
-  }
+  resetLoginState()
   shutdownWeChat()
   sdkLogout({ log: (msg) => console.log(`[wechat-logout] ${msg}`) })
   resetLoginState()

@@ -453,6 +453,8 @@ Bridges WeChat to yaco agent sessions via `weixin-agent-sdk`. When the switch is
 - **`wechat/state.ts`** / **`wechat/auth.ts`** / **`wechat/router.ts`** — thin adapters over the `channels/` factories with scope='wechat' (env keys: `WECHAT_CONVERSATION_WHITELIST`). `wechat/router.ts` exports a chunk-aggregating `passthroughText` shim for legacy callers.
 - **`wechat/login-flow.ts`** — manages the SDK's `login()` flow. Monkey-patches `console.log` for the duration of the SDK call to capture the QR ASCII (qrcode-terminal output is sent via `console.log` directly, not the user-supplied log callback). Exposes `LoginState { phase, qrAscii?, accountId?, error? }` to the route. Login flow is single-flight via a synchronously-claimed `inflight` slot.
 
+**Stop actions preempt a login; they never refuse it.** `sdkLogin()` resolves only when the user actually scans, so a QR left on screen keeps the flow in flight indefinitely. Gating cancel / turn-off / logout on "is a login running" therefore strands the user with a channel they cannot stop — and the earlier `resetLoginState()` was itself a no-op while in flight, so nothing could clear it. Since the SDK promise cannot be aborted, `resetLoginState()` instead bumps a **generation** counter and drops `inflight`; the abandoned flow keeps running but a stale generation stops it writing state, calling `initWeChat()`, or restoring the `console.log` interceptor a newer flow installed on top of it.
+
 ### whatsapp/ (gated by the `whatsapp` switch)
 
 Bridges WhatsApp to yaco agent sessions via `whatsapp-web.js` (puppeteer-driven WhatsApp Web client with `LocalAuth` session persistence). When the switch is off, no client boot.
