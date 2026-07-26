@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
 import { isCloseShortcut, isCopyShortcut } from '../lib/shortcuts'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -135,6 +135,8 @@ interface TerminalProps {
   sessionName: string
   projectName?: string
   provider?: string
+  /** False while the pane is mounted but hidden (a group's keep-alive tab). */
+  visible?: boolean
   onInteract?: () => void
   onFocus?: () => void
   onCloseRequest?: () => void
@@ -198,7 +200,7 @@ function buildWsUrl(sessionName: string, cols: number, rows: number, palette: Te
   return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?${params.toString()}`
 }
 
-export function Terminal({ sessionName, projectName, provider, onInteract, onFocus, onCloseRequest, onDisconnect, sendText, sendTextKey, onOpenCompose }: TerminalProps) {
+export function Terminal({ sessionName, projectName, provider, visible = true, onInteract, onFocus, onCloseRequest, onDisconnect, sendText, sendTextKey, onOpenCompose }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -206,6 +208,12 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
   const onFocusRef = useRef(onFocus)
   const onCloseRequestRef = useRef(onCloseRequest)
   const onDisconnectRef = useRef(onDisconnect)
+  // Read inside the long-lived xterm handlers, which are installed once per mount
+  // and must not capture a stale `visible`.
+  const visibleRef = useRef(visible)
+  // Installed by the WebSocket effect so the visible edge can resume a connection
+  // that was deliberately left dropped while this pane was hidden.
+  const resumeConnectionRef = useRef<(() => void) | null>(null)
   // Resolve the provider once per render so terminal contrast and OSC suppression
   // share one policy source, including the session-name inference before metadata.
   const resolvedProvider = inferProvider(provider, sessionName)
@@ -533,10 +541,15 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     }
     container.addEventListener('paste', handlePaste, { capture: true })
 
-    // Resize: send dimensions to current WebSocket via ref
+    // Resize: send dimensions to current WebSocket via ref — but only while this
+    // pane is the visible one. A hidden keep-alive pane keeps refitting locally (so
+    // it is correctly sized the moment it is shown), and its tmux client is still
+    // attached: pushing its size to the PTY would let a pane nobody is looking at
+    // resize the tmux window out from under another device viewing the same session.
+    // The visible edge below sends the pane's dimensions once instead.
     term.onResize(() => {
       const ws = wsRef.current
-      if (ws?.readyState === WebSocket.OPEN) {
+      if (visibleRef.current && ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
       }
     })
@@ -595,6 +608,9 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     let stableTimer: ReturnType<typeof setTimeout> | null = null
     let failCount = 0
     let pressureMode = false
+    // Set when a socket dropped while this pane was hidden; the visible edge picks
+    // it up through `resumeConnectionRef`.
+    let reconnectWhenVisible = false
 
     // Minimum time a connection must stay open before we consider it "stable"
     // and reset failCount.  If the session is dead, tmux outputs an error and
@@ -602,6 +618,13 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     const STABLE_MS = 5000
 
     function createWs() {
+      // The single place a socket is born, and therefore where the visibility rule
+      // belongs: the URL carries THIS pane's cols/rows and the server applies them
+      // with `tmux resize-window` as it attaches. A pane that is not on screen must
+      // not attach at all — not on a backoff timer that fires after the user
+      // switched away, and not on a mount or effect re-run that happens while
+      // hidden (a lazily imported Terminal can finish mounting after a tab switch).
+      if (!visibleRef.current) { reconnectWhenVisible = true; return }
       const url = buildWsUrl(sessionName, term!.cols, term!.rows, readTerminalPalette(), projectName)
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
@@ -609,6 +632,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
 
       ws.onopen = () => {
         if (disposed) { ws.close(); return }
+        // Hidden while this socket was still CONNECTING: the attach has already
+        // sized the tmux window, so detach again immediately rather than hold an
+        // off-screen tmux client. The visible edge re-attaches.
+        if (!visibleRef.current) { reconnectWhenVisible = true; ws.close(); return }
         if (firstConnect) {
           firstConnect = false
           // Reset terminal state to clear stale content and escape sequences
@@ -645,6 +672,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     }
 
     function scheduleReconnect() {
+      // `createWs` would refuse anyway; stopping here keeps a hidden pane from
+      // spending its retry budget (5 failures detach the tab) and from writing
+      // "[Reconnecting...]" into a buffer nobody is looking at.
+      if (!visibleRef.current) { reconnectWhenVisible = true; return }
       failCount++
       if (failCount > WS_RECONNECT_MAX_RETRIES) {
         term!.writeln('\r\n\x1b[31m[Disconnected]\x1b[0m')
@@ -679,10 +710,19 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
+    // Called by the visible edge below: re-attach a socket that was left dropped
+    // while this pane was hidden.
+    resumeConnectionRef.current = () => {
+      if (disposed || !reconnectWhenVisible) return
+      reconnectWhenVisible = false
+      scheduleReconnect()
+    }
+
     createWs()
 
     return () => {
       disposed = true
+      resumeConnectionRef.current = null
       document.removeEventListener('visibilitychange', handleVisibility)
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (stableTimer) clearTimeout(stableTimer)
@@ -698,12 +738,25 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     }
   }, [sessionName, containerReady, projectName])
 
-  // Re-focus xterm whenever the attached session changes, so keyboard shortcut
-  // / sidebar click handoff puts the user directly into the terminal.
-  useEffect(() => {
-    if (!sessionName) return
-    termRef.current?.focus()
-  }, [sessionName])
+  // Becoming the visible pane: take keyboard focus (a keep-alive pane is not
+  // remounted on a tab switch, so nothing else would move focus into it), hand the
+  // PTY the size this pane reached while it was hidden, and re-attach if its socket
+  // dropped meanwhile — all three were suppressed for as long as it was off screen.
+  //
+  // A LAYOUT effect: `visibleRef` gates handlers that a ResizeObserver notification
+  // can reach, and those run after commit — a passive effect would leave a window in
+  // which a hidden pane still looks visible.
+  useLayoutEffect(() => {
+    visibleRef.current = visible
+    const term = termRef.current
+    if (!sessionName || !visible || !term) return
+    term.focus()
+    const ws = wsRef.current
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+    }
+    resumeConnectionRef.current?.()
+  }, [sessionName, visible])
 
   // The XTerm instance is shared across attached sessions, so re-apply the
   // provider-specific contrast floor whenever the attached session changes.

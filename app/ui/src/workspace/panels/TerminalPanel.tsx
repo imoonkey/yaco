@@ -54,7 +54,13 @@ export function TerminalPanel() {
   const { name: projectName } = env.project
   const { isMobile } = env.viewport
   // Singleton/home terminal id outside a PanelHost (isolation tests) is 'terminal'.
-  const instanceId = usePanelInstance()?.instanceId ?? 'terminal'
+  const instance = usePanelInstance()
+  const instanceId = instance?.instanceId ?? 'terminal'
+  // False while this pane is a group's kept-but-hidden tab: the xterm and its
+  // WebSocket stay live, so the switch back is a visibility flip instead of a fresh
+  // tmux attach — but keyboard focus has to follow the switch explicitly, since
+  // nothing remounts.
+  const visible = instance?.visible ?? true
 
   const bound = selection.terminalBindings[instanceId] ?? ''
   const sessionInfo = data.sessions.projectSessions.find(s => s.name === bound) ?? null
@@ -115,6 +121,7 @@ export function TerminalPanel() {
             sessionName={bound}
             projectName={projectName}
             provider={sessionInfo?.provider}
+            visible={visible}
             onInteract={interactTerminal}
             onFocus={focusTerminal}
             onCloseRequest={() => commands.closePane(instanceId)}

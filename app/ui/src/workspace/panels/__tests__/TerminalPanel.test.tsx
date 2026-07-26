@@ -105,7 +105,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
         <WorkspaceSelectionContext.Provider value={selection}>
           <WorkspaceCommandsContext.Provider value={commands}>
             <WorkspaceVoiceContext.Provider value={voice}>
-              <PanelInstanceProvider value={{ type: 'terminal', instanceId }}>
+              <PanelInstanceProvider value={{ type: 'terminal', instanceId, visible: true }}>
                 {ui}
               </PanelInstanceProvider>
             </WorkspaceVoiceContext.Provider>

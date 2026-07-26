@@ -268,7 +268,7 @@ function wrapProviders(
 function renderEditorPanel(input: EditorPanelHarnessInput = {}) {
   const ctx = buildContexts(input)
   const panel = input.instanceId
-    ? <PanelInstanceProvider value={{ type: 'editor', instanceId: input.instanceId }}><EditorPanel /></PanelInstanceProvider>
+    ? <PanelInstanceProvider value={{ type: 'editor', instanceId: input.instanceId, visible: true }}><EditorPanel /></PanelInstanceProvider>
     : <EditorPanel />
   return { commands: ctx.commands, actions: ctx.actions, id: ctx.id, ...render(wrapProviders(ctx, panel)) }
 }
@@ -404,8 +404,8 @@ describe('EditorPanel — go-to-line gating (stamped instanceId)', () => {
     })
     const node = (
       <>
-        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor' }}><EditorPanel /></PanelInstanceProvider>
-        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2' }}><EditorPanel /></PanelInstanceProvider>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor', visible: true }}><EditorPanel /></PanelInstanceProvider>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2', visible: true }}><EditorPanel /></PanelInstanceProvider>
       </>
     )
     return wrapProviders(ctx, node)
@@ -493,8 +493,8 @@ describe('EditorPanel — shared per-path buffer', () => {
     })
     const node = (
       <>
-        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor' }}><EditorPanel /></PanelInstanceProvider>
-        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2' }}><EditorPanel /></PanelInstanceProvider>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor', visible: true }}><EditorPanel /></PanelInstanceProvider>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2', visible: true }}><EditorPanel /></PanelInstanceProvider>
       </>
     )
     return wrapProviders(ctx, node)

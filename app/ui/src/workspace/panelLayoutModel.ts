@@ -230,6 +230,28 @@ export const editorTabsInGroup = (tree: LayoutNode, groupId: string): EditorGrou
 export const terminalTabsInGroup = (tree: LayoutNode, groupId: string): TerminalGroupTab[] =>
   tabsInGroup(tree, groupId).filter((t): t is TerminalGroupTab => t.kind === 'terminal')
 
+/** The tabs of a group whose bodies stay MOUNTED: the active tab, plus the most
+ *  recently active terminal tabs, capped at `cap` bodies total. Returned in tab order.
+ *
+ *  A terminal body owns an xterm instance and a WebSocket attached to a tmux client;
+ *  unmounting one on a tab switch means the switch back pays a fresh wss handshake plus
+ *  a tmux attach — the whole ~1s of switching. Keeping it mounted (rendered hidden by
+ *  `PanelGroup`) makes the switch a visibility flip. Editors mount only when active:
+ *  their content lives in the shared per-path buffer, so a remount costs nothing.
+ *
+ *  `mru` is most-recent-first; ids no longer in the group (or not terminals) are ignored,
+ *  so a closed or moved tab drops out on its own. */
+export function mountedTabs(tabs: GroupTab[], activeTab: string, mru: string[], cap: number): GroupTab[] {
+  const byId = new Map(tabs.map((t) => [t.instanceId, t]))
+  const keep = new Set<string>()
+  if (byId.has(activeTab)) keep.add(activeTab)
+  for (const id of mru) {
+    if (keep.size >= cap) break
+    if (byId.get(id)?.kind === 'terminal') keep.add(id)
+  }
+  return tabs.filter((t) => keep.has(t.instanceId))
+}
+
 /** The tab with `instanceId` anywhere in the tree, or null. */
 export function tabByInstance(tree: LayoutNode, instanceId: string): GroupTab | null {
   let hit: GroupTab | null = null

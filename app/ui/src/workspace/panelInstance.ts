@@ -7,7 +7,11 @@ import { createContext, useContext } from 'react'
 import type { PanelId, SplitSide } from './context'
 import type { FocusedPane } from '../hooks/workspaceTypes'
 
-export type PanelInstance = { type: PanelId; instanceId: string }
+/** `visible` is false for a body the renderer keeps MOUNTED but out of sight (a
+ *  group's keep-alive terminal tabs — see `mountedTabs`). A panel that owns
+ *  focus or a live connection reads it to know a switch happened; everything
+ *  else can ignore it. */
+export type PanelInstance = { type: PanelId; instanceId: string; visible: boolean }
 
 const PanelInstanceContext = createContext<PanelInstance | null>(null)
 export const PanelInstanceProvider = PanelInstanceContext.Provider

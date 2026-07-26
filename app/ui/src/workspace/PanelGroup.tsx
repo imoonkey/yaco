@@ -11,6 +11,13 @@
 // label text emphasis in `GroupTabBar` (VSCode-style), not a coloured pane border.
 // An EMPTY group renders the tab bar with NO body wrapper — a valid render state.
 //
+// The active tab is not the only MOUNTED one: recently visited terminal tabs stay
+// mounted and hidden (`mountedTabs`), because a terminal body owns an xterm and a
+// WebSocket attached to a tmux client — re-creating those is the entire cost of
+// switching back. A hidden body is laid out at full size but `invisible`, is out of
+// the focus/a11y trees, and carries NONE of the pane markers, so exactly one leaf per
+// group stays resolvable.
+//
 // The body is mounted through `PanelHost` (which publishes the per-instance
 // `PanelInstanceContext`); the editor/terminal bodies read their `instanceId` from
 // that context and resolve their own payload from the tree (`tabByInstance`) — they
@@ -20,7 +27,7 @@
 // select/close, the group-native `splitGroup`/`reorderGroupTab`/`closeGroup`/
 // `setActiveGroup`, the editor view-pref toggles (`setEditorPrefs`), and the dirty-
 // close draft discard (`acceptDisk`) are all wired here and handed to the tab bar.
-import { useCallback, useMemo, type CSSProperties } from 'react'
+import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { PanelHost } from './PanelHost'
 import { GroupTabBar } from './GroupTabBar'
 import { DropOverlay } from './DropOverlay'
@@ -29,7 +36,7 @@ import {
   type PanelId, type SplitSide,
 } from './context'
 import type { PaneMarker } from './panelInstance'
-import { collectIds, editorInstancesInOrder, editorTabView, groupCount, regionsOf, tabIdToPath } from './panelLayoutModel'
+import { collectIds, editorInstancesInOrder, editorTabView, groupCount, mountedTabs, regionsOf, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
 import type { LayoutNode, TabsNode } from '../hooks/workspaceTypes'
 import type { Region } from './dndGeometry'
@@ -44,6 +51,12 @@ export type PanelGroupProps = {
   /** Focus/active marker for an editor/terminal pane (suppressed when single). */
   markerFor: (type: PanelId, instanceId: string) => PaneMarker
 }
+
+// How many bodies one group keeps mounted: the active tab plus its keep-alive
+// terminals. Each kept terminal holds a tmux client + a PTY on the server, which
+// the capacity guard budgets in the hundreds — this bounds a pathological group,
+// it is not a tuning knob.
+const MAX_MOUNTED_BODIES = 6
 
 export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps) {
   const selection = useWorkspaceSelection()
@@ -127,6 +140,15 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     void commands.saveFile(path, file.draft ?? file.serverContent ?? '')
   }, [commands])
 
+  // Visit order of this group's tabs, most recent first — what decides which kept
+  // terminal is dropped at the cap. Adjusted during render (the head IS the active
+  // tab) rather than in an effect, so the mounted set never lags a switch by a frame.
+  const [visitOrder, setVisitOrder] = useState<string[]>([group.activeTab])
+  if (visitOrder[0] !== group.activeTab) {
+    setVisitOrder([group.activeTab, ...visitOrder.filter((id) => id !== group.activeTab)])
+  }
+  const mounted = mountedTabs(group.tabs, group.activeTab, visitOrder, MAX_MOUNTED_BODIES)
+
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
   // The editor view shown in the tab bar's actions is the ACTIVE editor tab's own
@@ -177,17 +199,33 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         onMoveTabToSplit={commands.moveTabToSplit}
         onMoveGroup={commands.moveGroup}
       >
-        {activeTabNode && (
-          <div
-            data-instance-id={activeTabNode.instanceId}
-            data-panel-leaf={activeTabNode.kind}
-            data-focused={marker?.focused || undefined}
-            data-active={marker?.active || undefined}
-            className="flex flex-col flex-1 min-w-0 min-h-0"
-          >
-            <PanelHost id={activeTabNode.kind} instanceId={activeTabNode.instanceId} />
-          </div>
-        )}
+        {mounted.map((tab) => {
+          const isActive = tab.instanceId === group.activeTab
+          // A kept-but-hidden body stays laid out at the body's full size —
+          // `visibility` (not `display`), so xterm's cell measurement stays valid and
+          // re-showing it needs no refit. `inert` is what makes it unreachable:
+          // Chromium keeps a focused descendant focused (and keeps delivering
+          // keydown to it) when an ancestor merely turns invisible, so without it a
+          // switch to a body that claims no focus — the tasks tab, an empty group —
+          // would leave the hidden terminal taking the user's keystrokes. It also
+          // carries none of the pane markers: the geometry probe, focus tracking and
+          // the split affordances must still resolve exactly ONE leaf per group.
+          return (
+            <div
+              key={tab.instanceId}
+              data-instance-id={isActive ? tab.instanceId : undefined}
+              data-panel-leaf={isActive ? tab.kind : undefined}
+              data-focused={(isActive && marker?.focused) || undefined}
+              data-active={(isActive && marker?.active) || undefined}
+              inert={!isActive}
+              className={isActive
+                ? 'flex flex-col flex-1 min-w-0 min-h-0'
+                : 'absolute inset-0 flex flex-col invisible'}
+            >
+              <PanelHost id={tab.kind} instanceId={tab.instanceId} visible={isActive} />
+            </div>
+          )
+        })}
       </DropOverlay>
     </div>
   )

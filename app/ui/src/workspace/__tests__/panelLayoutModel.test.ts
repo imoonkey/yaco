@@ -24,6 +24,7 @@ import {
   tabsInGroup,
   editorTabsInGroup,
   terminalTabsInGroup,
+  mountedTabs,
   tabByInstance,
   editorTabPaths,
   editorInstancesInOrder,
@@ -42,7 +43,7 @@ import {
   resolveActiveEditor,
   resolveActiveTerminal,
 } from '../panelLayoutModel'
-import type { LayoutNode, SplitNode, SplitChild, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
+import type { GroupTab, LayoutNode, SplitNode, SplitChild, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
 
 function asSplit(node: LayoutNode): SplitNode {
   if (node.kind !== 'split') throw new Error(`expected split, got ${node.kind}`)
@@ -911,5 +912,55 @@ describe('normalizeLayout — refSize passthrough', () => {
     const adopted = relayoutToViewport(defaultWorkspacePanelLayout(), 500, 400)
     const round = normalizeLayout(JSON.parse(JSON.stringify(adopted)))
     expect(round.refSize).toEqual({ w: 500, h: 400 })
+  })
+})
+
+describe('mountedTabs', () => {
+  const terminalTab = (id: string): GroupTab => ({ instanceId: id, kind: 'terminal' })
+  const editorTab = (id: string, tabId = `${id}.ts`): GroupTab => ({ instanceId: id, kind: 'editor', tabId })
+  const ids = (tabs: GroupTab[]) => tabs.map((t) => t.instanceId)
+
+  it('mounts only the active tab when nothing has been visited yet', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2')]
+    expect(ids(mountedTabs(tabs, 't1', [], 6))).toEqual(['t1'])
+  })
+
+  it('keeps a previously active terminal mounted alongside the new one', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2')]
+    expect(ids(mountedTabs(tabs, 't2', ['t1'], 6))).toEqual(['t1', 't2'])
+  })
+
+  it('returns tabs in tab order, not visit order', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2'), terminalTab('t3')]
+    expect(ids(mountedTabs(tabs, 't1', ['t3', 't2'], 6))).toEqual(['t1', 't2', 't3'])
+  })
+
+  it('mounts an active editor but never a background one', () => {
+    const tabs = [editorTab('e1'), editorTab('e2'), terminalTab('t1')]
+    expect(ids(mountedTabs(tabs, 'e2', ['t1', 'e1'], 6))).toEqual(['e2', 't1'])
+  })
+
+  it('caps total mounted bodies, dropping the least recently active terminal', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2'), terminalTab('t3'), terminalTab('t4')]
+    expect(ids(mountedTabs(tabs, 't4', ['t3', 't2', 't1'], 3))).toEqual(['t2', 't3', 't4'])
+  })
+
+  it('counts the active tab against the cap whatever its kind', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2'), editorTab('e1')]
+    expect(ids(mountedTabs(tabs, 'e1', ['t2', 't1'], 2))).toEqual(['t2', 'e1'])
+  })
+
+  it('ignores mru entries that left the group', () => {
+    const tabs = [terminalTab('t1'), terminalTab('t2')]
+    expect(ids(mountedTabs(tabs, 't1', ['gone', 't2'], 6))).toEqual(['t1', 't2'])
+  })
+
+  it('mounts nothing when the group is empty', () => {
+    expect(mountedTabs([], '', ['t1'], 6)).toEqual([])
+  })
+
+  it('mounts the keep-alive terminals when the active tab id is stale', () => {
+    const tabs = [terminalTab('t1')]
+    expect(ids(mountedTabs(tabs, 'closed', ['t1'], 6))).toEqual(['t1'])
   })
 })
