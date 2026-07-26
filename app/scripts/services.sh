@@ -33,10 +33,17 @@ UI_DIR="$APP_DIR/ui"
 # ceiling; the backend additionally caps V8 itself via `--max-old-space-size`
 # in `app/server/package.json`, so it usually dies on the heap cap first with a
 # clean OOM trace instead of a SIGKILL.
+#
+# Size these from the CGROUP's observed peak, never from the main process's RSS
+# — the ceiling governs every process in the unit. `server` also hosts the
+# WhatsApp puppeteer Chrome fleet (~950MB RSS across 7 processes), and
+# `ui-build` spikes to ~1.3GB during a full rebuild; a limit set from the Node
+# RSS alone kills both. An OOM'd `ui-build` is especially bad: vite empties
+# `dist/` per rebuild, so a mid-build kill can leave `/` serving nothing.
 SERVICES=(
-  "server|$SERVER_DIR|start|YACO backend (Hono)|1800M|2400M|yes"
-  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|700M|1G|no"
-  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|700M|1G|yes"
+  "server|$SERVER_DIR|start|YACO backend (Hono)|2G|3G|yes"
+  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|1G|2G|no"
+  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|2G|3G|yes"
 )
 svc_name()  { cut -d'|' -f1 <<<"$1"; }
 svc_dir()   { cut -d'|' -f2 <<<"$1"; }
@@ -118,6 +125,7 @@ Restart=on-failure
 RestartSec=5
 MemoryHigh=$(svc_mem_high "$s")
 MemoryMax=$(svc_mem_max "$s")
+MemorySwapMax=0
 StandardOutput=journal
 StandardError=journal
 

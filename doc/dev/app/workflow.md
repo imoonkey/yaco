@@ -85,9 +85,9 @@ Three services, defined once in the `SERVICES` table at the top of `app/scripts/
 
 | Service | Runs | Purpose | MemoryHigh / Max | Autostart |
 |---|---|---|---|---|
-| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 1800M / 2400M | yes |
-| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 700M / 1G | yes |
-| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 700M / 1G | **no — on demand** |
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 2G / 3G | yes |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 2G / 3G | yes |
+| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 1G / 2G | **no — on demand** |
 
 **Vite dev is on demand.** Nothing in the normal path touches it: `/` serves `dist`
 from `yaco-server`, and `yaco-ui-build` is what keeps `dist` current. It is needed
@@ -110,11 +110,35 @@ long-lived Node processes sharing a box with agent fleets; once one is big enoug
 to be paged out, every major GC turns into a swap-in storm that stalls its event
 loop for **seconds** — on `yaco-server` that freezes every attached terminal and
 every API call at once, since they all share one loop. A kill + `Restart=on-failure`
-is strictly better. `MemoryMax` is the cgroup ceiling; the backend additionally caps
-V8 with `--max-old-space-size=1536` in `app/server/package.json`, so it normally
-dies on the heap cap first with a clean OOM trace rather than a SIGKILL. Limits are
-emitted from the `SERVICES` table, so `services.sh install` is what applies a change.
-(launchd has no equivalent, so the macOS plists carry the V8 cap only.)
+is strictly better. Units also carry `MemorySwapMax=0`: with tens of GB free, the
+right use of that headroom is to pin these processes in RAM so a major GC is always
+RAM-speed, not to let them grow larger. Limits are emitted from the `SERVICES` table,
+so `services.sh install` is what applies a change. (launchd has no equivalent, so the
+macOS plists carry the V8 cap only.)
+
+**They bound only these three units — not agents.** `yaco-*.service` are siblings of
+the transient scope tmux runs in (`cgroupEscapePrefix` in `cli/src/lib/core/agent/tmux.ts` wraps `tmux new-session` in `systemd-run --user --scope` precisely so the tmux server escapes this unit's control group and survives its restarts),
+so agent sessions and anything they spawn — Polars jobs, pytest, a full quant run —
+inherit no ceiling from here and can use the whole machine.
+
+**Size them from the cgroup's peak, never the main process's RSS.** `MemoryMax`
+governs every process in the unit: `yaco-server` also hosts the WhatsApp puppeteer
+Chrome fleet (~950 MB RSS across 7 processes), and `ui-build` peaks near 1.3 GB
+during a full rebuild — limits derived from the Node RSS alone kill both. An OOM'd
+`ui-build` is the worst case: vite empties `dist/` per rebuild, so a mid-build kill
+can leave `/` serving nothing.
+
+```bash
+# what to size from — cgroup peak and its anon/file split, not `ps` RSS
+CG=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice
+cat $CG/yaco-server.service/memory.peak $CG/yaco-server.service/memory.max
+awk '/^anon |^file /' $CG/yaco-server.service/memory.stat
+cat $CG/yaco-server.service/memory.events      # high/max/oom_kill counters
+```
+
+The backend additionally caps V8 with `--max-old-space-size=1536` in
+`app/server/package.json`. That, not the cgroup number, is the real runaway guard for
+the JS heap; `MemoryMax` is the backstop for native memory the V8 flag cannot see.
 
 | Platform | Manager | Unit/Plist location |
 |---|---|---|

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-07-26: Service memory limits resized from cgroup peaks, swap forbidden
+
+**What changed:**
+- Raised the `SERVICES` bounds — `server` and `ui-build` to 2G/3G, `ui` to 1G/2G — and added `MemorySwapMax=0` to the unit template.
+- Documented in `doc/dev/app/workflow.md` how to size these (cgroup `memory.peak` + `memory.stat` anon/file split, not `ps` RSS) and that they bound only the three units, never agent sessions.
+
+**Why:**
+- The first pass sized the limits from the Node process's RSS, but `MemoryMax` governs the whole cgroup. `yaco-server`'s cgroup also holds the WhatsApp puppeteer Chrome fleet (~950 MB RSS across 7 processes; 639 MB of the cgroup's anon), and `ui-build`'s observed peak was **1283 MB against a 1024 MB ceiling** — the next full rebuild would have been OOM-killed, and since vite empties `dist/` per rebuild that could have left `/` serving nothing. No kill had happened yet (`memory.events` all zero), so this was caught before it bit.
+- `MemorySwapMax=0` is the right way to spend a 62 GB box's headroom: the stall being fixed was a major GC faulting ~900 MB back from a swap *file*, so forbidding swap for these units makes GC always RAM-speed regardless of heap size. Raising the ceiling instead would have made the failure worse, not better — a bigger allowance is a bigger stall. `vm.swappiness` is already 10, so the eviction came from a genuine pressure episode, not kernel policy; swap is sticky, which is why 6.5 GB stayed occupied with 43 GB free.
+
+**Key files:** `app/scripts/services.sh`, `doc/dev/app/workflow.md`
+**Verification:** Applied live by `services.sh install` + `daemon-reload` with **no restart** — `yaco-server` kept pid 4066578, 9 tmux sessions intact, `/api/health` 1-30ms. Headroom over observed peak is now 3.3x (`server`, 943 MB) and 2.4x (`ui-build`, 1283 MB); `memory.swap.max=0` on both. Confirmed agents are unaffected: a running `w-fr-hxz-implementation` sits in the tmux transient scope with `memory.max=max`, and every parent slice up to `user.slice` is also `max`.
+**Commit:** doc + script only
+**Next:** None
+**Blockers:** None
+
 ## 2026-07-26: Service memory limits rolled out from the SERVICES table
 
 **What changed:**
