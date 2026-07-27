@@ -172,18 +172,26 @@ test.describe('Workspace regression', () => {
     // Gate the reload on persistence actually flushing to localStorage: the tab is
     // in the persisted layout AND the draft body is in the persisted drafts blob.
     // (layout 300ms / drafts 500ms debounce — polling beats a fixed sleep.)
+    //
+    // `yaco-drafts:<project>` holds ONE multi-bucket record keyed by worktree
+    // abspath, primary bucket = the project path (hooks/workspaceTypes.ts
+    // `PersistedDraftsByWorktree`, usePersistence.ts `loadDraftsByWorktree`).
+    // This file is edited on the primary view, so it lands in the project-path
+    // bucket — assert there, not in a top-level `files` map.
     await expect
       .poll(async () => {
         const layout = await getWorkspaceState(page, project.name)
         const drafts = await page.evaluate(
           (key) => {
             const raw = localStorage.getItem(key)
-            return raw ? (JSON.parse(raw) as { files?: Record<string, { draft?: string | null }> }) : null
+            return raw
+              ? (JSON.parse(raw) as Record<string, Record<string, { draft?: string | null }>>)
+              : null
           },
           `yaco-drafts:${project.name}`,
         )
         const tabPersisted = openEditorTabIds(layout).includes(filePath)
-        const draftBody = drafts?.files?.[filePath]?.draft ?? ''
+        const draftBody = drafts?.[project.path]?.[filePath]?.draft ?? ''
         return tabPersisted && draftBody.includes('DRAFT CONTENT')
       }, { timeout: 10_000 })
       .toBe(true)
