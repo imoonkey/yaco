@@ -84,6 +84,14 @@ async function mockApi(page: Page): Promise<void> {
     }
     if (path === '/api/ui-state/unread-watermarks') return fulfillJson(route, {})
     if (path === '/api/ui-state/pinned-sessions') return fulfillJson(route, [])
+    // The chrome's usage-quota rail fetches this on mount and memoizes
+    // `compactGroups(data)` (components/usageModel.ts), which calls `data.find`.
+    // The catch-all `{}` below is not an array, so an unmocked `/api/usage`
+    // throws inside render and blanks the whole app.
+    if (path === '/api/usage') return fulfillJson(route, [])
+    if (path === `/api/worktrees/${encodeURIComponent(project.name)}`) {
+      return fulfillJson(route, { worktrees: [] })
+    }
     if (path === '/api/sessions/history') return fulfillJson(route, history)
     if (path === '/api/sessions') return fulfillJson(route, liveSessions)
     if (path === `/api/files/${encodeURIComponent(project.name)}`) return fulfillJson(route, [])
