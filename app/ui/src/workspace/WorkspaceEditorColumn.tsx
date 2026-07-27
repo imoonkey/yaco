@@ -10,7 +10,7 @@ import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirec
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { clampLine } from './markdown'
-import { isHtmlFile, isMarkdownFile } from '../lib/binaryFiles'
+import { isDelimitedFile, isHtmlFile, isMarkdownFile } from '../lib/binaryFiles'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
@@ -67,6 +67,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const activeDiffTab = isDiffTab(activeTab)
   const isMd = !!activeFilePath && isMarkdownFile(activeFilePath)
   const isHtml = !!activeFilePath && isHtmlFile(activeFilePath)
+  const isDelimited = !!activeFilePath && isDelimitedFile(activeFilePath)
   const activeFileState = activeFilePath ? files[activeFilePath] : null
   const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
   const activeFileError = activeFileState?.loadError ?? null
@@ -101,6 +102,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         activeDiff={activeDiff}
         isMd={isMd}
         isHtml={isHtml}
+        isDelimited={isDelimited}
         previewMode={previewMode}
         splitDirection={splitDirection}
         splitSize={splitSize}

@@ -426,6 +426,10 @@ body {
   padding: 1em 26px 40px;
   color: var(--sol-preview-text);
   background: var(--sol-editor-bg);
+  /* The panel tree sets `select-none` app-wide so its pane drags don't paint a
+     selection (DesktopPanelTreeLayout); reading surfaces opt back in. */
+  -webkit-user-select: text;
+  user-select: text;
   font-family: var(--font-ui);
   font-size: var(--text-ui-xl);
   line-height: 22px;

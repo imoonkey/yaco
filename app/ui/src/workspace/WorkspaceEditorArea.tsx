@@ -19,6 +19,7 @@ import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
 import { ImagePreview } from './ImagePreview'
 import { PdfPreview } from './PdfPreview'
 import { HtmlPreview } from './HtmlPreview'
+import { DelimitedPreview } from './DelimitedPreview'
 
 // --- Error boundary for binary previews (isolates react-pdf/image errors from the app) ---
 class PreviewErrorBoundary extends Component<{ children: ReactNode; fileName: string }, { error: Error | null }> {
@@ -397,6 +398,7 @@ export function WorkspaceEditorArea({
   activeDiff,
   isMd,
   isHtml,
+  isDelimited,
   previewMode,
   splitDirection,
   splitSize,
@@ -433,6 +435,7 @@ export function WorkspaceEditorArea({
   activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
   isMd: boolean | undefined
   isHtml: boolean | undefined
+  isDelimited: boolean | undefined
   previewMode: PreviewMode
   splitDirection: SplitDirection
   splitSize: number
@@ -560,7 +563,7 @@ export function WorkspaceEditorArea({
     document.addEventListener('mouseup', onUp)
   }, [splitSize, splitDirection, onSplitResize])
 
-  const isPreviewable = isMd || isHtml
+  const isPreviewable = isMd || isHtml || isDelimited
   const showSplit = isPreviewable && previewMode === 'split'
   const showPreviewOnly = isPreviewable && previewMode === 'preview'
   // Over the editor's 1 MB content cap: the buffer never loaded. HTML can still
@@ -598,6 +601,8 @@ export function WorkspaceEditorArea({
       rawUrl={activeTab ? rawFileUrl(projectName, activeTab, worktree) : ''}
       useRaw={tooLarge && activeFileContent === null}
     />
+  ) : isDelimited ? (
+    <DelimitedPreview content={previewContent} filePath={activeTab ?? ''} />
   ) : (
     <MarkdownPreview
       content={previewContent}
