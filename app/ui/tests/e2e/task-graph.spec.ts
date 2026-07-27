@@ -588,7 +588,10 @@ test.describe('Task workspace (V1 stacked graph)', () => {
   test('detail panel overlays the graph and resizes from its left border', async ({ page }) => {
     await openTaskGraph(page)
 
-    const svg = page.locator('svg').first()
+    // The graph's own <svg> — the one wrapping the node layer. `svg.first()` in
+    // document order is chrome iconography (the usage-quota rail's `lg:hidden`
+    // provider icon renders first and has no box at this viewport).
+    const svg = page.locator('[data-layer="nodes"]').first().locator('xpath=ancestor::*[name()="svg"][1]')
     const node = taskNodes(page).first()
     const beforeSvg = await svg.boundingBox()
     expect(beforeSvg).toBeTruthy()
