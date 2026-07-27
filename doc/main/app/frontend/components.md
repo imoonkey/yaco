@@ -42,6 +42,7 @@ App (384 lines)
         │   ├── PdfPreview — `<iframe>` to raw URL; browser-native viewer (scroll, keyboard nav, zoom, search)
         │   ├── DiffTab (diff/ module — unified/split views, navigation)
         │   ├── MarkdownPreview
+        │   ├── DelimitedPreview — CSV/TSV table; papaparse + @tanstack/react-virtual windowing + @tanstack/react-table sorting
         │   └── Editor (357 lines)
         ├── FileExplorer (435 lines)
         │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon

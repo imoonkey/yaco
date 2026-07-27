@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-07-27: CSV/TSV files preview as a sortable table
+
+**What changed:**
+- `.csv`/`.tsv` joined `isPreviewableFile`, so the existing Edit/Split/Preview toggle now drives a third renderer, `DelimitedPreview`, beside markdown and HTML. Parsing is `papaparse` (`delimitedTable.ts`): quoted delimiters/newlines, CRLF and BOM handled, tab pinned for `.tsv` and sniffed for `.csv`, and ragged rows squared to the widest row so cells never shift columns.
+- Sorting via `@tanstack/react-table` (headless — the markup and Solarized styling stay ours), every column on the `alphanumeric` sort function. Overflow toggles clip↔wrap from the status bar; columns drag-resize from a per-header grip (double-click resets) through a `col → px` map the grid template mixes with the content-derived `ch` widths. Rows band by display position.
+- Rows render through a `memo`'d `DelimitedRow` taking only per-row-stable primitives, `overscan` 16 → 6, and the row-number gutter is deliberately **not** frozen.
+- `.markdown-preview` and the CSV preview root both opt back into `user-select: text`.
+
+**Why:**
+- React Compiler skips this component (both TanStack hooks return functions it cannot memoize safely), so the virtualizer was reconciling ~50 rows × 13 cells on every scroll frame — the reported jank. Freezing the gutter adds a sticky element *and* a stacking context per rendered row, which measured at ~6ms of p95 frame time; a frozen gutter is worth doing only as one sticky overlay column outside the row markup.
+- Cell text could not be selected or copied at all: `DesktopPanelTreeLayout` sets `select-none` so its hand-rolled pane drags don't paint a selection, and that inherits into every panel — reading surfaces have to opt back in the way `TerminalPanel` already did. `.markdown-preview` carried the same latent bug and was fixed in the same pass.
+- Column widths in `ch` are why react-table's `columnSizing` is unused: it is px-only and would need the auto-widths converted to seed values.
+
+**Key files:** `app/ui/src/workspace/{DelimitedPreview.tsx,delimitedTable.ts,WorkspaceEditorArea.tsx,WorkspaceEditorColumn.tsx}`, `app/ui/src/lib/binaryFiles.ts`, `app/ui/src/index.css`
+**Verification:** `scripts/verify.sh` green (one CLI `project move` timeout on the first run was a flaky 5s limit under load — 20/20 in isolation, and the diff touches no CLI file). 1161 app/ui unit tests, `npx tsc -b` clean. 7 e2e: sorting spans the whole file (asserts the file's *last* line surfaces first, so a window-only sort fails), real header-grip drag + double-click reset, wrap re-measurement (a row must move below a grown one), and selection in both previews — the markdown one was confirmed to FAIL without its fix. Scroll measured with a scripted-scroll harness at 4× CPU throttle, 5 trials on 3000×12: p50 25.8 → 17.0ms, p95 37.3 → 25.8ms, frames over 32ms 12/90 → 2/90.
+**Commit:** 651a2ec7
+**Next:** Wrap mode and column widths are component-local view state; carrying them on the tab means extending `GroupTab` alongside `previewMode`. A frozen row-number column, if wanted, needs the single-sticky-overlay restructure. Cell editing was scoped out — the cost there is the state contract (`Papa.unparse` back into the shared text draft, which normalizes quoting), not the widget.
+**Blockers:** None
+
 ## 2026-07-26: Switching a terminal tab stops costing a second
 
 **What changed:**
