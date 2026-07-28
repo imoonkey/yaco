@@ -19,7 +19,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, WrapText } from 'lucide-react'
 import { parseDelimited } from './delimitedTable'
 
 const ROW_HEIGHT = 30
-const OVERSCAN = 0
+const OVERSCAN = 6
 const MIN_COL_PX = 40
 const BLOCK = 8
 
@@ -27,6 +27,10 @@ const BLOCK = 8
 // every time the viewport crosses a row, so the DOM mutated on every scroll
 // frame, forcing main-thread scrolling. Quantised, the rendered set is identical
 // for BLOCK rows at a time and those frames composite with no style/layout/paint.
+//
+// OVERSCAN still has to be non-zero: snapping alone leaves NO rows past the
+// viewport edge when it lands on a block boundary, so a fast scroll outruns the
+// render and flashes a blank strip. The overscan is the floor on that lookahead.
 function blockRange(range: Range): number[] {
   const first = Math.max(0, Math.floor((range.startIndex - range.overscan) / BLOCK) * BLOCK)
   const last = Math.min(range.count - 1, Math.ceil((range.endIndex + range.overscan) / BLOCK) * BLOCK)
