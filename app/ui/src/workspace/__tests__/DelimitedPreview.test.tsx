@@ -67,6 +67,22 @@ describe('DelimitedPreview', () => {
     expect(visibleRows().map(r => r[2])).toEqual(['100', '99', '9'])
   })
 
+  it('adds a second sort level on shift-click and replaces it on a plain click', () => {
+    render(<DelimitedPreview content={'team,score\nb,2\na,1\nb,1\na,2\n'} filePath="m.csv" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^team/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^score/ }), { shiftKey: true })
+
+    // team asc, then score asc within each team.
+    expect(visibleRows().map(r => `${r[1]}${r[2]}`)).toEqual(['a1', 'a2', 'b1', 'b2'])
+    expect(screen.getByRole('columnheader', { name: /^team/ }).getAttribute('aria-sort')).toBe('ascending')
+    expect(screen.getByRole('columnheader', { name: /^score/ }).getAttribute('aria-sort')).toBe('ascending')
+
+    // A plain click drops the other level instead of adding to it.
+    fireEvent.click(screen.getByRole('button', { name: /^score/ }))
+    expect(screen.getByRole('columnheader', { name: /^team/ }).getAttribute('aria-sort')).toBe('none')
+  })
+
   it('keeps the gutter pointing at the source row when sorted', () => {
     render(<DelimitedPreview content={'city,pop\nb,99\na,100\nc,9\n'} filePath="s.csv" />)
 
