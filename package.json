@@ -4,7 +4,8 @@
   "workspaces": [
     "cli",
     "app/server",
-    "app/ui"
+    "app/ui",
+    "packages/*"
   ],
   "scripts": {
     "postinstall": "node app/scripts/fix-node-pty-perms.mjs",

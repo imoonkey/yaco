@@ -25,6 +25,8 @@ run_step() {
 
 run_step "keepalive test" .          bash tools/claude-usage-keepalive.test.sh
 run_step "cli test"       cli        bun run test
+run_step "codex transcribe typecheck" . npm run typecheck --workspace @yaco/codex-transcribe
+run_step "codex transcribe test"      . npm test --workspace @yaco/codex-transcribe
 run_step "server test"    app/server npm test
 run_step "ui lint"        app/ui     npm run lint
 run_step "build"          .          npm run build
