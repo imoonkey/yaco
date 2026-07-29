@@ -2,6 +2,11 @@ import { Hono } from 'hono'
 import Groq from 'groq-sdk'
 import { toFile } from 'groq-sdk/uploads'
 import {
+  CodexTranscribeError,
+  inspectCodexTranscribe,
+  transcribeCodex,
+} from '@yaco/codex-transcribe'
+import {
   VOICE_MAX_UPLOAD_BYTES,
   VOICE_MAX_TRANSCRIPT_CHARS,
   VOICE_MAX_FILEPATH_CHARS,
@@ -14,7 +19,9 @@ import { synthesizeSpeech, resolveTtsVoice } from '../lib/tts'
 
 const DEFAULT_STT_MODEL = 'whisper-large-v3-turbo'
 
-/** Audio formats Groq Whisper accepts; gate uploads before the upstream call. */
+type VoiceSttProvider = 'codex' | 'groq'
+
+/** Audio formats admitted by the shared route. Live QA pins the Codex subset. */
 const ALLOWED_AUDIO_MIME = new Set([
   'audio/wav',
   'audio/x-wav',
@@ -85,8 +92,16 @@ function getSttModel(): string {
   return process.env.GROQ_TRANSCRIPTION_MODEL || DEFAULT_STT_MODEL
 }
 
+function isVoiceSttProvider(value: FormDataEntryValue | null): value is VoiceSttProvider {
+  return value === 'codex' || value === 'groq'
+}
+
 /** Map Groq SDK errors to stable HTTP responses */
-function mapUpstreamError(err: unknown): { status: number; error: string; retryAfter?: string } {
+function mapUpstreamError(err: unknown): {
+  status: 429 | 502
+  error: string
+  retryAfter?: string
+} {
   if (err instanceof Groq.APIError && err.status === 429) {
     const retryAfter = err.headers?.get('retry-after') ?? undefined
     return { status: 429, error: 'Rate limit reached. Try again shortly.', retryAfter }
@@ -94,33 +109,59 @@ function mapUpstreamError(err: unknown): { status: number; error: string; retryA
   return { status: 502, error: 'Transcription failed. Try again.' }
 }
 
+function mapCodexError(err: CodexTranscribeError): {
+  status: 429 | 502 | 503
+  error: string
+  retryAfter?: string
+} {
+  const code = err.code
+  switch (code) {
+    case 'not_configured':
+      return { status: 503, error: 'Codex transcription is unavailable. Sign in with Codex.' }
+    case 'expired_auth':
+      return { status: 503, error: 'Codex login has expired. Sign in again.' }
+    case 'rate_limited':
+      return {
+        status: 429,
+        error: 'Rate limit reached. Try again shortly.',
+        retryAfter: err.retryAfter,
+      }
+    case 'forbidden':
+    case 'upstream':
+    case 'network':
+      return { status: 502, error: 'Transcription failed. Try again.' }
+    default: {
+      const unreachable: never = code
+      return unreachable
+    }
+  }
+}
+
 const app = new Hono()
 
-app.get('/status', (c) => {
-  // TTS is keyless (edge-tts) — advertised even when STT is unconfigured. The
-  // top-level `enabled` stays STT-only (voice INPUT, needs GROQ_API_KEY): the UI's
-  // useVoice reads it for mic readiness, so TTS must never flip it.
+app.get('/status', async (c) => {
+  const codex = await inspectCodexTranscribe()
   const tts = { enabled: true, voice: resolveTtsVoice() }
-  const apiKey = process.env.GROQ_API_KEY
-  if (!apiKey) {
-    return c.json({ enabled: false, reason: 'missing_api_key', tts })
-  }
+  const groqAvailable = Boolean(process.env.GROQ_API_KEY)
+  const groq = groqAvailable
+    ? { available: true as const, model: getSttModel() }
+    : { available: false as const, reason: 'missing_api_key' as const }
+  const formatter = groqAvailable
+    ? { available: true as const, models: resolveFormatterModels() }
+    : { available: false as const, reason: 'missing_api_key' as const }
+
   return c.json({
-    enabled: true,
-    sttModel: getSttModel(),
-    formatterModels: resolveFormatterModels(),
+    // Voice readiness is STT-only: keyless TTS must never enable the mic.
+    enabled: codex.available || groq.available,
+    providers: { codex, groq },
+    formatter,
     maxUploadBytes: VOICE_MAX_UPLOAD_BYTES,
     tts,
   })
 })
 
-// Single audio chunk → raw transcript. Whisper only; no formatting.
+// Single audio chunk → raw transcript from the explicitly selected provider.
 app.post('/transcribe', async (c) => {
-  const groq = getGroqClient()
-  if (!groq) {
-    return fail(c, 503, 'Voice input is unavailable. Set GROQ_API_KEY.')
-  }
-
   let formData: FormData
   try {
     formData = await c.req.formData()
@@ -131,6 +172,7 @@ app.post('/transcribe', async (c) => {
   const audio = formData.get('audio')
   const language = formData.get('language')
   const context = formData.get('context')
+  const provider = formData.get('provider')
 
   if (!audio || !(audio instanceof File)) {
     return fail(c, 400, 'Invalid voice recording.')
@@ -147,11 +189,36 @@ app.post('/transcribe', async (c) => {
   if (context !== null && typeof context !== 'string') {
     return fail(c, 400, 'Invalid voice recording.')
   }
+  if (!isVoiceSttProvider(provider)) {
+    return fail(c, 400, 'Invalid transcription provider.')
+  }
 
+  const audioBytes = new Uint8Array(await audio.arrayBuffer())
+  if (provider === 'codex') {
+    try {
+      const text = await transcribeCodex({
+        audio: audioBytes,
+        filename: audio.name || 'audio.wav',
+        mimeType: audio.type || 'audio/wav',
+        ...(language ? { language } : {}),
+        signal: c.req.raw.signal,
+      })
+      return c.json({ text })
+    } catch (err) {
+      if (!(err instanceof CodexTranscribeError)) throw err
+      const mapped = mapCodexError(err)
+      if (mapped.retryAfter) c.header('retry-after', mapped.retryAfter)
+      return fail(c, mapped.status, mapped.error)
+    }
+  }
+
+  const groq = getGroqClient()
+  if (!groq) {
+    return fail(c, 503, 'Voice input is unavailable. Set GROQ_API_KEY.')
+  }
   try {
-    const arrayBuffer = await audio.arrayBuffer()
     const file = await toFile(
-      new Uint8Array(arrayBuffer),
+      audioBytes,
       audio.name || 'audio.wav',
       { type: audio.type || 'audio/wav' },
     )
@@ -166,7 +233,7 @@ app.post('/transcribe', async (c) => {
   } catch (err) {
     const mapped = mapUpstreamError(err)
     if (mapped.retryAfter) c.header('retry-after', mapped.retryAfter)
-    return fail(c, mapped.status as 400, mapped.error)
+    return fail(c, mapped.status, mapped.error)
   }
 })
 

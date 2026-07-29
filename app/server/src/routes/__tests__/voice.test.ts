@@ -2,6 +2,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Shared mock instance - reset each test
 let mockTranscriptionCreate: ReturnType<typeof vi.fn>
+const mockInspectCodexTranscribe = vi.fn()
+const mockTranscribeCodex = vi.fn()
+
+vi.mock('@yaco/codex-transcribe', () => {
+  class CodexTranscribeError extends Error {
+    readonly code: string
+    readonly retryAfter?: string
+
+    constructor(
+      code: string,
+      options: { readonly retryAfter?: string } = {},
+    ) {
+      super(`Codex transcription failed: ${code}`)
+      this.name = 'CodexTranscribeError'
+      this.code = code
+      this.retryAfter = options.retryAfter
+    }
+  }
+
+  return {
+    CodexTranscribeError,
+    inspectCodexTranscribe: (...args: unknown[]) => mockInspectCodexTranscribe(...args),
+    transcribeCodex: (...args: unknown[]) => mockTranscribeCodex(...args),
+  }
+})
 
 // Mock groq-sdk before importing the route
 vi.mock('groq-sdk', () => {
@@ -55,6 +80,7 @@ vi.mock('../../lib/tts', () => ({
 
 // Import after mocks are set up
 import Groq from 'groq-sdk'
+import { CodexTranscribeError } from '@yaco/codex-transcribe'
 import { voiceRoutes } from '../voice'
 import { resolveFormatterModels } from '../../lib/voice-formatter'
 import { VOICE_MAX_TRANSCRIPT_CHARS, VOICE_MAX_FILEPATH_CHARS, VOICE_MAX_SPEAK_CHARS } from '../../lib/constants'
@@ -85,6 +111,15 @@ function postFormat(body: BodyInit) {
 }
 
 describe('GET /status', () => {
+  beforeEach(() => {
+    mockInspectCodexTranscribe.mockReset()
+    mockInspectCodexTranscribe.mockResolvedValue({
+      available: false,
+      reason: 'missing_auth',
+    })
+    vi.mocked(resolveFormatterModels).mockReturnValue(['test-model'])
+  })
+
   afterEach(() => {
     delete process.env.GROQ_API_KEY
     delete process.env.GROQ_TRANSCRIPTION_MODEL
@@ -92,40 +127,78 @@ describe('GET /status', () => {
     delete process.env.VOICE_FORMATTER_MODELS
   })
 
-  it('returns enabled:false when GROQ_API_KEY is not set', async () => {
+  it('reports unavailable providers, formatter, upload limit, and TTS independently', async () => {
     delete process.env.GROQ_API_KEY
     const res = await voiceRoutes.request('/status')
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json).toEqual({
       enabled: false,
-      reason: 'missing_api_key',
+      providers: {
+        codex: { available: false, reason: 'missing_auth' },
+        groq: { available: false, reason: 'missing_api_key' },
+      },
+      formatter: { available: false, reason: 'missing_api_key' },
+      maxUploadBytes: 20_000_000,
       tts: { enabled: true, voice: 'zh-CN-XiaoxiaoNeural' },
     })
   })
 
-  it('advertises TTS without flipping the top-level STT enabled flag', async () => {
-    // TTS needs no key; STT does. Advertising TTS must never make `useVoice` (which
-    // reads the top-level `enabled`) think the mic/server is ready.
+  it.each(['unsupported_auth', 'invalid_auth', 'expired_auth'] as const)(
+    'forwards the stable Codex unavailable reason %s',
+    async (reason) => {
+      mockInspectCodexTranscribe.mockResolvedValue({ available: false, reason })
+      const res = await voiceRoutes.request('/status')
+      const json = await res.json()
+      expect(json.providers.codex).toEqual({ available: false, reason })
+    },
+  )
+
+  it('enables voice input when only Codex is available', async () => {
     delete process.env.GROQ_API_KEY
+    mockInspectCodexTranscribe.mockResolvedValue({ available: true })
     const res = await voiceRoutes.request('/status')
     const json = await res.json()
-    expect(json.enabled).toBe(false)
-    expect(json.tts.enabled).toBe(true)
+    expect(json).toEqual({
+      enabled: true,
+      providers: {
+        codex: { available: true },
+        groq: { available: false, reason: 'missing_api_key' },
+      },
+      formatter: { available: false, reason: 'missing_api_key' },
+      maxUploadBytes: 20_000_000,
+      tts: { enabled: true, voice: 'zh-CN-XiaoxiaoNeural' },
+    })
   })
 
-  it('returns enabled:true with defaults when GROQ_API_KEY is set', async () => {
+  it('reports Groq STT and formatter capabilities with defaults', async () => {
     process.env.GROQ_API_KEY = 'test-key'
     const res = await voiceRoutes.request('/status')
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json).toEqual({
       enabled: true,
-      sttModel: 'whisper-large-v3-turbo',
-      formatterModels: ['test-model'],
+      providers: {
+        codex: { available: false, reason: 'missing_auth' },
+        groq: { available: true, model: 'whisper-large-v3-turbo' },
+      },
+      formatter: { available: true, models: ['test-model'] },
       maxUploadBytes: 20_000_000,
       tts: { enabled: true, voice: 'zh-CN-XiaoxiaoNeural' },
     })
+  })
+
+  it('reports both STT providers available together', async () => {
+    process.env.GROQ_API_KEY = 'test-key'
+    mockInspectCodexTranscribe.mockResolvedValue({ available: true })
+    const res = await voiceRoutes.request('/status')
+    const json = await res.json()
+    expect(json.enabled).toBe(true)
+    expect(json.providers).toEqual({
+      codex: { available: true },
+      groq: { available: true, model: 'whisper-large-v3-turbo' },
+    })
+    expect(json.formatter).toEqual({ available: true, models: ['test-model'] })
   })
 
   it('uses custom model env vars', async () => {
@@ -135,8 +208,8 @@ describe('GET /status', () => {
     vi.mocked(resolveFormatterModels).mockReturnValue(['model-a', 'model-b'])
     const res = await voiceRoutes.request('/status')
     const json = await res.json()
-    expect(json.sttModel).toBe('whisper-large-v3')
-    expect(json.formatterModels).toEqual(['model-a', 'model-b'])
+    expect(json.providers.groq.model).toBe('whisper-large-v3')
+    expect(json.formatter.models).toEqual(['model-a', 'model-b'])
   })
 })
 
@@ -144,6 +217,7 @@ describe('POST /transcribe', () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = 'test-key'
     mockTranscriptionCreate = vi.fn()
+    mockTranscribeCodex.mockReset()
     mockFormatWithFallback.mockReset()
   })
 
@@ -151,17 +225,47 @@ describe('POST /transcribe', () => {
     delete process.env.GROQ_API_KEY
   })
 
-  it('returns 503 when GROQ_API_KEY is missing', async () => {
+  it('validates the common audio form before the required provider', async () => {
+    const body = makeFormData({ language: 'en' })
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Invalid voice recording.' })
+  })
+
+  it.each([undefined, 'other'])(
+    'returns 400 for provider %s without dispatching',
+    async (provider) => {
+      const fields: Record<string, string | File> = { audio: makeAudioBlob() }
+      if (provider !== undefined) fields.provider = provider
+      const body = makeFormData(fields)
+      const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'Invalid transcription provider.' })
+      expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+      expect(mockTranscribeCodex).not.toHaveBeenCalled()
+    },
+  )
+
+  it('returns 400 when provider is not a string', async () => {
+    const body = makeFormData({ audio: makeAudioBlob(), provider: makeAudioBlob() })
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+    expect(res.status).toBe(400)
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+    expect(mockTranscribeCodex).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 for unavailable Groq without falling back to Codex', async () => {
     delete process.env.GROQ_API_KEY
-    const body = makeFormData({ audio: makeAudioBlob() })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(503)
     const json = await res.json()
     expect(json.error).toBe('Voice input is unavailable. Set GROQ_API_KEY.')
+    expect(mockTranscribeCodex).not.toHaveBeenCalled()
   })
 
   it('returns 400 for missing audio', async () => {
-    const body = makeFormData({ language: 'en' })
+    const body = makeFormData({ provider: 'groq', language: 'en' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
     const json = await res.json()
@@ -169,13 +273,13 @@ describe('POST /transcribe', () => {
   })
 
   it('returns 400 when audio field is not a file', async () => {
-    const body = makeFormData({ audio: 'not-a-file' })
+    const body = makeFormData({ audio: 'not-a-file', provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
   })
 
   it('returns 413 for oversized audio', async () => {
-    const body = makeFormData({ audio: makeAudioBlob(20_000_001) })
+    const body = makeFormData({ audio: makeAudioBlob(20_000_001), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(413)
     const json = await res.json()
@@ -183,7 +287,7 @@ describe('POST /transcribe', () => {
   })
 
   it('rejects a non-audio MIME type', async () => {
-    const body = makeFormData({ audio: makeFile('text/plain', 'note.txt') })
+    const body = makeFormData({ audio: makeFile('text/plain', 'note.txt'), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
     const json = await res.json()
@@ -192,7 +296,7 @@ describe('POST /transcribe', () => {
   })
 
   it('rejects an unknown format when MIME is absent and extension is unsupported', async () => {
-    const body = makeFormData({ audio: makeFile('', 'clip.bin') })
+    const body = makeFormData({ audio: makeFile('', 'clip.bin'), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
     const json = await res.json()
@@ -201,27 +305,38 @@ describe('POST /transcribe', () => {
 
   it('accepts other supported codecs (webm)', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'ok' })
-    const body = makeFormData({ audio: makeFile('audio/webm;codecs=opus', 'clip.webm') })
+    const body = makeFormData({
+      audio: makeFile('audio/webm;codecs=opus', 'clip.webm'),
+      provider: 'groq',
+    })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
   })
 
   it('falls back to extension when MIME is absent', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'ok' })
-    const body = makeFormData({ audio: makeFile('', 'clip.wav') })
+    const body = makeFormData({ audio: makeFile('', 'clip.wav'), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
   })
 
   it('rejects a non-string language field', async () => {
-    const body = makeFormData({ audio: makeAudioBlob(), language: makeAudioBlob() })
+    const body = makeFormData({
+      audio: makeAudioBlob(),
+      provider: 'groq',
+      language: makeAudioBlob(),
+    })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
     expect(mockTranscriptionCreate).not.toHaveBeenCalled()
   })
 
   it('rejects a non-string context field', async () => {
-    const body = makeFormData({ audio: makeAudioBlob(), context: makeAudioBlob() })
+    const body = makeFormData({
+      audio: makeAudioBlob(),
+      provider: 'groq',
+      context: makeAudioBlob(),
+    })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(400)
     expect(mockTranscriptionCreate).not.toHaveBeenCalled()
@@ -230,7 +345,7 @@ describe('POST /transcribe', () => {
   it('returns raw text and never formats', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'git status dash s b' })
 
-    const body = makeFormData({ audio: makeAudioBlob() })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
     const json = await res.json()
@@ -241,7 +356,7 @@ describe('POST /transcribe', () => {
   it('returns empty text for empty transcript', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: '' })
 
-    const body = makeFormData({ audio: makeAudioBlob() })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
     const json = await res.json()
@@ -257,7 +372,7 @@ describe('POST /transcribe', () => {
       new Headers({ 'retry-after': '3' }),
     ))
 
-    const body = makeFormData({ audio: makeAudioBlob() })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(429)
     expect(res.headers.get('retry-after')).toBe('3')
@@ -269,7 +384,7 @@ describe('POST /transcribe', () => {
     const { APIConnectionError } = Groq as unknown as { APIConnectionError: new (message: string) => Error }
     mockTranscriptionCreate.mockRejectedValue(new APIConnectionError('network fail'))
 
-    const body = makeFormData({ audio: makeAudioBlob() })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(502)
     const json = await res.json()
@@ -279,18 +394,23 @@ describe('POST /transcribe', () => {
   it('passes language hint to Whisper when provided', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'bonjour' })
 
-    const body = makeFormData({ audio: makeAudioBlob(), language: 'fr' })
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'groq', language: 'fr' })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
 
     const sttCall = mockTranscriptionCreate.mock.calls[0][0]
+    expect(sttCall.model).toBe('whisper-large-v3-turbo')
     expect(sttCall.language).toBe('fr')
   })
 
   it('feeds context into the Whisper prompt as vocab bias', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'ok' })
 
-    const body = makeFormData({ audio: makeAudioBlob(), context: 'voiceVad encodeWav' })
+    const body = makeFormData({
+      audio: makeAudioBlob(),
+      provider: 'groq',
+      context: 'voiceVad encodeWav',
+    })
     const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
     expect(res.status).toBe(200)
 
@@ -298,6 +418,97 @@ describe('POST /transcribe', () => {
     expect(sttCall.prompt).toContain('voiceVad encodeWav')
     // Base prompt is still present.
     expect(sttCall.prompt).toContain('IDE')
+  })
+
+  it('dispatches Codex with audio metadata, language, and request abort signal', async () => {
+    mockTranscribeCodex.mockResolvedValue('bonjour')
+    const controller = new AbortController()
+    const body = makeFormData({
+      audio: makeFile('audio/webm;codecs=opus', 'take.webm', 4),
+      provider: 'codex',
+      language: 'fr',
+      context: 'Groq-only prompt context',
+    })
+    const request = new Request('http://localhost/transcribe', {
+      method: 'POST',
+      body,
+      signal: controller.signal,
+    })
+
+    const res = await voiceRoutes.request(request)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ text: 'bonjour' })
+    expect(mockTranscribeCodex).toHaveBeenCalledOnce()
+    const input = mockTranscribeCodex.mock.calls[0][0]
+    expect(input.audio).toBeInstanceOf(Uint8Array)
+    expect(input.audio).toHaveLength(4)
+    expect(input).toMatchObject({
+      filename: 'take.webm',
+      mimeType: 'audio/webm;codecs=opus',
+      language: 'fr',
+      signal: request.signal,
+    })
+    expect(input).not.toHaveProperty('context')
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+  })
+
+  it('transcribes with Codex when GROQ_API_KEY is absent', async () => {
+    delete process.env.GROQ_API_KEY
+    mockTranscribeCodex.mockResolvedValue('codex only')
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'codex' })
+
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ text: 'codex only' })
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['not_configured', 503, 'Codex transcription is unavailable. Sign in with Codex.'],
+    ['expired_auth', 503, 'Codex login has expired. Sign in again.'],
+    ['forbidden', 502, 'Transcription failed. Try again.'],
+    ['upstream', 502, 'Transcription failed. Try again.'],
+    ['network', 502, 'Transcription failed. Try again.'],
+  ] as const)('maps Codex %s to HTTP %s without fallback', async (code, status, error) => {
+    mockTranscribeCodex.mockRejectedValue(new CodexTranscribeError(code))
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'codex' })
+
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+
+    expect(res.status).toBe(status)
+    expect(await res.json()).toEqual({ error })
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+  })
+
+  it('maps Codex rate limits and forwards retry-after', async () => {
+    mockTranscribeCodex.mockRejectedValue(
+      new CodexTranscribeError('rate_limited', { retryAfter: '7' }),
+    )
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'codex' })
+
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('7')
+    expect(await res.json()).toEqual({
+      error: 'Rate limit reached. Try again shortly.',
+    })
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+  })
+
+  it('lets unexpected Codex errors reach Hono error handling', async () => {
+    mockTranscribeCodex.mockRejectedValue(new Error('programmer bug'))
+    const body = makeFormData({ audio: makeAudioBlob(), provider: 'codex' })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const res = await voiceRoutes.request('/transcribe', { method: 'POST', body })
+
+    expect(res.status).toBe(500)
+    expect(consoleError).toHaveBeenCalled()
+    expect(mockTranscriptionCreate).not.toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 })
 

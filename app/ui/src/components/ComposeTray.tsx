@@ -3,7 +3,9 @@ import { X, Mic, Square, LoaderCircle, Wand } from 'lucide-react'
 import { DialogShell } from './DialogShell'
 import { TargetSelector } from './TargetSelector'
 import type { VoiceInstance } from './GlobalVoiceControl'
-import type { InteractionState, CapabilityState, AppendText, FormatResult } from '../hooks/useVoice'
+import type {
+  InteractionState, CapabilityState, AppendText, FormatResult, VoiceProvider,
+} from '../hooks/useVoice'
 
 // The one compose surface for terminal/editor text entry: type, paste, or
 // record (one take at a time, inserted at the caret). Insert sends the draft to
@@ -20,6 +22,12 @@ export function ComposeTray({
   elapsedMs,
   appendText,
   capability,
+  availableProviders,
+  provider,
+  onProviderChange,
+  formatterAvailable,
+  autoFormat,
+  onAutoFormatChange,
   errorMessage,
   notice,
   onRecord,
@@ -37,6 +45,12 @@ export function ComposeTray({
   elapsedMs: number
   appendText: AppendText | null
   capability: CapabilityState
+  availableProviders: VoiceProvider[]
+  provider: VoiceProvider | null
+  onProviderChange: (provider: VoiceProvider) => void
+  formatterAvailable: boolean
+  autoFormat: boolean
+  onAutoFormatChange: (enabled: boolean) => void
   errorMessage: string | null
   notice: string | null
   onRecord: () => void
@@ -128,6 +142,7 @@ export function ComposeTray({
   const takeInFlight = state === 'requesting_permission' || state === 'recording' || state === 'transcribing'
   const isRecoverable = state === 'recoverable'
   const canInsert = !takeInFlight && !isRecoverable && editText.trim() !== ''
+  const formatDisabled = !formatterAvailable || !editText.trim() || formatting
 
   const handleConfirm = useCallback(() => {
     if (!canInsert) return
@@ -185,14 +200,43 @@ export function ComposeTray({
       }}
     >
       <div>
-        {/* Header — the target selector re-points where Insert sends the draft */}
+        {/* Header — target and take preferences stay visible throughout a run. */}
         <div style={HEADER_STYLE}>
           <TargetSelector
             target={target}
             instances={instances}
             onSelect={onSelectTarget}
           />
-          <button style={CLOSE_BTN_STYLE} onClick={onClose} aria-label="Close"><X size={14} /></button>
+          <div style={PREFERENCE_ROW_STYLE}>
+            <select
+              aria-label="Transcription provider"
+              value={provider ?? ''}
+              disabled={takeInFlight || provider === null}
+              onChange={(event) => {
+                const value = event.target.value
+                if (value === 'codex' || value === 'groq') onProviderChange(value)
+              }}
+              style={{ ...PROVIDER_SELECT_STYLE, ...(takeInFlight ? DISABLED_CONTROL_STYLE : {}) }}
+            >
+              {availableProviders.map(value => (
+                <option key={value} value={value}>{value === 'codex' ? 'Codex' : 'Groq'}</option>
+              ))}
+            </select>
+            <label
+              style={{ ...AUTO_FORMAT_STYLE, ...((takeInFlight || !formatterAvailable) ? DISABLED_CONTROL_STYLE : {}) }}
+              title={formatterAvailable ? 'Format each finished take automatically' : 'Formatter unavailable'}
+            >
+              <input
+                type="checkbox"
+                aria-label="Auto format"
+                checked={autoFormat}
+                disabled={takeInFlight || !formatterAvailable}
+                onChange={(event) => onAutoFormatChange(event.target.checked)}
+              />
+              Auto format
+            </label>
+            <button style={CLOSE_BTN_STYLE} onClick={onClose} aria-label="Close"><X size={14} /></button>
+          </div>
         </div>
 
         <textarea
@@ -274,10 +318,10 @@ export function ComposeTray({
                 </button>
                 <button
                   className="font-medium"
-                  style={{ ...FORMAT_BTN_STYLE, ...(editText.trim() && !formatting ? {} : DISABLED_STYLE) }}
-                  disabled={!editText.trim() || formatting}
+                  style={{ ...FORMAT_BTN_STYLE, ...(formatDisabled ? DISABLED_STYLE : {}) }}
+                  disabled={formatDisabled}
                   onClick={handleFormat}
-                  title="Polish the whole draft with the formatter"
+                  title={formatterAvailable ? 'Polish the whole draft with the formatter' : 'Formatter unavailable'}
                 >
                   {formatting
                     ? <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
@@ -322,9 +366,42 @@ const HEADER_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
+  gap: 8,
+  flexWrap: 'wrap',
   marginBottom: 10,
   fontSize: 'var(--text-ui-md)',
   color: 'var(--sol-text)',
+}
+
+const PREFERENCE_ROW_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginLeft: 'auto',
+}
+
+const PROVIDER_SELECT_STYLE: React.CSSProperties = {
+  height: 28,
+  padding: '0 6px',
+  border: '1px solid var(--sol-border)',
+  borderRadius: 4,
+  background: 'var(--sol-input-bg)',
+  color: 'var(--sol-text)',
+  fontSize: 'var(--text-ui-sm)',
+}
+
+const AUTO_FORMAT_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  color: 'var(--sol-text)',
+  fontSize: 'var(--text-ui-sm)',
+  whiteSpace: 'nowrap',
+}
+
+const DISABLED_CONTROL_STYLE: React.CSSProperties = {
+  color: 'var(--sol-text-disabled)',
+  cursor: 'default',
 }
 
 const CLOSE_BTN_STYLE: React.CSSProperties = {

@@ -101,7 +101,18 @@ async function mockApi(page: Page): Promise<void> {
     if (path === `/api/tasks/${encodeURIComponent(project.name)}`) {
       return fulfillJson(route, { tasks: {} })
     }
-    if (path === '/api/voice/status') return fulfillJson(route, { available: false })
+    if (path === '/api/voice/status') {
+      return fulfillJson(route, {
+        enabled: false,
+        providers: {
+          codex: { available: false, reason: 'missing_auth' },
+          groq: { available: false, reason: 'missing_api_key' },
+        },
+        formatter: { available: false, reason: 'missing_api_key' },
+        maxUploadBytes: 20_000_000,
+        tts: { enabled: true, voice: 'stub' },
+      })
+    }
 
     await fulfillJson(route, {})
   })

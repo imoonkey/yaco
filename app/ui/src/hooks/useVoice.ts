@@ -19,6 +19,8 @@ export type CapabilityState =
   | { status: 'ready'; maxUploadBytes: number }
   | { status: 'unavailable'; reason: 'browser' | 'server'; message: string }
 
+export type VoiceProvider = 'codex' | 'groq'
+
 /** A finished take's text, ready to append to the compose draft. The tray
  *  appends whenever `key` changes (mirrors the editorInsert/terminalSend pattern). */
 export interface AppendText {
@@ -37,6 +39,12 @@ export interface FormatResult {
 
 export interface UseVoiceReturn {
   capability: CapabilityState
+  availableProviders: VoiceProvider[]
+  provider: VoiceProvider | null
+  setProvider: (provider: VoiceProvider) => void
+  formatterAvailable: boolean
+  autoFormat: boolean
+  setAutoFormat: (enabled: boolean) => void
   state: InteractionState
   elapsedMs: number
   appendText: AppendText | null
@@ -63,13 +71,77 @@ export interface UseVoiceReturn {
   markTargetLost: () => void
 }
 
-type VoiceStatusResponse =
-  | { enabled: true; sttModel: string; maxUploadBytes: number }
-  | { enabled: false; reason: string }
+type VoiceStatusResponse = {
+  enabled: boolean
+  providers: Record<VoiceProvider, { available: boolean }>
+  formatter: { available: boolean }
+  maxUploadBytes: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseVoiceStatus(value: unknown): VoiceStatusResponse | null {
+  if (!isRecord(value) || !isRecord(value.providers) || !isRecord(value.formatter)) return null
+  const codex = value.providers.codex
+  const groq = value.providers.groq
+  if (
+    typeof value.enabled !== 'boolean' ||
+    !isRecord(codex) || typeof codex.available !== 'boolean' ||
+    !isRecord(groq) || typeof groq.available !== 'boolean' ||
+    typeof value.formatter.available !== 'boolean' ||
+    typeof value.maxUploadBytes !== 'number' ||
+    !Number.isFinite(value.maxUploadBytes) || value.maxUploadBytes <= 0
+  ) return null
+  return {
+    enabled: value.enabled,
+    providers: {
+      codex: { available: codex.available },
+      groq: { available: groq.available },
+    },
+    formatter: { available: value.formatter.available },
+    maxUploadBytes: value.maxUploadBytes,
+  }
+}
 
 const DEFAULT_MAX_UPLOAD_BYTES = 20_000_000
 const TRANSCRIBE_TIMEOUT_MS = 60_000
 const FORMAT_TIMEOUT_MS = 30_000
+const PROVIDER_STORAGE_KEY = 'yaco.voiceProvider'
+const AUTO_FORMAT_STORAGE_KEY = 'yaco.voiceAutoFormat'
+const PROVIDER_ORDER: VoiceProvider[] = ['codex', 'groq']
+
+function loadProvider(): VoiceProvider | null {
+  try {
+    const value = localStorage.getItem(PROVIDER_STORAGE_KEY)
+    return value === 'codex' || value === 'groq' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function loadAutoFormat(): boolean {
+  try {
+    const value = localStorage.getItem(AUTO_FORMAT_STORAGE_KEY)
+    return value === null || value === '1'
+  } catch {
+    return true
+  }
+}
+
+function persistPreference(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Storage may be unavailable in a restricted browser context; the live
+    // compose-session preference remains valid even when it cannot persist.
+  }
+}
+
+function preferencesLocked(phase: InteractionState): boolean {
+  return phase === 'requesting_permission' || phase === 'recording' || phase === 'transcribing'
+}
 
 function parseRetryAfterMs(value: string | null): number {
   if (!value) return 1000
@@ -96,6 +168,10 @@ export function useVoice(): UseVoiceReturn {
   const [voiceState, dispatch] = useReducer(voiceReducer, INITIAL_STATE)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [appendText, setAppendText] = useState<AppendText | null>(null)
+  const [availableProviders, setAvailableProviders] = useState<VoiceProvider[]>([])
+  const [provider, setProviderState] = useState<VoiceProvider | null>(loadProvider)
+  const [formatterAvailable, setFormatterAvailable] = useState(false)
+  const [autoFormat, setAutoFormatState] = useState(loadAutoFormat)
 
   const sessionRef = useRef<CaptureSession | null>(null)
   const audioRef = useRef<Blob | null>(null) // cached take, kept for Retry until appended
@@ -105,16 +181,42 @@ export function useVoice(): UseVoiceReturn {
   const maxUploadBytesRef = useRef(DEFAULT_MAX_UPLOAD_BYTES)
   const stopRef = useRef<() => void>(() => {})
   const mountedRef = useRef(true)
+  const providerRef = useRef(provider)
+  const autoFormatRef = useRef(autoFormat)
 
   // Capability check on mount
   useEffect(() => {
     if (!checkBrowserCapability().ok) return
     let cancelled = false
     fetch(`${API}/voice/status`)
-      .then(res => res.json() as Promise<VoiceStatusResponse>)
-      .then(data => {
+      .then(res => res.json() as Promise<unknown>)
+      .then(value => {
         if (cancelled) return
-        if (data.enabled) {
+        const data = parseVoiceStatus(value)
+        if (!data) {
+          setCapability({
+            status: 'unavailable',
+            reason: 'server',
+            message: 'Voice service returned an invalid status.',
+          })
+          return
+        }
+        const providers = PROVIDER_ORDER.filter(provider => data.providers[provider].available)
+        const selected = providerRef.current && providers.includes(providerRef.current)
+          ? providerRef.current
+          : providers[0] ?? null
+
+        setAvailableProviders(providers)
+        providerRef.current = selected
+        setProviderState(selected)
+        if (selected) persistPreference(PROVIDER_STORAGE_KEY, selected)
+        setFormatterAvailable(data.formatter.available)
+        if (!data.formatter.available) {
+          autoFormatRef.current = false
+          setAutoFormatState(false)
+        }
+
+        if (data.enabled && providers.length > 0) {
           maxUploadBytesRef.current = data.maxUploadBytes
           setCapability({ status: 'ready', maxUploadBytes: data.maxUploadBytes })
         } else {
@@ -154,9 +256,10 @@ export function useVoice(): UseVoiceReturn {
   // One whole-take blob → raw transcript. ok:false means a transient failure
   // (network / timeout / 5xx) the caller can Retry from the cached blob; ok with
   // empty text means the recording held no speech.
-  const postTranscribe = useCallback(async (blob: Blob): Promise<TranscribeResult> => {
+  const postTranscribe = useCallback(async (blob: Blob, provider: VoiceProvider): Promise<TranscribeResult> => {
     const formData = new FormData()
     formData.append('audio', blob, filenameForMime(blob.type))
+    formData.append('provider', provider)
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -201,8 +304,14 @@ export function useVoice(): UseVoiceReturn {
 
   // transcribe → (no-speech | fail | format → append). Shared by stop() and
   // retry(); guards every async hop on the run id and live phase.
-  const processTake = useCallback(async (blob: Blob, runId: number, target: VoiceTargetContext) => {
-    const result = await postTranscribe(blob)
+  const processTake = useCallback(async (
+    blob: Blob,
+    runId: number,
+    target: VoiceTargetContext,
+    provider: VoiceProvider,
+    shouldAutoFormat: boolean,
+  ) => {
+    const result = await postTranscribe(blob, provider)
     if (!mountedRef.current) return
     if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
 
@@ -217,13 +326,33 @@ export function useVoice(): UseVoiceReturn {
       return
     }
 
-    const formatted = await requestFormat(text, target)
-    if (!mountedRef.current) return
-    if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
+    let output = text
+    if (shouldAutoFormat) {
+      const formatted = await requestFormat(text, target)
+      if (!mountedRef.current) return
+      if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
+      output = formatted.text
+    }
     audioRef.current = null
     dispatch({ type: 'TRANSCRIBED', runId })
-    setAppendText({ text: formatted.text, key: runId })
+    setAppendText({ text: output, key: runId })
   }, [postTranscribe, requestFormat])
+
+  const setProvider = useCallback((nextProvider: VoiceProvider) => {
+    if (preferencesLocked(selectInteractionState(phaseRef.current))) return
+    if (!availableProviders.includes(nextProvider)) return
+    providerRef.current = nextProvider
+    setProviderState(nextProvider)
+    persistPreference(PROVIDER_STORAGE_KEY, nextProvider)
+  }, [availableProviders])
+
+  const setAutoFormat = useCallback((enabled: boolean) => {
+    if (preferencesLocked(selectInteractionState(phaseRef.current))) return
+    if (enabled && !formatterAvailable) return
+    autoFormatRef.current = enabled
+    setAutoFormatState(enabled)
+    persistPreference(AUTO_FORMAT_STORAGE_KEY, enabled ? '1' : '0')
+  }, [formatterAvailable])
 
   const open = useCallback((ctx: VoiceTargetContext) => {
     if (phaseRef.current.phase !== 'idle') return
@@ -241,6 +370,9 @@ export function useVoice(): UseVoiceReturn {
       ? ctx
       : (phase.phase === 'composing' || phase.phase === 'error') ? phase.target : undefined
     if (!target) return // a take is already in flight, or no target to record into
+
+    const selectedProvider = providerRef.current
+    if (!selectedProvider) return
 
     const runId = ++runCounterRef.current
     setElapsedMs(0)
@@ -278,6 +410,9 @@ export function useVoice(): UseVoiceReturn {
     const session = sessionRef.current
     const runId = phase.runId
     const target = phase.target
+    const selectedProvider = providerRef.current
+    if (!selectedProvider) return
+    const shouldAutoFormat = autoFormatRef.current
 
     dispatch({ type: 'STOP', runId })
     void (async () => {
@@ -304,7 +439,13 @@ export function useVoice(): UseVoiceReturn {
         return
       }
       audioRef.current = blob
-      await processTake(blob, runId, target)
+      await processTake(
+        blob,
+        runId,
+        target,
+        selectedProvider,
+        shouldAutoFormat,
+      )
     })()
   }, [processTake])
   useEffect(() => { stopRef.current = stop })
@@ -314,10 +455,18 @@ export function useVoice(): UseVoiceReturn {
     if (phase.phase !== 'error') return
     const blob = audioRef.current
     if (!blob) { dispatch({ type: 'DISCARD' }); return }
+    const selectedProvider = providerRef.current
+    if (!selectedProvider || !availableProviders.includes(selectedProvider)) return
     const runId = ++runCounterRef.current
     dispatch({ type: 'RETRY', runId })
-    void processTake(blob, runId, phase.target)
-  }, [processTake])
+    void processTake(
+      blob,
+      runId,
+      phase.target,
+      selectedProvider,
+      autoFormatRef.current,
+    )
+  }, [availableProviders, processTake])
 
   // Enforce the session cap by ending the take (the only finalizing path).
   useEffect(() => {
@@ -343,13 +492,19 @@ export function useVoice(): UseVoiceReturn {
   const format = useCallback(async (text: string): Promise<FormatResult> => {
     const p = phaseRef.current
     const target = 'target' in p ? p.target : null
-    if (!target || !text.trim()) return { text, ok: false }
+    if (!formatterAvailable || !target || !text.trim()) return { text, ok: false }
     return requestFormat(text, target)
-  }, [requestFormat])
+  }, [formatterAvailable, requestFormat])
 
   const { phase } = voiceState
   return {
     capability,
+    availableProviders,
+    provider,
+    setProvider,
+    formatterAvailable,
+    autoFormat,
+    setAutoFormat,
     state: selectInteractionState(phase),
     elapsedMs,
     appendText,

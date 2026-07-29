@@ -12,7 +12,6 @@ import {
   runTag,
   type FixtureProject,
 } from './helpers/workspace'
-import { resolveDevPorts } from '../../e2ePorts'
 
 // The voice target selector now lives in the ComposeTray header (design: §G),
 // not the top nav bar. It names the instance the next Insert routes into and
@@ -21,12 +20,10 @@ import { resolveDevPorts } from '../../e2ePorts'
 // against the bound terminal (the focus default), then RE-POINTED to the editor
 // file, lands in the editor — not the terminal.
 //
-// The fake capture hook is gated on import.meta.env.DEV (voiceCapture.ts), so it
-// only works against the dev server — the static build has no seam. Run with
-// E2E_REUSE=1. The default-from-focus precedence + target-loss recovery + the
+// The fake capture hook is enabled by DEV or the isolated E2E-only build flag.
+// The default-from-focus precedence + target-loss recovery + the
 // in-flight retarget lock are covered by the resolveVoiceTarget /
 // voiceStateMachine unit tests.
-const skipOnBuild = resolveDevPorts({ e2e: true }).yacoHome !== null
 
 test.use({
   viewport: { width: 1280, height: 800 },
@@ -37,10 +34,6 @@ test.use({
 
 let fixture: FixtureProject | null = null
 const openedSessions: string[] = []
-
-test.beforeEach(() => {
-  test.skip(skipOnBuild, 'voice fake-capture hook is dev-only (import.meta.env.DEV); run with E2E_REUSE=1')
-})
 
 test.afterEach(async ({ request }) => {
   for (const name of openedSessions.splice(0)) {
@@ -72,7 +65,18 @@ async function waitServed(request: APIRequestContext, name: string): Promise<voi
  *  `__YACO_FAKE_CAPTURE__` replaces startCaptureSession's body. */
 async function stubVoice(page: Page): Promise<void> {
   await page.route('**/api/voice/status', (route) =>
-    route.fulfill({ json: { enabled: true, sttModel: 'stub', maxUploadBytes: 20_000_000 } }),
+    route.fulfill({
+      json: {
+        enabled: true,
+        providers: {
+          codex: { available: true },
+          groq: { available: true, model: 'stub' },
+        },
+        formatter: { available: true, models: ['stub'] },
+        maxUploadBytes: 20_000_000,
+        tts: { enabled: true, voice: 'stub' },
+      },
+    }),
   )
   await page.addInitScript(() => {
     const w = window as unknown as { __YACO_FAKE_CAPTURE__?: () => Promise<unknown> }

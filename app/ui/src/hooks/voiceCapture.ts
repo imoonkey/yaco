@@ -103,7 +103,8 @@ declare global {
 export async function startCaptureSession(
   callbacks: CaptureCallbacks,
 ): Promise<CaptureSession> {
-  const fake = import.meta.env.DEV && typeof window !== 'undefined'
+  const fakeEnabled = import.meta.env.DEV || import.meta.env.VITE_YACO_E2E_FAKE_CAPTURE === '1'
+  const fake = fakeEnabled && typeof window !== 'undefined'
     ? window.__YACO_FAKE_CAPTURE__
     : undefined
   if (fake) return fake(callbacks)

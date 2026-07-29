@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 import {
   createFixtureProject,
   selectProject,
@@ -6,17 +6,13 @@ import {
   waitForAppReady,
   type FixtureProject,
 } from './helpers/workspace'
-import { resolveDevPorts } from '../../e2ePorts'
 
 // Drives the real ComposeTray via a fake capture session + stubbed voice API.
 // The clipboard is only ever written by the explicit Copy button — closing the
 // tray (Insert / X) must leave it untouched, so a draft can never leak into an
 // unrelated paste.
 //
-// The fake capture hook is gated on import.meta.env.DEV (voiceCapture.ts), so it
-// only works against the dev server — the default isolated suite serves a static
-// build, where the seam is absent. Run this with E2E_REUSE=1.
-const skipOnBuild = resolveDevPorts({ e2e: true }).yacoHome !== null
+// The fake capture hook is enabled by DEV or the isolated E2E-only build flag.
 
 test.use({
   permissions: ['clipboard-read', 'clipboard-write'],
@@ -30,7 +26,6 @@ test.use({
 let fixture: FixtureProject | undefined
 
 test.beforeEach(async ({ request }) => {
-  test.skip(skipOnBuild, 'voice fake-capture hook is dev-only (import.meta.env.DEV); run with E2E_REUSE=1')
   fixture = await createFixtureProject(request, {
     files: { 'package.json': '{"name":"voice-fixture","private":true}\n' },
   })
@@ -44,10 +39,23 @@ test.afterEach(async () => {
  *  real mic. `__YACO_FAKE_CAPTURE__` replaces startCaptureSession's body: stop()
  *  resolves a dummy blob, which the stubbed /transcribe + /format then turn into
  *  `displayText`. */
-async function stubVoice(page: Page, displayText: string) {
+async function stubVoice(
+  page: Page,
+  displayText: string,
+  transcribe?: (route: Route) => Promise<void> | void,
+) {
   await page.route('**/api/voice/status', (route) =>
     route.fulfill({
-      json: { enabled: true, sttModel: 'stub', maxUploadBytes: 20_000_000 },
+      json: {
+        enabled: true,
+        providers: {
+          codex: { available: true },
+          groq: { available: true, model: 'stub' },
+        },
+        formatter: { available: true, models: ['stub'] },
+        maxUploadBytes: 20_000_000,
+        tts: { enabled: true, voice: 'stub' },
+      },
     }),
   )
   await page.addInitScript(() => {
@@ -68,11 +76,27 @@ async function stubVoice(page: Page, displayText: string) {
     }
   })
   await page.route('**/api/voice/transcribe', (route) =>
-    route.fulfill({ json: { text: 'original transcript' } }),
+    transcribe?.(route) ?? route.fulfill({ json: { text: 'original transcript' } }),
   )
   await page.route('**/api/voice/format', (route) =>
     route.fulfill({ json: { displayText, formattingStatus: 'formatted' } }),
   )
+}
+
+async function readTranscribeForm(route: Route): Promise<{ provider: string | null; audio: string }> {
+  const request = route.request()
+  const body = request.postDataBuffer()
+  const contentType = request.headers()['content-type']
+  expect(body).not.toBeNull()
+  expect(contentType).toContain('multipart/form-data')
+
+  const form = await new Response(body!, { headers: { 'content-type': contentType! } }).formData()
+  const audio = form.get('audio')
+  expect(audio).toBeInstanceOf(File)
+  return {
+    provider: form.get('provider') as string | null,
+    audio: Buffer.from(await (audio as File).arrayBuffer()).toString('hex'),
+  }
 }
 
 /** Open the fixture project and a file so the editor compose launcher appears. */
@@ -173,4 +197,39 @@ test('Format replaces the draft; the inline Undo button restores it', async ({ p
   // The inline Undo button (next to Format) restores the pre-format draft.
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(input).toHaveValue('some unformatted draft')
+})
+
+test('failure allows an explicit provider switch and Retry reuses the cached audio', async ({ page }) => {
+  const requests: Array<{ provider: string | null; audio: string }> = []
+  let attempts = 0
+  let formatCalls = 0
+  page.on('request', request => {
+    if (request.url().endsWith('/api/voice/format')) formatCalls++
+  })
+  await stubVoice(page, 'unused', async route => {
+    requests.push(await readTranscribeForm(route))
+    attempts++
+    if (attempts === 1) {
+      await route.fulfill({ status: 502, json: { error: 'Transcription failed. Try again.' } })
+      return
+    }
+    await route.fulfill({ json: { text: 'raw retry transcript' } })
+  })
+  await openFileForVoice(page)
+
+  await page.getByRole('button', { name: 'Start voice recording' }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible({ timeout: 10_000 })
+
+  const provider = page.getByRole('combobox', { name: 'Transcription provider' })
+  const autoFormat = page.getByRole('checkbox', { name: 'Auto format' })
+  await expect(provider).toHaveValue('codex')
+  await provider.selectOption('groq')
+  await autoFormat.uncheck()
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByLabel('Compose input')).toHaveValue('raw retry transcript', { timeout: 10_000 })
+
+  expect(requests.map(request => request.provider)).toEqual(['codex', 'groq'])
+  expect(requests[0]!.audio).toBe(requests[1]!.audio)
+  expect(formatCalls).toBe(0)
 })

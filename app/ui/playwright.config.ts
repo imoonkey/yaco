@@ -44,10 +44,12 @@ const reuseExistingServer = !isolated
 // here), then boot. A static build has no per-request compilation, so it stays
 // responsive under load — the fix for vite-dev's flaky timeouts. Build dominates
 // startup → allow time. `import.meta.env.DEV` is false in a build, so dev-only
-// test hooks (e.g. the fake capture session) don't work here — those specs self-skip and
-// run under E2E_REUSE=1 instead. The preclean reads YACO_HOME from the env (not
+// test hooks are opt-in at build time; the E2E-only voice capture seam is enabled
+// here without entering ordinary production builds. The preclean reads YACO_HOME from the env (not
 // a shell-interpolated path) and validates it before any rm.
-const buildStep = isolated && !process.env.E2E_SKIP_BUILD ? 'npx vite build --outDir dist-e2e && ' : ''
+const buildStep = isolated && !process.env.E2E_SKIP_BUILD
+  ? 'VITE_YACO_E2E_FAKE_CAPTURE=1 npx vite build --outDir dist-e2e && '
+  : ''
 const apiCommand = isolated
   ? `${buildStep}node tests/e2e/preclean.mjs && npx tsx ../server/src/index.ts`
   : 'npx tsx ../server/src/index.ts'

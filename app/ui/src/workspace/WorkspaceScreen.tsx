@@ -225,6 +225,12 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
         elapsedMs={voice.elapsedMs}
         appendText={voice.appendText}
         capability={voice.capability}
+        availableProviders={voice.availableProviders}
+        provider={voice.provider}
+        onProviderChange={voice.setProvider}
+        formatterAvailable={voice.formatterAvailable}
+        autoFormat={voice.autoFormat}
+        onAutoFormatChange={voice.setAutoFormat}
         errorMessage={voice.errorMessage}
         notice={voice.notice}
         onRecord={voice.record}
