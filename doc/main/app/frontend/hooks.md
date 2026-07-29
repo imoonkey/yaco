@@ -204,14 +204,14 @@ Behavior:
 
 Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permission) and `useSessionUnreadState` (capped unread counts + visibility auto-advance). The ack watermark store moved server-side as the REVIEW ack. The multi-instance workspace still reports an active-viewing target (the focused terminal's session + whether that terminal is on screen) via `WorkspaceProvider`'s visibility report, which `App.tsx` feeds into this guard — see [app-shell.md](../ui/app-shell.md).
 
-## useVoice.ts (~290 lines)
+## useVoice.ts (~510 lines)
 
 Orchestrates the single-take voice-input flow on top of three pieces:
 `voiceCapture.ts` (native `MediaRecorder` capture → one whole-take blob),
 `voiceStateMachine.ts` (the `voiceReducer` + selectors), and the split
 [`/api/voice/transcribe` + `/api/voice/format`](../backend/routes.md#voice) routes.
 
-**Export**: `useVoice()` → `{ capability, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, format, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md). `format(text)` runs the formatter over arbitrary draft text (the tray's **Format** button), returning the polished text (or the input unchanged on failure).
+**Export**: `useVoice()` → `{ capability, availableProviders, provider, setProvider, formatterAvailable, autoFormat, setAutoFormat, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, format, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md). `format(text)` runs the formatter over arbitrary draft text (the tray's **Format** button), returning the polished text (or the input unchanged on failure).
 
 ### Flow
 
@@ -221,11 +221,12 @@ user ends manually, transcribed once, then **appended** to the compose draft
 change). Multiple takes append in sequence; the tray also opens empty for
 type/paste with no recording at all.
 
-- **Capability** — on mount: `checkBrowserCapability()` (secure context + `getUserMedia` + `MediaRecorder`), then `GET /api/voice/status` for `maxUploadBytes`. Result gates `record()` (not `open()` — type/paste works without a mic).
+- **Capability** — on mount: `checkBrowserCapability()` (secure context + `getUserMedia` + `MediaRecorder`), then fail-closed parsing of `GET /api/voice/status` for the two provider capabilities, formatter capability, and `maxUploadBytes`. At least one STT provider must be available to gate `record()` (not `open()` — type/paste works without a mic).
+- **Preferences** — `yaco.voiceProvider` stores `codex|groq`; `yaco.voiceAutoFormat` stores the independent formatter choice. Codex is the first-choice default when available. If a persisted provider is unavailable before recording, the hook reconciles to the first available provider; a temporary formatter outage disables formatting for the current mount without erasing the persisted preference.
 - **`open(ctx)`** — opens the tray idle (`composing`) for type/paste.
 - **`record(ctx?)`** — computes `runId` up front (mirrors the reducer's `counter + 1`), dispatches `START_RECORD`, then `startCaptureSession({ onElapsed, onError })`. The session resolves to `PERMISSION_GRANTED` **only if** the live phase is still `requesting_permission` with the same `runId` and the hook is mounted — otherwise the orphaned session is `release()`d. Rejection → `PERMISSION_DENIED`. From `composing`/`error` it reuses the frozen target and appends.
-- **`stop()` → take pipeline** — dispatches `STOP` (→ `transcribing`), `await session.stop()` (one blob) + `release()`. An empty/oversized blob → `NO_SPEECH` / `FAIL`; otherwise the blob is cached in `audioRef` and `processTake` runs: `POST /transcribe` → on transient failure `FAIL` (retryable), else `POST /format` → `TRANSCRIBED` + `appendText`. A **`/format` network failure falls back to appending the raw transcript** so words are never lost. A second effect calls `stop()` once `elapsedMs` crosses `MAX_RECORDING_SECONDS`.
-- **`retry()`** — re-runs `processTake` from the cached `audioRef` blob (no re-record), which is why a failed transcription now actually recovers.
+- **`stop()` → take pipeline** — dispatches `STOP` (→ `transcribing`), `await session.stop()` (one blob) + `release()`. An empty/oversized blob → `NO_SPEECH` / `FAIL`; otherwise the blob is cached in `audioRef`. `processTake` captures the selected provider and auto-format value at the async boundary, sends the mandatory provider field to `POST /transcribe`, and only calls `POST /format` when auto-format remains selected and available. A formatter failure falls back to the raw transcript so words are never lost. A second effect calls `stop()` once `elapsedMs` crosses `MAX_RECORDING_SECONDS`.
+- **`retry()`** — re-runs `processTake` from the cached `audioRef` blob (no re-record) with the provider the user currently selects in the error state. There is no automatic provider fallback. Provider/formatter controls are locked during permission, recording, and transcription, then re-enabled on error.
 
 ### Timeouts
 
@@ -236,7 +237,7 @@ type/paste with no recording at all.
 
 An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution.
 
-Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): record→transcribe→format→append, retry-from-cache after a transcribe failure, `/format` failure → raw append, no-speech, unmount cleanup.
+Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): provider capability validation/reconciliation, persisted preference durability, in-flight preference locking, explicit-provider cached Retry, auto-format independence, record→transcribe→format→append, `/format` failure → raw append, no-speech, and unmount cleanup.
 
 ## useSpeech.ts
 

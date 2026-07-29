@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-07-29: Selectable Codex and Groq voice transcription
+
+**What changed:**
+- Added the deep `@yaco/codex-transcribe` workspace package. It reads the existing Codex-owned ChatGPT OAuth metadata on each operation, sends the pinned Desktop header/multipart contract to the hidden batch transcription endpoint, and exposes stable error codes without logging credentials, audio, transcript, or upstream bodies.
+- Changed `/api/voice/status` to report Codex and Groq STT plus formatter capabilities independently; `/api/voice/transcribe` now requires `provider=codex|groq` and has no implicit default or failover.
+- Added persisted provider and Auto format controls to the compose tray. An in-flight take freezes both choices; after a failure the user can explicitly switch provider and Retry the same cached audio.
+- Added a default-off, environment-only live runner whose JSON Lines output is limited to status, MIME, attempt, and latency.
+
+**Why:**
+- Codex-authenticated users can reuse their existing local login for raw transcription without running cproxy or copying OAuth credentials into YACO, while Groq remains an explicit supported alternative and the formatter stays optional.
+- The ChatGPT endpoint is hidden and can change. Explicit provider provenance, typed 401/403/429 handling, a retained Groq path, and an opt-in live probe constrain that risk without browser cookies, Cloudflare challenge code, token refresh ownership, or silent provider switching.
+
+**Key files:** `packages/codex-transcribe/`, `app/server/src/routes/voice.ts`, `app/ui/src/hooks/useVoice.ts`, `app/ui/src/components/ComposeTray.tsx`, `plan/all/20260729_codex-transcribe/`
+**Verification:** `scripts/verify.sh` green; package 75/75; focused server 71/71 and UI 21/21; isolated voice Playwright 7/7. Synthetic live QA: macOS Codex 10/10 across WebM/Opus and MP4/AAC, Linux Codex 2/2, and both Codex/Groq produced non-empty expected-phrase matches without logging transcripts.
+**Commits:** `32d29671`, `76fb755d`, `447941db`
+**Next:** Keep the opt-in live runner as the explicit signal if the hidden endpoint or Desktop header allowlist changes.
+**Blockers:** None
+
 ## 2026-07-27: CSV/TSV files preview as a sortable table
 
 **What changed:**

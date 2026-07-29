@@ -108,41 +108,61 @@ A **colocated repo** is a depth-1 child directory that is its own git repo but i
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/voice/status` | Voice pipeline availability and config |
-| POST | `/api/voice/transcribe` | Transcribe one recording (Whisper only) |
+| GET | `/api/voice/status` | Codex/Groq STT capabilities, formatter capability, and config |
+| POST | `/api/voice/transcribe` | Transcribe one recording with an explicit Codex or Groq provider |
 | POST | `/api/voice/format` | Format a whole transcript (formatter only) |
 | POST | `/api/voice/speak` | Notification text → neural spoken audio (Groq rewrite + edge-tts) |
 
 **`GET /api/voice/status`**
 
-Returns pipeline readiness so the UI can gate recording controls.
+Returns independently derived STT provider and formatter capabilities so the UI can gate recording and formatting separately.
 
-Enabled (GROQ_API_KEY set):
+Example with both providers available:
 ```json
-{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"], "maxUploadBytes": 20000000, "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" } }
+{
+  "enabled": true,
+  "providers": {
+    "codex": { "available": true },
+    "groq": { "available": true, "model": "whisper-large-v3-turbo" }
+  },
+  "formatter": {
+    "available": true,
+    "models": ["openai/gpt-oss-120b"]
+  },
+  "maxUploadBytes": 20000000,
+  "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" }
+}
 ```
 
-Disabled (key missing):
+Example with neither STT provider available:
 ```json
-{ "enabled": false, "reason": "missing_api_key", "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" } }
+{
+  "enabled": false,
+  "providers": {
+    "codex": { "available": false, "reason": "missing_auth" },
+    "groq": { "available": false, "reason": "missing_api_key" }
+  },
+  "formatter": { "available": false, "reason": "missing_api_key" },
+  "maxUploadBytes": 20000000,
+  "tts": { "enabled": true, "voice": "zh-CN-XiaoxiaoNeural" }
+}
 ```
 
-Top-level `enabled` is **STT-only** (voice input — needs `GROQ_API_KEY`; the UI's
-`useVoice` reads it for mic readiness). The nested `tts` is advertised in **both**
-branches (edge-tts is keyless), so advertising read-back never flips the mic UI to ready.
+Top-level `enabled` is **STT-only**: it is true when at least one provider is available. `providers.codex` comes from local auth metadata inspection only; status never uploads probe audio. Codex reasons are `missing_auth`, `unsupported_auth`, `invalid_auth`, or `expired_auth`. `formatter.available` depends only on `GROQ_API_KEY`, so Codex raw transcription works without a formatter. The nested `tts` remains keyless and does not affect mic readiness.
 
 The pipeline is **split** into two single-responsibility endpoints. The client
 records one continuous take (native `MediaRecorder`, ended by the user via
 Stop/F5 — no mid-recording chunking, no VAD), uploads it **once** to
-`/transcribe`, then calls `/format` once over that transcript. The formatter
-runs exactly once per take.
+`/transcribe` with the selected provider, then calls `/format` only when Auto
+format is enabled and the formatter is available.
 
-**`POST /api/voice/transcribe`** (`multipart/form-data`) — Whisper STT only.
+**`POST /api/voice/transcribe`** (`multipart/form-data`) — provider-selected STT.
 
 Request fields:
 - `audio` (file, required) — one whole-take recording (typically `audio/webm;codecs=opus`, or `audio/mp4` on Safari). MIME-allowlisted (`audio/wav`, `webm`, `ogg`, `mpeg`, `mp4`, `m4a`, `flac`); when the part is typeless / `application/octet-stream`, the file extension is used instead.
+- `provider` (string, required) — exactly `codex` or `groq`; there is no default or server-side failover.
 - `language` (string, optional) — ISO-639-1 hint for Whisper
-- `context` (string, optional) — tiny vocabulary-bias snippet; `buildWhisperPrompt` keeps only a capped tail (Groq 224-token `initial_prompt` limit)
+- `context` (string, optional) — tiny vocabulary-bias snippet used only by Groq; `buildWhisperPrompt` keeps a capped tail (Groq 224-token `initial_prompt` limit). Codex receives no Groq-specific prompt.
 
 Response (silence yields `{ "text": "" }`):
 ```json
@@ -190,7 +210,10 @@ client plays the mp3 and degrades to browser TTS on any non-200. -> See:
 
 | Condition | HTTP | `error` message | Route |
 |-----------|------|-----------------|-------|
-| Missing GROQ_API_KEY | 503 | Voice input is unavailable. Set GROQ_API_KEY. | both |
+| Missing GROQ_API_KEY | 503 | Voice input is unavailable. Set GROQ_API_KEY. | Groq transcribe / format |
+| Codex auth missing/invalid/unsupported | 503 | Codex transcription is unavailable. Sign in with Codex. | Codex transcribe |
+| Codex auth expired / upstream 401 | 503 | Codex login has expired. Sign in again. | Codex transcribe |
+| Missing/unknown `provider` | 400 | Invalid transcription provider. | transcribe |
 | Invalid form / missing audio / non-string `language`\|`context` | 400 | Invalid voice recording. | transcribe |
 | Unsupported audio format | 400 | Unsupported audio format. | transcribe |
 | Audio > 20 MB | 413 | Recording too large. Keep it short. | transcribe |
@@ -199,14 +222,15 @@ client plays the mp3 and degrades to browser TTS on any non-200. -> See:
 | Invalid JSON / non-string `text` | 400 | Invalid request. | speak |
 | `text` > `VOICE_MAX_SPEAK_CHARS` | 413 | Text too long. | speak |
 | edge-tts synthesis failed | 502 | Speech synthesis failed. | speak |
-| Upstream rate limit | 429 | Rate limit reached. Try again shortly. | transcribe |
-| Upstream timeout/network | 502 | Transcription failed. Try again. | transcribe |
+| Upstream rate limit | 429 | Rate limit reached. Try again shortly. | both providers |
+| Codex 403 / other upstream / timeout/network | 502 | Transcription failed. Try again. | Codex transcribe |
+| Groq upstream timeout/network | 502 | Transcription failed. Try again. | Groq transcribe |
 
-On a 429, `/transcribe` forwards the upstream Groq `retry-after` header so the
+On a 429, `/transcribe` forwards either provider's upstream `retry-after` header so the
 client backs off precisely — `useVoice.ts` parses it (seconds or HTTP date),
 waits, and retries the upload once.
 
-Audio is never persisted to disk. API key is never exposed to the browser.
+Audio is never persisted to disk. API keys and Codex OAuth credentials are never exposed to the browser. `@yaco/codex-transcribe` reads `${CODEX_HOME:-~/.codex}/auth.json` for each operation, accepts only `auth_mode: "chatgpt"`, and never reads a refresh token, refreshes credentials, or writes the Codex-owned file. The ChatGPT batch endpoint is hidden and may change; a 403 is surfaced as a provider failure rather than starting a browser/Cloudflare challenge flow.
 
 -> History: `plan/archive/20260605_voice-streaming/` (the original streaming
 design; the mid-recording chunking it describes was reverted to this single-take

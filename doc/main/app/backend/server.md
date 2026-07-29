@@ -117,7 +117,8 @@ Nothing under `/assets/vad/` is served, and `MIME_TYPES` no longer carries
 |-----|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server listen port |
 | `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins (overrides private-network defaults) |
-| `GROQ_API_KEY` | unset | Groq API key for the voice pipeline: STT + formatter, and the read-back **spoken rewrite**. TTS itself (edge-tts) is keyless, so read-back works without it (raw text). Set in `server/.env` |
+| `CODEX_HOME` | `~/.codex` | Optional Codex state root. `@yaco/codex-transcribe` reads `auth.json` on each inspection/request; YACO never refreshes tokens or writes this file. |
+| `GROQ_API_KEY` | unset | Groq API key for Groq STT + formatter and the read-back **spoken rewrite**. It is not required for Codex raw transcription. TTS itself (edge-tts) is keyless, so read-back works without it (raw text). Set in `server/.env` |
 | `GROQ_TRANSCRIPTION_MODEL` | `whisper-large-v3-turbo` | Whisper model for speech-to-text |
 | `GROQ_FORMATTER_MODEL` | unset | Optional single LLM formatter override. Ignored when `VOICE_FORMATTER_MODELS` is set; otherwise the built-in chain starts with `openai/gpt-oss-120b` |
 | `VOICE_TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | edge-tts neural voice for notification read-back. The `*MultilingualNeural` voices return empty audio from the endpoint — use a standard neural voice |
