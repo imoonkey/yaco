@@ -3,9 +3,13 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "exports": "./src/index.ts",
   "scripts": {
     "test": "vitest run",
+    "test:live": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/live.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
