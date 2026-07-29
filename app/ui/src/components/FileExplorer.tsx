@@ -343,7 +343,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
     const pending = { path: tempPath, type: nodeType }
     pendingRef.current = pending
     setPendingCreate(pending)
-    return { id: tempPath }
+    return { ...pending, name: '' }
   }, [onExpandDir])
 
   const onRename = useCallback(async ({ id, name }: { id: string; name: string }) => {

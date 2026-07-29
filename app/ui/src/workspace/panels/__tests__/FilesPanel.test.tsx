@@ -67,8 +67,8 @@ beforeEach(() => {
     addEventListener: () => {}, removeEventListener: () => {},
     addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
   }))
-  // Run reveal's requestAnimationFrame callback synchronously for determinism.
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0 })
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => window.setTimeout(() => cb(0), 0))
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
   // The worktree-picker open store is module-scoped (it bridges the header/body
   // split), so reset it to closed before each test.
   resetWorktreePickerForTests()
@@ -77,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.clearAllMocks()
 })
 
@@ -228,6 +229,25 @@ describe('FilesPanel — tree mode (matches the current inline explorer body)', 
       const after = filesPanelFetch.mock.calls.filter(c => isRootFilesUrl(String(c[0]))).length
       expect(after).toBe(rootCallsBefore + 1)
     })
+  })
+
+  it.each(['New File', 'New Folder'])('shows a name input after clicking "%s"', async (action) => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 320,
+      height: 480,
+      top: 0,
+      right: 320,
+      bottom: 480,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    renderFilesPanel({ showTextSearch: false })
+
+    fireEvent.click(await screen.findByLabelText(action))
+
+    expect(await screen.findByRole('textbox')).toBeTruthy()
   })
 })
 
