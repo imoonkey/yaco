@@ -3,9 +3,9 @@
 `type: paper` 且属于 quant / trading-ML 方向的论文做深度 review 时的 body template；
 **其他领域的论文不适用**（维度是按交易系统 pipeline 设计的）。用法：
 
-- **Checklist，不是槽位**：某个 section 真没内容就整节跳过，**保留编号**（允许跳号），不写 N/A 凑数。
+- **Checklist，不是槽位**：某个 section 真没内容就整节跳过，**保留编号**（允许跳号），不写 N/A 凑数。编号是锚，节标题用 template 原文或中文对应皆可。
 - **论文没写 ≠ 没内容**：隐含假设也是内容。典型如 §8——多数学术论文不讨论执行，但"月末收盘出信号、同一收盘价零摩擦成交"这类隐含口径必须写出来：「论文未讨论，隐含口径是 X，偏乐观的方向在 Y」。
-- 写到的数字必须带 table / section / equation 出处。
+- 写到的数字必须带 table / section / equation 出处。允许自己从论文数字推导（如从收益与换手推 breakeven cost），但必须显式标注「本人推导，非论文数字」。
 - 深度 review 是显式决定，不是默认动作——只归档不 review 时照常留空 body。
 
 写出来的 `wiki/source/<id>.md` 形如：
@@ -13,7 +13,7 @@
 ```markdown
 ---
 description: 一行 —— 这是什么、为什么值得记
-tags: [paper, <topical>, ...]
+tags: [<topical>, ...]        # 不加 paper——type 字段已表达
 ---
 
 # <Paper Title> — <Authors> (<Venue Year>)
@@ -51,11 +51,11 @@ tags: [paper, <topical>, ...]
 
 ## 5. Model and Training Objective
 
-描述模型类别、模型输入、核心架构和不同模型之间的组合方式，包括线性模型、树模型、神经网络、序列模型、图模型、强化学习或其他方法。记录训练 label、损失函数或优化目标，以及模型最终输出的形式，例如预期收益、收益排名、上涨概率、目标持仓或交易动作。若模型包含正则化、多任务学习、预训练、在线学习或 ensemble，也在这里说明。benchmark 类论文的模型对比矩阵直接写在这里，不需要变体模板。
+描述模型类别、模型输入、核心架构和不同模型之间的组合方式，包括线性模型、树模型、神经网络、序列模型、图模型、强化学习或其他方法。记录训练 label、损失函数或优化目标，以及模型最终输出的形式，例如预期收益、收益排名、上涨概率、目标持仓或交易动作。若模型包含正则化、多任务学习、预训练、在线学习或 ensemble，也在这里说明。benchmark 类论文的模型对比矩阵直接写在这里，不需要变体模板——分工：本节放**静态属性**（机制、参数量、lookback、超参空间），性能表放 §10，避免两节重复。
 
 ## 6. Training and Evaluation Protocol
 
-描述样本时间范围以及 train、validation 和 test 的划分方式，包括 expanding window、rolling window、固定时间划分或跨市场验证。说明模型多久重新训练、如何选择超参数、如何 early stop，以及是否处理 overlapping labels、时间边界泄露和随机种子敏感性。列出论文使用的基准模型和简单策略，以判断结果究竟来自新数据、模型复杂度还是实验设计。对多模型对比，明确协议是否公平：各模型的调参预算是否对等、几个 seed、split 是否完全一致。
+描述样本时间范围以及 train、validation 和 test 的划分方式，包括 expanding window、rolling window、固定时间划分或跨市场验证。说明模型多久重新训练、如何选择超参数、如何 early stop，以及是否处理 overlapping labels、时间边界泄露和随机种子敏感性。列出论文使用的基准模型和简单策略，以判断结果究竟来自新数据、模型复杂度还是实验设计。对多模型对比，明确协议是否公平：各模型的调参预算是否对等、几个 seed、split 是否完全一致、参数量/lookback 是否可比——公平性通常是多个轴上的"部分公平"，用 维度 × verdict（✅/⚠️/❌）的表呈现比散文清楚。
 
 ## 7. From Model Output to Portfolio
 
@@ -71,7 +71,7 @@ tags: [paper, <topical>, ...]
 
 ## 10. Results and Performance Attribution
 
-记录论文报告的主要预测指标和投资指标，例如 out-of-sample (R^2)、IC、Rank IC、accuracy、收益率、Sharpe ratio、最大回撤、turnover、alpha 和 t-statistic。明确结果是 gross 还是 net of costs，并总结不同子样本、市场状态和资产组中的稳定性。进一步分析收益是否可以被市场、行业或已知风格因子解释，以及改进主要来自模型、数据、portfolio construction 还是交易机制。
+记录论文报告的主要预测指标和投资指标，例如 out-of-sample (R^2)、IC、Rank IC、accuracy、收益率、Sharpe ratio、最大回撤、turnover、alpha 和 t-statistic。明确结果是 gross 还是 net of costs，并总结不同子样本、市场状态和资产组中的稳定性。进一步分析收益是否可以被市场、行业或已知风格因子解释，以及改进主要来自模型、数据、portfolio construction 还是交易机制。对 benchmark 类论文做一个高价值检查：标题结论的差异是否大于论文自报的 ±std / 噪声带——逐表给 verdict，落在噪声带内的"结论"要点名。
 
 ## 11. Interpretation, Limitations, and Personal Assessment
 
