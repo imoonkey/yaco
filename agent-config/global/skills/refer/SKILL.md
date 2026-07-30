@@ -26,8 +26,12 @@ The reference library lives at `~/ld-workspace/reference` (desktop) or
    `wiki/source/<id>.md`, fill in `description` and `tags`, and write the body.
 
    **An empty body is a valid resting state, not a TODO.** Do not "complete" a page
-   because it looks unfinished. There is no body template and there will not be one —
-   a template with slots invites filling the slots, and filled ≠ worth saying.
+   because it looks unfinished. There is no *general* body template — a template with
+   slots invites filling the slots, and filled ≠ worth saying. When you ARE writing a
+   deep review, a domain-specific checklist may exist under `references/` (currently
+   only `references/quant-ml-paper-review.md`, for quant/trading-ML papers — do not
+   apply it to papers outside that domain; sections you have nothing to say about are
+   skipped with numbering kept; implicit assumptions count as content).
 
 3. **If this changed a conclusion**, append a line to `wiki/domain/<name>/log.md`
    (create it if the domain has none) — what claim got overturned or merged, and why.
@@ -45,9 +49,7 @@ tags: [<topical>, ...]
 
 **`tags` rule**: a tag is a property of the *source* ("what is this about"), never a
 property of a *relationship* ("who used it"). `factor`, `alpha-mining`, `benchmark`
-are tags. `quant`, `used-by-vvg` are not — those drift the moment a project changes,
-and the person changing it is not looking at the library. Point at the library from
-the project, not the other way round.
+are tags. You are encouraged to reuse tags, so relevant wikis can be connected through tags.
 
 ## Finding things
 
