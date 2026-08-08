@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-08: Lockfile sync — react-arborist 3.8.0 → 3.16.0
+
+**What changed:**
+- Refreshed one `package-lock.json` entry (`version` / `resolved` / `integrity`) via `npm update react-arborist --package-lock-only`. No `package.json` touched anywhere; 3.16.0's `dependencies` and `peerDependencies` are identical to 3.8.0's, so no transitive entry moved.
+- Corrected `doc/main/app/ui/workspace/explorer-and-changes.md`: the explorer's custom `handleClick` override was justified there by "3.5.0 only checks `metaKey`", which 3.16.0's `NodeApi.handleClick` (it handles `metaKey || ctrlKey`) makes false. The override is still required — it stops a modifier click from falling through to preview-open / dir-toggle.
+
+**Why:**
+- A clean `npm ci` installed 3.8.0 while `app/ui/src/components/FileExplorer.tsx:458`'s `onCreate` is written against 3.16.0's `CreateHandler` (which may return the created node). `package.json`'s `^3.4.3` permitted both, so every local `node_modules` ran 3.16.0 and only fresh clones broke — `npx tsc -b` failed TS2322 and `npm run build` failed with it. External contributors and the new CI workflow could not go green.
+- Updated the lock rather than rewriting the component down to the 3.8.0 signature: 3.16.0 is the release that added the return-the-node behavior the component's `idAccessor="path"` design relies on.
+- The rest of the lock↔`node_modules` drift (129 installed-version mismatches, plus 79 locked-but-absent packages of which 68 are other-platform optionals) was deliberately left alone — a reviewable one-entry diff beats an unreviewable ~200-entry one on a release branch, with no failure to justify it.
+
+**Known gaps (out of this task's declared `package-lock.json` scope):** `app/ui/package.json` still declares `react-arborist: ^3.4.3` though the source needs 3.16.0; `app/ui/package-lock.json` and `app/server/package-lock.json` are tracked, stale since 2026-06-03, and inert (both are root `workspaces` entries, so `cd app/ui && npm ci` installs the root project and never reads them); and `fileExplorerNode.tsx`'s comment repeats the stale 3.5.0 rationale. All three want one follow-up under `oss-release-v0.1`.
+
+**Key files:** `package-lock.json`, `doc/main/app/ui/workspace/explorer-and-changes.md`, `plan/all/release-recap/oss-lockfile-sync-{plan,review,qa}.md`
+**Verification:** Hermetic export (`git archive` → a short non-`/tmp` path, no `node_modules`) + fresh `npm ci`: `npm ci` exit 0 installing react-arborist 3.16.0; `app/ui` `npx tsc -b` and `npm run build` exit 0 (**both were red before**); `app/ui` lint 0 errors; `app/ui` vitest 1180/1180; `cli` bun test 1125/1125; `app/server` 795/795; 18/18 File-Explorer Playwright specs green, including all four `file-create` specs that drive the `CreateHandler` API that differs between the two versions. `scripts/verify.sh` green in-worktree. Cross-provider Codex review (`oss-lockfile-sync-review.md`): APPROVE, 0 critical / 0 high; it independently recomputed the tarball SHA-512 against the lock's `integrity`.
+**Commit:** `2d71bd82`
+**Next:** the follow-up above; then the remaining `oss-release-v0.1` publish tasks.
+**Blockers:** None.
+
 ## 2026-08-08: Root MIT LICENSE and publish-guard package metadata
 
 **What changed:**

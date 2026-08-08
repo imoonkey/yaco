@@ -46,7 +46,7 @@ Virtualized file tree using react-arborist with react-window.
 - Enter → open selected file (pinned)
 - Tree is keyboard-accessible
 
-Modifier handling lives in `fileExplorerNode.tsx#handleClick`: react-arborist 3.5.0's built-in handler only listens for `metaKey`, so we route `metaKey || ctrlKey` (and `shiftKey`) ourselves before any preview/toggle side-effects. Without this override Cmd/Ctrl+Click silently behaves as single-select on Linux/Windows.
+Modifier handling lives in `fileExplorerNode.tsx#handleClick`, which intercepts the click instead of delegating to `node.handleClick`: a modifier click must select only, never fall through to the preview-open / directory-toggle side-effects below it. (The original reason — react-arborist 3.5.0's built-in handler checked `metaKey` alone, so Cmd/Ctrl+Click degraded to single-select on Linux/Windows — no longer applies: since the lockfile moved to 3.16.0, `NodeApi.handleClick` handles `metaKey || ctrlKey` itself. The override is still required for the side-effect skip. `fileExplorerNode.tsx`'s comment still cites the stale reason.)
 
 ### Selection Sync (File Reveal)
 
