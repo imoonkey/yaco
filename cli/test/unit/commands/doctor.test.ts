@@ -154,12 +154,42 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
     expect(r.summary.fail).toBe(1);
   });
 
-  it("still fails task-graph when the tasks file is unreadable", () => {
+  it("still fails task-graph when the tasks file is malformed", () => {
     installPrereqs();
     writeFileSync(join(tasksDir(), "tasks.json"), "not json\n");
     const r = runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
+  });
+
+  // The skip is for a path that is genuinely NOT THERE. A path that is there
+  // but cannot be read is breakage and must not be laundered into a skip —
+  // `plan/tasks` symlinked at an extracted task store is exactly how this repo
+  // family keeps its plan out of the public tree.
+  it("fails task-graph when the tasks path is a dangling symlink", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    mkdirSync(join(repoRoot, "plan"), { recursive: true });
+    symlinkSync(join(sandbox, "extracted-store-that-moved"), tasksDir());
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(tg?.detail).toContain("dangling symlink");
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("fails task-graph when the tasks path cannot be read", () => {
+    if (process.getuid?.() === 0) return; // root defeats the permission wall
+    installPrereqs();
+    chmodSync(join(repoRoot, "plan"), 0o000);
+    try {
+      const r = runAllChecks();
+      const tg = r.checks.find((c) => c.name === "task-graph");
+      expect(tg?.status).toBe("fail");
+      expect(tg?.detail).toContain("EACCES");
+    } finally {
+      chmodSync(join(repoRoot, "plan"), 0o755); // let afterEach clean up
+    }
   });
 });
 

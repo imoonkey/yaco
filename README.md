@@ -89,9 +89,9 @@ wrong. It checks the binary, `~/.yaco`, the project registry, the skill link,
 the provider hooks and wrapper, tmux, git, the installed providers, and the
 current repository's task graph. Two checks are worth knowing: `providers` fails
 when neither `claude` nor `codex` is on your `PATH`, and `task-graph` reports
-`SKIP` until the repository has a graph under `plan/tasks/`, which `yaco task
-set` creates — an unplanned repo is a zero state, not a failure. Only a graph
-that exists but does not validate fails the check.
+`SKIP` until the repository has a graph (under `plan/tasks/` by default), which
+`yaco task set` creates — an unplanned repo is a zero state, not a failure.
+Only a graph that is there but unreadable or invalid fails the check.
 
 **2. Start the app**, from the repo root:
 

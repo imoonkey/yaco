@@ -39,7 +39,7 @@ yaco doctor [--repo <path>] [--json]
 | 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
 | 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
-| 11 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks` store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / unreadable store |
+| 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 eleven names above so consumers can rely on the contract. `claude-md-link` was
@@ -48,8 +48,10 @@ deliberate change to the published contract.
 
 ## `task-graph` skip — the unplanned repo
 
-A repo with no `plan/tasks` tree has not been planned yet; that is the zero
-state of every fresh clone, not breakage. The check reports
+The check reads the task store at the path `yaco.toml [paths]` resolves —
+`plan/tasks` unless the repo overrides `plan` or `tasks`; the detail always
+names the resolved path. A repo that has no store there has not been planned
+yet; that is the zero state of every fresh clone, not breakage:
 
 ```
 SKIP  task-graph  <repo>/plan/tasks absent — no task graph yet (`yaco task set` creates one)
@@ -57,8 +59,23 @@ SKIP  task-graph  <repo>/plan/tasks absent — no task graph yet (`yaco task set
 
 Because skips count in neither summary bucket, `summary.fail` stays 0, the
 exit code stays 0, and `yaco install` — which bails when `summary.fail > 0` —
-completes on a fresh clone. A tree that *exists* but does not load or validate
-is still a `fail`: absent is a zero state, broken is breakage.
+completes on a fresh clone.
+
+**Absent is a zero state; unreadable is breakage.** The skip is only for a path
+that is genuinely not there (`ENOENT`). A store that *is* there but cannot be
+read fails, and says why:
+
+| Store state | Status |
+|---|---|
+| path does not exist | `skip` |
+| symlink dangling at a moved/extracted store | `fail` — `dangling symlink` |
+| walled off by permissions | `fail` — the errno (`EACCES: …`) |
+| loads but does not validate | `fail` — `<N> integrity problem(s)` |
+| loads and validates (an empty store counts) | `pass` |
+
+The dangling-symlink case is not hypothetical: pointing `plan/tasks` at a task
+store kept outside the public tree is exactly how a repo separates its plan, and
+laundering that broken link into a skip would hide it.
 
 The `providers` and `agent-hook-config` checks keep their fixed names but build
 their detail by iterating the provider registry (`listProviders()` from

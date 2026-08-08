@@ -79,8 +79,10 @@ Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `yaco doctor [--repo <path>] [--json]` runs eleven required checks; the
 `--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
 0 / 1 carrying the pass/fail signal. A check may report `skip` (a zero
-state, e.g. `task-graph` in a repo with no `plan/tasks`); skips count in
-neither summary bucket, so they keep the exit code at 0.
+state, e.g. `task-graph` in a repo with no task store at the path
+`yaco.toml [paths]` resolves — `plan/tasks` by default); skips count in
+neither summary bucket, so they keep the exit code at 0. A store that is
+there but unreadable still fails.
 
 ### Installed-binary rule for agent runtime changes
 

@@ -253,6 +253,20 @@ function checkProviders(): CheckResult {
   return pass("providers", detail);
 }
 
+/** Why a path `existsSync` denies is nonetheless there — it dangles, or its
+ *  parent walls us out — or null when it is genuinely absent. `lstat` is the
+ *  discriminator: it does not follow symlinks, so it succeeds on a dangling
+ *  one and reports the real errno for everything else. */
+function unreadableReason(path: string): string | null {
+  try {
+    lstatSync(path);
+    return "dangling symlink";
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    return err.code === "ENOENT" ? null : err.message;
+  }
+}
+
 function checkTaskGraph(repoRoot: string): CheckResult {
   // Validate in-process: callers thread the resolved repoRoot in (install
   // passes --repo through; the doctor handler resolves the flag/env/cwd
@@ -262,11 +276,18 @@ function checkTaskGraph(repoRoot: string): CheckResult {
   try {
     const paths = readYacoProjectPaths(repoRoot);
     const tasksPath = join(repoRoot, paths.tasks);
-    // No tasks tree is the zero state of an unplanned repo (a fresh clone has
-    // none), not breakage — skip, so `yaco install` on a fresh clone still
-    // exits 0. A tree that exists but does not validate stays a failure.
     if (!existsSync(tasksPath)) {
-      return skip("task-graph", `${tasksPath} absent — no task graph yet (\`yaco task set\` creates one)`);
+      // No tasks tree is the zero state of an unplanned repo (a fresh clone
+      // has none), not breakage — skip, so `yaco install` on a fresh clone
+      // still exits 0. But existsSync also denies a path that is *there* and
+      // merely unreadable — a symlink dangling at an extracted store, a
+      // permission wall — and that is breakage, so it fails. So does a tree
+      // that loads but does not validate.
+      const reason = unreadableReason(tasksPath);
+      if (reason === null) {
+        return skip("task-graph", `${tasksPath} absent — no task graph yet (\`yaco task set\` creates one)`);
+      }
+      return fail("task-graph", `${tasksPath}: ${reason}`);
     }
     const store = loadTaskStore(tasksPath);
     const report = validateGraph(store.tasks);
