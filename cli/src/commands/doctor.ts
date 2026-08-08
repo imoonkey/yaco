@@ -284,6 +284,12 @@ function checkTaskGraph(repoRoot: string): CheckResult {
   // would force a child bun process and re-pay startup cost; the validate
   // primitives are already pure and re-usable.
   try {
+    // The skip below claims "this repo has no task graph yet" — a claim that
+    // presupposes a repo. A --repo that is not there is bad input, so it
+    // fails, and it also bounds the climb in unreadableReason() to the repo.
+    if (!existsSync(repoRoot)) {
+      return fail("task-graph", `${repoRoot}: repo root does not exist`);
+    }
     const paths = readYacoProjectPaths(repoRoot);
     const tasksPath = join(repoRoot, paths.tasks);
     if (!existsSync(tasksPath)) {

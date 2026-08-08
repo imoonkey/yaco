@@ -68,6 +68,7 @@ read fails, and says why:
 | Store state | Status |
 |---|---|
 | no component of the path exists | `skip` |
+| the repo root itself does not exist (a wrong `--repo`) | `fail` — bad input, not a zero state |
 | a live symlinked plan root that has no tasks tree yet | `skip` |
 | symlink dangling at a moved/extracted store — **at any depth**, `plan` or `plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
 | walled off by permissions | `fail` — the errno (`EACCES: …`) |

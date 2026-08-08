@@ -325,6 +325,23 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     expect(taskGraph.detail).toContain(otherRepo);
   });
 
+  it("fails (exit 1) when --repo points at a repo that does not exist", () => {
+    // A missing repo is bad input, not an unplanned repo — it must not be
+    // laundered into the zero-state skip.
+    installPrereqs();
+    const missing = join(sandbox, "no-such-repo");
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "doctor", "--repo", missing, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.status).toBe(1);
+    const parsed = JSON.parse(r.stdout);
+    const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(missing);
+  });
+
   it("exits 0 with a task-graph skip when --repo has no tasks tree", () => {
     installPrereqs();
     const r = spawnSync(
