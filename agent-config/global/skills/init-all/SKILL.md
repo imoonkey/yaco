@@ -15,7 +15,7 @@ Initialize a project for multi-agent development. CLAUDE.md is the single source
 
 Invoke Claude's built-in `/init`, then trim the generated CLAUDE.md to the pointer convention:
 
-- Don't repeat global rules (already loaded from `~/.claude/CLAUDE.md`)
+- Don't repeat rules the agent already loads globally
 - Don't embed architecture or workflow details — point to `doc/main/` and `doc/dev/` as SOTA instead
 - Keep it under 50 lines; if longer, content belongs in doc/
 
@@ -58,7 +58,7 @@ If doc/main/ and doc/dev/ already exist, leave them alone.
 Check global symlinks:
 
 ```bash
-ls -la ~/.claude/CLAUDE.md ~/.claude/skills ~/.codex/AGENTS.md ~/.agents/skills 2>/dev/null
+ls -la ~/.claude/skills ~/.agents/skills 2>/dev/null
 ```
 
 If any are missing, warn:

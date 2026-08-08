@@ -1,7 +1,7 @@
 /** `yaco doctor` — required health checks for a YACO install.
  *
- *  Twelve stable check names per the install/distribution design:
- *    binary, version, yaco-home, registry, skills-link, claude-md-link,
+ *  Eleven stable check names per the install/distribution design:
+ *    binary, version, yaco-home, registry, skills-link,
  *    agent-hook-config, agent-wrapper, tmux, git, providers, task-graph
  *
  *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }.
@@ -17,7 +17,7 @@
  *
  *  `gh` is intentionally NOT included as a separate check — only ever
  *  reported as part of `providers` if at all; doctor's required surface
- *  is exactly the 12 names above so consumers can rely on the contract.
+ *  is exactly the 11 names above so consumers can rely on the contract.
  */
 import {
   existsSync,
@@ -57,8 +57,7 @@ Flags:
                   any check failed, 0 otherwise)
 
 Reports the status of: binary, version, yaco-home, registry, skills-link,
-claude-md-link, agent-hook-config, agent-wrapper, tmux, git, providers,
-task-graph.
+agent-hook-config, agent-wrapper, tmux, git, providers, task-graph.
 `;
 
 export type CheckStatus = "pass" | "fail" | "skip";
@@ -74,7 +73,7 @@ export interface DoctorReport {
   summary: { pass: number; fail: number };
 }
 
-/** The 12 required check names — stable contract per the design. Tests
+/** The 11 required check names — stable contract per the design. Tests
  *  assert this exact list shows up in `yaco doctor --json` output. */
 export const REQUIRED_CHECKS = [
   "binary",
@@ -82,7 +81,6 @@ export const REQUIRED_CHECKS = [
   "yaco-home",
   "registry",
   "skills-link",
-  "claude-md-link",
   "agent-hook-config",
   "agent-wrapper",
   "tmux",
@@ -191,10 +189,6 @@ function checkSkillsLink(): CheckResult {
   return checkSymlinkPresent("skills-link", join(userHome(), ".claude", "skills"));
 }
 
-function checkClaudeMdLink(): CheckResult {
-  return checkSymlinkPresent("claude-md-link", join(userHome(), ".claude", "CLAUDE.md"));
-}
-
 /** `agent-hook-config` (stable check name): pass when at least one provider has
  *  its yaco-owned hook entries installed. Detail is registry-driven — each
  *  provider with a hooks adapter is probed via `hasInstalledHook`. */
@@ -287,7 +281,7 @@ export function resolveDoctorRepo(repoFlag?: string): string {
   return process.cwd();
 }
 
-/** Run all 12 required checks and return a structured report. Pure: no
+/** Run all 11 required checks and return a structured report. Pure: no
  *  process.exit; callers decide how to react. */
 export function runAllChecks(repoRoot?: string): DoctorReport {
   const resolvedRepo = resolveDoctorRepo(repoRoot);
@@ -297,7 +291,6 @@ export function runAllChecks(repoRoot?: string): DoctorReport {
     checkYacoHome(),
     checkRegistry(),
     checkSkillsLink(),
-    checkClaudeMdLink(),
     checkAgentHookConfig(),
     checkAgentWrapper(),
     checkTmux(),

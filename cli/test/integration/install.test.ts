@@ -109,7 +109,9 @@ describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
     expect(existsSync(join(env["YACO_BIN_DIR"]!, "yaco"))).toBe(true);
     expect(existsSync(join(env["YACO_HOME"]!, "agent-wrapper.sh"))).toBe(true);
     expect(existsSync(join(env["YACO_HOME"]!, "projects.json"))).toBe(true);
-    expect(existsSync(join(env["HOME"]!, ".claude", "CLAUDE.md"))).toBe(true);
+    expect(existsSync(join(env["HOME"]!, ".claude", "skills"))).toBe(true);
+    // Purely additive: install never claims a global instruction file.
+    expect(existsSync(join(env["HOME"]!, ".claude", "CLAUDE.md"))).toBe(false);
   }, 120_000);
 });
 
