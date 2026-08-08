@@ -3,9 +3,9 @@
 ## 2026-08-07: Trusted hostnames come from the environment, not the source
 
 **What changed:**
-- `DEFAULT_ALLOWED_HOSTNAMES` and the Vite dev server's `allowedHosts` both hardcoded one deployment's tailnet names. Shipped defaults are now `localhost`, `::1`, `.local`, and private-LAN addresses only; a deployment names its own hosts in `YACO_ALLOWED_HOSTNAMES`, read identically by the API server and Vite. A leading-dot entry allows the subdomains of a domain, the syntax Vite already takes.
+- `DEFAULT_ALLOWED_HOSTNAMES` and the Vite dev server's `allowedHosts` both hardcoded one deployment's tailnet names. Shipped defaults are now `localhost`, `::1`, `.local`, and private-LAN addresses only; a deployment names its own hosts in `YACO_ALLOWED_HOSTNAMES`, which the API server and Vite read with the same syntax from separate sources — `app/server/.env` for the backend, the service environment for Vite. A leading-dot entry allows the subdomains of a domain; Vite additionally admits the bare domain, the one place the two deliberately differ.
 - Origin validation moved out of `index.ts` into `server/src/lib/origin.ts` as `createOriginGuard(env)`, with 21 tests. `index.ts` starts a server on import, so the guard was untestable where it lived — extracting it is what made the env behavior checkable.
-- `app/scripts/services.sh` bakes the variable into the generated systemd unit and launchd plist, but only when it is set, and refuses a value that is not a hostname list.
+- `app/scripts/services.sh` bakes the variable into the generated systemd unit and launchd plist for the `ui` service alone — anywhere else it would outrank `app/server/.env` permanently — and refuses a value that is not a hostname list.
 - `skills/refer` no longer hardcodes one machine's reference-library path; it reads `$REF_LIB`.
 
 **Why:**
@@ -14,8 +14,8 @@
 - Generating the service env unconditionally would have shadowed `app/server/.env`, since `dotenv` leaves a key alone once it is present.
 
 **Key files:** `app/server/src/lib/origin.ts`, `app/server/src/index.ts`, `app/ui/vite.config.ts`, `app/scripts/services.sh`, `doc/main/app/security.md`, `doc/dev/app/workflow.md`, `agent-config/global/skills/refer/SKILL.md`
-**Verification:** `scripts/verify.sh` green. Integration QA against a live server process — CORS responses and WebSocket upgrades for configured, default, and hostile origins — plus `services.sh install` into a temp HOME with the platform tools shimmed (`systemd-analyze verify` on the generated units), and `app/ui` Playwright 202 passed. Independent Codex review, three rounds, in `plan/all/release-recap/oss-personal-literals-review.md`.
-**Commits:** `f4463fb0`, `df947ccd`
+**Verification:** `scripts/verify.sh` green. Integration QA against a live server process — CORS responses and WebSocket upgrades for configured, default, and hostile origins — plus `services.sh install` into a temp HOME with the platform tools shimmed (`systemd-analyze verify` on the generated units), and `app/ui` Playwright 202 passed. Recorded in `plan/all/release-recap/oss-personal-literals-qa.md`; the independent Codex review and its rounds are in `plan/all/release-recap/oss-personal-literals-review.md`.
+**Commits:** `f4463fb0`..`HEAD` on `task/oss-personal-literals`
 **Next:** `oss-global-claude-extract` removes `agent-config/global/CLAUDE.md`, the last personal literal in the repo. Reaching the app over the real tailnet with the variable set stays a human check.
 **Blockers:** None
 

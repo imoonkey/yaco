@@ -106,18 +106,24 @@ resolve_node_bin_dir() {
 
 # YACO_ALLOWED_HOSTNAMES has to reach the Vite dev server through the service
 # environment, because vite.config.ts reads process.env and never loads a .env.
-# `desktop, laptop` is what an operator naturally writes and what both parsers
-# accept, so squeeze the whitespace out rather than refusing it — and refuse
-# anything left that is not hostname text, which is also what keeps the value
-# from breaking the systemd directive or the plist XML it lands in.
+# Trim around the commas exactly as the app parsers trim each entry, then refuse
+# anything left that is not hostname text. `desktop, laptop` is accepted because
+# both parsers accept it; `desk top` or a line-wrapped value is refused rather
+# than joined into a different, real hostname the operator never authorized.
+# Refusing non-hostname text is also what keeps the value from breaking the
+# systemd directive or the plist XML it lands in. The `case` test is deliberate:
+# `grep` anchors per line, so a two-line value would pass it line by line.
 normalize_allowed_hostnames() {
-  YACO_ALLOWED_HOSTNAMES="$(printf '%s' "${YACO_ALLOWED_HOSTNAMES:-}" | tr -d '[:space:]')"
-  if [ -n "$YACO_ALLOWED_HOSTNAMES" ] \
-     && ! printf '%s' "$YACO_ALLOWED_HOSTNAMES" | grep -Eq '^[A-Za-z0-9.,:-]+$'; then
-    echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: $YACO_ALLOWED_HOSTNAMES" >&2
-    echo "             expected something like 'desktop,.example.ts.net'" >&2
-    return 1
-  fi
+  local v
+  v="$(printf '%s' "${YACO_ALLOWED_HOSTNAMES:-}" \
+       | sed 's/[[:blank:]]*,[[:blank:]]*/,/g; s/^[[:blank:]]*//; s/[[:blank:]]*$//')"
+  case "$v" in
+    *[!A-Za-z0-9.,:-]*)
+      echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: ${YACO_ALLOWED_HOSTNAMES:-}" >&2
+      echo "             expected something like 'desktop,.example.ts.net'" >&2
+      return 1 ;;
+  esac
+  YACO_ALLOWED_HOSTNAMES="$v"
 }
 
 # Only the Vite dev server needs the hostnames in its process environment. The
