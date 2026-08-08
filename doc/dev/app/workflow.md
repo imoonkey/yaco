@@ -219,33 +219,34 @@ npm run restart    # app/scripts/services.sh restart
 ### Reaching the app under a LAN or tailnet name
 
 No hostname is compiled in — a bare `http://desktop/` or `https://desktop.example.ts.net/`
-is rejected until you name it. Both processes read `YACO_ALLOWED_HOSTNAMES` and it means
-the same thing in each, but they pick it up differently:
+is rejected until you name it. Both processes read `YACO_ALLOWED_HOSTNAMES` with the same
+syntax, but each has its own source for it:
 
 - **API server** (`yaco-server`) — add `YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net`
   to `app/server/.env` (loaded by `dotenv/config`, the same file as `GROQ_API_KEY`).
+  This is the backend's only source; nothing puts it in the service environment, where
+  it would outrank `.env` permanently (`dotenv` leaves a key alone once it is present).
   Without it the WebSocket upgrade is dropped and terminals sit in "Reconnecting".
 - **Vite dev server** (`yaco-ui`) — `vite.config.ts` reads `process.env` and does not
-  load `.env`, so the variable has to be in the service's environment. Only the dev
-  server needs it; a built UI is served by the API server.
+  load `.env`, so this one has to come from the service environment. Export it and
+  regenerate the definitions rather than hand-editing them; the generated unit and plist
+  are overwritten on every `services.sh install`, which bakes the value into the `ui`
+  service alone:
 
-Export it and regenerate the service definitions rather than hand-editing them — the
-generated unit and plist are overwritten on every `services.sh install`:
+  ```bash
+  export YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net
+  bash app/scripts/services.sh install
+  bash app/scripts/services.sh restart
+  ```
 
-```bash
-export YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net
-bash app/scripts/services.sh install     # bakes it into the unit (Linux) / plist (macOS)
-bash app/scripts/services.sh restart
-```
-
-`services.sh install` bakes the variable in only when it is set — an empty assignment in
-the service would shadow `app/server/.env`, since `dotenv` leaves a key alone once it is
-present in the environment. It refuses to install a value that is not a hostname list.
+  `install` refuses a value that is not a hostname list. Only the dev server needs any of
+  this — a built UI is served by the API server.
 
 An entry with a leading dot needs a domain after it; a bare `.` is ignored with a
-warning, because it would otherwise match any hostname carrying the DNS root dot. The
-API server reads a leading-dot entry as "names under this domain" and rejects the bare
-domain; Vite also accepts the bare domain, so name the actual host if you serve one.
+warning, because it would otherwise match any hostname carrying the DNS root dot. The two
+processes differ in exactly one place: the API server reads a leading-dot entry as "names
+under this domain" and rejects the bare domain, while Vite also accepts the bare domain.
+Name the actual host if you serve one.
 
 ## Build
 

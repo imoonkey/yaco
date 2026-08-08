@@ -106,26 +106,35 @@ resolve_node_bin_dir() {
 
 # YACO_ALLOWED_HOSTNAMES has to reach the Vite dev server through the service
 # environment, because vite.config.ts reads process.env and never loads a .env.
-# It is baked in only when actually set: an empty value in the service would
-# shadow the backend's app/server/.env entry, since dotenv leaves a key alone
-# once it is present in process.env. The value is restricted to hostname
-# characters so it cannot break the systemd directive or the plist XML.
-check_allowed_hostnames() {
-  local v="${YACO_ALLOWED_HOSTNAMES:-}"
-  if [ -n "$v" ] && ! printf '%s' "$v" | grep -Eq '^[A-Za-z0-9.,:-]+$'; then
-    echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: $v" >&2
+# `desktop, laptop` is what an operator naturally writes and what both parsers
+# accept, so squeeze the whitespace out rather than refusing it — and refuse
+# anything left that is not hostname text, which is also what keeps the value
+# from breaking the systemd directive or the plist XML it lands in.
+normalize_allowed_hostnames() {
+  YACO_ALLOWED_HOSTNAMES="$(printf '%s' "${YACO_ALLOWED_HOSTNAMES:-}" | tr -d '[:space:]')"
+  if [ -n "$YACO_ALLOWED_HOSTNAMES" ] \
+     && ! printf '%s' "$YACO_ALLOWED_HOSTNAMES" | grep -Eq '^[A-Za-z0-9.,:-]+$'; then
+    echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: $YACO_ALLOWED_HOSTNAMES" >&2
     echo "             expected something like 'desktop,.example.ts.net'" >&2
     return 1
   fi
 }
 
+# Only the Vite dev server needs the hostnames in its process environment. The
+# backend's source of truth is app/server/.env, and a service-level value would
+# win over it permanently — dotenv leaves a key alone once it is in the
+# environment, so a stale installer value would silently outrank the .env one.
+svc_takes_hostnames() {
+  [ "$(svc_name "$1")" = ui ] && [ -n "${YACO_ALLOWED_HOSTNAMES:-}" ]
+}
+
 install_linux() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
-  local hosts_env=""
-  [ -n "${YACO_ALLOWED_HOSTNAMES:-}" ] \
-    && hosts_env="Environment=\"YACO_ALLOWED_HOSTNAMES=$YACO_ALLOWED_HOSTNAMES\""
   mkdir -p "$UNIT_DIR"
   for s in "${SERVICES[@]}"; do
+    local hosts_env=""
+    svc_takes_hostnames "$s" \
+      && hosts_env="Environment=\"YACO_ALLOWED_HOSTNAMES=$YACO_ALLOWED_HOSTNAMES\""
     cat > "$UNIT_DIR/yaco-$(svc_name "$s").service" <<EOF
 [Unit]
 Description=$(svc_desc "$s")
@@ -170,11 +179,11 @@ EOF
 
 install_macos() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
-  local hosts_env=""
-  [ -n "${YACO_ALLOWED_HOSTNAMES:-}" ] && hosts_env="        <key>YACO_ALLOWED_HOSTNAMES</key>
-        <string>$YACO_ALLOWED_HOSTNAMES</string>"
   mkdir -p "$PLIST_DIR" "$LOG_DIR"
   for s in "${SERVICES[@]}"; do
+    local hosts_env=""
+    svc_takes_hostnames "$s" && hosts_env="        <key>YACO_ALLOWED_HOSTNAMES</key>
+        <string>$YACO_ALLOWED_HOSTNAMES</string>"
     local name; name="$(svc_name "$s")"
     local label="com.yaco.$name"
     local wd; wd="$(svc_dir "$s")"
@@ -318,7 +327,7 @@ case "$CMD" in
     if [ "$OS" = linux ]; then linux_cmd "$CMD"; else macos_cmd "$CMD"; fi
     ;;
   install)
-    check_allowed_hostnames || exit 1
+    normalize_allowed_hostnames || exit 1
     if [ "$OS" = linux ]; then install_linux; else install_macos; fi
     ;;
   -h|--help|help)
