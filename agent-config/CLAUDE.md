@@ -20,7 +20,6 @@ yaco init links
 
 ## Layout
 
-- `global/CLAUDE.md` — global instruction source linked into user agent homes.
 - `global/skills/*/SKILL.md` — global skill prompts.
 - `global/skills/*/references/` — stack-specific reference material.
 

@@ -46,7 +46,6 @@ beforeEach(() => {
   mkdirSync(process.env["YACO_BIN_DIR"]!, { recursive: true });
   repoRoot = join(sandbox, "repo");
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
-  writeFileSync(join(repoRoot, "agent-config", "global", "CLAUDE.md"), "# fake\n");
   // Minimal valid tasks graph for the task-graph check.
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
   writeFileSync(join(repoRoot, "plan", "tasks", "tasks.json"), "{}\n");
@@ -81,7 +80,7 @@ function installPrereqs(): void {
 }
 
 describe("runAllChecks — required check surface", () => {
-  it("returns exactly the 12 required check names in stable order", () => {
+  it("returns exactly the 11 required check names in stable order", () => {
     installPrereqs();
     const r = runAllChecks();
     expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
@@ -104,7 +103,7 @@ describe("runAllChecks — required check surface", () => {
     expect(r.summary.pass + r.summary.fail).toBe(r.checks.length);
   });
 
-  it("after a fresh install + shimmed PATH, all 12 checks pass", () => {
+  it("after a fresh install + shimmed PATH, all 11 checks pass", () => {
     installPrereqs();
     const r = runAllChecks();
     if (r.summary.fail > 0) {
@@ -131,12 +130,10 @@ describe("runAllChecks — individual failure modes", () => {
     expect(reg?.status).toBe("fail");
   });
 
-  it("skills-link / claude-md-link checks fail when the symlinks are missing", () => {
+  it("skills-link check fails when the symlink is missing", () => {
     const r = runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
-    const claudeMd = r.checks.find((c) => c.name === "claude-md-link");
     expect(skills?.status).toBe("fail");
-    expect(claudeMd?.status).toBe("fail");
   });
 
   it("agent-wrapper check fails when ${YACO_HOME}/agent-wrapper.sh is missing", () => {
@@ -176,7 +173,7 @@ describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
       expect(Object.keys(c).sort()).toEqual(["detail", "name", "status"]);
     }
     expect(Object.keys(parsed.data.summary).sort()).toEqual(["fail", "pass"]);
-    // AC 7 — all 12 required names present.
+    // AC 7 — all 11 required names present.
     const names = parsed.data.checks.map((c: any) => c.name);
     for (const required of REQUIRED_CHECKS) {
       expect(names).toContain(required);

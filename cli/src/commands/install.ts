@@ -60,7 +60,7 @@ Options:
   --skip-hooks     Skip merging provider hooks into ~/.claude + ~/.codex
                    (the wrapper script is still written)
   --no-registry    Do not upsert this repo into \${YACO_HOME}/projects.json
-  --skip-links     Do not write ~/.claude/* / ~/.codex/* / ~/.agents/* symlinks
+  --skip-links     Do not write the ~/.claude/skills / ~/.agents/skills symlinks
   --skip-doctor    Do not run \`yaco doctor\` after install
   --dry-run        Print planned actions to stderr without changing files
   --repo <path>    Override the repo root (default: \$YACO_REPO_ROOT or cwd)
@@ -171,9 +171,9 @@ function pathKind(p: string): "missing" | "symlink" | "other" {
  *  The realpath comparison closes the same shape of footgun the registry
  *  rebind fix closed: running `yaco install` from a `.worktrees/<slug>/`
  *  checkout (or from any non-canonical alias of the same repo) would
- *  otherwise silently retarget the user's global `~/.claude/{CLAUDE.md,
- *  skills}` etc. to the transient install location, breaking the live
- *  setup the moment that location goes away. The default is to refuse;
+ *  otherwise silently retarget the user's global `~/.claude/skills` to the
+ *  transient install location, breaking the live setup the moment that
+ *  location goes away. The default is to refuse;
  *  `--force` is the operator escape hatch for legitimate checkout moves.
  *  `--skip-links` skips all global-link writes entirely. */
 function upsertSymlink(
@@ -320,23 +320,24 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
   actions.push(`updated registry ${file}`);
 }
 
-/** Install global agent-config symlinks into ~/.claude / ~/.codex / ~/.agents. */
+/** Install the global skills symlinks into ~/.claude / ~/.agents.
+ *
+ *  Purely additive: install plants skill directories and never claims a
+ *  global instruction file, so a pre-existing ~/.claude/CLAUDE.md is left
+ *  exactly as the user wrote it. */
 function installGlobalLinks(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const home = userHome();
-  const claudeMd = join(repoRoot, "agent-config", "global", "CLAUDE.md");
   const skillsDir = join(repoRoot, "agent-config", "global", "skills");
-  // Hard precondition: if agent-config/global/CLAUDE.md is missing, refuse to
+  // Hard precondition: if agent-config/global/skills is missing, refuse to
   // install — silently linking to a non-existent target would mask a broken
   // checkout and only surface as a confusing error from doctor later.
-  if (!existsSync(claudeMd)) {
+  if (!existsSync(skillsDir)) {
     throw new CliError(
       ErrCode.ENV,
-      `missing ${claudeMd} — repo root is not a YACO checkout (or --repo is wrong)`,
+      `missing ${skillsDir} — repo root is not a YACO checkout (or --repo is wrong)`,
     );
   }
-  upsertSymlink(join(home, ".claude", "CLAUDE.md"), claudeMd, force, actions, dryRun);
   upsertSymlink(join(home, ".claude", "skills"), skillsDir, force, actions, dryRun);
-  upsertSymlink(join(home, ".codex", "AGENTS.md"), claudeMd, force, actions, dryRun);
   upsertSymlink(join(home, ".agents", "skills"), join(home, ".claude", "skills"), force, actions, dryRun);
 }
 
