@@ -4,7 +4,10 @@
  *    binary, version, yaco-home, registry, skills-link,
  *    agent-hook-config, agent-wrapper, tmux, git, providers, task-graph
  *
- *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }.
+ *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }. `skip`
+ *  means "nothing to check here" (a legitimate zero state, e.g. a repo that
+ *  has no task graph yet) and is counted in neither summary bucket, so it
+ *  never trips the exit code.
  *  --json envelope is ALWAYS `{ok:true,data:{checks,summary}}` on stdout —
  *  doctor is a STATUS command, so the schema stays stable even when checks
  *  fail. The exit code reflects summary.fail > 0 (exit 1) vs 0 (exit 0), so
@@ -259,7 +262,12 @@ function checkTaskGraph(repoRoot: string): CheckResult {
   try {
     const paths = readYacoProjectPaths(repoRoot);
     const tasksPath = join(repoRoot, paths.tasks);
-    if (!existsSync(tasksPath)) return fail("task-graph", `${tasksPath} missing`);
+    // No tasks tree is the zero state of an unplanned repo (a fresh clone has
+    // none), not breakage — skip, so `yaco install` on a fresh clone still
+    // exits 0. A tree that exists but does not validate stays a failure.
+    if (!existsSync(tasksPath)) {
+      return skip("task-graph", `${tasksPath} absent — no task graph yet (\`yaco task set\` creates one)`);
+    }
     const store = loadTaskStore(tasksPath);
     const report = validateGraph(store.tasks);
     if (!report.ok) {

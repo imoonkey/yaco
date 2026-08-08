@@ -115,6 +115,54 @@ describe("runAllChecks — required check surface", () => {
   });
 });
 
+describe("runAllChecks — task-graph zero state (fresh clone)", () => {
+  const tasksDir = () => join(repoRoot, "plan", "tasks");
+
+  it("skips task-graph when the repo has no tasks tree, and the skip is not a failure", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("skip");
+    // Actionable detail: the path that is absent + how a graph gets created.
+    expect(tg?.detail).toContain(tasksDir());
+    expect(tg?.detail).toContain("yaco task set");
+    // Skips count in neither bucket, so the exit-code signal stays clean.
+    expect(r.summary.fail).toBe(0);
+    expect(r.summary.pass).toBe(REQUIRED_CHECKS.length - 1);
+    // The 11-name contract is unchanged by the skip.
+    expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
+  });
+
+  it("still fails task-graph when the tree exists but the graph is invalid", () => {
+    installPrereqs();
+    writeFileSync(
+      join(tasksDir(), "tasks.json"),
+      JSON.stringify({
+        orphan: {
+          title: "orphan",
+          state: "ready",
+          depends: [],
+          parent: "ghost",
+          acceptCriteria: ["x"],
+        },
+      }) + "\n",
+    );
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("still fails task-graph when the tasks file is unreadable", () => {
+    installPrereqs();
+    writeFileSync(join(tasksDir(), "tasks.json"), "not json\n");
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+  });
+});
+
 describe("runAllChecks — individual failure modes", () => {
   it("yaco-home check fails when ${YACO_HOME} is missing", () => {
     // No install — YACO_HOME does not exist.
@@ -204,16 +252,34 @@ describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
 describe("doctor --repo (HIGH 2 wire-through)", () => {
   it("uses --repo for the task-graph check", () => {
     installPrereqs();
-    // Point doctor at a repo with no task store — task-graph should fail.
+    // Point doctor at a repo whose graph is invalid — the failure detail
+    // naming that repo proves the flag reached the task-graph check.
+    const otherRepo = join(sandbox, "other-repo");
+    mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
+    writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
     const r = spawnSync(
       "bun",
-      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
+      ["run", BIN, "doctor", "--repo", otherRepo, "--json"],
       { encoding: "utf-8", env: { ...process.env } },
     );
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout);
     const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
     expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(otherRepo);
+  });
+
+  it("exits 0 with a task-graph skip when --repo has no tasks tree", () => {
+    installPrereqs();
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("skip");
     expect(taskGraph.detail).toContain(sandbox);
   });
 });

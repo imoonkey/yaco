@@ -76,9 +76,11 @@ symlinks, and runs `yaco doctor`.
 Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `--dry-run`, `--repo <path>`, `--bin-dir <path>`, `--json`.
 
-`yaco doctor [--repo <path>] [--json]` runs twelve required checks; the
+`yaco doctor [--repo <path>] [--json]` runs eleven required checks; the
 `--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
-0 / 1 carrying the pass/fail signal.
+0 / 1 carrying the pass/fail signal. A check may report `skip` (a zero
+state, e.g. `task-graph` in a repo with no `plan/tasks`); skips count in
+neither summary bucket, so they keep the exit code at 0.
 
 ### Installed-binary rule for agent runtime changes
 
