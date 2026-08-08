@@ -7,9 +7,11 @@ per-project task graphs, and git worktrees.
 It is an **orchestration layer, not an agent**. YACO never talks to a model. It
 starts, tracks, and attaches to the agent CLI you already have installed —
 [Claude Code](https://claude.com/claude-code) (`claude`) or
-[Codex](https://developers.openai.com/codex/cli) (`codex`). Install works
-without either one, but what you get is an empty shell with nothing to
-orchestrate; `yaco doctor` reports it as a failing `providers` check.
+[Codex](https://developers.openai.com/codex/cli) (`codex`). **Install one of
+them before you install YACO.** Without a provider on your `PATH` there is
+nothing to orchestrate, and the installer will not report success: it ends by
+running `yaco doctor`, whose `providers` check fails, which makes the whole
+bootstrap exit non-zero — after it has already changed your machine.
 
 ## What you get
 
@@ -26,8 +28,8 @@ orchestrate; `yaco doctor` reports it as a failing `providers` check.
   working tree.
 - **A skill library.** 30 workflow skills in `agent-config/global/skills/`
   (`/design`, `/implement`, `/code-review`, `/verify`, `/qa`, `/orchestrate`, …),
-  linked into `~/.claude/skills` at install time so Claude Code and Codex can
-  both use them.
+  linked into `~/.claude/skills` and `~/.agents/skills` at install time so both
+  agents can use them.
 
 ## Requirements
 
@@ -35,10 +37,10 @@ Linux or macOS.
 
 | Requirement | Why | Check |
 |---|---|---|
-| **Claude Code** (`claude`) or **Codex** (`codex`) | The agent YACO drives. Bring your own — YACO ships none. | `yaco doctor` → `providers` |
+| **Claude Code** (`claude`) or **Codex** (`codex`) | The agent YACO drives. Bring your own — YACO ships none, and installing without one fails the final doctor check. | `yaco doctor` → `providers` |
 | **[Bun](https://bun.sh)** | `tools/install.sh` compiles the `yaco` binary with `bun build --compile`. Without it the installer exits 2. | `bun --version` |
 | **Node.js ≥ 22.13 and npm** | The app server and UI. `yaco install` runs `npm install` in `app/server` and `app/ui`. | `node -v` |
-| **A C/C++ toolchain** | `node-pty`, which backs every terminal, is a native module. It ships prebuilt binaries for common platforms; anywhere else npm builds it from source (`build-essential` on Linux, Xcode Command Line Tools on macOS). | — |
+| **make, python3, and a C/C++ compiler** | `node-pty`, which backs every terminal, is a native module, and it ships prebuilt binaries for macOS and Windows only — **on Linux it is always compiled from source** at install time. On Debian/Ubuntu: `sudo apt install make python3 build-essential`. On macOS the prebuild covers arm64 and x64; Xcode Command Line Tools are the fallback. | — |
 | **tmux** | Agent and shell sessions are tmux sessions. | `tmux -V` |
 | **git** | Worktrees and the app's git views. | `git --version` |
 
@@ -56,14 +58,19 @@ tools/install.sh
 
 `tools/install.sh` is the only entry point for a first install, and for recovery
 from a missing or broken `yaco` binary. It compiles `cli/src/main.ts` into
-`${YACO_BIN_DIR:-~/.local/bin}/yaco`, then hands off to `yaco install`, which:
+`${YACO_BIN_DIR:-~/.local/bin}/yaco`, then hands off to `yaco install`, which in
+this order:
 
-- runs `npm install` in `app/server` and `app/ui`,
-- writes the agent wrapper into `${YACO_HOME:-~/.yaco}` and merges YACO's hook
-  entries into `~/.claude` and `~/.codex`,
-- links `agent-config/global/skills` into `~/.claude/skills`,
-- registers this repository in `${YACO_HOME:-~/.yaco}/projects.json`,
-- and finishes by running `yaco doctor`.
+1. writes the agent wrapper into `${YACO_HOME:-~/.yaco}`,
+2. merges YACO's hook entries into `~/.claude` and `~/.codex`,
+3. links `agent-config/global/skills` into `~/.claude/skills`,
+4. runs `npm install` in `app/server` and `app/ui`,
+5. registers this repository in `${YACO_HOME:-~/.yaco}/projects.json`,
+6. and finishes by running `yaco doctor`.
+
+None of that is transactional. If a later step fails — an npm install, or the
+closing doctor — the earlier steps have already changed your machine, so read
+the error and re-run rather than assuming nothing happened.
 
 Make sure `~/.local/bin` is on your `$PATH`. Re-run the same command after a
 `git pull` to update; `tools/install.sh --cli-only` refreshes just the CLI and
@@ -77,12 +84,13 @@ config, skipping the app's npm installs.
 yaco doctor
 ```
 
-It checks the binary, `~/.yaco`, the project registry, the skill link, the
-provider hooks and wrapper, tmux, git, the installed providers, and the current
-repository's task graph. Two checks are worth reading closely: `providers` fails
-when neither `claude` nor `codex` is on your `PATH` — install one first, or the
-rest of YACO has nothing to drive — and `task-graph` only passes in a repository
-that already has one under `plan/tasks/`, which `yaco task set` creates.
+The installer already ran this once; run it yourself whenever something looks
+wrong. It checks the binary, `~/.yaco`, the project registry, the skill link,
+the provider hooks and wrapper, tmux, git, the installed providers, and the
+current repository's task graph. Two checks are worth knowing: `providers` fails
+when neither `claude` nor `codex` is on your `PATH`, and `task-graph` only
+passes in a repository that already has one under `plan/tasks/`, which `yaco
+task set` creates — so it reports a failure in a repo you have not planned yet.
 
 **2. Start the app**, from the repo root:
 
@@ -131,7 +139,7 @@ In the app, that same session is a terminal tab you can type into directly.
 | `app/server/` | Hono backend: file/git/task APIs, WebSocket terminals, SSE watchers |
 | `app/ui/` | React + Vite frontend |
 | `cli/` | `@yaco/cli` — the `yaco` dispatcher: `agent`, `task`, `worktree`, `plan`, `project`, `install`, `doctor`, `paths`, `gate`, `align`, `init` |
-| `agent-config/` | Skills and agent configuration linked into `~/.claude` / `~/.codex` |
+| `agent-config/` | The workflow skills installed for Claude Code and Codex |
 | `packages/` | Shared libraries used by the app |
 | `tools/` | The bootstrap installer |
 | `doc/` | Documentation (see below) |
@@ -150,13 +158,22 @@ If yours contains something you would rather not publish, run:
 yaco plan init          # optionally: --remote <url>
 ```
 
-That promotes `plan/` into a private repository colocated inside the working
-tree: `git init` in place, a default `plan/.gitignore`, and a `/plan/` entry in
-the host repo's `.git/info/exclude`, so the host repository never tracks it
-while your tools, editor, and `rg` still see the files exactly where they were.
-It is idempotent and must be re-run on every fresh clone and every machine,
-because `.git/info/exclude` is not itself version-controlled. `--remote` adds an
-origin; it never pushes.
+That promotes `plan/` into a **separate git repository colocated inside the
+working tree**: `git init` in place, a default `plan/.gitignore`, and a `/plan/`
+entry in the host repo's `.git/info/exclude`, so the host repo stops picking the
+files up while your editor, `rg`, and YACO itself still see them exactly where
+they were. It is idempotent and must be re-run on every fresh clone and every
+machine, because `.git/info/exclude` is not version-controlled.
+
+Two things it deliberately does **not** do:
+
+- **It does not untrack what the host repo already committed.** A git exclude
+  only affects untracked paths. If `plan/` is already in the host's index, run
+  `git rm -r --cached plan && git commit` yourself afterwards — and note that
+  even then the content stays in the host's *history* until you rewrite it.
+- **It does not make anything private.** `--remote <url>` records an origin and
+  never pushes; creating a private remote, and verifying it is private, is
+  yours to do.
 
 **YACO's own `plan/` is private, because it holds a personal corpus of agent
 interactions. That is the exception, not the recommendation** — and it means
@@ -169,14 +186,17 @@ effect.
 
 ## Development
 
-`scripts/verify.sh` is the single verification entry — it runs every
-component's tests, lint, and build in order and stops at the first failure:
+`scripts/verify.sh` is the standard verification entry — CLI unit tests, the
+`@yaco/codex-transcribe` typecheck and tests, the server tests, the UI lint, and
+the UI build, in a fixed order, stopping at the first failure:
 
 ```bash
 bash scripts/verify.sh
 ```
 
-The individual commands, when you want a faster loop (each from the repo root):
+It deliberately stops there: the UI component tests, the browser e2e suite, and
+the CLI integration suite are **not** part of it and are run separately (each
+from the repo root):
 
 ```bash
 (cd cli        && bun run test)           # CLI unit tests
@@ -188,9 +208,12 @@ The individual commands, when you want a faster loop (each from the repo root):
 (cd cli        && bun run test:integration)
 ```
 
-The last two are the ones with side effects: the e2e suite starts its own
-server, and the CLI integration suite reinstalls the CLI binary before it runs.
-Everything above them is local and read-only.
+Only one of these touches your installed YACO: `bun run test:integration`
+reinstalls the CLI binary and its global config before it runs. The rest stay
+inside the checkout, though several write local artifacts — `npm run build`
+produces `app/ui/dist` (which `npm run start:app` then serves), and the e2e run
+boots its own server and writes `dist-e2e/`, `test-results/`, and
+`playwright-report/`.
 
 For a development loop against the app, `npm run dev:local` runs the server on
 `:3001` and Vite on `:5173` in the foreground. `npm run dev` instead installs
