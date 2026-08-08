@@ -21,7 +21,7 @@ exports map).
 
 - `getYacoHome()` returns `process.env.YACO_HOME` **verbatim when non-empty**, otherwise `~/.yaco`. Empty string falls through to the default — tested by `yaco-home.test.ts`.
 - **Plan root + plan-relative sub-paths.** `plan` is the explicit plan root (repo-relative, default `plan`). `tasks`/`active`/`archive`/`backlog` are *plan-relative* config keys (defaults `tasks`/`active`/`archive`/`backlog`) joined under the plan root; `worktrees` is repo-relative (default `.worktrees`, at the repo root, not under plan). `readYacoProjectPaths()` returns the normalized **repo-relative** effective paths (`{ plan: "plan", tasks: "plan/tasks", active: "plan/active", archive: "plan/archive", backlog: "plan/backlog", worktrees: ".worktrees" }`), so callers keep resolving against `repoRoot` unchanged and sub-paths can never disagree with the plan root. `[paths] plan = "private-plan"` yields `tasks = "private-plan/tasks"`, etc.
-- `yaco.toml [paths]` overrides must be repo-relative strings. Empty, absolute, or `..`-segment values are rejected as `CliError(ENV)` (exit 3); `plan` additionally rejects `.`/dot-only forms (the host can never be the plan repo). `[project]` is ignored — project identity lives only in `~/.yaco/projects.json`. (A separate `[colocated] repos` policy is read app-side — -> See: [app routes](../app/backend/routes.md#colocated-repos).)
+- `yaco.toml [paths]` overrides must be repo-relative strings. For **every** key, `normalizeRepoRelative` rejects as `CliError(ENV)` (exit 3): absolute paths, any `..` segment, empty values, dot-only values that resolve to no segment (`"."`, `"./"` — so the host can never be the plan repo), and any segment starting with `-` (a value can never be option-injected into a git argv, e.g. `plan = "--bare"`). Surviving values are canonicalized — `.` segments and redundant separators are stripped, so `"./plan"` is stored as `"plan"` and the `info/exclude` entry and colocated-repo detection stay consistent. `[project]` is ignored — project identity lives only in `~/.yaco/projects.json`. (A separate `[colocated] repos` policy is read app-side — -> See: [app routes](../app/backend/routes.md#colocated-repos).)
 - The scoped TOML reader accepts: section headers, `key = "string"` (basic + literal strings), `# comments`, blank lines. Anything else — numbers, booleans, inline tables, multi-line strings, **duplicate keys**, keys outside a section — throws `TomlParseError` with a line number; the project reader wraps as `CliError(ENV)`.
 - `agentWrapperPath()` returns `${YACO_HOME}/agent-wrapper.sh`. `yaco install` writes the managed wrapper there. `yaco agent hooks install` / `ensureHooks` refreshes it from `cli/scripts/agent-wrapper.sh` when a source checkout is discoverable, but a compiled `yaco` launched from another project cwd can reuse the installed wrapper without source access. The legacy `hookV2ScriptPath`/`wrapper-v2.sh` helpers were retired in yc-agent-subcommand.
 - `readProjects()` returns `[]` for a missing registry and normalizes on-disk
@@ -79,10 +79,13 @@ End-to-end shape is locked in by `test/unit/core/paths/paths-cli.test.ts`.
 - `app/server/src/lib/terminal.ts` — `shellSessionsDir`
 - `app/server/src/lib/ui-state.ts` — `uiStateDir`
 - `app/server/src/lib/{eventsLog,project-watcher}.ts` — `projectEventsFile`, `projectsFile`
+- `app/server/src/lib/{project-watcher,attention-runtime}.ts` — `readYacoProjectPaths`
 - `app/server/src/lib/channels/{auth,state}.ts`, `app/server/src/lib/{whatsapp/index,wechat/login-flow}.ts` — `channelScopeDir`
+- `app/server/src/lib/channels/enabled.ts` — `channelsDir`
+- `app/server/src/lib/colocatedRepos.ts` — `parseScopedToml`
 
-There are 11 import sites total. New consumers should always go through
-`@yaco/cli/core/paths` rather than duplicating the helpers.
+New consumers should always go through `@yaco/cli/core/paths` rather than
+duplicating the helpers.
 
 ## Related
 

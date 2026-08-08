@@ -76,7 +76,7 @@ symlinks, and runs `yaco doctor`.
 Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `--dry-run`, `--repo <path>`, `--bin-dir <path>`, `--json`.
 
-`yaco doctor [--repo <path>] [--json]` runs twelve required checks; the
+`yaco doctor [--repo <path>] [--json]` runs eleven required checks; the
 `--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
 0 / 1 carrying the pass/fail signal.
 

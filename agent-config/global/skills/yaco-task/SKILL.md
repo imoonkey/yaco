@@ -6,11 +6,12 @@ metadata:
 ---
 
 Operation manual for `yaco task` — the project task graph, from top-level
-milestones down to leaf tasks. The graph lives in `plan/tasks/**/tasks.json`,
-but never edit those files or script around them: every read and write goes
-through the `yaco task` CLI, which owns the graph constraints (ref validation,
-cycle detection, state guards, parent rollup). For where docs, bundles, and the
-archive/symlink views live, follow `/yaco-paths`.
+milestones down to leaf tasks. The graph lives in `<tasks>/**/tasks.json` —
+`<tasks>` defaults to `plan/tasks`, and `yaco paths project --json` resolves a
+project's actual path. Never edit those files or script around them: every read
+and write goes through the `yaco task` CLI, which owns the graph constraints
+(ref validation, cycle detection, state guards, parent rollup). For where docs,
+bundles, and the archive/symlink views live, follow `/yaco-paths`.
 
 ## Scope
 
@@ -19,7 +20,7 @@ archive/symlink views live, follow `/yaco-paths`.
 - **Reorganization**: reparent tasks, adjust dependencies, split or merge tasks as the plan evolves
 - **Progress tracking**: update state as work proceeds, read the graph to report status
 
-## Core Schema — `plan/tasks/**/tasks.json`
+## Core Schema — `<tasks>/**/tasks.json`
 
 ```json
 {

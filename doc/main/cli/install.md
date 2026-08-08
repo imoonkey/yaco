@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-06-22 (integration tests reinstall installed hook binary)
+> Last updated: 2026-08-08 (oss-doc-cleanup)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
@@ -17,12 +17,20 @@ bootstrap by design:
    rest: writes `${YACO_HOME}/agent-wrapper.sh`, merges yaco-owned entries
    into `~/.claude/settings.json` + `~/.codex/hooks.json` (preserving
    unrelated user entries, dropping legacy `bash ".../hook-v2.sh"` shell-hook
-   groups left by pre-yaco installs), links global agent-config into
-   `~/.claude`, `~/.codex`, `~/.agents`, upserts `{id:"yaco", path: repoRoot}`
+   groups left by pre-yaco installs), links `agent-config/global/skills` into
+   `~/.claude/skills` + `~/.agents/skills`, upserts `{id:"yaco", path: repoRoot}`
    into `${YACO_HOME}/projects.json`, sweeps legacy `$BIN_DIR/{mt, multmux}`
    symlinks, then runs `yaco doctor`.
 
 Idempotent: re-running `yaco install` is a no-op (snapshot diff is empty).
+
+## Global links are additive
+
+`installGlobalLinks` plants **skill directories only**. It gates on
+`agent-config/global/skills` (missing ⇒ `ENV` exit 3, so a broken checkout
+fails loudly instead of linking at nothing) and never claims a tool's global
+instruction file — a user's own global rules are left byte-for-byte alone.
+Consequently `yaco doctor` asserts one symlink, `skills-link`.
 
 ## Installed Binary Boundary
 
@@ -59,7 +67,7 @@ exec, because:
 
 - `install.ts#resolveRepoRoot` chains `--repo` flag → `$YACO_REPO_ROOT` →
   `process.cwd()`. Without the env, an `install.sh` invoked from `/tmp` would
-  install `/tmp` into projects.json and link `~/.claude/CLAUDE.md` at the
+  install `/tmp` into projects.json and point the global skills symlink at the
   wrong tree.
 - `lifecycle.ts#hookBinary()` chains `$YACO_BIN_DIR/yaco` → `process.argv[0]`
   (if it ends with `/yaco`) → `which yaco` → literal `"yaco"`. Without the
