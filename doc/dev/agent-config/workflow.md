@@ -28,7 +28,7 @@ cd agent-config
 | `/qa` | After implementation | E2E/integration QA: verify affected user flows (Playwright, HTTP, CLI) |
 | `/tdd` | For core logic | Test-first development |
 | `/update-doc` | After changes | Sync docs, local skills, and changelog |
-| `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
+| `/yaco-task` | Task management | Create/edit/remove tasks in the project task store (default `plan/tasks`; `yaco paths project --json` resolves it) |
 | `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
 | `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |
 | `/write-skill` | Writing/editing a skill | Quality bar for authoring a skill's SKILL.md, references/, and scripts |
