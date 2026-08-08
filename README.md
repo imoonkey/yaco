@@ -216,9 +216,10 @@ it alone, but they are not side-effect free — `npm run build` produces
 `app/ui/dist` (which `npm run start:app` then serves), and the e2e run boots its
 own server, writes `dist-e2e/`, `test-results/` and `playwright-report/` in the
 checkout, and provisions a disposable `YACO_HOME` plus marked fixture repos
-under your temp dir and `$HOME`, which its teardown removes. (`E2E_REUSE=1`
-opts out of that isolation and runs against the live dev server and your real
-`~/.yaco`.)
+under your temp dir and `$HOME`, which its teardown removes. (From a main
+checkout, `E2E_REUSE=1` opts out of that isolation and runs against the live dev
+server and your real `~/.yaco`; inside a git worktree it is ignored and the run
+stays isolated.)
 
 For a development loop against the app, `npm run dev:local` runs the server on
 `:3001` and Vite on `:5173` in the foreground. `npm run dev` instead installs
