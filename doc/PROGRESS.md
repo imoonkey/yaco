@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-08-08: Narrow Linux CI
+
+**What changed:**
+- Added `.github/workflows/ci.yml`, the repository's first CI. One `ubuntu-latest` job on push-to-`main` and pull request: root `npm ci`, then `cli` bun test, `app/server` test, and `app/ui` typecheck + lint + build.
+- Documented the workflow and its exclusions under "Continuous integration" in `doc/dev/README.md`.
+
+**Why:**
+- The README promises `cd cli && bun run test`, `cd app/server && npm test`, and `cd app/ui && npm run lint`. With the repo about to be public and no CI, the first external clone would have been the test environment for those promises.
+- The Playwright e2e suite is excluded on purpose: four specs are red on `main`, and a red badge on launch day is worse than no badge. `cli`'s `test:integration` is excluded because it runs `tools/install.sh`, which mutates the host's `~/.claude` / `~/.codex` / `~/.yaco`.
+- Every step is the verbatim command a contributor runs, so a local pass and a CI pass mean the same thing.
+
+**Key files:** `.github/workflows/ci.yml`, `doc/dev/README.md`, `plan/all/release-recap/oss-narrow-ci-plan.md`, `plan/all/release-recap/oss-narrow-ci-review.md`
+**Verification:** Every step run twice — in this worktree and in a clean `git archive` + `git init` + `npm ci` checkout that simulates `actions/checkout`. Clean checkout: `npm ci` exit 0 (745 packages), cli 1122/1122, app/server 795/795 across 46 files, eslint 0 errors. Independent Codex review validated the workflow with `actionlint 1.7.12`, resolved each action's `action.yml`, and confirmed no step reaches Playwright — zero findings against `ci.yml`.
+**Commit:** This commit
+**Next:** Enable the workflow's badge and discharge "green on the release SHA" once the repo has a GitHub remote.
+**Blockers:** `app/ui` typecheck and build are red on a clean `npm ci` — root `package-lock.json` pins `react-arborist@3.8.0` while every local `node_modules` and `FileExplorer.tsx:458` are written against `3.16.0`. Pre-existing `main` debt surfaced by this task, out of its `.github/workflows/**` scope; CI cannot go green until the lockfile is refreshed.
+
 ## 2026-07-29: Selectable Codex and Groq voice transcription
 
 **What changed:**
