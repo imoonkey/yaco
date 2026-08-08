@@ -15,6 +15,16 @@ const PROXY_API_PORT = process.env.VITE_PROXY_API_PORT
   ? Number(process.env.VITE_PROXY_API_PORT)
   : API_PORT
 
+// Host headers the dev server accepts beyond localhost, so the UI can be reached
+// over a LAN or tailnet name. Same variable and syntax the API server uses for its
+// origin check (`app/server/src/lib/origin.ts`): comma-separated, a leading dot
+// allows a domain and its subdomains. Entries are validated the same way — a bare
+// `.` would match any hostname carrying the DNS root dot (`evil.example.`).
+const ALLOWED_HOSTS = (process.env.YACO_ALLOWED_HOSTNAMES ?? '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(s => s && (!s.startsWith('.') || (s.length > 1 && !s.includes('..'))))
+
 // Self-hosted VAD assets removed: the voice path now records with the native
 // MediaRecorder (src/hooks/voiceCapture.ts) and no longer ships a neural VAD.
 
@@ -52,7 +62,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: UI_PORT,
-    allowedHosts: ['laptop', 'desktop', '.tailnet-example.ts.net'],
+    allowedHosts: ALLOWED_HOSTS,
     warmup: {
       clientFiles: [
         './src/main.tsx',

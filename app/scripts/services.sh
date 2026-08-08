@@ -120,6 +120,7 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=$(svc_dir "$s")
 Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="YACO_ALLOWED_HOSTNAMES=${YACO_ALLOWED_HOSTNAMES:-}"
 ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
@@ -181,6 +182,8 @@ install_macos() {
         <string>en_US.UTF-8</string>
         <key>LC_CTYPE</key>
         <string>en_US.UTF-8</string>
+        <key>YACO_ALLOWED_HOSTNAMES</key>
+        <string>${YACO_ALLOWED_HOSTNAMES:-}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

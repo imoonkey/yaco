@@ -4,7 +4,6 @@ import { cors } from 'hono/cors'
 import { serve } from '@hono/node-server'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
-import { isIP } from 'node:net'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, stat } from 'node:fs/promises'
@@ -27,6 +26,7 @@ import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { pickEncoding, appendVary } from './lib/static-encoding.js'
+import { createOriginGuard } from './lib/origin.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runtime.js'
@@ -56,19 +56,8 @@ import {
 } from './lib/terminal-osc.js'
 import type { IPty } from 'node-pty'
 
-const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean)
+const isAllowedOrigin = createOriginGuard(process.env)
 
-const DEFAULT_ALLOWED_HOSTNAMES = new Set([
-  'localhost',
-  '::1',
-  'laptop',
-  'laptop.tailnet-example.ts.net',
-  'desktop',
-  'desktop.tailnet-example.ts.net',
-])
 const SERVER_SRC_DIR = dirname(fileURLToPath(import.meta.url))
 // Built UI to serve. Defaults to the canonical app/ui/dist; e2e overrides it via
 // YACO_UI_DIST so an isolated run serves its own build without clobbering dist.
@@ -88,41 +77,6 @@ const MIME_TYPES = new Map([
   ['.woff', 'font/woff'],
   ['.woff2', 'font/woff2'],
 ])
-
-function isPrivateHostname(hostname: string): boolean {
-  if (DEFAULT_ALLOWED_HOSTNAMES.has(hostname) || hostname.endsWith('.local')) {
-    return true
-  }
-
-  const ipVersion = isIP(hostname)
-  if (ipVersion === 0) return false
-  if (ipVersion === 6) return hostname === '::1'
-
-  if (hostname.startsWith('127.')) return true
-
-  const [a, b] = hostname.split('.').map(Number)
-  return a === 10
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168)
-    || (a === 169 && b === 254)
-}
-
-function isAllowedOrigin(origin?: string | null): boolean {
-  if (!origin) return true
-
-  try {
-    const url = new URL(origin)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-
-    if (EXPLICIT_ALLOWED_ORIGINS.length > 0) {
-      return EXPLICIT_ALLOWED_ORIGINS.includes(origin)
-    }
-
-    return isPrivateHostname(url.hostname)
-  } catch {
-    return false
-  }
-}
 
 function resolveUiPath(pathname: string): string | null {
   try {

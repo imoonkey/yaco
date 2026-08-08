@@ -213,7 +213,33 @@ npm run restart    # app/scripts/services.sh restart
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
-| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, allows localhost, `laptop`, `laptop.tailnet-example.ts.net`, `.local`, and private-LAN origins |
+| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, allows localhost, `.local`, private-LAN origins, and `YACO_ALLOWED_HOSTNAMES` |
+| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames to trust beyond the above. A leading dot allows a domain and its subdomains (`.example.ts.net`) |
+
+### Reaching the app under a LAN or tailnet name
+
+No hostname is compiled in — a bare `http://desktop/` or `https://desktop.example.ts.net/`
+is rejected until you name it. Both processes read `YACO_ALLOWED_HOSTNAMES` and it means
+the same thing in each, but they pick it up differently:
+
+- **API server** (`yaco-server`) — add `YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net`
+  to `app/server/.env` (loaded by `dotenv/config`, the same file as `GROQ_API_KEY`).
+  Without it the WebSocket upgrade is dropped and terminals sit in "Reconnecting".
+- **Vite dev server** (`yaco-ui`) — `vite.config.ts` reads `process.env` and does not
+  load `.env`, so the variable has to be in the service's environment. Only the dev
+  server needs it; a built UI is served by the API server.
+
+Export it and regenerate the service definitions rather than hand-editing them — the
+generated unit and plist are overwritten on every `services.sh install`:
+
+```bash
+export YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net
+bash app/scripts/services.sh install     # bakes it into the unit (Linux) / plist (macOS)
+bash app/scripts/services.sh restart
+```
+
+An entry with a leading dot needs a domain after it; a bare `.` is ignored with a
+warning, because it would otherwise match any hostname carrying the DNS root dot.
 
 ## Build
 

@@ -5,8 +5,8 @@ description: Add a source to the shared reference library and — only if you ha
 
 # Refer
 
-The reference library lives at `~/ld-workspace/reference` (desktop) or
-`~/workspace/reference` (laptop). Two layers, nothing else:
+The reference library lives at `$REF_LIB`, defaulting to `~/reference`. Every command
+below runs from that directory. Two layers, nothing else:
 
 - `source/<id>/` — **only bytes**: `content.md`, `paper.pdf`, or a git checkout. Nobody edits these.
 - `wiki/source/<id>.md` — **everything about those bytes**: all metadata, plus whatever we wrote.
