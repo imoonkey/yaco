@@ -21,6 +21,28 @@ convention as `scripts/worktree-provision.sh`):
 | [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs `cli` bun test → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. |
 | [`scripts/gate.sh <base>`](../../scripts/gate.sh) | Floor-from-diff aggregator. Computes `git diff <base>..HEAD`, maps touched paths to the checks they owe (code→`verify`+`review`, `app/ui`→`qa`, any change→`doc`), runs every owed check, and prints a one-line JSON summary `{verify,doc,review,qa: pass\|fail\|skip}` as the **last stdout line**. Any `fail` → non-zero exit. |
 
+## Continuous integration
+
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on pushes to `main`
+and on every pull request. One `ubuntu-latest` job, Linux only:
+
+| Step | Command |
+|------|---------|
+| cli tests | `cd cli && bun run test` |
+| app/server tests | `cd app/server && npm test` |
+| app/ui typecheck | `cd app/ui && npx tsc -b` |
+| app/ui lint | `cd app/ui && npm run lint` |
+| app/ui build | `cd app/ui && npm run build` |
+
+These are the same commands the README gives contributors — CI runs no CI-only
+variant, so a local pass and a CI pass mean the same thing.
+
+**The Playwright e2e suite is deliberately not run.** Four specs are red on `main`
+(session-search ×2, task-graph detail panel, workspace draft persistence). Run it
+locally with `cd app/ui && npx playwright test`. `cli`'s `test:integration` is also
+excluded: it shells out to `tools/install.sh`, which mutates `~/.claude`, `~/.codex`,
+and `~/.yaco`.
+
 `gate.sh` derives the check set from the diff, not from which task is in flight —
 the work can't dodge a gate by misclassifying itself. v1 is stateless; `review`/`qa`
 are existence + **freshness** checks — a `plan/` artifact whose own `reviewed_sha`
