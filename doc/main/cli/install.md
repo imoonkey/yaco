@@ -34,9 +34,11 @@ never claims a tool's global instruction file — a user's own global rules are
 left byte-for-byte alone. Consequently `yaco doctor` asserts one symlink,
 `skills-link`.
 
-A symlink already pointing somewhere else is **refused** (`IO`) unless `--force`
-is passed; a regular file or directory at the path is refused unconditionally.
-`--skip-links` leaves the links alone entirely.
+A symlink already pointing somewhere else is **refused** (`CONFLICT`) unless
+`--force` is passed; a regular file or directory at the path is refused
+unconditionally (`IO`, no `--force` override — move it aside yourself). A
+symlink already on target is a silent no-op, which is what keeps re-runs
+idempotent. `--skip-links` leaves the links alone entirely.
 
 ## Installed Binary Boundary
 
