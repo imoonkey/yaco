@@ -37,6 +37,17 @@ Standardized error response helper for Hono routes.
 - Returns `c.json({ error, ...extra }, status)`
 - Used across all route files for consistent error shape
 
+### origin.ts (~70 lines, 21 tests)
+
+Builds the `Origin` allowlist check shared by the HTTP CORS middleware and the WebSocket upgrade handler in `index.ts`. Pure — the environment is an argument, which is the only reason it is testable at all: `index.ts` starts a server on import. Policy and the two env knobs are documented in [security.md § CORS and Origin Validation](../security.md#cors-and-origin-validation); operator setup in [dev/workflow.md](../../../dev/app/workflow.md#reaching-the-app-under-a-lan-or-tailnet-name).
+
+**Exports**: `createOriginGuard(env): (origin?) => boolean`
+
+- No deployment hostname is compiled in. Defaults are `localhost`, `::1`, `.local`, and private-LAN addresses; anything else comes from `YACO_ALLOWED_HOSTNAMES`.
+- A leading-dot entry matches the **subdomains** of a domain, never the domain itself. Vite's `allowedHosts` takes the same syntax but also admits the bare domain — matching that would make the shipped `.local` default trust a single-label `local` origin.
+- A leading-dot entry with no domain after it (`.`, `..`) is dropped with a warning: it would match every hostname a browser writes with the DNS root dot.
+- `new URL('http://[::1]').hostname` is `'[::1]'`, so the hostname is unbracketed before comparison.
+
 ### static-encoding.ts (~180 lines, 47 tests)
 
 Pure helpers for negotiating which precompressed sibling (`.br` / `.gz`) to serve a client based on `Accept-Encoding`, and for appending the matching `Vary` field. No I/O. Consumed by `serveUiFile` in `index.ts` (see [server.md § UI Serving](server.md#ui-serving)); the precompressed siblings come from the build step in [dev/workflow.md](../../../dev/app/workflow.md#build). Test suite at `__tests__/static-encoding.test.ts`.

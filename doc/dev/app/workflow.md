@@ -213,7 +213,40 @@ npm run restart    # app/scripts/services.sh restart
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
-| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, allows localhost, `laptop`, `laptop.tailnet-example.ts.net`, `.local`, and private-LAN origins |
+| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, allows localhost, `.local`, private-LAN origins, and `YACO_ALLOWED_HOSTNAMES` |
+| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames to trust beyond the above. A leading dot allows the subdomains of a domain (`.example.ts.net`), not the domain itself |
+
+### Reaching the app under a LAN or tailnet name
+
+No hostname is compiled in — a bare `http://desktop/` or `https://desktop.example.ts.net/`
+is rejected until you name it. Both processes read `YACO_ALLOWED_HOSTNAMES` with the same
+syntax, but each has its own source for it:
+
+- **API server** (`yaco-server`) — add `YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net`
+  to `app/server/.env` (loaded by `dotenv/config`, the same file as `GROQ_API_KEY`).
+  This is the backend's only source; nothing puts it in the service environment, where
+  it would outrank `.env` permanently (`dotenv` leaves a key alone once it is present).
+  Without it the WebSocket upgrade is dropped and terminals sit in "Reconnecting".
+- **Vite dev server** (`yaco-ui`) — `vite.config.ts` reads `process.env` and does not
+  load `.env`, so this one has to come from the service environment. Export it and
+  regenerate the definitions rather than hand-editing them; the generated unit and plist
+  are overwritten on every `services.sh install`, which bakes the value into the `ui`
+  service alone:
+
+  ```bash
+  export YACO_ALLOWED_HOSTNAMES=desktop,.example.ts.net
+  bash app/scripts/services.sh install
+  bash app/scripts/services.sh restart
+  ```
+
+  `install` refuses a value that is not a hostname list. Only the dev server needs any of
+  this — a built UI is served by the API server.
+
+An entry with a leading dot needs a domain after it; a bare `.` is ignored with a
+warning, because it would otherwise match any hostname carrying the DNS root dot. The two
+processes differ in exactly one place: the API server reads a leading-dot entry as "names
+under this domain" and rejects the bare domain, while Vite also accepts the bare domain.
+Name the actual host if you serve one.
 
 ## Build
 
