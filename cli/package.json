@@ -4,6 +4,13 @@
   "module": "src/main.ts",
   "type": "module",
   "private": true,
+  "description": "YACO command-line interface — the yaco dispatcher for agent sessions, task graphs, worktrees, and project paths.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imoonkey/yaco.git",
+    "directory": "cli"
+  },
   "bin": {
     "yaco": "./src/main.ts"
   },
