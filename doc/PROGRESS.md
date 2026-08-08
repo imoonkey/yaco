@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-08-07: `yaco install` is purely additive — global CLAUDE.md left the repo
+
+**What changed:**
+- Deleted `agent-config/global/CLAUDE.md`. It holds the maintainer's personal global agent rules and now lives in a separate private repo, symlinked in by hand.
+- `installGlobalLinks` (`cli/src/commands/install.ts`) no longer writes `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`. It plants only `~/.claude/skills` and `~/.agents/skills`. The "is this a YACO checkout" precondition moved from the deleted file onto `agent-config/global/skills/`, keeping the same `ENV` refusal for a wrong `--repo`.
+- `yaco doctor` dropped the `claude-md-link` check. `REQUIRED_CHECKS` is now **11** names, a deliberate change to a published contract.
+
+**Why:**
+- The two dropped symlinks made install a *takeover*, not an addition: a stranger running `tools/install.sh` had their own `~/.claude/CLAUDE.md` claimed (refused on conflict, but `--force` rewrote it). `~/.claude/skills` was always additive — removing the instruction-file half leaves only that behavior, which is the only half that is defensible for an outside user.
+- The file and the wiring had to move together: install hard-required the file, so deleting it alone would have made every install fail `ENV`.
+- `skills/` is the better checkout marker anyway — it is what install actually links, so the precondition now guards the thing it is about to use.
+
+**Key files:** `cli/src/commands/install.ts`, `cli/src/commands/doctor.ts`, `cli/test/unit/commands/{install,doctor}.test.ts`, `cli/test/integration/install.test.ts`, `agent-config/global/skills/init-all/SKILL.md`, `plan/all/release-recap/`
+**Verification:** `scripts/verify.sh` steps all green (`npx tsc --noEmit -p cli` clean; cli 1125/1125 at `--timeout 30000`; server 795/795; ui lint 0 errors; root build OK). Codex cross-provider review of `c22f3ba6`: APPROVE, 0 findings. E2E QA 27/27 — real `tools/install.sh` on a fresh `git clone` under an isolated `HOME`: install exits 0 without the deleted file, a pre-existing `~/.claude/CLAUDE.md` stays byte-identical (including under `--force`), `~/.codex/AGENTS.md` is never created, doctor reports 11/11 green.
+**Commit:** `c22f3ba6`
+**Next:** `oss-doc-cleanup` syncs `doc/main/cli/{install,doctor}.md` and `doc/main/agent-config/architecture.md`; `oss-readme-rewrite` syncs the root README's 12-check list. Both depend on this task and deliberately still describe the old wiring.
+**Blockers:** None in code. The human still has to host the extracted `CLAUDE.md` in its private repo and `ln -s` it on both machines — deferred by design, recoverable from git history at `a17bd086`.
+
 ## 2026-07-29: Selectable Codex and Groq voice transcription
 
 **What changed:**
