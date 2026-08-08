@@ -14,7 +14,7 @@
 - Generating the service env unconditionally would have shadowed `app/server/.env`, since `dotenv` leaves a key alone once it is present.
 
 **Key files:** `app/server/src/lib/origin.ts`, `app/server/src/index.ts`, `app/ui/vite.config.ts`, `app/scripts/services.sh`, `doc/main/app/security.md`, `doc/dev/app/workflow.md`, `agent-config/global/skills/refer/SKILL.md`
-**Verification:** `scripts/verify.sh` green. Integration QA against a live server process — CORS responses and WebSocket upgrades for configured, default, and hostile origins — plus `services.sh install` into a temp HOME with the platform tools shimmed (`systemd-analyze verify` on the generated units), and `app/ui` Playwright 202 passed. Recorded in `plan/all/release-recap/oss-personal-literals-qa.md`; the independent Codex review and its rounds are in `plan/all/release-recap/oss-personal-literals-review.md`.
+**Verification:** `scripts/verify.sh` green. Integration QA against a live server process — CORS responses and WebSocket upgrades for configured, default, and hostile origins — plus `services.sh install` into a temp HOME with the platform tools shimmed (`systemd-analyze verify` on the generated units), and the `app/ui` Playwright suite. Counts and per-flow results in `plan/all/release-recap/oss-personal-literals-qa.md`; the independent Codex review and its rounds are in `plan/all/release-recap/oss-personal-literals-review.md`.
 **Commits:** `f4463fb0`..`HEAD` on `task/oss-personal-literals`
 **Next:** `oss-global-claude-extract` removes `agent-config/global/CLAUDE.md`, the last personal literal in the repo. Reaching the app over the real tailnet with the variable set stays a human check.
 **Blockers:** None

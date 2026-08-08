@@ -111,14 +111,17 @@ resolve_node_bin_dir() {
 # both parsers accept it; `desk top` or a line-wrapped value is refused rather
 # than joined into a different, real hostname the operator never authorized.
 # Refusing non-hostname text is also what keeps the value from breaking the
-# systemd directive or the plist XML it lands in. The `case` test is deliberate:
-# `grep` anchors per line, so a two-line value would pass it line by line.
+# systemd directive or the plist XML it lands in — the character class is about
+# serialization safety, not DNS grammar, so `_` stays in for the `/etc/hosts`
+# aliases and local machine names this variable exists to name. The `case` test
+# is deliberate: `grep` anchors per line, so a two-line value would pass it line
+# by line.
 normalize_allowed_hostnames() {
   local v
   v="$(printf '%s' "${YACO_ALLOWED_HOSTNAMES:-}" \
        | sed 's/[[:blank:]]*,[[:blank:]]*/,/g; s/^[[:blank:]]*//; s/[[:blank:]]*$//')"
   case "$v" in
-    *[!A-Za-z0-9.,:-]*)
+    *[!A-Za-z0-9._,:-]*)
       echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: ${YACO_ALLOWED_HOSTNAMES:-}" >&2
       echo "             expected something like 'desktop,.example.ts.net'" >&2
       return 1 ;;
