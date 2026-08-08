@@ -1,6 +1,12 @@
 {
   "name": "yaco",
   "private": true,
+  "description": "YACO — an orchestration layer for Claude Code and Codex: the yaco CLI, a workflow web app, and the agent skills they share.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imoonkey/yaco.git"
+  },
   "workspaces": [
     "cli",
     "app/server",

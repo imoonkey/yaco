@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-08-08: Root MIT LICENSE and publish-guard package metadata
+
+**What changed:**
+- Added root `LICENSE` — the verbatim OSI/SPDX MIT text, `Copyright (c) 2026 Qi Guo`. Byte-diffed against an upstream MIT `LICENSE` and found character-identical modulo the copyright line, so SPDX/licensee scanners match it.
+- Filled `description` / `license` / `repository` in root `package.json` and `cli/package.json`; `cli` also carries `directory: "cli"` since it is a monorepo subdirectory. `package-lock.json` picks up two derived `"license": "MIT"` lines because npm mirrors that field into the lock's root and workspace entries.
+- `"private": true` **deliberately retained** in both manifests — it is a load-bearing publish guard, not leftover scaffolding. Do not remove it while adding npm metadata.
+
+**Why:**
+- v0.1 ships via `git clone` + `tools/install.sh`, not npm: `cli`'s `bin` points at a TypeScript entry that node cannot execute, so publishing would ship something broken. Real per-platform binary distribution is its own project.
+- MIT over Apache-2.0 because the dependency census came back MIT 617 / ISC 69 / Apache-2.0 42 / BSD-3 19 / BSD-2 13 / BlueOak 6 / MPL-2.0 4 / MIT-0 2 with **zero GPL/AGPL/SSPL** — no compatibility constraint to work around, and an explicit patent grant only adds reading cost for a v0.1 personal dev tool.
+- Holder is the legal-name form `Qi Guo`, not the `qiguo` shell username or the `imoonkey` handle; a single-year 2026 needs no range since the first commit is 2026-03-04.
+
+**Known gap (deliberately out of this task's scope):** `app/server/package.json` carries no `private: true`, so `npm publish --workspaces` prepares `yaco-server@0.0.1` — the only workspace not skipped. Tracked against the `oss-release-v0.1` milestone.
+
+**Key files:** `LICENSE`, `package.json`, `cli/package.json`, `package-lock.json`, `plan/all/release-recap/`
+**Verification:** `scripts/verify.sh` green. Cross-provider Codex review (`review-oss-license-mit.md`) — 0 critical / 0 high in scope. QA on a hermetic `git archive` fresh clone plus an isolated-`HOME` run (`qa-oss-license-mit.md`): LICENSE ships at root with 3/3 canonical MIT anchors, workspace graph resolves with no further lock drift, publish refused for root/cli/ui/codex-transcribe, `yaco doctor` still parses `cli/package.json` to `0.1.0` rather than its silent `0.0.0` fallback, and the `@yaco/cli/core/*` exports still resolve for `app/server`.
+**Commit:** `5e8a8313`
+**Next:** `oss-readme-rewrite` — the root README still has no license section and no runtime prerequisites.
+**Blockers:** None
+
 ## 2026-07-29: Selectable Codex and Groq voice transcription
 
 **What changed:**
