@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-08-07: Rewrite the root README for a first-time reader
+
+**What changed:**
+- Replaced the maintainer-facing source map in `README.md` with a README written for someone who has never seen YACO: product positioning (an orchestration layer over Claude Code / Codex, never an agent itself), a requirements table, the source-install path, a first-run walkthrough, the `plan/` story, and a Development section in place of a `CONTRIBUTING.md`.
+- Documented the three runtime prerequisites that were written down nowhere in the repo — bun (`tools/install.sh` hard-requires it), node + npm (`yaco install` runs `npm install` in `app/server` and `app/ui`), and the `node-pty` native-build toolchain — plus tmux and git, which `yaco doctor` already checks.
+- Recorded install behavior a stranger cannot infer: a missing provider CLI makes the closing `yaco doctor` fail, which makes the whole bootstrap exit non-zero *after* it has mutated the machine, and the install is not transactional. The step list follows the real side-effect order (wrapper → hooks → links → app npm installs → registry → doctor).
+- Corrected the `plan/` narrative: `plan/` is the user's own directory, committed with the code by default; `yaco plan init` makes it a separate colocated repo but does **not** untrack what the host already committed and does not make any remote private. YACO's own private `plan/` is called out as the exception, and the README no longer implies the public repo carries live plan history.
+
+**Why:**
+- `oss-release-v0.1` puts this repository in front of people with no context. The previous README answered "where does the code live" for a maintainer and answered none of "what is this", "what do I need", "what do I run first" — and the prerequisites gap alone would stop a stranger at the first command.
+
+**Key files:** `README.md`
+**Verification:** `scripts/verify.sh` green; `app/ui` component tests (1180) green; every command, flag, path and port in the README traced to the source that implements it; link and personal-literal sweep clean; independent cross-provider (Codex) review, two rounds, artifact at `plan/all/release-recap/oss-readme-rewrite-review.md`.
+**Commit:** a2f3c924..HEAD
+**Next:** `oss-license-mit` adds the `LICENSE` the README links to; `oss-doc-cleanup` sweeps `doc/` for the same public-repo framing.
+**Blockers:** None
+
 ## 2026-07-29: Selectable Codex and Groq voice transcription
 
 **What changed:**

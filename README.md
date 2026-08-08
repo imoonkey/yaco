@@ -119,12 +119,14 @@ yaco claude "give me a tour of this repo"
 
 `yaco claude` (or `yaco codex`) starts a session and prints the handle it was
 given. Add `--wait` to block until the agent finishes and print its reply
-instead; anything after a bare `--` is forwarded verbatim to the provider CLI.
+instead. Arguments after a bare `--` go to the provider CLI, with two
+exceptions: `--wait` and `--timeout-ms` stay YACO's wherever they appear.
 
 **5. Watch it, from either side.**
 
 ```bash
-yaco agent list                  # every session and its status
+yaco agent list                  # sessions under the current directory
+yaco agent list --all            # every session, across every project
 yaco agent capture <handle>      # recent output
 yaco agent send <handle> "…"     # reply to it
 yaco agent kill <handle>         # end it
@@ -194,9 +196,9 @@ the UI build, in a fixed order, stopping at the first failure:
 bash scripts/verify.sh
 ```
 
-It deliberately stops there: the UI component tests, the browser e2e suite, and
-the CLI integration suite are **not** part of it and are run separately (each
-from the repo root):
+It deliberately stops there. The individual commands, for a faster loop — the
+last three are the suites `verify.sh` does **not** run, so reach for them
+yourself (each from the repo root):
 
 ```bash
 (cd cli        && bun run test)           # CLI unit tests
@@ -204,16 +206,19 @@ from the repo root):
 (cd app/ui     && npm run lint)           # eslint
 (cd app/ui     && npm run build)          # tsc -b + vite build — this is the typecheck
 (cd app/ui     && npm test)               # component tests (vitest)
-(cd app/ui     && npx playwright test)    # browser e2e (boots its own isolated server)
+(cd app/ui     && npx playwright test)    # browser e2e
 (cd cli        && bun run test:integration)
 ```
 
 Only one of these touches your installed YACO: `bun run test:integration`
-reinstalls the CLI binary and its global config before it runs. The rest stay
-inside the checkout, though several write local artifacts — `npm run build`
-produces `app/ui/dist` (which `npm run start:app` then serves), and the e2e run
-boots its own server and writes `dist-e2e/`, `test-results/`, and
-`playwright-report/`.
+reinstalls the CLI binary and its global config before it runs. The rest leave
+it alone, but they are not side-effect free — `npm run build` produces
+`app/ui/dist` (which `npm run start:app` then serves), and the e2e run boots its
+own server, writes `dist-e2e/`, `test-results/` and `playwright-report/` in the
+checkout, and provisions a disposable `YACO_HOME` plus marked fixture repos
+under your temp dir and `$HOME`, which its teardown removes. (`E2E_REUSE=1`
+opts out of that isolation and runs against the live dev server and your real
+`~/.yaco`.)
 
 For a development loop against the app, `npm run dev:local` runs the server on
 `:3001` and Vite on `:5173` in the foreground. `npm run dev` instead installs
