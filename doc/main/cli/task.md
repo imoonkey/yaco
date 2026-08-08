@@ -1,11 +1,14 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-06-07 (yaco-read-surface: `task get` single-record read, `task list --state`; prior astl-session-rename-link-integrity)
+> Last updated: 2026-08-08 (oss-doc-cleanup; prior yaco-read-surface: `task get` single-record read, `task list --state`)
 
-The task area owns the project task graph at `<repoRoot>/<paths.tasks>`
-(default `plan/tasks`, override via `yaco.toml [paths].tasks`). If the
-path is a directory, every descendant `tasks.json` is loaded recursively;
-if it is a `.json` file, that file is treated as a single-file task store.
+The task area owns the project task graph at `<repoRoot>/<paths.tasks>`. It
+defaults to `plan/tasks` and is overridden by `yaco.toml [paths]`: `tasks` is
+*plan-relative* and joined under `[paths].plan`, so `plan = "private-plan"`
+alone moves the store to `private-plan/tasks`. `yaco paths project --json`
+prints the resolved absolute path. If the path is a directory, every descendant
+`tasks.json` is loaded recursively; if it is a `.json` file, that file is
+treated as a single-file task store.
 
 The pure library lives under `cli/src/lib/core/task/` and is published over
 the workspace exports map as `@yaco/cli/core/task`. CLI handlers in

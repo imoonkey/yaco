@@ -1,26 +1,29 @@
 # Architecture
 
-Centralized AI agent configuration. Single source of truth for CLAUDE.md, skills, and settings across all projects.
+Centralized skill source for AI coding agents. One canonical tree, distributed by symlink to every tool that reads it.
 
 ## Multi-Tool Compatibility
 
-| | Config | Project skills | Global config | Global skills |
-|---|---|---|---|---|
-| **Claude Code** | `CLAUDE.md` | `.claude/skills/` | `~/.claude/CLAUDE.md` | `~/.claude/skills/` |
-| **Codex** | `AGENTS.md` | `.agents/skills/` | `~/.codex/AGENTS.md` | `~/.agents/skills/` |
-| **Cursor** | `AGENTS.md` | reads `.claude/skills/` natively | Cursor Settings UI | reads `~/.claude/skills/` natively |
-| **Gemini CLI** | `GEMINI.md` | TBD | TBD | TBD |
+| | Project config | Project skills | Global skills |
+|---|---|---|---|
+| **Claude Code** | `CLAUDE.md` | `.claude/skills/` | `~/.claude/skills/` |
+| **Codex** | `AGENTS.md` | `.agents/skills/` | `~/.agents/skills/` |
+| **Cursor** | `AGENTS.md` | reads `.claude/skills/` natively | reads `~/.claude/skills/` natively |
+| **Gemini CLI** | `GEMINI.md` | TBD | TBD |
+
+Each tool also reads a global instruction file from the user's home config. YACO does not supply one and never links one — see the additive rule below.
 
 ## Symlink Model
 
 Everything is distributed via symlinks — never copied. `CLAUDE.md` and `.claude/` are canonical; all other tools read via symlinks.
 
-**Global (one-time via `setup.sh`):**
+**Global (via `yaco install`):**
 
 | Canonical | Symlink |
 |-----------|---------|
-| `agent-config/global/CLAUDE.md` | `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` |
 | `agent-config/global/skills/` | `~/.claude/skills/`, `~/.agents/skills/` |
+
+The global install is **purely additive**: it plants skill directories and never claims a tool's global instruction file, so whatever global rules a user already wrote stay exactly as they wrote them.
 
 **Per-project (via `/init-all`):**
 
@@ -29,13 +32,12 @@ Everything is distributed via symlinks — never copied. `CLAUDE.md` and `.claud
 | `CLAUDE.md` | `AGENTS.md`, `GEMINI.md` |
 | `.claude/` | `.agents/`, `.codex/` |
 
-## CLAUDE.md Layering
+## Project CLAUDE.md
 
-Agents read both global and project CLAUDE.md, merged into context:
+`<project>/CLAUDE.md` is the one instruction file this repo's model owns: stack, build commands, project-specific conventions.
 
-- **Global** (`~/.claude/CLAUDE.md`) — critical rules, git conventions, code quality
-- **Project** (`<project>/CLAUDE.md`) — stack, build commands, project-specific conventions
 - **No concatenation** — just symlinks. Each tool discovers its own config file name.
+- **No global layer** — global rules, if a user keeps any, live in their own home config, outside this repo and outside YACO's install path.
 
 ## Skill Tiers
 

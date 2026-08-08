@@ -1,6 +1,6 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-08 (oss-doctor-fresh-clone)
+> Last updated: 2026-08-08 (oss-doc-cleanup + oss-doctor-fresh-clone)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -30,7 +30,7 @@ yaco doctor [--repo <path>] [--json]
 | # | Name | What it asserts | Detail on pass | Detail on fail |
 |---|------|-----------------|----------------|----------------|
 | 1 | `binary` | `which yaco` resolves AND the binary is executable | resolved path | `yaco not on $PATH` / `not executable` |
-| 2 | `version` | `cli/package.json` version is readable | `0.1.0` | `0.0.0` (fallback) |
+| 2 | `version` | Reports the `cli/package.json` version. **Never fails** — any read/parse error falls back to `0.0.0` and still passes | `0.1.0` | — |
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
 | 5 | `skills-link` | `~/.claude/skills` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
@@ -40,6 +40,9 @@ yaco doctor [--repo <path>] [--json]
 | 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
 | 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
 | 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
+
+`skills-link` is the only symlink check: `yaco install` links skill directories
+and nothing else, so there is no global-instruction-file link to assert.
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 eleven names above so consumers can rely on the contract. `claude-md-link` was
@@ -129,13 +132,18 @@ bun process; now it runs `validateGraph(loadTaskStore(tasksPath).tasks)` directl
 (both are pure helpers in `lib/core/task`). Eliminates one bun startup per
 doctor run and avoids the test-mode argv plumbing nightmare.
 
+It is graph integrity only, so it is **not** equivalent to `yaco task validate`:
+that command additionally fails on a cross-host stale lock
+(`error.details.staleLocks` — see [task.md](task.md#locking)). A doctor-green
+task store can still have a lock `yaco task validate` would reject.
+
 ## Tests
 
 - `cli/test/unit/commands/doctor.test.ts` — `runAllChecks` direct calls and
   subprocess coverage. Asserts the 11-name stable order; the `{name, status,
   detail}` per-check shape; the `{pass, fail}`-only summary; the all-pass
   case after a fresh install; per-check failure modes (yaco-home missing,
-  registry missing, symlinks missing, agent-wrapper missing, no hook
+  registry missing, skills link missing, agent-wrapper missing, no hook
   entries, no providers on PATH); every row of the store-state table above
   (absent → `skip` with the name list unchanged; malformed, invalid, dangling
   at the leaf, dangling at the plan root, permission-walled, missing `--repo`

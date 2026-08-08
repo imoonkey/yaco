@@ -4,7 +4,7 @@
 
 | Doc | Content |
 |-----|---------|
-| [doc/main/agent-config/architecture.md](architecture.md) | Multi-tool compatibility, symlink model, CLAUDE.md layering, skill tiers |
+| [doc/main/agent-config/architecture.md](architecture.md) | Multi-tool compatibility, additive symlink model, project CLAUDE.md, skill tiers |
 | [doc/dev/agent-config/workflow.md](../../dev/agent-config/workflow.md) | Setup commands, skill table, adding skills/stacks |
 | [doc/progress/agent-config.md](../../progress/agent-config.md) | History trace — what changed and when |
 
