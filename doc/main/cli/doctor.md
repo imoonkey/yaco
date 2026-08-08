@@ -67,15 +67,19 @@ read fails, and says why:
 
 | Store state | Status |
 |---|---|
-| path does not exist | `skip` |
-| symlink dangling at a moved/extracted store | `fail` — `dangling symlink` |
+| no component of the path exists | `skip` |
+| a live symlinked plan root that has no tasks tree yet | `skip` |
+| symlink dangling at a moved/extracted store — **at any depth**, `plan` or `plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
 | walled off by permissions | `fail` — the errno (`EACCES: …`) |
 | loads but does not validate | `fail` — `<N> integrity problem(s)` |
 | loads and validates (an empty store counts) | `pass` |
 
-The dangling-symlink case is not hypothetical: pointing `plan/tasks` at a task
+The dangling-symlink case is not hypothetical: pointing the plan root at a task
 store kept outside the public tree is exactly how a repo separates its plan, and
-laundering that broken link into a skip would hide it.
+laundering that broken link into a skip would hide it. The probe therefore climbs
+to the nearest component that exists on disk rather than testing the leaf alone —
+`plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
+does, and the extracted *root* is the likelier shape.
 
 The `providers` and `agent-hook-config` checks keep their fixed names but build
 their detail by iterating the provider registry (`listProviders()` from

@@ -178,6 +178,32 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
     expect(r.summary.fail).toBe(1);
   });
 
+  it("fails task-graph when a dangling symlink sits ABOVE the tasks path", () => {
+    // `plan -> /moved/private-plan` breaks `plan/tasks` exactly as a link at
+    // the final component does — and it is the likelier shape, since the plan
+    // ROOT is what gets extracted out of a public tree.
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    symlinkSync(join(sandbox, "moved-private-plan"), join(repoRoot, "plan"));
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(tg?.detail).toContain(`dangling symlink at ${join(repoRoot, "plan")}`);
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("skips when a LIVE symlinked plan root simply has no tasks tree yet", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    const external = join(sandbox, "external-plan");
+    mkdirSync(external, { recursive: true });
+    symlinkSync(external, join(repoRoot, "plan"));
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("skip");
+    expect(r.summary.fail).toBe(0);
+  });
+
   it("fails task-graph when the tasks path cannot be read", () => {
     if (process.getuid?.() === 0) return; // root defeats the permission wall
     installPrereqs();

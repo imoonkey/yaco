@@ -30,7 +30,7 @@ import {
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { ok, type Result } from "../lib/core/result.ts";
@@ -253,17 +253,27 @@ function checkProviders(): CheckResult {
   return pass("providers", detail);
 }
 
-/** Why a path `existsSync` denies is nonetheless there — it dangles, or its
- *  parent walls us out — or null when it is genuinely absent. `lstat` is the
- *  discriminator: it does not follow symlinks, so it succeeds on a dangling
- *  one and reports the real errno for everything else. */
+/** Why a path `existsSync` denies is nonetheless there — some component of it
+ *  dangles, or walls us out — or null when it is genuinely absent.
+ *
+ *  Climbs to the nearest component that exists on disk. `lstat` does not follow
+ *  symlinks, so the first component it can stat is either a real ancestor (the
+ *  path below it is simply not there) or a link pointing nowhere — which is
+ *  breakage at any depth: `plan -> /moved/private-plan` breaks `plan/tasks`
+ *  exactly as `plan/tasks -> /moved` does. */
 function unreadableReason(path: string): string | null {
-  try {
-    lstatSync(path);
-    return "dangling symlink";
-  } catch (e) {
-    const err = e as NodeJS.ErrnoException;
-    return err.code === "ENOENT" ? null : err.message;
+  for (let cur = path; ; cur = dirname(cur)) {
+    let entry: ReturnType<typeof lstatSync>;
+    try {
+      entry = lstatSync(cur);
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      if (err.code !== "ENOENT") return err.message;
+      if (dirname(cur) === cur) return null; // hit the filesystem root
+      continue;
+    }
+    if (!entry.isSymbolicLink() || existsSync(cur)) return null;
+    return cur === path ? "dangling symlink" : `dangling symlink at ${cur}`;
   }
 }
 
