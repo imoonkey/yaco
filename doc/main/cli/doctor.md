@@ -1,11 +1,13 @@
 # Doctor Subcommand
 
-> Last updated: 2026-06-05 (tui-provider-install-doctor)
+> Last updated: 2026-08-08 (oss-doctor-fresh-clone)
 
-`yaco doctor` runs the twelve required health checks against the current
+`yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
 `{name, status: 'pass'|'fail'|'skip', detail}`; the summary is `{pass, fail}`
-only.
+only — a `skip` lands in neither bucket, so it never trips the exit code.
+`skip` means "nothing to check here": a legitimate zero state, not a
+degraded one.
 
 The pure runner lives in `cli/src/commands/doctor.ts#runAllChecks(repoRoot?)`;
 the CLI handler (`handleDoctor`) wraps it with argv parsing and emits
@@ -32,16 +34,53 @@ yaco doctor [--repo <path>] [--json]
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
 | 5 | `skills-link` | `~/.claude/skills` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
-| 6 | `claude-md-link` | `~/.claude/CLAUDE.md` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
-| 7 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()` — marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
-| 8 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
-| 9 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
-| 10 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
-| 11 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
-| 12 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks` store (in-process via `loadTaskStore + validateGraph`) | `<tasksPath> ok` | `<tasksPath> missing` / `<N> integrity problem(s)` |
+| 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()` — marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
+| 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
+| 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
+| 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
+| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
+| 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
-twelve names above so consumers can rely on the contract.
+eleven names above so consumers can rely on the contract. `claude-md-link` was
+removed (install never claims `~/.claude/CLAUDE.md`); the removal was a
+deliberate change to the published contract.
+
+## `task-graph` skip — the unplanned repo
+
+The check reads the task store at the path `yaco.toml [paths]` resolves —
+`plan/tasks` unless the repo overrides `plan` or `tasks`; the detail always
+names the resolved path. A repo that has no store there has not been planned
+yet; that is the zero state of every fresh clone, not breakage:
+
+```
+SKIP  task-graph  <repo>/plan/tasks absent — no task graph yet (`yaco task set` creates one)
+```
+
+Because skips count in neither summary bucket, `summary.fail` stays 0, the
+exit code stays 0, and `yaco install` — which bails when `summary.fail > 0` —
+completes on a fresh clone.
+
+**Absent is a zero state; unreadable is breakage.** The skip is only for a path
+that is genuinely not there (`ENOENT`). A store that *is* there but cannot be
+read fails, and says why:
+
+| Store state | Status |
+|---|---|
+| no component of the path exists | `skip` |
+| the repo root itself does not exist (a wrong `--repo`) | `fail` — bad input, not a zero state |
+| a live symlinked plan root that has no tasks tree yet | `skip` |
+| symlink dangling at a moved/extracted store — **at any depth**, `plan` or `plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
+| walled off by permissions | `fail` — the errno (`EACCES: …`) |
+| loads but does not validate | `fail` — `<N> integrity problem(s)` |
+| loads and validates (an empty store counts) | `pass` |
+
+The dangling-symlink case is not hypothetical: pointing the plan root at a task
+store kept outside the public tree is exactly how a repo separates its plan, and
+laundering that broken link into a skip would hide it. The probe therefore climbs
+to the nearest component that exists on disk rather than testing the leaf alone —
+`plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
+does, and the extracted *root* is the likelier shape.
 
 The `providers` and `agent-hook-config` checks keep their fixed names but build
 their detail by iterating the provider registry (`listProviders()` from
@@ -58,7 +97,8 @@ exit code (0 vs 1) carries the pass/fail signal.
 
 | Outcome | Stdout | Stderr | Exit |
 |---------|--------|--------|------|
-| All pass | `{"ok":true,"data":{"checks":[...],"summary":{"pass":12,"fail":0}}}` | empty | `0` |
+| All pass | `{"ok":true,"data":{"checks":[...],"summary":{"pass":11,"fail":0}}}` | empty | `0` |
+| Any skip | `{"ok":true,"data":{"checks":[...],"summary":{"pass":10,"fail":0}}}` | empty | `0` |
 | Any fail | `{"ok":true,"data":{"checks":[...],"summary":{"pass":N,"fail":M}}}` | empty | `1` |
 
 Why always-Ok: callers parse `data.checks` unconditionally without having to
@@ -92,10 +132,22 @@ doctor run and avoids the test-mode argv plumbing nightmare.
 ## Tests
 
 - `cli/test/unit/commands/doctor.test.ts` — `runAllChecks` direct calls and
-  subprocess coverage. Asserts the 12-name stable order; the `{name, status,
+  subprocess coverage. Asserts the 11-name stable order; the `{name, status,
   detail}` per-check shape; the `{pass, fail}`-only summary; the all-pass
   case after a fresh install; per-check failure modes (yaco-home missing,
   registry missing, symlinks missing, agent-wrapper missing, no hook
-  entries, no providers on PATH); the `--json` envelope contract on
-  failure (`{ok:true, data:{...}}` stdout + exit 1 + empty stderr); and the
-  `--repo` wire-through against a sandbox repo.
+  entries, no providers on PATH); every row of the store-state table above
+  (absent → `skip` with the name list unchanged; malformed, invalid, dangling
+  at the leaf, dangling at the plan root, permission-walled, missing `--repo`
+  → `fail`; live symlinked plan root with no tasks tree → `skip`); the `--json`
+  envelope contract on failure (`{ok:true, data:{...}}` stdout + exit 1 + empty
+  stderr); and the `--repo` wire-through against a sandbox repo.
+- `cli/test/unit/commands/install.test.ts` — the fresh-clone flow: `yaco
+  install --repo <clone>` against a checkout with no `plan/` exits 0 with a
+  `task-graph` skip, in-process and as a subprocess.
+- `cli/test/integration/install.test.ts` — the same flow through the real
+  entry point: `git archive HEAD tools cli agent-config` into a sandbox (no
+  `plan/`), then that export's `tools/install.sh --cli-only` with the closing
+  doctor **enabled**, asserting exit 0 and the skip line. The older bootstrap
+  case runs `--skip-doctor` against this checkout, which has a `plan/`, so it
+  cannot cover this.

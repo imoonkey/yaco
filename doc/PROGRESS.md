@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-08-08: A fresh clone with no `plan/` installs green — `task-graph` skips
+
+**What changed:**
+- `checkTaskGraph()` (`cli/src/commands/doctor.ts`) reports **`skip`** instead of `fail` when the repo's task store is absent, with a detail that names the resolved path and how a graph gets created (`` `yaco task set` ``). `REQUIRED_CHECKS` is still the same 11 names.
+- Nothing else moved: `runAllChecks` already counted `skip` in neither summary bucket, so `summary.fail` stays 0, `yaco doctor` exits 0, and install's one-line `summary.fail > 0` bail (`cli/src/commands/install.ts`) passes untouched.
+- **Absent is the zero state; unreadable is breakage.** The skip fires only for a path that is genuinely not there. A store that is there but unresolvable fails and says why: a symlink dangling at a moved/extracted store **at any depth** (`plan` or `plan/tasks`), a permission wall, a graph that loads but does not validate — and a `--repo` that does not exist at all.
+- `doc/main/cli/doctor.md` documents the skip state as a store-state table and drops the last of the stale twelve-check/`claude-md-link` text; `doc/main/cli/README.md`, `doc/dev/cli/workflow.md`, and the root README's `task-graph` sentence follow.
+
+**Why:**
+- The public tree is history-scrubbed of `plan/`, so a fresh clone has no task store at all. Doctor failed that check, install bails on any failing check, and `tools/install.sh` therefore exited non-zero on the exact first-run flow the README promises — the release blocker.
+- A repo nobody has planned yet is not a broken repo. Doctor already had the status for "nothing to check here"; using it is the whole fix. The alternatives — an `--allow-missing-task-graph` flag, or teaching install to ignore one named check — both add a knob for a state that is simply normal, and the second turns a one-line gate into a per-check policy table.
+- The unreadable/absent split is not pedantry, and `existsSync` cannot draw it: it denies a dangling symlink exactly as it denies a missing path. Worse, `loadTasks()` returns `{}` for a path it cannot see and an empty graph validates — so a `plan/tasks` symlink dangling at an extracted store reported **pass** before this task. Pointing the plan root outside the public tree is precisely how a repo separates its plan, so the probe now `lstat`s up to the nearest component that exists and fails naming it.
+- The `--repo` wire-through tests in both `doctor.test.ts` and `install.test.ts` used "a repo with no task store" as their *failure* fixture; that fixture is now the skip case, so both were re-fixtured onto a present-but-invalid graph. They still prove the same thing — a failure detail naming the `--repo` target, not cwd.
+
+**Key files:** `cli/src/commands/doctor.ts`, `cli/test/unit/commands/{doctor,install}.test.ts`, `cli/test/integration/install.test.ts`, `doc/main/cli/doctor.md`, `doc/main/cli/README.md`, `doc/dev/cli/workflow.md`, `README.md`, `plan/all/release-recap/oss-doctor-fresh-clone-{plan,review,qa}.md`
+**Verification:** `scripts/verify.sh` green at every commit; `npx tsc --noEmit -p cli` clean; cli 1133/1133. New `tools/install.sh` integration case runs the README entry point on a `git archive` export with no `plan/`, doctor **enabled** — the pre-existing bootstrap case passes `--skip-doctor` against a checkout that has a `plan/`, so it could not catch this. E2E QA (`oss-doctor-fresh-clone-qa.md`) — a real `git clone` with `plan/` removed, installed under an isolated `HOME`/`YACO_HOME`/`YACO_BIN_DIR`/`PATH`: `tools/install.sh --cli-only` exits **0**, `yaco doctor` exits **0** at `10 pass, 0 fail` with the `task-graph` skip, and the real `~/.claude`, `~/.codex`, `~/.yaco`, `~/.local/bin/yaco` are byte-identical afterwards. Cross-provider Codex review (`oss-doctor-fresh-clone-review.md`): **APPROVE**, 0 critical / 0 high after four rounds — it drove the three boundary fixes above (leaf dangling link, ancestor dangling link, missing `--repo`).
+**Commit:** `c6cce7d6..3ff195b1` (4 commits)
+**Next:** remaining `oss-release-v0.1` tasks. `oss-doc-cleanup`'s doctor-doc slice is done here; its `install.md` / `agent-config/architecture.md` slice is not.
+**Blockers:** None.
+
 ## 2026-08-08: Lockfile sync — react-arborist 3.8.0 → 3.16.0
 
 **What changed:**

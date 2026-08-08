@@ -115,6 +115,110 @@ describe("runAllChecks — required check surface", () => {
   });
 });
 
+describe("runAllChecks — task-graph zero state (fresh clone)", () => {
+  const tasksDir = () => join(repoRoot, "plan", "tasks");
+
+  it("skips task-graph when the repo has no tasks tree, and the skip is not a failure", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("skip");
+    // Actionable detail: the path that is absent + how a graph gets created.
+    expect(tg?.detail).toContain(tasksDir());
+    expect(tg?.detail).toContain("yaco task set");
+    // Skips count in neither bucket, so the exit-code signal stays clean.
+    expect(r.summary.fail).toBe(0);
+    expect(r.summary.pass).toBe(REQUIRED_CHECKS.length - 1);
+    // The 11-name contract is unchanged by the skip.
+    expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
+  });
+
+  it("still fails task-graph when the tree exists but the graph is invalid", () => {
+    installPrereqs();
+    writeFileSync(
+      join(tasksDir(), "tasks.json"),
+      JSON.stringify({
+        orphan: {
+          title: "orphan",
+          state: "ready",
+          depends: [],
+          parent: "ghost",
+          acceptCriteria: ["x"],
+        },
+      }) + "\n",
+    );
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("still fails task-graph when the tasks file is malformed", () => {
+    installPrereqs();
+    writeFileSync(join(tasksDir(), "tasks.json"), "not json\n");
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+  });
+
+  // The skip is for a path that is genuinely NOT THERE. A path that is there
+  // but cannot be read is breakage and must not be laundered into a skip —
+  // `plan/tasks` symlinked at an extracted task store is exactly how this repo
+  // family keeps its plan out of the public tree.
+  it("fails task-graph when the tasks path is a dangling symlink", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    mkdirSync(join(repoRoot, "plan"), { recursive: true });
+    symlinkSync(join(sandbox, "extracted-store-that-moved"), tasksDir());
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(tg?.detail).toContain("dangling symlink");
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("fails task-graph when a dangling symlink sits ABOVE the tasks path", () => {
+    // `plan -> /moved/private-plan` breaks `plan/tasks` exactly as a link at
+    // the final component does — and it is the likelier shape, since the plan
+    // ROOT is what gets extracted out of a public tree.
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    symlinkSync(join(sandbox, "moved-private-plan"), join(repoRoot, "plan"));
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("fail");
+    expect(tg?.detail).toContain(`dangling symlink at ${join(repoRoot, "plan")}`);
+    expect(r.summary.fail).toBe(1);
+  });
+
+  it("skips when a LIVE symlinked plan root simply has no tasks tree yet", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    const external = join(sandbox, "external-plan");
+    mkdirSync(external, { recursive: true });
+    symlinkSync(external, join(repoRoot, "plan"));
+    const r = runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("skip");
+    expect(r.summary.fail).toBe(0);
+  });
+
+  it("fails task-graph when the tasks path cannot be read", () => {
+    if (process.getuid?.() === 0) return; // root defeats the permission wall
+    installPrereqs();
+    chmodSync(join(repoRoot, "plan"), 0o000);
+    try {
+      const r = runAllChecks();
+      const tg = r.checks.find((c) => c.name === "task-graph");
+      expect(tg?.status).toBe("fail");
+      expect(tg?.detail).toContain("EACCES");
+    } finally {
+      chmodSync(join(repoRoot, "plan"), 0o755); // let afterEach clean up
+    }
+  });
+});
+
 describe("runAllChecks — individual failure modes", () => {
   it("yaco-home check fails when ${YACO_HOME} is missing", () => {
     // No install — YACO_HOME does not exist.
@@ -204,16 +308,51 @@ describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
 describe("doctor --repo (HIGH 2 wire-through)", () => {
   it("uses --repo for the task-graph check", () => {
     installPrereqs();
-    // Point doctor at a repo with no task store — task-graph should fail.
+    // Point doctor at a repo whose graph is invalid — the failure detail
+    // naming that repo proves the flag reached the task-graph check.
+    const otherRepo = join(sandbox, "other-repo");
+    mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
+    writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
     const r = spawnSync(
       "bun",
-      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
+      ["run", BIN, "doctor", "--repo", otherRepo, "--json"],
       { encoding: "utf-8", env: { ...process.env } },
     );
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout);
     const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
     expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(otherRepo);
+  });
+
+  it("fails (exit 1) when --repo points at a repo that does not exist", () => {
+    // A missing repo is bad input, not an unplanned repo — it must not be
+    // laundered into the zero-state skip.
+    installPrereqs();
+    const missing = join(sandbox, "no-such-repo");
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "doctor", "--repo", missing, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.status).toBe(1);
+    const parsed = JSON.parse(r.stdout);
+    const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(missing);
+  });
+
+  it("exits 0 with a task-graph skip when --repo has no tasks tree", () => {
+    installPrereqs();
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("skip");
     expect(taskGraph.detail).toContain(sandbox);
   });
 });

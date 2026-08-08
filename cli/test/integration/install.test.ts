@@ -115,6 +115,43 @@ describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
   }, 120_000);
 });
 
+describe("tools/install.sh — public fresh clone with no plan/", () => {
+  it("bootstraps and runs the closing doctor to exit 0", () => {
+    // Export HEAD the way the public tree ships it — everything install.sh
+    // needs, and no plan/ (the release history is scrubbed of it). This is the
+    // README's first-run command, doctor included: the previous end-to-end
+    // test passes --skip-doctor and runs against this checkout, which HAS a
+    // plan/, so neither of them covers the flow an outside user actually runs.
+    const clone = join(sandbox, "fresh-clone");
+    mkdirSync(clone, { recursive: true });
+    const exported = spawnSync(
+      "bash",
+      ["-c", `git -C "${REPO_ROOT}" archive HEAD tools cli agent-config | tar -x -C "${clone}"`],
+      { encoding: "utf-8" },
+    );
+    expect(exported.status).toBe(0);
+    expect(existsSync(join(clone, "plan"))).toBe(false);
+    expect(existsSync(join(clone, "tools", "install.sh"))).toBe(true);
+
+    const env = { ...withShimmedEnv(), YACO_REPO_ROOT: clone };
+    const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only"], {
+      env,
+      encoding: "utf-8",
+      timeout: 90_000,
+    });
+    if (r.status !== 0) {
+      console.error("install.sh stdout:\n", r.stdout);
+      console.error("install.sh stderr:\n", r.stderr);
+    }
+    expect(r.status).toBe(0);
+    // The closing doctor ran, saw no task graph, and reported it as a skip —
+    // which is why the exit code is 0.
+    expect(r.stderr).toContain("SKIP task-graph");
+    expect(r.stderr).toContain(join(clone, "plan", "tasks"));
+    expect(r.stdout).toContain("ran yaco doctor");
+  }, 120_000);
+});
+
 // One-shot afterAll guard against any stray sandbox.
 afterAll(() => {
   if (sandbox && existsSync(sandbox)) {

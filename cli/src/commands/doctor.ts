@@ -4,7 +4,10 @@
  *    binary, version, yaco-home, registry, skills-link,
  *    agent-hook-config, agent-wrapper, tmux, git, providers, task-graph
  *
- *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }.
+ *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }. `skip`
+ *  means "nothing to check here" (a legitimate zero state, e.g. a repo that
+ *  has no task graph yet) and is counted in neither summary bucket, so it
+ *  never trips the exit code.
  *  --json envelope is ALWAYS `{ok:true,data:{checks,summary}}` on stdout —
  *  doctor is a STATUS command, so the schema stays stable even when checks
  *  fail. The exit code reflects summary.fail > 0 (exit 1) vs 0 (exit 0), so
@@ -27,7 +30,7 @@ import {
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { ok, type Result } from "../lib/core/result.ts";
@@ -250,6 +253,30 @@ function checkProviders(): CheckResult {
   return pass("providers", detail);
 }
 
+/** Why a path `existsSync` denies is nonetheless there — some component of it
+ *  dangles, or walls us out — or null when it is genuinely absent.
+ *
+ *  Climbs to the nearest component that exists on disk. `lstat` does not follow
+ *  symlinks, so the first component it can stat is either a real ancestor (the
+ *  path below it is simply not there) or a link pointing nowhere — which is
+ *  breakage at any depth: `plan -> /moved/private-plan` breaks `plan/tasks`
+ *  exactly as `plan/tasks -> /moved` does. */
+function unreadableReason(path: string): string | null {
+  for (let cur = path; ; cur = dirname(cur)) {
+    let entry: ReturnType<typeof lstatSync>;
+    try {
+      entry = lstatSync(cur);
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      if (err.code !== "ENOENT") return err.message;
+      if (dirname(cur) === cur) return null; // hit the filesystem root
+      continue;
+    }
+    if (!entry.isSymbolicLink() || existsSync(cur)) return null;
+    return cur === path ? "dangling symlink" : `dangling symlink at ${cur}`;
+  }
+}
+
 function checkTaskGraph(repoRoot: string): CheckResult {
   // Validate in-process: callers thread the resolved repoRoot in (install
   // passes --repo through; the doctor handler resolves the flag/env/cwd
@@ -257,9 +284,27 @@ function checkTaskGraph(repoRoot: string): CheckResult {
   // would force a child bun process and re-pay startup cost; the validate
   // primitives are already pure and re-usable.
   try {
+    // The skip below claims "this repo has no task graph yet" — a claim that
+    // presupposes a repo. A --repo that is not there is bad input, so it
+    // fails, and it also bounds the climb in unreadableReason() to the repo.
+    if (!existsSync(repoRoot)) {
+      return fail("task-graph", `${repoRoot}: repo root does not exist`);
+    }
     const paths = readYacoProjectPaths(repoRoot);
     const tasksPath = join(repoRoot, paths.tasks);
-    if (!existsSync(tasksPath)) return fail("task-graph", `${tasksPath} missing`);
+    if (!existsSync(tasksPath)) {
+      // No tasks tree is the zero state of an unplanned repo (a fresh clone
+      // has none), not breakage — skip, so `yaco install` on a fresh clone
+      // still exits 0. But existsSync also denies a path that is *there* and
+      // merely unreadable — a symlink dangling at an extracted store, a
+      // permission wall — and that is breakage, so it fails. So does a tree
+      // that loads but does not validate.
+      const reason = unreadableReason(tasksPath);
+      if (reason === null) {
+        return skip("task-graph", `${tasksPath} absent — no task graph yet (\`yaco task set\` creates one)`);
+      }
+      return fail("task-graph", `${tasksPath}: ${reason}`);
+    }
     const store = loadTaskStore(tasksPath);
     const report = validateGraph(store.tasks);
     if (!report.ok) {

@@ -581,15 +581,22 @@ describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
 });
 
 describe("runInstall --repo (HIGH 2 wire-through)", () => {
-  it("threads --repo into the trailing doctor task-graph check", () => {
+  /** A second fake repo — the checkout install is pointed at via --repo. */
+  function stageOtherRepo(): string {
     // Stage a yaco binary so the binary check passes.
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
-    // Build a SECOND fake repo without a task store so the task-graph check
-    // would fail when doctor runs against it.
     const otherRepo = join(sandbox, "other-repo");
     mkdirSync(join(otherRepo, "agent-config", "global", "skills"), { recursive: true });
-    // No plan/tasks in otherRepo on purpose.
+    return otherRepo;
+  }
+
+  it("threads --repo into the trailing doctor task-graph check", () => {
+    const otherRepo = stageOtherRepo();
+    // A present-but-broken graph in otherRepo: the failure detail naming that
+    // repo proves doctor ran against --repo, not cwd.
+    mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
+    writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
     let code: string | undefined;
     let report: any;
     try {
@@ -602,5 +609,39 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     const taskGraph = report.checks.find((c: any) => c.name === "task-graph");
     expect(taskGraph.status).toBe("fail");
     expect(taskGraph.detail).toContain(otherRepo);
+  });
+
+  it("installs green against a repo with no plan/ (fresh clone)", () => {
+    const otherRepo = stageOtherRepo();
+    // No plan/ in otherRepo at all — the public fresh-clone shape.
+    const report = runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
+    const taskGraph = report.doctor!.checks.find((c) => c.name === "task-graph");
+    expect(taskGraph?.status).toBe("skip");
+    expect(taskGraph?.detail).toContain(otherRepo);
+    expect(report.doctor!.summary.fail).toBe(0);
+  });
+});
+
+describe("yaco install — fresh clone exits 0 (release blocker)", () => {
+  it("subprocess install against a plan-less repo exits 0", () => {
+    // The exact flow tools/install.sh runs after building the binary:
+    // `yaco install` against a freshly cloned checkout that has no plan/.
+    writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(binDir, "yaco"), 0o755);
+    const freshClone = join(sandbox, "fresh-clone");
+    mkdirSync(join(freshClone, "agent-config", "global", "skills"), { recursive: true });
+    expect(existsSync(join(freshClone, "plan"))).toBe(false);
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "install", "--cli-only", "--repo", freshClone, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(true);
+    const taskGraph = parsed.data.doctor.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("skip");
+    expect(parsed.data.doctor.summary.fail).toBe(0);
   });
 });
