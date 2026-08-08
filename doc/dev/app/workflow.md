@@ -214,7 +214,7 @@ npm run restart    # app/scripts/services.sh restart
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
 | `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, allows localhost, `.local`, private-LAN origins, and `YACO_ALLOWED_HOSTNAMES` |
-| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames to trust beyond the above. A leading dot allows a domain and its subdomains (`.example.ts.net`) |
+| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames to trust beyond the above. A leading dot allows the subdomains of a domain (`.example.ts.net`), not the domain itself |
 
 ### Reaching the app under a LAN or tailnet name
 
@@ -238,8 +238,14 @@ bash app/scripts/services.sh install     # bakes it into the unit (Linux) / plis
 bash app/scripts/services.sh restart
 ```
 
+`services.sh install` bakes the variable in only when it is set — an empty assignment in
+the service would shadow `app/server/.env`, since `dotenv` leaves a key alone once it is
+present in the environment. It refuses to install a value that is not a hostname list.
+
 An entry with a leading dot needs a domain after it; a bare `.` is ignored with a
-warning, because it would otherwise match any hostname carrying the DNS root dot.
+warning, because it would otherwise match any hostname carrying the DNS root dot. The
+API server reads a leading-dot entry as "names under this domain" and rejects the bare
+domain; Vite also accepts the bare domain, so name the actual host if you serve one.
 
 ## Build
 

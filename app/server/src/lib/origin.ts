@@ -36,9 +36,11 @@ function isPrivateIpv4(hostname: string): boolean {
  *   entire allowlist; nothing else is trusted.
  * - `YACO_ALLOWED_HOSTNAMES` — comma-separated hostnames trusted in addition to
  *   loopback and private-LAN addresses, for reaching the app over a LAN or
- *   tailnet name. A leading dot allows a domain and its subdomains
- *   (`.example.ts.net`), matching the syntax and behavior of Vite's
- *   `server.allowedHosts` so one value configures both processes.
+ *   tailnet name. A leading dot allows the subdomains of a domain
+ *   (`.example.ts.net`), the same syntax Vite's `server.allowedHosts` takes, so
+ *   one value configures both processes. Vite additionally admits the bare
+ *   domain; this guard does not, because the shipped `.local` default would
+ *   then trust a single-label `local` origin that nobody configured.
  */
 export function createOriginGuard(env: NodeJS.ProcessEnv): (origin?: string | null) => boolean {
   const explicitOrigins = parseList(env.WORKFLOW_CORS_ORIGINS)
@@ -55,9 +57,8 @@ export function createOriginGuard(env: NodeJS.ProcessEnv): (origin?: string | nu
   ]
 
   const isAllowedHostname = (hostname: string): boolean =>
-    allowedHostnames.some(allowed => allowed.startsWith('.')
-      ? hostname === allowed.slice(1) || hostname.endsWith(allowed)
-      : hostname === allowed)
+    allowedHostnames.some(allowed =>
+      allowed.startsWith('.') ? hostname.endsWith(allowed) : hostname === allowed)
 
   return (origin?: string | null): boolean => {
     if (!origin) return true

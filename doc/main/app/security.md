@@ -49,9 +49,12 @@ When `WORKFLOW_CORS_ORIGINS` is set, only those explicit origins are allowed. Wh
 - Private LAN ranges: `10.*`, `172.16-31.*`, `192.168.*`, `169.254.*`
 - Anything listed in `YACO_ALLOWED_HOSTNAMES`
 
-No deployment-specific hostname is compiled in. To reach the app under a LAN or tailnet name, set `YACO_ALLOWED_HOSTNAMES` to a comma-separated list of hostnames; an entry with a leading dot allows a domain and its subdomains (`.example.ts.net` allows both `example.ts.net` and `desktop.example.ts.net`). The same variable and syntax widen the Vite dev server's `allowedHosts`, so one value configures both processes.
+No deployment-specific hostname is compiled in. To reach the app under a LAN or tailnet name, set `YACO_ALLOWED_HOSTNAMES` to a comma-separated list of hostnames; an entry with a leading dot allows the subdomains of a domain (`.example.ts.net` allows `desktop.example.ts.net`). The same variable and syntax widen the Vite dev server's `allowedHosts`, so one value configures both processes.
 
-A leading-dot entry must name a domain: a bare `.` is dropped with a warning, since it would otherwise match any hostname a browser writes with the DNS root dot (`evil.example.`) and open the allowlist to the public internet.
+Two deliberate narrowings guard that syntax:
+
+- A leading-dot entry must name a domain. A bare `.` is dropped with a warning, since it would otherwise match any hostname a browser writes with the DNS root dot (`evil.example.`) and open the allowlist to the public internet.
+- A leading-dot entry does **not** allow the bare domain, only names under it. Vite is wider here and admits the domain itself; this guard cannot be, because the shipped `.local` default would then trust a single-label `local` origin nobody configured. The practical difference is that a UI served by the dev server at a bare domain would still fail the API and WebSocket origin checks.
 
 **Code path**: `server/src/lib/origin.ts` (`createOriginGuard`), wired in `server/src/index.ts`
 

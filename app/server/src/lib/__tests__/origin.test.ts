@@ -18,6 +18,14 @@ describe('createOriginGuard — shipped defaults', () => {
     expect(isAllowed('http://[::1]:3001')).toBe(true)
   })
 
+  // `.local` names a suffix, never a host: trusting a bare `local` origin would
+  // hand the allowlist to any single-label name a search domain resolves.
+  it('allows names under .local but not `local` itself', () => {
+    expect(isAllowed('http://desktop.local')).toBe(true)
+    expect(isAllowed('http://local')).toBe(false)
+    expect(isAllowed('http://notlocal')).toBe(false)
+  })
+
   it('allows mDNS and private-LAN addresses', () => {
     expect(isAllowed('http://desktop.local:5173')).toBe(true)
     expect(isAllowed('http://192.168.1.5:3001')).toBe(true)
@@ -55,11 +63,11 @@ describe('createOriginGuard — YACO_ALLOWED_HOSTNAMES', () => {
     expect(isAllowed('http://phone')).toBe(false)
   })
 
-  it('treats a leading dot as the domain and its subdomains, as Vite does', () => {
+  it('treats a leading dot as the subdomains of a domain, not the domain itself', () => {
     const isAllowed = guard({ YACO_ALLOWED_HOSTNAMES: '.example.ts.net' })
     expect(isAllowed('https://desktop.example.ts.net')).toBe(true)
     expect(isAllowed('https://laptop.example.ts.net:3001')).toBe(true)
-    expect(isAllowed('https://example.ts.net')).toBe(true)
+    expect(isAllowed('https://example.ts.net')).toBe(false)
     expect(isAllowed('https://notexample.ts.net')).toBe(false)
   })
 

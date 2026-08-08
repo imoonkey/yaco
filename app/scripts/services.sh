@@ -104,8 +104,26 @@ resolve_node_bin_dir() {
   dirname "$n"
 }
 
+# YACO_ALLOWED_HOSTNAMES has to reach the Vite dev server through the service
+# environment, because vite.config.ts reads process.env and never loads a .env.
+# It is baked in only when actually set: an empty value in the service would
+# shadow the backend's app/server/.env entry, since dotenv leaves a key alone
+# once it is present in process.env. The value is restricted to hostname
+# characters so it cannot break the systemd directive or the plist XML.
+check_allowed_hostnames() {
+  local v="${YACO_ALLOWED_HOSTNAMES:-}"
+  if [ -n "$v" ] && ! printf '%s' "$v" | grep -Eq '^[A-Za-z0-9.,:-]+$'; then
+    echo "services.sh: YACO_ALLOWED_HOSTNAMES is not a hostname list: $v" >&2
+    echo "             expected something like 'desktop,.example.ts.net'" >&2
+    return 1
+  fi
+}
+
 install_linux() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
+  local hosts_env=""
+  [ -n "${YACO_ALLOWED_HOSTNAMES:-}" ] \
+    && hosts_env="Environment=\"YACO_ALLOWED_HOSTNAMES=$YACO_ALLOWED_HOSTNAMES\""
   mkdir -p "$UNIT_DIR"
   for s in "${SERVICES[@]}"; do
     cat > "$UNIT_DIR/yaco-$(svc_name "$s").service" <<EOF
@@ -120,7 +138,7 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=$(svc_dir "$s")
 Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="YACO_ALLOWED_HOSTNAMES=${YACO_ALLOWED_HOSTNAMES:-}"
+$hosts_env
 ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
@@ -152,6 +170,9 @@ EOF
 
 install_macos() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
+  local hosts_env=""
+  [ -n "${YACO_ALLOWED_HOSTNAMES:-}" ] && hosts_env="        <key>YACO_ALLOWED_HOSTNAMES</key>
+        <string>$YACO_ALLOWED_HOSTNAMES</string>"
   mkdir -p "$PLIST_DIR" "$LOG_DIR"
   for s in "${SERVICES[@]}"; do
     local name; name="$(svc_name "$s")"
@@ -182,8 +203,7 @@ install_macos() {
         <string>en_US.UTF-8</string>
         <key>LC_CTYPE</key>
         <string>en_US.UTF-8</string>
-        <key>YACO_ALLOWED_HOSTNAMES</key>
-        <string>${YACO_ALLOWED_HOSTNAMES:-}</string>
+$hosts_env
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -298,6 +318,7 @@ case "$CMD" in
     if [ "$OS" = linux ]; then linux_cmd "$CMD"; else macos_cmd "$CMD"; fi
     ;;
   install)
+    check_allowed_hostnames || exit 1
     if [ "$OS" = linux ]; then install_linux; else install_macos; fi
     ;;
   -h|--help|help)

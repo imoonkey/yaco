@@ -117,7 +117,7 @@ Nothing under `/assets/vad/` is served, and `MIME_TYPES` no longer carries
 |-----|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server listen port |
 | `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins (overrides private-network defaults) |
-| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames trusted in addition to loopback, `.local`, and private-LAN addresses — how you reach the app under a LAN or tailnet name. A leading dot allows a domain and its subdomains (`.example.ts.net`); a bare `.` is dropped with a warning. Ignored when `WORKFLOW_CORS_ORIGINS` is set. Also read by the Vite dev server for `server.allowedHosts` |
+| `YACO_ALLOWED_HOSTNAMES` | unset | Comma-separated hostnames trusted in addition to loopback, `.local`, and private-LAN addresses — how you reach the app under a LAN or tailnet name. A leading dot allows the subdomains of a domain (`.example.ts.net`), not the domain itself; a bare `.` is dropped with a warning. Ignored when `WORKFLOW_CORS_ORIGINS` is set. Also read by the Vite dev server for `server.allowedHosts` |
 | `CODEX_HOME` | `~/.codex` | Optional Codex state root. `@yaco/codex-transcribe` reads `auth.json` on each inspection/request; YACO never refreshes tokens or writes this file. |
 | `GROQ_API_KEY` | unset | Groq API key for Groq STT + formatter and the read-back **spoken rewrite**. It is not required for Codex raw transcription. TTS itself (edge-tts) is keyless, so read-back works without it (raw text). Set in `server/.env` |
 | `GROQ_TRANSCRIPTION_MODEL` | `whisper-large-v3-turbo` | Whisper model for speech-to-text |
