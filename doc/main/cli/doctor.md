@@ -1,6 +1,6 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-07 (oss-doctor-fresh-clone)
+> Last updated: 2026-08-08 (oss-doctor-fresh-clone)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -136,11 +136,18 @@ doctor run and avoids the test-mode argv plumbing nightmare.
   detail}` per-check shape; the `{pass, fail}`-only summary; the all-pass
   case after a fresh install; per-check failure modes (yaco-home missing,
   registry missing, symlinks missing, agent-wrapper missing, no hook
-  entries, no providers on PATH); the `task-graph` zero state (absent tree →
-  `skip`, exit 0, name list unchanged) versus a present-but-invalid or
-  unreadable graph (→ `fail`); the `--json` envelope contract on
-  failure (`{ok:true, data:{...}}` stdout + exit 1 + empty stderr); and the
-  `--repo` wire-through against a sandbox repo.
+  entries, no providers on PATH); every row of the store-state table above
+  (absent → `skip` with the name list unchanged; malformed, invalid, dangling
+  at the leaf, dangling at the plan root, permission-walled, missing `--repo`
+  → `fail`; live symlinked plan root with no tasks tree → `skip`); the `--json`
+  envelope contract on failure (`{ok:true, data:{...}}` stdout + exit 1 + empty
+  stderr); and the `--repo` wire-through against a sandbox repo.
 - `cli/test/unit/commands/install.test.ts` — the fresh-clone flow: `yaco
   install --repo <clone>` against a checkout with no `plan/` exits 0 with a
   `task-graph` skip, in-process and as a subprocess.
+- `cli/test/integration/install.test.ts` — the same flow through the real
+  entry point: `git archive HEAD tools cli agent-config` into a sandbox (no
+  `plan/`), then that export's `tools/install.sh --cli-only` with the closing
+  doctor **enabled**, asserting exit 0 and the skip line. The older bootstrap
+  case runs `--skip-doctor` against this checkout, which has a `plan/`, so it
+  cannot cover this.
