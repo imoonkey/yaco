@@ -1,12 +1,13 @@
 // Phase 2: Guard/regression tests for lifecycle fixes G8, G9, G10, G11
-// Uses mock.module to replace tmux/hooks/session-id for pure unit testing.
+// Replaces tmux/hooks/session-id with file-scoped module mocks for pure unit testing.
 
-import { mock, describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, readFileSync, existsSync, rmSync, utimesSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { stateDir } from "../src/lib/core/agent/session-state.ts";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
+import { mockSrcModule } from "./helpers/module-mock.ts";
 
 // Redirect the session-state dir to a tmp fixture for this suite so a clean
 // CI box (no YACO_AGENT_SESSIONS_DIR / YACO_HOME set) doesn't drop test state into
@@ -79,10 +80,10 @@ function resetMocks(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Module mocks — bun hoists these before static imports
+// Module mocks — installed for this file only (see helpers/module-mock.ts)
 // ---------------------------------------------------------------------------
 
-mock.module("../src/lib/core/agent/tmux.ts", () => ({
+mockSrcModule("lib/core/agent/tmux.ts", () => ({
   hasSession: () => {
     const idx = Math.min(hasSessionIdx, mockConfig.hasSession.length - 1);
     hasSessionIdx++;
@@ -125,7 +126,7 @@ mock.module("../src/lib/core/agent/tmux.ts", () => ({
   resolveAgentPidFromProcesses: () => null,
 }));
 
-mock.module("../src/lib/core/agent/lifecycle.ts", () => ({
+mockSrcModule("lib/core/agent/lifecycle.ts", () => ({
   ensureHooks: () => {},
   buildWrappedCommand: (_h: string, _c: string, cmd: string) => cmd,
   HOOK_MARKER: "yaco-agent-hook",
@@ -134,7 +135,7 @@ mock.module("../src/lib/core/agent/lifecycle.ts", () => ({
   TOOL_SCOPED_EVENTS: new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "PreCompact", "PostCompact"]),
 }));
 
-mock.module("../src/lib/core/agent/session-id.ts", () => ({
+mockSrcModule("lib/core/agent/session-id.ts", () => ({
   PENDING_SESSION_ID: "pending:awaiting-first-prompt",
   resolveSessionId: () => {
     resolveSessionIdCalls++;

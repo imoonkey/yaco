@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-06-22 (installed-binary guard for live agent tests)
+> Last updated: 2026-08-08 (file-scoped module mocks in the cli unit suite)
 
 ## Prerequisites
 
@@ -125,6 +125,32 @@ Test split:
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
 `YACO_TASK_LOCK_TIMEOUT_MS=<ms>` overrides the default 10s task-lock retry budget — handy when locally reproducing cross-host lock contention without a long wait.
+
+### Mocking a module
+
+`bun test` runs the whole unit suite in one process, and bun's module-mock registry is
+process-global — `mock.restore()` does not undo a registration. An unscoped mock therefore
+changes what every other test file imports, and since bun's load order follows filesystem
+traversal, which files it hits depends on the checkout path.
+
+Use `test/helpers/module-mock.ts`, never bun's registration directly:
+
+```ts
+import { mockSrcModule } from "./helpers/module-mock.ts";
+
+mockSrcModule("lib/core/agent/tmux.ts", () => ({
+  checkSessionAlive: () => false,
+}));
+```
+
+The path is relative to `cli/src`. The mock is installed for the calling file only, and the
+module's real exports are put back afterwards. The replacement **merges**: an export the
+factory omits keeps its real implementation, so list every export the code under test
+reaches or it will run for real.
+
+`test/unit/module-mock-scope.test.ts` fails the suite if any other test file registers a
+module mock. `bun test --randomize --seed=<n>` is the cheapest way to smoke out order
+coupling between files.
 
 ### Verifying provider adapter changes
 

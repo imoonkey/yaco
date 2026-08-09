@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-08-08: cli unit tests stop depending on the checkout path — module mocks are file-scoped
+
+**What changed:**
+- `cli/test/helpers/module-mock.ts` adds `mockSrcModule(srcPath, factory)`: it registers the mock in `beforeAll` and re-registers a snapshot of the module's real exports in `afterAll`, so the mock exists only while the calling file's tests run. Modules the file already imported still see it — ESM named imports are live bindings and bun updates a module's exports in place.
+- The three files that registered mocks now go through it: `test/lifecycle-guards.test.ts` (`tmux.ts`, `lifecycle.ts`, `session-id.ts`), `test/kill.test.ts` and `test/unit/agent/reclaim-crashed.test.ts` (`tmux.ts`).
+- `cli/test/unit/module-mock-scope.test.ts` fails the suite if any test file registers a module mock outside the helper. The scan is a literal substring match — no comment stripping, no lexing — so it can only over-report; anything that parses TypeScript to decide what counts can be fooled into a false negative by a string holding a comment marker.
+- `test/unit/commands/install.test.ts` drops two `spawnSync` workarounds that existed only to escape the leaked mock; that file plus `doctor.test.ts` fall from ~40s to 3.2s.
+- The replacement **merges**, as bun's own registration does: an omitted export keeps its real implementation. `lifecycle-guards` relies on exactly that (it never stubs `isProcessAlive`), so the semantics are documented rather than changed.
+
+**Why:**
+- `bun test` runs all 73 cli test files in one process, bun's module-mock registry is process-global, and `mock.restore()` does not undo a registration. Three files registered mocks at top level, so they rewrote what every other file imported. bun's load order follows filesystem traversal, so the suite's result depended on where the repo was checked out: green at `~/ld-workspace/yaco`, 10 failures in `hooks-install.test.ts` from a `git archive` export at `/tmp/w/yaco`, 4 failures in `tmux.test.ts` on the GitHub runner — the last of those against `resolveAgentPidFromProcesses`, a pure function.
+
+**Key files:** `cli/test/helpers/module-mock.ts`, `cli/test/unit/module-mock-scope.test.ts`, `cli/test/lifecycle-guards.test.ts`, `cli/test/kill.test.ts`, `cli/test/unit/agent/reclaim-crashed.test.ts`, `cli/test/unit/commands/install.test.ts`, `doc/dev/cli/workflow.md`
+**Verification:** `bun run test:unit` green in the worktree and in a fresh `git archive` export at `/tmp/w/yaco` (10 failures there before); each previously-failing file green standalone at both paths; on a pinned checkout, `bun test --randomize --seed=1..5` over the mocker+victim set is 10/10 runs green, where the same set before the fix failed 10/0/1/1/14 tests by seed; guard verified to fail closed against planted offenders; `npx tsc --noEmit -p cli` clean.
+**Commit:** `c92f248a`, `893f002f`, `aeddbbf2`, `cec91afd`
+**Next:** `test/state.test.ts` has within-file env-var order coupling that only `--randomize` exposes (present before this change) — a separate fix.
+**Blockers:** None
+
 ## 2026-08-08: A fresh clone with no `plan/` installs green — `task-graph` skips
 
 **What changed:**
