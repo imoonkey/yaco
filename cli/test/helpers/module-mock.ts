@@ -20,6 +20,10 @@ const SRC_ROOT = join(import.meta.dir, "..", "..", "src");
  * the file already imported still pick the mock up: ESM named imports are live
  * bindings and bun updates the module's exports in place.
  *
+ * The replacement merges, as bun's own `mock.module()` does: an export the factory omits
+ * keeps its real implementation. So a factory covering part of a module leaves the rest
+ * live — list every export the code under test reaches, or it will run for real.
+ *
  * @param srcPath module to mock, relative to `cli/src` (e.g. `"lib/core/agent/tmux.ts"`)
  * @param exports  factory returning the replacement exports
  */
