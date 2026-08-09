@@ -287,8 +287,8 @@ describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
 
 describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
   it("returns {ok:true, data:{checks, summary}} with exit 1 when checks fail", () => {
-    // No install — most checks fail. Subprocess used to bypass mock.module
-    // pollution and to capture the real exit code path through process.exit().
+    // No install — most checks fail. Subprocess captures the real exit code
+    // path through process.exit().
     const r = spawnSync("bun", ["run", BIN, "doctor", "--json"], {
       encoding: "utf-8",
       env: { ...process.env },

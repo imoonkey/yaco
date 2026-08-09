@@ -3,13 +3,10 @@
  *  Every test runs in an isolated tmpdir with $HOME, $YACO_HOME, $YACO_BIN_DIR,
  *  $YACO_REPO_ROOT all pointing at sandbox paths. No real-home modifications.
  *
- *  The hook-merge AC test uses a subprocess (bun run src/main.ts ...) instead
- *  of an in-process runInstall() call because lifecycle-guards.test.ts in this
- *  same suite installs a process-wide `mock.module("…/lifecycle.ts")` that
- *  stubs yacoHookGroup() to return `{matcher, hooks: []}`. The mock is hoisted
- *  at parse time and applies to every test file run in the same bun process,
- *  including any that load before lifecycle-guards.test.ts. A subprocess
- *  bypasses the mock entirely.
+ *  The one subprocess test here (`fresh clone exits 0`) is a subprocess because
+ *  the assertion is about the real exit code, not to escape a module mock:
+ *  lifecycle-guards.test.ts's mocks are scoped to that file (see
+ *  test/helpers/module-mock.ts), so the real lifecycle.ts runs here.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -205,25 +202,7 @@ describe("runInstall — hook merge semantics (AC 4)", () => {
     };
     writeFileSync(join(claudeDir, "settings.json"), JSON.stringify(userSettings));
 
-    // Subprocess: lifecycle-guards.test.ts in the same `bun test` invocation
-    // installs a process-wide mock.module that stubs yacoHookGroup() →
-    // {matcher, hooks: []}. The mock is hoisted at parse time and persists for
-    // the lifetime of the bun process, so any in-process runInstall() call
-    // would inherit empty hook bodies. A fresh bun subprocess does not load
-    // lifecycle-guards.test.ts, so the real yacoHookGroup runs.
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "install", "--cli-only", "--skip-doctor", "--json"],
-      {
-        encoding: "utf-8",
-        env: { ...process.env, NO_COLOR: "1" },
-        timeout: 20_000,
-      },
-    );
-    if (r.status !== 0) {
-      process.stderr.write(`install subprocess stderr:\n${r.stderr}\n`);
-    }
-    expect(r.status).toBe(0);
+    runInstall(baseOpts());
 
     const after = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf-8"));
     expect(after.theme).toBe("dark");
@@ -504,22 +483,7 @@ describe("runInstall — canonical hook command (HIGH 4)", () => {
     // Stage a yaco binary at binDir/yaco so the lifecycle resolver picks it.
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
-    // Subprocess: lifecycle-guards.test.ts in the same `bun test` invocation
-    // installs a process-wide mock.module on lifecycle.ts that stubs the
-    // hook command builders. A fresh bun subprocess runs the real ones.
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "install", "--cli-only", "--skip-doctor", "--json"],
-      {
-        encoding: "utf-8",
-        env: { ...process.env, NO_COLOR: "1" },
-        timeout: 20_000,
-      },
-    );
-    if (r.status !== 0) {
-      process.stderr.write(`install subprocess stderr:\n${r.stderr}\n`);
-    }
-    expect(r.status).toBe(0);
+    runInstall(baseOpts());
 
     const settings = JSON.parse(
       readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
