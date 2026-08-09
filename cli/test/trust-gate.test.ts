@@ -10,10 +10,9 @@
  *      through handleStartupInterstitial, whose blocked branch never touches
  *      tmux), while the trust-FOLDER interstitial stays unguarded.
  *
- *  No mock.module here on purpose: a second file mocking tmux would clobber
- *  lifecycle-guards' tmux mock (bun's module-mock registry is process-global).
- *  The blocked branch needs no tmux, so the gate is exercised against real
- *  on-disk config under a sandboxed HOME.
+ *  No module mock here because none is needed: the blocked branch never touches
+ *  tmux, so the gate is exercised against real on-disk config under a sandboxed
+ *  HOME.
  */
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
