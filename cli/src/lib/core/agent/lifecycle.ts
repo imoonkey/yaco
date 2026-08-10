@@ -15,6 +15,7 @@ import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 import { execSync } from "child_process";
 import { homedir } from "os";
+import { parse as parseToml } from "smol-toml";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
 import { getProvider } from "./providers/index.ts";
 import { CliError, ErrCode } from "../errors.ts";
@@ -367,8 +368,8 @@ type HookShape = "json" | "toml";
 
 /** Validate one per-event value against its SOURCE shape:
  *   - json: MUST be an array of groups (`Event: group[]`, from hooks.json).
- *   - toml: MUST be the single-group object `{ hooks: handler[] }` that
- *           `Bun.TOML.parse` produces from `[[hooks.<Event>.hooks]]`.
+ *   - toml: MUST be the single-group object `{ hooks: handler[] }` that a TOML
+ *           parser produces from `[[hooks.<Event>.hooks]]`.
  *  A value in the other (or any unexpected) shape ⇒ false. */
 function eventValueAllYaco(value: unknown, shape: HookShape): boolean {
   if (shape === "json") {
@@ -444,8 +445,8 @@ function codexHooksJsonAllYaco(path: string): boolean {
  *  DEFINITION is operator-authored — the gate applies the SAME strict per-handler
  *  canonical match as hooks.json.
  *
- *  Parses with Bun's TOML parser (a Bun built-in): a malformed file THROWS ⇒
- *  false (block), satisfying "any unparseable source ⇒ block". The `[hooks.state]`
+ *  A malformed file makes the parser THROW ⇒ false (block), satisfying "any
+ *  unparseable source ⇒ block". The `[hooks.state]`
  *  trusted-hash subtree is validated (must hold only trust records). The
  *  `[features] hooks = true` flag lives under the top-level `features` table, so
  *  it never reaches the `hooks` map. Missing file, or no inline `[hooks]` at all
@@ -460,7 +461,7 @@ function codexConfigTomlAllYaco(path: string): boolean {
   }
   let parsed: any;
   try {
-    parsed = Bun.TOML.parse(raw);
+    parsed = parseToml(raw);
   } catch {
     return false; // malformed TOML ⇒ cannot enumerate ⇒ block
   }

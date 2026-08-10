@@ -4,6 +4,7 @@ import { resolve } from "path";
 import { listProviders } from "./providers/index.ts";
 import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
+import { sleepSync } from "../sleep.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
 const INPUT_EMPTY_POLL_MS = 500;
@@ -439,7 +440,7 @@ export function waitForInputEmptyThenSend(
       sendKeys(handle, text);
       return "sent";
     }
-    Bun.sleepSync(INPUT_EMPTY_POLL_MS);
+    sleepSync(INPUT_EMPTY_POLL_MS);
   }
   return "timeout";
 }
