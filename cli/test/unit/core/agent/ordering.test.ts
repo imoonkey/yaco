@@ -1,10 +1,16 @@
 /** Directory ordering is defined, not incidental.
  *
  *  Each reader is exercised over a directory built BOTH ascending and descending,
- *  with enough entries that a single-row fixture could not pass by accident. That
- *  is what keeps these tests from depending on one filesystem's habits: whichever
- *  way a directory read leans, one of the two builds has to be reordered before
- *  the reader can answer in ascending order.
+ *  with enough entries that a single-row fixture could not pass by accident:
+ *  whichever way a directory read leans, one of the two builds has to be
+ *  reordered before the reader can answer in ascending order.
+ *
+ *  The exception is a filesystem that enumerates lexicographically no matter how
+ *  a directory was built. There these assertions hold without the readers doing
+ *  any work — but there the readers have no undefined order to fix either, and
+ *  the same suite run anywhere else catches the regression. The proof that
+ *  ordering actually changed lives in `test/golden/ordering-delta.test.ts`, which
+ *  compares two committed artifacts and reads no directory at all.
  *
  *  The golden matrix pins the same behavior end to end; these pin it per reader,
  *  so a failure names the reader that regressed. */
