@@ -195,7 +195,14 @@ export function isStale(handle: string): boolean {
 
 /**
  * List all state files in the global sessions directory.
- * Returns handles (filenames without .json extension).
+ * Returns handles (filenames without .json extension), ascending by handle.
+ *
+ * The sort is the CLI's session-order contract: this is the enumeration behind
+ * `agent list`, `agent summaries`, and every `listByPath` caller, and a raw
+ * directory read has no defined order — it differs between Bun and Node on the
+ * same directory. Ordering is by code unit (plain `.sort()`, never
+ * `localeCompare`) so the order is a property of the handles alone, not of the
+ * runtime or the machine's locale.
  */
 export function listStateHandles(): string[] {
   const dir = sessionsRoot();
@@ -203,7 +210,8 @@ export function listStateHandles(): string[] {
   try {
     return readdirSync(dir)
       .filter((f: string) => f.endsWith(".json"))
-      .map((f: string) => f.slice(0, -5));
+      .map((f: string) => f.slice(0, -5))
+      .sort();
   } catch {
     return [];
   }
