@@ -77,10 +77,10 @@ export interface WhatsAppLoginState {
 let client: Client | null = null
 let state: WhatsAppLoginState = { phase: 'idle', ready: false, discoveryMode: false }
 let initInflight: Promise<void> | null = null
-/** Bumped by every stop. `client` cannot be published until the optional module
- *  has loaded, so a stop landing in that window finds nothing to destroy and
- *  returns clean; the start it raced must therefore recognise that it has been
- *  superseded rather than go on to launch a browser nobody asked for. */
+/** Bumped by every endSession(). `client` cannot be published until the optional
+ *  module has loaded, so a stop landing in that window finds nothing to destroy
+ *  and returns clean; a start must therefore be able to recognise that it has
+ *  been superseded rather than go on to launch a browser nobody asked for. */
 let stopGeneration = 0
 let myJid: string | null = null
 const router = createRouter(whatsappStore)
@@ -245,11 +245,9 @@ async function handleMessage(msg: Message): Promise<void> {
 export function initWhatsApp(): Promise<void> {
   if (initInflight) return initInflight
   // If a prior init failed or the client got disconnected, the `client` ref
-  // may still be set but is unusable. Destroy it and re-init from scratch.
+  // may still be set but is unusable. End that session and re-init from scratch.
   if (client && (state.phase === 'failed' || state.phase === 'disconnected')) {
-    const stale = client
-    client = null
-    void stale.destroy().catch(() => { /* best-effort */ })
+    void endSession()?.destroy().catch(() => { /* best-effort */ })
   }
   if (client) return Promise.resolve()
 
@@ -329,20 +327,29 @@ async function startClient(): Promise<void> {
   })
   client = wa
 
+  // A superseded client is a ghost: a stop has already taken it out of service
+  // but destroy() is asynchronous, so it keeps emitting for a while. Its events
+  // must not touch state the stop (or a restart behind it) now owns.
   wa.on('qr', (qrRaw: string) => {
+    if (superseded()) return
     setState({ phase: 'awaiting-qr', qrRaw, ready: false })
-    void renderQrAscii(qrRaw).then((ascii) => setState({ qrAscii: ascii })).catch(() => undefined)
+    void renderQrAscii(qrRaw)
+      .then((ascii) => { if (!superseded()) setState({ qrAscii: ascii }) })
+      .catch(() => undefined)
   })
 
   wa.on('authenticated', () => {
+    if (superseded()) return
     setState({ phase: 'authenticating', qrAscii: undefined, qrRaw: undefined })
   })
 
   wa.on('auth_failure', (msg) => {
+    if (superseded()) return
     setState({ phase: 'failed', error: `auth_failure: ${msg}`, ready: false })
   })
 
   wa.on('ready', () => {
+    if (superseded()) return
     try {
       myJid = wa.info.wid._serialized
     } catch (e) {
@@ -353,57 +360,62 @@ async function startClient(): Promise<void> {
   })
 
   wa.on('disconnected', (reason) => {
+    if (superseded()) return
     setState({ phase: 'disconnected', ready: false, error: `disconnected: ${reason}` })
     myJid = null
     console.warn('[whatsapp] disconnected:', reason)
   })
 
   wa.on('message_create', (msg) => {
-    if (!myJid) return
+    if (superseded() || !myJid) return
     void handleMessage(msg)
   })
 
   await wa.initialize().catch((err) => {
-    console.error('[whatsapp] initialize failed:', err)
     // A stop tears the client down mid-initialize; the resulting rejection is
-    // the stop working, not a failure to report over the idle state it left.
+    // the stop working, not a failure to report over the state it left.
     if (superseded()) return
     setState({ phase: 'failed', error: (err as Error).message, ready: false })
+    console.error('[whatsapp] initialize failed:', err)
   })
 }
 
 export async function logoutWhatsApp(): Promise<void> {
-  stopStart()
-  if (!client) {
-    spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
-    setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined })
-    return
-  }
-  try { await client.logout() } catch (e) {
-    console.warn('[whatsapp] logout call failed:', e)
-  }
-  try { await client.destroy() } catch (e) {
-    console.warn('[whatsapp] destroy failed:', e)
-  }
-  client = null
-  spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
+  const stale = endSession()
   setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined, error: undefined })
+  if (stale) {
+    try { await stale.logout() } catch (e) {
+      console.warn('[whatsapp] logout call failed:', e)
+    }
+    try { await stale.destroy() } catch (e) {
+      console.warn('[whatsapp] destroy failed:', e)
+    }
+  }
+  // After the teardown, so the profile directory is no longer held open.
+  spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
 }
 
-/** Supersedes any start, in flight or not yet visible. Clearing `initInflight`
- *  too is what lets the very next initWhatsApp() begin a fresh start instead of
- *  handing back the one this call just cancelled. */
-function stopStart(): void {
+/** Takes the channel out of service and hands back the client to tear down.
+ *
+ *  Every shared-state mutation a stop performs happens here, synchronously,
+ *  before the caller awaits any teardown I/O — so a restart racing that I/O
+ *  starts cleanly and is not clobbered when the teardown finally unwinds.
+ *  Supersedes any start (including one still loading, hence invisible as a
+ *  `client`), and drops the inflight slot so the next initWhatsApp() begins a
+ *  fresh start rather than handing back the one this call just cancelled. */
+function endSession(): Client | null {
   stopGeneration += 1
   initInflight = null
+  const stale = client
+  client = null
+  return stale
 }
 
 export async function shutdownWhatsApp(): Promise<void> {
-  stopStart()
-  if (client) {
-    try { await client.destroy() } catch { /* noop */ }
-    client = null
-  }
+  const stale = endSession()
   setState({ phase: 'idle', ready: false })
+  if (stale) {
+    try { await stale.destroy() } catch { /* noop */ }
+  }
   await shutdownAllTaps()
 }

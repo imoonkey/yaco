@@ -78,24 +78,48 @@ describe('whatsapp-web.js is loaded lazily', () => {
     expect(stderr).not.toMatch(/^\s+at /m)
   }, 60_000)
 
+})
+
+interface LifecycleResult {
+  constructed: number
+  initialized: number
+  destroyed: number
+  login: { phase: string; ready: boolean }
+  isInitialized: boolean
+}
+
+const lifecycle = async (mode: string): Promise<LifecycleResult> =>
+  probeResult<LifecycleResult>((await runProbe('lifecycle-probe.ts', { args: [mode] })).stdout)
+
+describe('a stop wins against the start it races', () => {
   // The load is the one window where a start is running but `client` is not yet
   // published, so a stop arriving in it has nothing to destroy.
-  it.each(['shutdown', 'logout'] as const)(
-    'a %s during the load leaves no browser behind',
-    async (mode) => {
-      const { stdout } = await runProbe('stop-during-load-probe.ts', { args: [mode] })
-      const probe = probeResult<{
-        constructed: number
-        initialized: number
-        login: { phase: string; ready: boolean }
-        initialized_flag: boolean
-      }>(stdout)
+  it.each(['shutdown', 'logout'])('%s during the load leaves no browser behind', async (stop) => {
+    const probe = await lifecycle(`${stop}-during-load`)
 
-      expect(probe.constructed).toBe(0)
-      expect(probe.initialized).toBe(0)
-      expect(probe.initialized_flag).toBe(false)
-      expect(probe.login).toMatchObject({ phase: 'idle', ready: false })
-    },
-    60_000,
-  )
+    expect(probe.constructed).toBe(0)
+    expect(probe.initialized).toBe(0)
+    expect(probe.isInitialized).toBe(false)
+    expect(probe.login).toMatchObject({ phase: 'idle', ready: false })
+  }, 60_000)
+
+  it('ignores a torn-down client that keeps emitting', async () => {
+    const probe = await lifecycle('ghost-event')
+
+    // destroy() is asynchronous, so a `ready` fired during and after it must not
+    // resurrect a channel the user switched off.
+    expect(probe.login).toMatchObject({ phase: 'idle', ready: false })
+    expect(probe.isInitialized).toBe(false)
+  }, 60_000)
+
+  it('restarts when a start is requested while the stop is still tearing down', async () => {
+    const probe = await lifecycle('restart-during-stop')
+
+    expect(probe.constructed).toBe(2)
+    expect(probe.initialized).toBe(2)
+    expect(probe.destroyed).toBe(1)
+    // The restart owns the channel; the stop unwinding behind it writes nothing.
+    expect(probe.isInitialized).toBe(true)
+    expect(probe.login.phase).toBe('awaiting-qr')
+  }, 60_000)
 })
