@@ -128,7 +128,7 @@ flowchart TB
             I --> V["/verify · /qa"]
             V --> U["/update-doc"]
         end
-        BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary (milestone close)"]
+        BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary"]
     end
     TG --> OR
 ```
