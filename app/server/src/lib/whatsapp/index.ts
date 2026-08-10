@@ -77,6 +77,11 @@ export interface WhatsAppLoginState {
 let client: Client | null = null
 let state: WhatsAppLoginState = { phase: 'idle', ready: false, discoveryMode: false }
 let initInflight: Promise<void> | null = null
+/** Bumped by every stop. `client` cannot be published until the optional module
+ *  has loaded, so a stop landing in that window finds nothing to destroy and
+ *  returns clean; the start it raced must therefore recognise that it has been
+ *  superseded rather than go on to launch a browser nobody asked for. */
+let stopGeneration = 0
 let myJid: string | null = null
 const router = createRouter(whatsappStore)
 
@@ -261,22 +266,34 @@ export function initWhatsApp(): Promise<void> {
     discoveryMode: false,
   })
 
-  initInflight = startClient().finally(() => { initInflight = null })
-  return initInflight
+  // Only clear the slot if it is still ours: a stop plus a restart can install
+  // a newer start before this one unwinds (same guard as serialize() above).
+  const started: Promise<void> = startClient()
+    .finally(() => { if (initInflight === started) initInflight = null })
+  initInflight = started
+  return started
 }
 
 async function startClient(): Promise<void> {
+  const generation = stopGeneration
+  const superseded = (): boolean => generation !== stopGeneration
+
   // First, before any side effect: whatsapp-web.js is optional, so its absence
   // is a normal outcome that must surface as a legible phase, not a crash.
   let wweb: WwebModule
   try {
     wweb = await loadWweb()
   } catch (err) {
+    if (superseded()) return
     const message = (err as Error).message
     setState({ phase: 'failed', error: message, ready: false })
     console.error(`[whatsapp] ${message}`)
     return
   }
+  if (superseded()) return
+
+  // From here to `client = wa` there is no await, so a stop can no longer slip
+  // between the decision to start and the client becoming visible to it.
   const { Client, LocalAuth } = wweb
 
   // Belt-and-suspenders: if any Chrome from a prior unclean exit still
@@ -347,12 +364,16 @@ async function startClient(): Promise<void> {
   })
 
   await wa.initialize().catch((err) => {
-    setState({ phase: 'failed', error: (err as Error).message, ready: false })
     console.error('[whatsapp] initialize failed:', err)
+    // A stop tears the client down mid-initialize; the resulting rejection is
+    // the stop working, not a failure to report over the idle state it left.
+    if (superseded()) return
+    setState({ phase: 'failed', error: (err as Error).message, ready: false })
   })
 }
 
 export async function logoutWhatsApp(): Promise<void> {
+  stopStart()
   if (!client) {
     spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
     setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined })
@@ -369,7 +390,16 @@ export async function logoutWhatsApp(): Promise<void> {
   setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined, error: undefined })
 }
 
+/** Supersedes any start, in flight or not yet visible. Clearing `initInflight`
+ *  too is what lets the very next initWhatsApp() begin a fresh start instead of
+ *  handing back the one this call just cancelled. */
+function stopStart(): void {
+  stopGeneration += 1
+  initInflight = null
+}
+
 export async function shutdownWhatsApp(): Promise<void> {
+  stopStart()
   if (client) {
     try { await client.destroy() } catch { /* noop */ }
     client = null
