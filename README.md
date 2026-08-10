@@ -115,20 +115,20 @@ A milestone typically flows like this — drawn linear, lived with loops:
 ```mermaid
 flowchart TB
     subgraph DE ["Design & Plan"]
-        D["/design ·<br>/double-design"] <--> EPR["/eng-plan-review"]
+        D["/design · /double-design"] <--> EPR["/eng-plan-review"]
         DIS["/discuss · /align"] -.- D
-        D --> TG["/yaco-task<br>(task graph)"]
+        D --> TG["/yaco-task (task graph)"]
     end
     subgraph OR ["/orchestrate"]
         direction TB
         subgraph BU ["per task, in its own worktree"]
             direction TB
-            I["/implement<br>/tdd · /investigate"] --> CR["/code-review"]
+            I["/implement · /tdd · /investigate"] --> CR["/code-review"]
             CR -->|fix| I
             I --> V["/verify · /qa"]
             V --> U["/update-doc"]
         end
-        BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary<br>(milestone close)"]
+        BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary (milestone close)"]
     end
     TG --> OR
 ```
