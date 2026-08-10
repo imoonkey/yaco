@@ -386,6 +386,36 @@ describe("runInstall — global-link safety", () => {
     }
   });
 
+  it("migrates a RELATIVE legacy whole-dir symlink without --force (cwd-independent)", () => {
+    const home = process.env["HOME"]!;
+    const claudeDir = join(home, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    // Relative link that correctly resolves to OUR skillsDir from the link's
+    // own directory — must be treated as ours regardless of process cwd.
+    symlinkSync(
+      join("..", "..", "repo", "agent-config", "global", "skills"),
+      join(claudeDir, "skills"),
+    );
+    runInstall(baseOpts());
+    const container = join(claudeDir, "skills");
+    expect(lstatSync(container).isSymbolicLink()).toBe(false);
+    expect(readlinkSync(join(container, "alpha"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "alpha"),
+    );
+  });
+
+  it("ENV when agent-config/global/skills is a file, not a directory", () => {
+    rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
+    writeFileSync(join(repoRoot, "agent-config", "global", "skills"), "not a dir\n");
+    let code: string | undefined;
+    try {
+      runInstall(baseOpts());
+    } catch (e) {
+      code = (e as { code?: string }).code;
+    }
+    expect(code).toBe("ENV");
+  });
+
   it("migrates a legacy whole-dir symlink to per-skill links without --force", () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");

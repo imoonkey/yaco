@@ -195,8 +195,10 @@ function checkSkillsLink(): CheckResult {
     return fail(name, `cannot resolve yaco repo from registry: ${(e as Error).message}`);
   }
   const skillsDir = join(repoPath, "agent-config", "global", "skills");
-  if (!existsSync(skillsDir)) {
-    return fail(name, `${skillsDir} missing — checkout moved? re-run \`yaco install\``);
+  let manifestIsDir = false;
+  try { manifestIsDir = statSync(skillsDir).isDirectory(); } catch { /* missing */ }
+  if (!manifestIsDir) {
+    return fail(name, `${skillsDir} missing or not a directory — checkout moved? re-run \`yaco install\``);
   }
   let st;
   try {
@@ -211,9 +213,14 @@ function checkSkillsLink(): CheckResult {
     );
   }
   if (!st.isDirectory()) return fail(name, `${claudeSkills}: not a directory`);
-  const skills = readdirSync(skillsDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name);
+  let skills: string[];
+  try {
+    skills = readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch (e) {
+    return fail(name, `cannot read ${skillsDir}: ${(e as Error).message}`);
+  }
   const missing = skills.filter((s) => !existsSync(join(claudeSkills, s)));
   if (missing.length > 0) {
     const shown = missing.slice(0, 3).join(", ");

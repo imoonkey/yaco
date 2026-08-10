@@ -24,6 +24,7 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -197,7 +198,7 @@ function upsertSymlink(
     let current: string | null = null;
     try { current = readlinkSync(linkPath); } catch { /* fall through */ }
     if (current !== null) {
-      const sameTarget = realpathOr(current) === realpathOr(target);
+      const sameTarget = realpathOr(resolveLinkTarget(linkPath, current)) === realpathOr(target);
       if (sameTarget) return;
       if (!force) {
         throw new CliError(
@@ -335,10 +336,13 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
 function installGlobalLinks(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const home = userHome();
   const skillsDir = join(repoRoot, "agent-config", "global", "skills");
-  // Hard precondition: if agent-config/global/skills is missing, refuse to
-  // install — silently linking to a non-existent target would mask a broken
-  // checkout and only surface as a confusing error from doctor later.
-  if (!existsSync(skillsDir)) {
+  // Hard precondition: if agent-config/global/skills is missing or not a
+  // directory, refuse to install — silently linking to a non-existent target
+  // would mask a broken checkout and only surface as a confusing error from
+  // doctor later.
+  let skillsDirIsDir = false;
+  try { skillsDirIsDir = statSync(skillsDir).isDirectory(); } catch { /* missing */ }
+  if (!skillsDirIsDir) {
     throw new CliError(
       ErrCode.ENV,
       `missing ${skillsDir} — repo root is not a YACO checkout (or --repo is wrong)`,
@@ -358,6 +362,12 @@ function listSkillNames(skillsDir: string): string[] {
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort();
+}
+
+/** A readlink() result may be relative — resolve it against the link's own
+ *  directory, never the process cwd. */
+function resolveLinkTarget(linkPath: string, current: string): string {
+  return current.startsWith("/") ? current : join(dirname(linkPath), current);
 }
 
 /** Make ~/.claude/skills a real directory to merge into.
@@ -388,7 +398,7 @@ function ensureSkillsContainer(
   }
   if (st.isSymbolicLink()) {
     const current = readlinkSync(path);
-    const ours = realpathOr(current) === realpathOr(skillsDir);
+    const ours = realpathOr(resolveLinkTarget(path, current)) === realpathOr(skillsDir);
     if (!ours && !force) {
       throw new CliError(
         ErrCode.CONFLICT,
@@ -437,7 +447,7 @@ function plantSkillLink(
     return;
   }
   const current = readlinkSync(linkPath);
-  if (realpathOr(current) === realpathOr(target)) return;
+  if (realpathOr(resolveLinkTarget(linkPath, current)) === realpathOr(target)) return;
   const dangling = !existsSync(linkPath);
   if (!dangling && !force) {
     actions.push(`skip ${name}: links to ${current} (user-managed; --force to retarget)`);

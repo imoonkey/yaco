@@ -261,6 +261,16 @@ describe("runAllChecks — individual failure modes", () => {
     expect(skills?.detail).toContain("gamma");
   });
 
+  it("skills-link fails cleanly (no throw) when the manifest is a file", () => {
+    installPrereqs();
+    rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
+    writeFileSync(join(repoRoot, "agent-config", "global", "skills"), "not a dir\n");
+    const r = runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("fail");
+    expect(skills?.detail).toContain("not a directory");
+  });
+
   it("skills-link passes with a user-override real dir at a shipped name", () => {
     mkdirSync(join(repoRoot, "agent-config", "global", "skills", "gamma"), { recursive: true });
     installPrereqs();
