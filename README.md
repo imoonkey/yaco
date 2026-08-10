@@ -113,33 +113,34 @@ checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
 A milestone typically flows like this — drawn linear, lived with loops:
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph DE ["Design"]
         D["/design ·<br>/double-design"] <--> EPR["/eng-plan-review"]
-        DIS["/discuss"] -.- D
+        DIS["/discuss · /align"] -.- D
     end
     subgraph PL ["Plan"]
-        TG["/yaco-task<br>(task graph)"] --> O["/orchestrate"]
+        TG["/yaco-task<br>(task graph)"]
     end
-    subgraph BU ["Build — per task, own worktree (/yaco-worktree)"]
-        I["/implement<br>/tdd · /investigate"] --> CR["/code-review"]
+    subgraph BU ["Build — per task, in its own worktree"]
+        O["/orchestrate"] --> I["/implement<br>/tdd · /investigate"]
+        I --> CR["/code-review"]
         CR -->|fix| I
         I --> V["/verify · /qa"]
     end
     subgraph LA ["Land"]
-        M["merge"] --> IS["/impl-summary ·<br>/update-doc"]
+        M["/yaco-worktree merge"] --> IS["/impl-summary ·<br>/update-doc"]
     end
     D --> TG
-    O --> I
+    TG --> O
     V --> M
 ```
 
 Always on, in any phase: `/coding-standards`, `/simplify-code-arch`,
-`/ultra-think`, `/yaco-paths`. Cross-agent: `/align` (how `/double-design`
-reconciles Claude and Codex). Onboarding: `/init-all` sets a repo up for
-multi-agent work. What comes *before* design — scoping, UX specs, product
-diagnostics — is deliberately bring-your-own: drop your own skills into
-`~/.claude/skills` and they slot straight into the same loop.
+`/ultra-think`, `/yaco-paths`. Onboarding: `/init-all` sets a repo up for
+multi-agent work. And "design" here means *engineering* design — what comes
+before it (scoping, product design, UX specs) is deliberately bring-your-own:
+drop your own skills into `~/.claude/skills` and they slot straight into the
+same loop.
 
 This layer is the least settled, on purpose: nobody — us included — knows the
 right way to work with coding agents yet. Treat these skills as a fork-and-edit
