@@ -72,7 +72,14 @@ registerHooks({
   },
 })
 
-const MODES = ['shutdown-during-load', 'logout-during-load', 'ghost-event', 'restart-during-shutdown', 'restart-during-logout'] as const
+const MODES = [
+  'shutdown-during-load',
+  'logout-during-load',
+  'ghost-event',
+  'restart-during-shutdown',
+  'restart-during-logout',
+  'stale-readiness',
+] as const
 type Mode = typeof MODES[number]
 
 const mode = process.argv[2] as Mode
@@ -80,6 +87,7 @@ if (!MODES.includes(mode)) throw new Error(`unknown mode: ${mode}`)
 
 const { initWhatsApp, shutdownWhatsApp, logoutWhatsApp, getLoginState, isInitialized } =
   await import('../index.js')
+const { getAuthSnapshot } = await import('../auth.js')
 
 // The real LocalAuth creates this; the fake does not, so plant it and let
 // logout's `rm -rf` be the only thing that can take it away.
@@ -124,6 +132,24 @@ switch (mode) {
     await stopped
     break
   }
+  // A message arrives at the replacement before it has said it is ready. The
+  // previous session had said so, and its readiness must not carry over.
+  case 'stale-readiness': {
+    await initWhatsApp()
+    fake().clients[0].emit('ready')
+    await settle(50)
+    const stopped = shutdownWhatsApp()
+    await initWhatsApp()
+    await stopped
+    fake().clients[1].emit('message_create', {
+      fromMe: true,
+      hasMedia: false,
+      body: '/help',
+      id: { remote: '10000000000@c.us' },
+      reply: async () => { fake().log.push('replied') },
+    })
+    break
+  }
 }
 
 // Long enough for a start that ignored a stop to finish and be caught.
@@ -137,6 +163,7 @@ console.log(JSON.stringify({
   log,
   sessionDirAtStart,
   sessionDirExists: existsSync(join(channelScopeDir('whatsapp'), 'session')),
+  tofuBound: getAuthSnapshot().tofuBound,
   login: getLoginState(),
   isInitialized: isInitialized(),
 }))

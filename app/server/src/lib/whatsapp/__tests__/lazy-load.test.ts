@@ -87,6 +87,7 @@ interface LifecycleResult {
   log: string[]
   sessionDirAtStart: boolean[]
   sessionDirExists: boolean
+  tofuBound: string | null
   login: { phase: string; ready: boolean }
   isInitialized: boolean
 }
@@ -138,5 +139,15 @@ describe('a stop wins against the start it races', () => {
     // The replacement opened the profile only after logout had already wiped
     // it — the inverse ordering is what would delete a live profile.
     expect(probe.sessionDirAtStart).toEqual([true, false])
+  }, 60_000)
+
+  it('does not carry the previous session readiness over to its replacement', async () => {
+    const probe = await lifecycle('stale-readiness')
+
+    // The replacement has not emitted `ready`, so a message reaching it must be
+    // ignored — not TOFU-bound and not answered on a half-built session.
+    expect(probe.login).toMatchObject({ phase: 'awaiting-qr', ready: false })
+    expect(probe.log).not.toContain('replied')
+    expect(probe.tofuBound).toBeNull()
   }, 60_000)
 })

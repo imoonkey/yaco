@@ -421,6 +421,10 @@ export async function logoutWhatsApp(): Promise<void> {
 function endSession(): Client | null {
   stopGeneration += 1
   initInflight = null
+  // myJid doubles as the message listener's readiness token, and it belongs to
+  // the session being ended: left behind, it tells the *next* client's
+  // message_create that it is ready before that client has said so.
+  myJid = null
   const stale = client
   client = null
   return stale
