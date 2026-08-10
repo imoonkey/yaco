@@ -128,7 +128,7 @@ flowchart TD
         end
         BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary<br>(milestone close)"]
     end
-    TG --> BU
+    TG --> OR
 ```
 
 Always on, in any phase: `/coding-standards`, `/simplify-code-arch`,
