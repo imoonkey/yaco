@@ -82,6 +82,12 @@ let initInflight: Promise<void> | null = null
  *  and returns clean; a start must therefore be able to recognise that it has
  *  been superseded rather than go on to launch a browser nobody asked for. */
 let stopGeneration = 0
+/** Physical release of what a session held: the browser, its profile directory
+ *  and the taps. Ownership flips synchronously in endSession() so a restart
+ *  wins the race, but the resources are not actually free until this settles —
+ *  and the next session reuses the very same profile directory. Every start
+ *  therefore waits on it, and every teardown queues behind the last. */
+let teardown: Promise<void> = Promise.resolve()
 let myJid: string | null = null
 const router = createRouter(whatsappStore)
 
@@ -247,7 +253,10 @@ export function initWhatsApp(): Promise<void> {
   // If a prior init failed or the client got disconnected, the `client` ref
   // may still be set but is unusable. End that session and re-init from scratch.
   if (client && (state.phase === 'failed' || state.phase === 'disconnected')) {
-    void endSession()?.destroy().catch(() => { /* best-effort */ })
+    const stale = endSession()
+    void releaseSession(async () => {
+      try { await stale?.destroy() } catch { /* best-effort */ }
+    })
   }
   if (client) return Promise.resolve()
 
@@ -288,6 +297,9 @@ async function startClient(): Promise<void> {
     console.error(`[whatsapp] ${message}`)
     return
   }
+  // A previous session may still be handing back the browser profile this one
+  // is about to open, and logout's `rm -rf` of it runs in there too.
+  await teardown
   if (superseded()) return
 
   // From here to `client = wa` there is no await, so a stop can no longer slip
@@ -383,16 +395,19 @@ async function startClient(): Promise<void> {
 export async function logoutWhatsApp(): Promise<void> {
   const stale = endSession()
   setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined, error: undefined })
-  if (stale) {
-    try { await stale.logout() } catch (e) {
-      console.warn('[whatsapp] logout call failed:', e)
+  await releaseSession(async () => {
+    if (stale) {
+      try { await stale.logout() } catch (e) {
+        console.warn('[whatsapp] logout call failed:', e)
+      }
+      try { await stale.destroy() } catch (e) {
+        console.warn('[whatsapp] destroy failed:', e)
+      }
     }
-    try { await stale.destroy() } catch (e) {
-      console.warn('[whatsapp] destroy failed:', e)
-    }
-  }
-  // After the teardown, so the profile directory is no longer held open.
-  spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
+    // Inside the release, so it lands after the browser lets the directory go
+    // and before any replacement session starts using it again.
+    spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
+  })
 }
 
 /** Takes the channel out of service and hands back the client to tear down.
@@ -411,11 +426,20 @@ function endSession(): Client | null {
   return stale
 }
 
+/** Queues one session's physical release onto the teardown chain. */
+function releaseSession(work: () => Promise<void>): Promise<void> {
+  const done = teardown.then(work, work)
+  teardown = done.catch(() => undefined)
+  return done
+}
+
 export async function shutdownWhatsApp(): Promise<void> {
   const stale = endSession()
   setState({ phase: 'idle', ready: false })
-  if (stale) {
-    try { await stale.destroy() } catch { /* noop */ }
-  }
-  await shutdownAllTaps()
+  await releaseSession(async () => {
+    if (stale) {
+      try { await stale.destroy() } catch { /* noop */ }
+    }
+    await shutdownAllTaps()
+  })
 }

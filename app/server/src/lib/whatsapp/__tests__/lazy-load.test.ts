@@ -84,6 +84,9 @@ interface LifecycleResult {
   constructed: number
   initialized: number
   destroyed: number
+  log: string[]
+  sessionDirAtStart: boolean[]
+  sessionDirExists: boolean
   login: { phase: string; ready: boolean }
   isInitialized: boolean
 }
@@ -112,14 +115,28 @@ describe('a stop wins against the start it races', () => {
     expect(probe.isInitialized).toBe(false)
   }, 60_000)
 
-  it('restarts when a start is requested while the stop is still tearing down', async () => {
-    const probe = await lifecycle('restart-during-stop')
+  it.each(['shutdown', 'logout'])(
+    'restarts after a %s finishes releasing, not before',
+    async (stop) => {
+      const probe = await lifecycle(`restart-during-${stop}`)
 
-    expect(probe.constructed).toBe(2)
-    expect(probe.initialized).toBe(2)
-    expect(probe.destroyed).toBe(1)
-    // The restart owns the channel; the stop unwinding behind it writes nothing.
-    expect(probe.isInitialized).toBe(true)
-    expect(probe.login.phase).toBe('awaiting-qr')
+      // The restart owns the channel; the stop unwinding behind it writes nothing.
+      expect(probe.isInitialized).toBe(true)
+      expect(probe.login.phase).toBe('awaiting-qr')
+      expect(probe.constructed).toBe(2)
+      expect(probe.initialized).toBe(2)
+      // Ownership flips at once, but the replacement reuses the previous
+      // session's browser profile directory, so it must wait for the release.
+      expect(probe.log).toEqual(['construct#1', 'destroy#1:start', 'destroy#1:end', 'construct#2'])
+    },
+    60_000,
+  )
+
+  it('never lets logout delete the session directory of the session that replaced it', async () => {
+    const probe = await lifecycle('restart-during-logout')
+
+    // The replacement opened the profile only after logout had already wiped
+    // it — the inverse ordering is what would delete a live profile.
+    expect(probe.sessionDirAtStart).toEqual([true, false])
   }, 60_000)
 })
