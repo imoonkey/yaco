@@ -12,7 +12,11 @@
  *    2  ensure "/<plan>/" is in the host's exclude file — resolved via
  *       `git rev-parse --git-path info/exclude` so a linked worktree (where
  *       .git is a file) is handled correctly — so the host repo never tracks it.
- *    3  --remote: add origin; a different existing origin is a CONFLICT unless
+ *    3  ensure "!<plan>/" is in the root .ignore — the exclude entry also makes
+ *       ignore-stack tools (rg/fd, agent file search) blind to the plan dir; the
+ *       .ignore negation re-includes it at higher precedence (no-op for tools
+ *       when the plan dir is tracked).
+ *    4  --remote: add origin; a different existing origin is a CONFLICT unless
  *       --force. Never pushes — publishing the plan repo is a separate, personal
  *       step the tool does not assume.
  */
@@ -42,6 +46,7 @@ export interface PlanInitResult {
   initialized: boolean;
   gitignoreCreated: boolean;
   excludeUpdated: boolean;
+  ignoreUpdated: boolean;
   remote: "none" | "added" | "unchanged" | "updated";
 }
 
@@ -104,12 +109,24 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   // ── 2. host info/exclude ─────────────────────────────────────────────────
   const excludeUpdated = ensureExcluded(repoRoot, plan);
 
-  // ── 3. remote (never pushes) ─────────────────────────────────────────────
+  // ── 3. root .ignore whitelist ────────────────────────────────────────────
+  const ignoreUpdated = ensureLine(join(repoRoot, ".ignore"), `!${plan}/`);
+
+  // ── 4. remote (never pushes) ─────────────────────────────────────────────
   const remote = opts.remote
     ? ensureRemote(planDir, opts.remote, opts.force ?? false)
     : "none";
 
-  return { repoRoot, plan, planDir, initialized, gitignoreCreated, excludeUpdated, remote };
+  return {
+    repoRoot,
+    plan,
+    planDir,
+    initialized,
+    gitignoreCreated,
+    excludeUpdated,
+    ignoreUpdated,
+    remote,
+  };
 }
 
 /** True iff the host's root working-tree .gitignore matches the plan root.
@@ -136,20 +153,32 @@ function ensureExcluded(repoRoot: string, plan: string): boolean {
       `could not resolve info/exclude: ${r.stderr.trim() || "git rev-parse failed"}`,
     );
   }
-  const excludePath = resolve(repoRoot, r.stdout.trim());
-  const entry = `/${plan}/`;
+  return ensureLine(resolve(repoRoot, r.stdout.trim()), `/${plan}/`);
+}
 
+/** Append `entry` as its own line in `filePath` unless already present.
+ *  Creates the file if absent; never reorders or rewrites existing lines.
+ *  Returns whether it appended.
+ *
+ *  Presence uses gitignore whitespace rules: trailing whitespace is stripped,
+ *  leading whitespace is significant — an indented copy of the entry is not an
+ *  effective pattern, so it does not count. A read failure other than
+ *  file-absent aborts; treating it as absent would rewrite a file we could not
+ *  read. */
+function ensureLine(filePath: string, entry: string): boolean {
   let current = "";
   try {
-    current = readFileSync(excludePath, "utf-8");
-  } catch {
-    /* file may not exist yet — created below */
+    current = readFileSync(filePath, "utf-8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new CliError(ErrCode.IO, `could not read ${filePath}: ${(e as Error).message}`);
+    }
   }
-  if (current.split(/\r?\n/).some((line) => line.trim() === entry)) return false;
+  if (current.split(/\r?\n/).some((line) => line.trimEnd() === entry)) return false;
 
-  mkdirSync(dirname(excludePath), { recursive: true });
+  mkdirSync(dirname(filePath), { recursive: true });
   const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-  writeFileSync(excludePath, current + prefix + entry + "\n");
+  writeFileSync(filePath, current + prefix + entry + "\n");
   return true;
 }
 
@@ -228,6 +257,7 @@ function renderPlanInit(r: PlanInitResult): string {
     `  ${r.initialized ? "git init (new repo)" : "already a repo"}`,
     `  .gitignore ${r.gitignoreCreated ? "created" : "kept"}`,
     `  info/exclude ${r.excludeUpdated ? "added /" + r.plan + "/" : "already excludes /" + r.plan + "/"}`,
+    `  .ignore ${r.ignoreUpdated ? "added !" + r.plan + "/" : "already whitelists !" + r.plan + "/"}`,
   ];
   if (r.remote !== "none") lines.push(`  origin ${r.remote}`);
   return lines.join("\n") + "\n";

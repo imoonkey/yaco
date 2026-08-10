@@ -2,7 +2,7 @@
 
 import { afterAll, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -59,9 +59,85 @@ describe("runPlanInit", () => {
     expect(second.initialized).toBe(false);
     expect(second.gitignoreCreated).toBe(false);
     expect(second.excludeUpdated).toBe(false);
+    expect(second.ignoreUpdated).toBe(false);
     // The exclude file did not gain a duplicate entry.
     const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
     expect(exclude.match(/\/plan\//g)?.length).toBe(1);
+  });
+
+  it("creates a root .ignore whitelisting the plan dir", () => {
+    const root = makeHostRepo();
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/\n");
+  });
+
+  it("appends the whitelist to an existing .ignore, preserving its lines", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "node_modules/\ndist/\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!plan/\n");
+  });
+
+  it("glues a newline when the existing .ignore lacks a trailing one", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "dist/");
+    runPlanInit({ cwd: root });
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\n");
+  });
+
+  it("leaves an .ignore that already carries the whitelist untouched", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "dist/\n!plan/\ncustom\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\ncustom\n");
+  });
+
+  it("treats an indented copy of the entry as absent — leading whitespace defeats negation", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), " !plan/\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe(" !plan/\n!plan/\n");
+  });
+
+  it("treats a trailing-whitespace copy as present — git strips trailing whitespace", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "!plan/  \n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/  \n");
+  });
+
+  it("fails on an unreadable .ignore instead of silently replacing it", () => {
+    const root = makeHostRepo();
+    const ignorePath = join(root, ".ignore");
+    writeFileSync(ignorePath, "keep-me\n");
+    chmodSync(ignorePath, 0o200); // write-only: read fails with EACCES, write would succeed
+    try {
+      runPlanInit({ cwd: root });
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.IO);
+    } finally {
+      chmodSync(ignorePath, 0o644);
+    }
+    expect(readFileSync(ignorePath, "utf-8")).toBe("keep-me\n");
+  });
+
+  it("whitelist and second-run idempotency track the [paths] plan override", () => {
+    const root = makeHostRepo("private-plan");
+    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "private-plan"\n');
+    const first = runPlanInit({ cwd: root });
+    expect(first.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
+
+    const second = runPlanInit({ cwd: root });
+    expect(second.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
   });
 
   it("refuses when the root .gitignore matches the plan root", () => {
