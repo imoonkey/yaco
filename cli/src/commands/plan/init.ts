@@ -156,17 +156,25 @@ function ensureExcluded(repoRoot: string, plan: string): boolean {
   return ensureLine(resolve(repoRoot, r.stdout.trim()), `/${plan}/`);
 }
 
-/** Append `entry` as its own line in `filePath` unless already present
- *  (trim-compared per line). Creates the file if absent; never reorders or
- *  rewrites existing lines. Returns whether it appended. */
+/** Append `entry` as its own line in `filePath` unless already present.
+ *  Creates the file if absent; never reorders or rewrites existing lines.
+ *  Returns whether it appended.
+ *
+ *  Presence uses gitignore whitespace rules: trailing whitespace is stripped,
+ *  leading whitespace is significant — an indented copy of the entry is not an
+ *  effective pattern, so it does not count. A read failure other than
+ *  file-absent aborts; treating it as absent would rewrite a file we could not
+ *  read. */
 function ensureLine(filePath: string, entry: string): boolean {
   let current = "";
   try {
     current = readFileSync(filePath, "utf-8");
-  } catch {
-    /* file may not exist yet — created below */
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new CliError(ErrCode.IO, `could not read ${filePath}: ${(e as Error).message}`);
+    }
   }
-  if (current.split(/\r?\n/).some((line) => line.trim() === entry)) return false;
+  if (current.split(/\r?\n/).some((line) => line.trimEnd() === entry)) return false;
 
   mkdirSync(dirname(filePath), { recursive: true });
   const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";

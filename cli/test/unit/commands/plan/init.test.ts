@@ -2,7 +2,7 @@
 
 import { afterAll, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -93,6 +93,39 @@ describe("runPlanInit", () => {
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(false);
     expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\ncustom\n");
+  });
+
+  it("treats an indented copy of the entry as absent — leading whitespace defeats negation", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), " !plan/\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe(" !plan/\n!plan/\n");
+  });
+
+  it("treats a trailing-whitespace copy as present — git strips trailing whitespace", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "!plan/  \n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/  \n");
+  });
+
+  it("fails on an unreadable .ignore instead of silently replacing it", () => {
+    const root = makeHostRepo();
+    const ignorePath = join(root, ".ignore");
+    writeFileSync(ignorePath, "keep-me\n");
+    chmodSync(ignorePath, 0o200); // write-only: read fails with EACCES, write would succeed
+    try {
+      runPlanInit({ cwd: root });
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.IO);
+    } finally {
+      chmodSync(ignorePath, 0o644);
+    }
+    expect(readFileSync(ignorePath, "utf-8")).toBe("keep-me\n");
   });
 
   it("whitelist and second-run idempotency track the [paths] plan override", () => {
