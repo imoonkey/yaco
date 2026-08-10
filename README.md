@@ -120,7 +120,9 @@ flowchart TD
         D --> TG["/yaco-task<br>(task graph)"]
     end
     subgraph OR ["/orchestrate"]
+        direction TB
         subgraph BU ["per task, in its own worktree"]
+            direction TB
             I["/implement<br>/tdd · /investigate"] --> CR["/code-review"]
             CR -->|fix| I
             I --> V["/verify · /qa"]
