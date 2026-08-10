@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-08-10: CLI read ordering is defined, and a golden matrix pins it
+
+**What changed:**
+- Every agent read path that enumerates a directory or resolves a tie now returns a total, name-derived order: `listStateHandles` ascending (the order behind `agent list`, `agent summaries`, every `listByPath` caller); Claude project logs and Codex rollout day directories read sorted; `finalizeHistory` ordering by recency then ascending `sessionId`, with an unparseable `updatedAt` ranked after every real timestamp instead of compared as NaN; both `threads` queries tie-breaking on `id`; equal-delay rollout selection resolving to the smallest rollout path. Comparison is by code unit — plain `.sort()`, never `localeCompare`.
+- New `cli/test/golden/`: a hermetic capture harness (own `$HOME`/`$YACO_HOME`, empty `$PATH`, redacted paths) that freezes exit code, stdout, stderr, and durable `$YACO_HOME` state for 31 cases spanning help, text/JSON successes, the agent list/history/summaries/messages/status reads, task reads, paths, doctor, install, and one case per error class.
+- Two matrices are committed: `matrix.original.json` captured on Bun **before** the sort (a historical artifact, never recaptured) and `matrix.json` after (recaptured and compared byte for byte by `golden.test.ts`). `ordering-delta.test.ts` holds the 23 non-order-sensitive cases byte-identical across the two and shows exactly 8 reordering.
+
+**Why:**
+- State-file enumeration was unsorted, so `agent list` row order was undefined by construction and differed between Bun and Node on the same directory. That had to be fixed *before* the Node port, or the port's golden matrix could not separate a real regression from a directory-order artifact. `doctor --json` is in the baseline from the start because it reports the package version — the port's one intentional output delta, which a baseline that omitted it could not distinguish from a regression.
+- The `updatedAt` NaN fallthrough (caught in review) made the history comparator intransitive, handing the order back to the sort's internals — the exact nondeterminism being removed.
+
+**Key files:** `cli/src/lib/core/agent/{session-state,session-id}.ts`, `cli/src/lib/core/agent/providers/{history,output}.ts`, `cli/test/golden/**`, `cli/test/unit/core/agent/ordering.test.ts`, `doc/main/cli/architecture.md`
+**Verification:** `scripts/verify.sh` all steps passed; `npx tsc --noEmit -p .` clean in `cli/`; `bun run test` 1175 pass; every new assertion confirmed to fail against the pre-sort tree; QA over the real machine's 15 live sessions in `plan/all/cli-node-sdk/qa-cli-order-determinism.md`.
+**Commit:** db64f544..HEAD
+**Next:** `cli-portable-runtime` — the Bun-compatible plateau, against this post-ordering baseline.
+**Blockers:** None
+
 ## 2026-08-10: per-skill skills links + the shipped set shrinks to 22 yaco-coupled skills
 
 **What changed:**
