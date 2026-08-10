@@ -113,7 +113,7 @@ checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
 A milestone typically flows like this — drawn linear, lived with loops:
 
 ```mermaid
-flowchart TD
+flowchart TB
     subgraph DE ["Design & Plan"]
         D["/design ·<br>/double-design"] <--> EPR["/eng-plan-review"]
         DIS["/discuss · /align"] -.- D
