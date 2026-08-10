@@ -127,10 +127,9 @@ flowchart TB
             CR -->|fix| I
             I --> V["/verify · /qa"]
             V --> U["/update-doc"]
-            U --> G["yaco gate → /yaco-worktree merge up"]
+            U --> G["yaco gate"]
         end
-        BU -->|"task branches converge"| MAIN["main"]
-        MAIN --> IS["/impl-summary"]
+        BU --> IS["/impl-summary"]
     end
     TG --> OR
 ```
