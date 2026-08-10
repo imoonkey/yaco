@@ -124,9 +124,9 @@ flowchart TD
             I["/implement<br>/tdd · /investigate"] --> CR["/code-review"]
             CR -->|fix| I
             I --> V["/verify · /qa"]
+            V --> U["/update-doc"]
         end
-        V --> M["/yaco-worktree merge"]
-        M --> IS["/impl-summary ·<br>/update-doc"]
+        BU -->|"yaco gate → /yaco-worktree merge"| IS["/impl-summary<br>(milestone close)"]
     end
     TG --> BU
 ```
