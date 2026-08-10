@@ -76,10 +76,13 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onOpe
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
     const isInput = e.target === inputRef.current
     if (e.key === 'Enter' && isInput && displayItems[selectedIdx]) {
+      // Closing the dialog restores focus to the editor mid-keydown, so without
+      // preventDefault the browser performs Enter's default action against the
+      // freshly focused CodeMirror and inserts a newline there.
+      e.preventDefault()
       const entry = displayItems[selectedIdx].entry
       // Cmd+Enter opens a FILE to the side (design §F); dirs keep plain behavior.
       if (e.metaKey && entry.type === 'file' && onOpenToSide) {
-        e.preventDefault()
         onOpenToSide(entry)
         onClose()
         return

@@ -68,6 +68,28 @@ test.describe('File search (Cmd+P)', () => {
     await expect(tab).toBeVisible()
   })
 
+  test('Enter does not leak a newline into the focused editor', async ({ page }) => {
+    // Open a file and put the caret in its editor, so quick-open's Enter has a
+    // focused CodeMirror to leak into once the dialog closes and focus restores.
+    await openFileViaSearch(page, 'index.ts')
+    const content = page.locator('.cm-content')
+    await expect(content).toContainText('export const value = 1', { timeout: 5000 })
+    // Pin the tab (quick-open tabs are previews, and a clean preview is replaced
+    // by the next one) so the buffer is still reachable after the second open.
+    const firstTab = page.locator('[data-testid="group-tab"]', { hasText: 'index.ts' })
+    await firstTab.dblclick()
+    await content.click()
+
+    await openFileViaSearch(page, 'helper.ts')
+    await expect(content).toContainText('export function helper', { timeout: 5000 })
+
+    // Back to the first file: its buffer must be untouched — the fixture is one
+    // line plus the trailing newline, so a leaked Enter shows up as a third line.
+    await firstTab.click()
+    await expect(content).toContainText('export const value = 1', { timeout: 5000 })
+    await expect(page.locator('.cm-line')).toHaveCount(2)
+  })
+
   test('gitignore toggle includes ignored files', async ({ page }) => {
     await page.keyboard.press('Meta+p')
     await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
