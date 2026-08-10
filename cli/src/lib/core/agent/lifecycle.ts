@@ -11,11 +11,11 @@
  *  install. No embedded shell strings.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync, statSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join, resolve } from "path";
+import { join, resolve } from "path";
 import { execSync } from "child_process";
 import { homedir } from "os";
 import { parse as parseToml } from "smol-toml";
+import { packagedAssetPath, selfExecutablePath } from "../../../package-root.ts";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
 import { getProvider } from "./providers/index.ts";
 import { CliError, ErrCode } from "../errors.ts";
@@ -30,39 +30,20 @@ function userHome(): string {
 // Marker comment to identify yaco-managed hook entries.
 const HOOK_MARKER = "yaco-agent-hook";
 
-/** Locate cli/src/main.ts shipped with this package. */
-function packagedMainPath(): string {
-  // import.meta.url → .../cli/src/lib/core/agent/lifecycle.ts
-  // resolve(..., "../../../main.ts") → cli/src/main.ts
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../main.ts");
-}
-
-/** Locate the slim hook-event entry point shipped with this package. */
-function packagedHookEventBin(): string {
-  // import.meta.url → .../cli/src/lib/core/agent/lifecycle.ts
-  // resolve(..., "../../../hook-event-bin.ts") → cli/src/hook-event-bin.ts
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../hook-event-bin.ts");
-}
-
 /** Resolve the hook entry command. Canonical form per the install/distribution
  *  design: `<absolute-yaco-binary> agent hook-event <Event>` — points at the
- *  installed binary, NOT repo-local source. The previous `bun .../hook-event-bin.ts`
- *  form broke the moment yaco was installed without a checkout (no bun, no
- *  source files). Always returns an absolute invocation so the hook works even
- *  if PATH at hook-fire time is stripped (tmux server env, etc.).
+ *  installed executable, NOT repo-local source, which breaks the moment yaco is
+ *  installed without a checkout. Always returns an absolute invocation so the
+ *  hook works even if PATH at hook-fire time is stripped (tmux server env,
+ *  etc.).
  *
  *  Resolution order:
  *    1. $YACO_BIN_DIR/yaco — set by tools/install.sh during bootstrap
- *    2. process.argv[0] — when invoked from the compiled bun binary, this IS
- *       the yaco binary; reuse it so doctor + install produce identical hook
- *       commands.
+ *    2. process.execPath when this process IS the yaco executable, so doctor
+ *       and install produce identical hook commands (see {@link isSelfExecutable}).
  *    3. `which yaco` — fall back to PATH lookup at install time.
  *    4. literal "yaco" — last resort; the hook will fail at fire time but
- *       install still completes so the user can diagnose.
- *
- *  main.ts has a parallel fast-path for `argv[0:2] === ['agent','hook-event']`
- *  that lazy-imports only the hook-event handler, preserving the per-event
- *  cold-start budget that hook-event-bin.ts used to provide. */
+ *       install still completes so the user can diagnose. */
 let _cachedHookBinary: string | null = null;
 function hookBinary(): string {
   if (_cachedHookBinary !== null) return _cachedHookBinary;
@@ -76,11 +57,8 @@ function resolveYacoBinary(): string {
     const candidate = resolve(envBin, "yaco");
     if (existsSync(candidate)) return candidate;
   }
-  // process.argv[0] is the bun-compiled binary itself when yaco runs as a
-  // compiled artifact. Detect by checking the basename, which is always
-  // "yaco" for the compiled output and "bun" otherwise.
-  const arg0 = process.argv[0];
-  if (arg0 && arg0.endsWith("/yaco")) return arg0;
+  const self = selfExecutablePath();
+  if (self) return self;
   // PATH lookup at install time. Pass env explicitly so tests that override
   // PATH still find the right binary.
   try {
@@ -105,17 +83,14 @@ export function _resetHookBinaryCacheForTests(): void {
 
 /** Locate the on-disk agent-wrapper.sh shipped with the cli package.
  *
- *  Under `bun run`, import.meta.url points at the real source file and
- *  the sibling `cli/scripts/agent-wrapper.sh` exists. Under a
- *  `bun build --compile` binary, import.meta.url resolves into the bun
- *  runtime's virtual fs (e.g. `/scripts/agent-wrapper.sh`) which has no
- *  file siblings on disk — this function returns that virtual path
- *  unconditionally; the caller is expected to existsSync() before reading
- *  and fall back via {@link findExistingWrapperPath}. */
+ *  Real whenever the package's own files are real — a source run, and every
+ *  emitted/bundled layout, because {@link packagedAssetPath} is invariant
+ *  across them. A single-file compiled artifact is the exception: its package
+ *  root is a virtual filesystem, so this names a path that exists nowhere. The
+ *  caller existsSync()es before reading and recovers via
+ *  {@link findExistingWrapperPath}. */
 function packagedAgentWrapperPath(): string {
-  // import.meta.url → .../cli/src/lib/core/agent/lifecycle.ts
-  // resolve(..., "../../../../scripts/agent-wrapper.sh") → cli/scripts/agent-wrapper.sh
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../../scripts/agent-wrapper.sh");
+  return packagedAssetPath("scripts", "agent-wrapper.sh");
 }
 
 /** Walk a fallback chain to find the on-disk agent-wrapper.sh. The packaged
@@ -299,11 +274,11 @@ function ensureManagedScript(path: string, content: string): void {
   }
 }
 
-/** True if any hook in this group is a yaco-managed entry. Matches both the
- *  slim hook-event-bin invocation and the (alternative) main.ts dispatch form. */
+/** True if any hook in this group is a yaco-managed entry. Every yaco hook,
+ *  whatever executable it names, runs `agent hook-event <Event>`. */
 function isYacoHookCommand(command: unknown): boolean {
   if (typeof command !== "string") return false;
-  return /hook-event-bin\.ts\b|\bagent\s+hook-event\b/.test(command);
+  return /\bagent\s+hook-event\b/.test(command);
 }
 
 /** True if a hook group was authored by yaco. The hook *command* is the

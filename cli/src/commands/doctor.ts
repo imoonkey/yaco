@@ -34,6 +34,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { packagedAssetPath } from "../package-root.ts";
 import { ok, type Result } from "../lib/core/result.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { emit } from "../lib/core/json.ts";
@@ -140,11 +141,10 @@ function checkVersion(): CheckResult {
   // Until cli/package.json publishes a real version, mirror it here as
   // the source-of-truth for the doctor report.
   try {
-    // import.meta.url-rooted resolution would be more robust, but doctor is
-    // already in src/commands/; reading package.json via a relative URL is
-    // bun-friendly. Fall through to "0.0.0" on any read failure.
-    const url = new URL("../../package.json", import.meta.url);
-    const pkg = JSON.parse(readFileSync(url, "utf-8"));
+    // The manifest is a package asset, so it is located the same way every
+    // other one is. Fall through to "0.0.0" on any read failure — a compiled
+    // single-file artifact has no readable package root.
+    const pkg = JSON.parse(readFileSync(packagedAssetPath("package.json"), "utf-8"));
     const v = typeof pkg.version === "string" ? pkg.version : "0.0.0";
     return pass("version", v);
   } catch {

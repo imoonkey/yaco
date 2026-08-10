@@ -14,13 +14,12 @@ function userHome(): string {
   return env && env.length > 0 ? env : homedir();
 }
 
-/** A YACO-managed hook entry runs the `agent hook-event` entry point (or the
- *  legacy hook-event-bin.ts form). */
+/** A YACO-managed hook entry runs the `agent hook-event` entry point. */
 function hasInstalledHook(configPath: string): boolean {
   if (!existsSync(configPath)) return false;
   try {
     const raw = readFileSync(configPath, "utf-8");
-    return /\bagent\s+hook-event\b|hook-event-bin\.ts\b/.test(raw);
+    return /\bagent\s+hook-event\b/.test(raw);
   } catch {
     return false;
   }

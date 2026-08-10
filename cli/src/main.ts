@@ -15,6 +15,7 @@ import { CliError, ErrCode, exitCodeFor, toErr } from "./lib/core/errors.ts";
 import { emit } from "./lib/core/json.ts";
 import { handlePaths } from "./commands/paths.ts";
 import { handleAgent, runStart } from "./commands/agent/index.ts";
+import { handleHookEvent } from "./commands/agent/hook-event.ts";
 import { handleTask } from "./commands/task/index.ts";
 import { handleWorktree } from "./commands/worktree/index.ts";
 import { handleAlign } from "./commands/align/index.ts";
@@ -226,13 +227,15 @@ function renderExitCode(result: Result<unknown>, json: boolean): number {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   // Fast-path: `yaco agent hook-event <Event>` is fired by provider hooks on
-  // every event (and Codex blocks the loop until it returns). Loading the
-  // full command tree for what's a one-liner stdin-read + state-write would
-  // burn cold-start budget on every event. Lazy-import just the hook handler.
-  // Mirrors the silent-on-error contract of the old hook-event-bin.ts entry.
+  // every event, and Codex blocks its loop until the hook returns. The branch
+  // exists for the *contract*, not for load time — it reads stdin, updates
+  // state, swallows every failure so a broken hook cannot block the agent
+  // loop, and exits 0 regardless. The import is static because a dynamic one
+  // would defer nothing: the dispatcher statically imports
+  // commands/agent/index.ts, which statically imports this handler, so it is
+  // already loaded by the time main() runs.
   if (argv[0] === "agent" && argv[1] === "hook-event") {
     try {
-      const { handleHookEvent } = await import("./commands/agent/hook-event.ts");
       await handleHookEvent(argv.slice(2));
     } catch { /* hooks must never block the agent loop on failure */ }
     process.exit(0);

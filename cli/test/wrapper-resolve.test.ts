@@ -1,12 +1,14 @@
 /** Tests for the agent-wrapper.sh fallback resolution chain.
  *
- *  Background: under `bun run`, lifecycle.ts#packagedAgentWrapperPath()
- *  resolves import.meta.url to the on-disk source file and the script sibling
- *  is found at `cli/scripts/agent-wrapper.sh`. Under a `bun build --compile`
- *  binary, import.meta.url resolves into the bun runtime's virtual fs
- *  (e.g. `/scripts/agent-wrapper.sh`) and the open fails with ENOENT — this
- *  regressed `yaco agent start` after a fresh `tools/install.sh` (caught by
- *  yc-cross-machine-smoke 2026-06-03).
+ *  Background: whenever the package's own files are real,
+ *  lifecycle.ts#packagedAgentWrapperPath() finds `cli/scripts/agent-wrapper.sh`
+ *  under the package root and the chain is never entered. Under a compiled
+ *  single-file artifact the package root is a virtual filesystem, the open
+ *  fails with ENOENT, and only the chain gets the wrapper back — this regressed
+ *  `yaco agent start` after a fresh `tools/install.sh` (caught by
+ *  yc-cross-machine-smoke 2026-06-03). package-root.test.ts covers the same
+ *  recovery end to end against a really-compiled artifact; these tests drive
+ *  the chain's individual rungs, which that one cannot reach separately.
  *
  *  The fallback chain in `findExistingWrapperPath` lets the caller recover by
  *  walking: explicit `repoRoot` arg > `$YACO_REPO_ROOT` > git rev-parse from
