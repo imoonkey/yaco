@@ -1,6 +1,6 @@
 ---
 name: design
-description: System design from first principles. Produce a design doc, self-review, iterate. Use after `/scope-review` or `/ux-design`, and before `/eng-plan-review` or `/implement`, for non-trivial work.
+description: System design from first principles. Produce a design doc, self-review, iterate. Use before `/eng-plan-review` or `/implement`, for non-trivial work.
 ---
 
 # Design
