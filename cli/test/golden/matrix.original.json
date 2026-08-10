@@ -1,0 +1,638 @@
+{
+  "casesDigest": "d8117061c21c17d3",
+  "cases": [
+    {
+      "id": "help",
+      "argv": [
+        "--help"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project (yaco.toml, plan/, .worktrees/)\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "version-flag",
+      "argv": [
+        "--version"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project (yaco.toml, plan/, .worktrees/)\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "paths-runtime-json",
+      "argv": [
+        "paths",
+        "runtime",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"agentWrapperPath\":\"{SANDBOX}/yaco/agent-wrapper.sh\",\"channelsDir\":\"{SANDBOX}/yaco/channels\",\"projectsFile\":\"{SANDBOX}/yaco/projects.json\",\"sessionsDir\":\"{SANDBOX}/yaco/sessions\",\"shellSessionsDir\":\"{SANDBOX}/yaco/shell-sessions\",\"uiStateDir\":\"{SANDBOX}/yaco/ui-state\",\"yacoHome\":\"{SANDBOX}/yaco\"},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-providers-json",
+      "argv": [
+        "agent",
+        "providers",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"executable\":\"claude\",\"id\":\"claude\",\"label\":\"Claude\"},{\"executable\":\"codex\",\"id\":\"codex\",\"label\":\"Codex\"}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-all-text",
+      "argv": [
+        "agent",
+        "list",
+        "--all"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "kappa-5                        starting     beta\nbeta-4                         crashed      alpha\nmid-2                          idle         beta\nalpha-1                        idle         alpha\nzeta-3                         idle         alpha\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-all-json",
+      "argv": [
+        "agent",
+        "list",
+        "--all",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"name\":\"kappa-5\",\"pid\":424205,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"claude\",\"sessionId\":\"pending\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"starting\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"exitCode\":1,\"name\":\"beta-4\",\"pid\":424204,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"22222222-2222-4222-8222-222222222222\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"crashed\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"mid-2\",\"pid\":424202,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"codex\",\"sessionId\":\"0198c0de-2222-4222-8222-222222222222\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"alpha-1\",\"pid\":424201,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"11111111-1111-4111-8111-111111111111\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"zeta-3\",\"pid\":424203,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"33333333-3333-4333-8333-333333333333\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-cwd-text",
+      "argv": [
+        "agent",
+        "list"
+      ],
+      "cwd": "alpha",
+      "exitCode": 0,
+      "stdout": "beta-4                         crashed      alpha\nalpha-1                        idle         alpha\nzeta-3                         idle         alpha\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-path-json",
+      "argv": [
+        "agent",
+        "list",
+        "--path",
+        "{BETA}",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"name\":\"kappa-5\",\"pid\":424205,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"claude\",\"sessionId\":\"pending\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"starting\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"mid-2\",\"pid\":424202,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"codex\",\"sessionId\":\"0198c0de-2222-4222-8222-222222222222\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-reconcile-json",
+      "argv": [
+        "agent",
+        "list",
+        "--all",
+        "--reconcile",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"name\":\"kappa-5\",\"pid\":424205,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"claude\",\"sessionId\":\"pending\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"starting\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"exitCode\":1,\"name\":\"beta-4\",\"pid\":424204,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"22222222-2222-4222-8222-222222222222\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"crashed\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"mid-2\",\"pid\":424202,\"project\":\"beta\",\"projectPath\":\"{SANDBOX}/work/beta\",\"provider\":\"codex\",\"sessionId\":\"0198c0de-2222-4222-8222-222222222222\",\"sessionPath\":\"{SANDBOX}/work/beta\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"alpha-1\",\"pid\":424201,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"11111111-1111-4111-8111-111111111111\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},{\"name\":\"zeta-3\",\"pid\":424203,\"project\":\"alpha\",\"projectPath\":\"{SANDBOX}/work/alpha\",\"provider\":\"claude\",\"sessionId\":\"33333333-3333-4333-8333-333333333333\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-list-empty-text",
+      "argv": [
+        "agent",
+        "list",
+        "--path",
+        "{BETA}/nowhere"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "No active sessions.\n\nHealth:\n  tmux: not found\n  claude: not found\n  codex: not found\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-history-text",
+      "argv": [
+        "agent",
+        "history",
+        "--path",
+        "{ALPHA}"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "claude  22222222-2222-4222-8222-222222222222 *  second session prompt\nclaude  11111111-1111-4111-8111-111111111111 *  indexed: first session prompt\nclaude  33333333-3333-4333-8333-333333333333 *  indexed: third session prompt\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-history-json",
+      "argv": [
+        "agent",
+        "history",
+        "--path",
+        "{ALPHA}",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"oldestUpdatedAt\":\"2026-06-01T10:00:00.000Z\",\"returned\":3,\"rows\":[{\"created\":\"2026-06-01T09:00:00.000Z\",\"gitBranch\":null,\"live\":true,\"liveSessionName\":\"beta-4\",\"parentSession\":null,\"provider\":\"claude\",\"sessionId\":\"22222222-2222-4222-8222-222222222222\",\"spawnedBy\":\"user:terminal\",\"summary\":\"second session prompt\",\"title\":null,\"tokens\":125,\"updatedAt\":\"2026-06-01T11:00:00.000Z\"},{\"created\":\"2026-06-01T09:00:00.000Z\",\"gitBranch\":\"main\",\"live\":true,\"liveSessionName\":\"alpha-1\",\"parentSession\":null,\"provider\":\"claude\",\"sessionId\":\"11111111-1111-4111-8111-111111111111\",\"spawnedBy\":\"user:terminal\",\"summary\":\"indexed: first session prompt\",\"title\":null,\"tokens\":125,\"updatedAt\":\"2026-06-01T11:00:00.000Z\"},{\"created\":\"2026-06-01T09:00:00.000Z\",\"gitBranch\":\"main\",\"live\":true,\"liveSessionName\":\"zeta-3\",\"parentSession\":null,\"provider\":\"claude\",\"sessionId\":\"33333333-3333-4333-8333-333333333333\",\"spawnedBy\":\"user:terminal\",\"summary\":\"indexed: third session prompt\",\"title\":null,\"tokens\":125,\"updatedAt\":\"2026-06-01T10:00:00.000Z\"}],\"truncated\":false},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-summaries-text",
+      "argv": [
+        "agent",
+        "summaries",
+        "--path",
+        "{ALPHA}"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "beta-4   second session prompt\nalpha-1  first session prompt\nzeta-3   third session prompt\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-summaries-json",
+      "argv": [
+        "agent",
+        "summaries",
+        "--path",
+        "{ALPHA}",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"handle\":\"beta-4\",\"label\":\"second session prompt\",\"provider\":\"claude\",\"sessionId\":\"22222222-2222-4222-8222-222222222222\"},{\"handle\":\"alpha-1\",\"label\":\"first session prompt\",\"provider\":\"claude\",\"sessionId\":\"11111111-1111-4111-8111-111111111111\"},{\"handle\":\"zeta-3\",\"label\":\"third session prompt\",\"provider\":\"claude\",\"sessionId\":\"33333333-3333-4333-8333-333333333333\"}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-messages-text",
+      "argv": [
+        "agent",
+        "messages",
+        "zeta-3"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "0  U  20  text\n1  A   4  text\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-messages-json",
+      "argv": [
+        "agent",
+        "messages",
+        "zeta-3",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":[{\"chars\":20,\"index\":0,\"role\":\"user\",\"types\":[\"text\"]},{\"chars\":4,\"index\":1,\"role\":\"assistant\",\"types\":[\"text\"]}],\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "doctor-json",
+      "argv": [
+        "doctor",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 1,
+      "stdout": "{\"data\":{\"checks\":[{\"detail\":\"`yaco` not on $PATH — run tools/install.sh\",\"name\":\"binary\",\"status\":\"fail\"},{\"detail\":\"0.1.0\",\"name\":\"version\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco\",\"name\":\"yaco-home\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco/projects.json: no 'yaco' entry\",\"name\":\"registry\",\"status\":\"fail\"},{\"detail\":\"no 'yaco' registry entry — run `yaco install`\",\"name\":\"skills-link\",\"status\":\"fail\"},{\"detail\":\"no yaco-agent-hook entries in provider configs\",\"name\":\"agent-hook-config\",\"status\":\"fail\"},{\"detail\":\"{SANDBOX}/yaco/agent-wrapper.sh missing — run `yaco install`\",\"name\":\"agent-wrapper\",\"status\":\"fail\"},{\"detail\":\"tmux not on $PATH — agent sessions will not start\",\"name\":\"tmux\",\"status\":\"fail\"},{\"detail\":\"git not on $PATH\",\"name\":\"git\",\"status\":\"fail\"},{\"detail\":\"no provider executable on $PATH (claude, codex)\",\"name\":\"providers\",\"status\":\"fail\"},{\"detail\":\"4 integrity problem(s) in {SANDBOX}/plan/tasks\",\"name\":\"task-graph\",\"status\":\"fail\"}],\"summary\":{\"fail\":9,\"pass\":2}},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "install-dry-run-json",
+      "argv": [
+        "install",
+        "--dry-run",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 3,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"ENV\",\"message\":\"missing {SANDBOX}/agent-config/global/skills — repo root is not a YACO checkout (or --repo is wrong)\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "task-list-json",
+      "argv": [
+        "task",
+        "list",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"tasks\":{\"t-mike\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"t-zulu\":{\"depends\":[],\"parent\":null,\"state\":\"ready\",\"title\":\"Zulu\",\"workset\":\"active\"}},\"tasksFile\":\"{SANDBOX}/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/plan/tasks\"},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "task-list-text",
+      "argv": [
+        "task",
+        "list"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "t-zulu  ready      Zulu\nt-mike  active     Mike\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "task-get-json",
+      "argv": [
+        "task",
+        "get",
+        "t-mike",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"id\":\"t-mike\",\"task\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"tasksFile\":\"{SANDBOX}/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/plan/tasks\"},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-status-text",
+      "argv": [
+        "agent",
+        "status",
+        "zeta-3"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "handle:         zeta-3\nstatus:         idle\nprovider:       claude\npid:            424203\nsessionId:      33333333-3333-4333-8333-333333333333\npath:           {SANDBOX}/work/alpha\nproject:        alpha\nspawnedBy:      user:terminal\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-status-json",
+      "argv": [
+        "agent",
+        "status",
+        "zeta-3",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"createdAt\":\"2026-06-01T09:00:00.000Z\",\"handle\":\"zeta-3\",\"pid\":424203,\"provider\":\"claude\",\"sessionId\":\"33333333-3333-4333-8333-333333333333\",\"sessionPath\":\"{SANDBOX}/work/alpha\",\"spawnedBy\":\"user:terminal\",\"status\":\"idle\",\"statusEnteredAt\":\"2026-06-01T09:00:00.000Z\"},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "agent-status-absent-json",
+      "argv": [
+        "agent",
+        "status",
+        "absent-x",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 0,
+      "stdout": "{\"data\":{\"createdAt\":\"\",\"handle\":\"absent-x\",\"pid\":0,\"provider\":\"unknown\",\"sessionId\":\"pending:awaiting-first-prompt\",\"sessionPath\":\"\",\"status\":\"stopped\"},\"ok\":true}\n",
+      "stderr": "",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-usage-json",
+      "argv": [
+        "agent",
+        "status",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"USAGE\",\"message\":\"yaco agent status <name> [--reconcile] [--json]. Use `yaco agent list` to enumerate sessions.\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-invalid-name-json",
+      "argv": [
+        "agent",
+        "status",
+        "=absent",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"USAGE\",\"message\":\"Invalid session name: \\\"=absent\\\". Only alphanumeric, hyphens, and underscores allowed.\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-unknown-area-json",
+      "argv": [
+        "bogus",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"USAGE\",\"message\":\"unknown area: bogus. Run `yaco --help` for the list.\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-unknown-flag-json",
+      "argv": [
+        "agent",
+        "history",
+        "--nope",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"USAGE\",\"message\":\"yaco agent history [--path <project-path>] [--since <iso-timestamp-with-timezone>] [--limit <n>] [--json] (unknown flag: --nope)\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-not-found-json",
+      "argv": [
+        "task",
+        "get",
+        "t-absent",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"no task 't-absent' in {SANDBOX}/plan/tasks\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-internal-json",
+      "argv": [
+        "agent",
+        "capture",
+        "absent-x",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 5,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"INTERNAL\",\"message\":\"Session \\\"absent-x\\\" not found\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    },
+    {
+      "id": "err-env-json",
+      "argv": [
+        "worktree",
+        "merge",
+        "absent",
+        "--json"
+      ],
+      "cwd": "root",
+      "exitCode": 3,
+      "stdout": "",
+      "stderr": "{\"error\":{\"code\":\"ENV\",\"message\":\"not in a git repository (cwd={SANDBOX}): git rev-parse failed\"},\"ok\":false}\n",
+      "durable": {
+        "projects.json": "984aafeb8dbc9370",
+        "sessions/alpha-1.json": "86d2e30746ac3795",
+        "sessions/beta-4.json": "9d4fb583934e7ec5",
+        "sessions/kappa-5.json": "723d96b12453382d",
+        "sessions/mid-2.json": "64e471acff4507a2",
+        "sessions/zeta-3.json": "146484ca0d7a75ff"
+      }
+    }
+  ]
+}
