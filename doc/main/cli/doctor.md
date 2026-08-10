@@ -33,7 +33,7 @@ yaco doctor [--repo <path>] [--json]
 | 2 | `version` | Reports the `cli/package.json` version. **Never fails** — any read/parse error falls back to `0.0.0` and still passes | `0.1.0` | — |
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
-| 5 | `skills-link` | `~/.claude/skills` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
+| 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill shipped by the registered yaco checkout resolves (manifest = `agent-config/global/skills/` listing, resolved via the registry's `yaco` entry) | `<dir> (<N> skills from <manifest>)` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / unresolvable registry or manifest |
 | 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()` — marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
 | 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
 | 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
@@ -41,8 +41,11 @@ yaco doctor [--repo <path>] [--json]
 | 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
 | 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
 
-`skills-link` is the only symlink check: `yaco install` links skill directories
-and nothing else, so there is no global-instruction-file link to assert.
+`skills-link` mirrors the installer's additive-merge tolerance: a user override
+of any shape at a shipped name passes; only a missing/dangling entry, a legacy
+whole-dir symlink container, or an unresolvable manifest fails. `yaco install`
+plants skill links and nothing else, so there is no global-instruction-file
+link to assert.
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 eleven names above so consumers can rely on the contract. `claude-md-link` was

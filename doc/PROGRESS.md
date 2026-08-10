@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-08-10: per-skill skills links + the shipped set shrinks to 22 yaco-coupled skills
+
+**What changed:**
+- `~/.claude/skills` is now a real directory: `installGlobalLinks` plants one symlink per skill in `agent-config/global/skills/` (the listing is the manifest), migrates the legacy whole-dir symlink in place (relative targets resolved against the link's dir, not cwd), and merges additively — same-name real files/dirs are kept (never clobbered, even with `--force`), live foreign links need `--force`, dangling links are replaced. `~/.agents/skills` stays a whole-dir symlink.
+- `yaco doctor`'s `skills-link` check resolves the manifest via the registry's `yaco` entry (cwd-independent) and requires every shipped skill to resolve inside the container, accepting user overrides of any shape; legacy symlink layout and non-dir manifests fail cleanly instead of throwing.
+- 8 skills left the repo per `plan` bundle skill-separate: 7 personal-methodology skills (office-hours, scope-review, ux-design, self-improve, write-skill, refer, borrow) moved to the private agent-global repo (which links them back via its own `link-skills.sh`), and the `yaco` router skill was deleted (zero references). The shipped 22 = CLI companions + the `/orchestrate` runtime closure + the design cluster; `/design`'s description dropped its reference to the unshipped shape skills.
+
+**Why:**
+- The whole-dir symlink could not coexist with a user's own `~/.claude/skills` — the exact audience most likely to try yaco got a hard install failure. Per-skill links make the merge additive in both directions and let personal skills live in a separate repo.
+
+**Key files:** `cli/src/commands/install.ts`, `cli/src/commands/doctor.ts`, their unit tests, `agent-config/global/skills/`, `README.md`, `doc/main/cli/{install,doctor}.md`, `doc/{main,dev}/agent-config/`
+**Verification:** cli unit suite green (1156 pass incl. 8 new link/merge/migration tests); `npx tsc --noEmit -p cli` clean; live migration on this machine: `tools/install.sh --cli-only` → doctor 11/11, then agent-global `link-skills.sh` → 29 entries (22 yaco + 7 personal) coexisting.
+**Commits:** `d1a61329`, `281539aa` (cli), `5752afaa`, `48ea7cc9` (skills), + README/docs commit
+**Next:** —
+**Blockers:** None.
+
 ## 2026-08-09: `yaco plan init` also writes the root `.ignore` whitelist for the plan dir
 
 **What changed:**

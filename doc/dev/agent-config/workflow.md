@@ -21,7 +21,6 @@ cd agent-config
 |-------|-------|-------------|
 | `/init-all` | In project root | Initialize project for all AI agents (CLAUDE.md + symlinks + doc/) |
 | `/implement` | `/implement <task>` | Full workflow: plan -> build -> review -> verify -> docs |
-| `/office-hours` | `/office-hours <problem>` | YC-style problem definition — forcing questions, design doc output |
 | `/design` | `/design <goal>` | Design doc before implementation |
 | `/code-review` | After changes | Severity-based code review |
 | `/investigate` | Before fixing bugs | Systematic debugging — investigate before fixing |
@@ -31,11 +30,10 @@ cd agent-config
 | `/yaco-task` | Task management | Create/edit/remove tasks in the project task store (default `plan/tasks`; `yaco paths project --json` resolves it) |
 | `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
 | `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |
-| `/write-skill` | Writing/editing a skill | Quality bar for authoring a skill's SKILL.md, references/, and scripts |
 
 ## Adding a New Skill
 
-1. Global: create `global/skills/<name>/SKILL.md` — follow [`/write-skill`](../../../agent-config/global/skills/write-skill/SKILL.md) for the content quality bar.
+1. Global: create `global/skills/<name>/SKILL.md` — ship it here only if yaco itself needs it (CLI companion or part of the /orchestrate runtime closure); personal-workflow skills belong in your own repo, linked into `~/.claude/skills` beside yaco's per-skill links.
 2. Project: create `.claude/skills/<name>/SKILL.md` in the project
 
 **Skills call `yaco` subcommands, not shell helpers.** All durable behavior

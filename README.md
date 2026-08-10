@@ -35,7 +35,7 @@ observability into every session your agents spawn — and they into yours.
 | Layer | What it gives you | Depends on |
 |---|---|---|
 | **1 · Agent CLI** | `yaco agent` — start, message, watch, and kill agent sessions. tmux-backed, so sessions outlive your terminal, your browser, and the server. This is the multi-agent primitive. | nothing — works standalone |
-| **2 · Skills & workflow** | 30 workflow skills (`/design`, `/implement`, `/orchestrate`, …) plus the CLI built for them: per-repo task graphs, git-worktree isolation, plans and gates. This layer is *how you work* — opinionated, personal, rapidly evolving. | layer 1 |
+| **2 · Skills & workflow** | 22 workflow skills (`/design`, `/implement`, `/orchestrate`, …) plus the CLI built for them: per-repo task graphs, git-worktree isolation, plans and gates. This layer is *how you work* — opinionated, personal, rapidly evolving. | layer 1 |
 | **3 · The app** | A web server + browser IDE: editor, file tree, diffs, search, terminals, voice input, agent/task notifications, and the parent→child agent session tree. Use it on this machine, from another one, or from your phone — over Tailscale or however you connect. | layers 1 & 2 |
 
 ## Quickstart
@@ -102,28 +102,44 @@ capture, and attach to. No hidden recursion, no privileged internal API.
 
 ## Layer 2 — skills and the workflow
 
-Thirty skills in
-[`agent-config/global/skills/`](agent-config/global/skills/), linked into both
-agents at install time, encode a full development loop — and drive the `yaco`
-subcommands built for it: `yaco task` (a per-repo task graph under `plan/`),
-`yaco worktree` (each task gets its own checkout at `.worktrees/<slug>` on
-branch `task/<slug>`), `yaco plan`, `yaco gate`.
+Twenty-two skills in
+[`agent-config/global/skills/`](agent-config/global/skills/) encode the
+development loop — and drive the `yaco` subcommands built for it: `yaco task`
+(a per-repo task graph under `plan/`), `yaco worktree` (each task gets its own
+checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
+`yaco gate`. The installer plants them as **per-skill symlinks** into
+`~/.claude/skills`, alongside — never replacing — the skills you already have.
 
 A milestone typically flows like this — drawn linear, lived with loops:
 
 ```mermaid
 flowchart LR
-    SR["/scope-review"] --> UX["/ux-design"] --> D["/design or<br>/double-design"]
-    D <--> EPR["/eng-plan-review"]
-    D --> TG["yaco task<br>(task graph)"] --> O["/orchestrate"]
-    subgraph W ["per task, in its own worktree"]
-        I["/implement"] --> CR["/code-review"]
+    subgraph DE ["Design"]
+        D["/design ·<br>/double-design"] <--> EPR["/eng-plan-review"]
+        DIS["/discuss"] -.- D
+    end
+    subgraph PL ["Plan"]
+        TG["/yaco-task<br>(task graph)"] --> O["/orchestrate"]
+    end
+    subgraph BU ["Build — per task, own worktree (/yaco-worktree)"]
+        I["/implement<br>/tdd · /investigate"] --> CR["/code-review"]
         CR -->|fix| I
         I --> V["/verify · /qa"]
     end
-    O --> W
-    V --> M["merge"]
+    subgraph LA ["Land"]
+        M["merge"] --> IS["/impl-summary ·<br>/update-doc"]
+    end
+    D --> TG
+    O --> I
+    V --> M
 ```
+
+Always on, in any phase: `/coding-standards`, `/simplify-code-arch`,
+`/ultra-think`, `/yaco-paths`. Cross-agent: `/align` (how `/double-design`
+reconciles Claude and Codex). Onboarding: `/init-all` sets a repo up for
+multi-agent work. What comes *before* design — scoping, UX specs, product
+diagnostics — is deliberately bring-your-own: drop your own skills into
+`~/.claude/skills` and they slot straight into the same loop.
 
 This layer is the least settled, on purpose: nobody — us included — knows the
 right way to work with coding agents yet. Treat these skills as a fork-and-edit

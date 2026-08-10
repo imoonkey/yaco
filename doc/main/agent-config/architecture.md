@@ -76,10 +76,10 @@ Orthogonal to location, each global skill declares its relationship to the `yaco
 | Value | Meaning | Skills |
 |-------|---------|--------|
 | `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, yaco-agent, yaco-task, yaco-worktree |
-| `"optional"` | Runs in any repo; has an optional "Inside a YACO project" integration | design, office-hours, update-doc |
+| `"optional"` | Runs in any repo; has an optional "Inside a YACO project" integration | design, update-doc |
 | *(absent)* | Standalone — pure workflow prompt, runs in any repo | everything else |
 
-The field is inert metadata (no runtime reads it yet). It documents the split and lets future tooling export the yaco-independent set as a standalone bundle.
+The field is inert metadata (no runtime reads it yet). The shipped set is deliberately yaco-shaped: CLI companions plus the `/orchestrate` runtime closure (see `plan` bundle skill-separate); personal-methodology skills live in a private repo whose per-skill links coexist in `~/.claude/skills`.
 
 ### Design decision: methodology skills are global
 

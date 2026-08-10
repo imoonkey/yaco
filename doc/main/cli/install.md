@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-08-08 (oss-doc-cleanup)
+> Last updated: 2026-08-10 (skill-separate)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
@@ -17,8 +17,9 @@ bootstrap by design:
    rest: writes `${YACO_HOME}/agent-wrapper.sh`, merges yaco-owned entries
    into `~/.claude/settings.json` + `~/.codex/hooks.json` (preserving
    unrelated user entries, dropping legacy `bash ".../hook-v2.sh"` shell-hook
-   groups left by pre-yaco installs), links `agent-config/global/skills` into
-   `~/.claude/skills` + `~/.agents/skills`, upserts `{id:"yaco", path: repoRoot}`
+   groups left by pre-yaco installs), plants per-skill symlinks into the real
+   directory `~/.claude/skills` (and `~/.agents/skills` → `~/.claude/skills`),
+   upserts `{id:"yaco", path: repoRoot}`
    into `${YACO_HOME}/projects.json`, sweeps legacy `$BIN_DIR/{mt, multmux}`
    symlinks, then runs `yaco doctor`.
 
@@ -26,19 +27,27 @@ Idempotent: re-running `yaco install` is a no-op (snapshot diff is empty).
 
 ## Global links are additive
 
-`installGlobalLinks` plants **skill directories only** — `~/.claude/skills` at
-the repo's `agent-config/global/skills`, then `~/.agents/skills` at
-`~/.claude/skills`. It gates on `agent-config/global/skills` (missing ⇒ `ENV`
-exit 3, so a broken checkout fails loudly instead of linking at nothing) and
-never claims a tool's global instruction file — a user's own global rules are
-left byte-for-byte alone. Consequently `yaco doctor` asserts one symlink,
-`skills-link`.
+`~/.claude/skills` is a **real directory** shared with the user's other skill
+sources; `installGlobalLinks` plants one symlink per skill listed in the
+repo's `agent-config/global/skills/` (the directory IS the manifest — no
+hardcoded list), then keeps `~/.agents/skills` as a whole-dir symlink to it.
+It gates on the manifest being a directory (missing/non-dir ⇒ `ENV` exit 3)
+and never claims a tool's global instruction file — a user's own global rules
+are left byte-for-byte alone.
 
-A symlink already pointing somewhere else is **refused** (`CONFLICT`) unless
-`--force` is passed; a regular file or directory at the path is refused
-unconditionally (`IO`, no `--force` override — move it aside yourself). A
-symlink already on target is a silent no-op, which is what keeps re-runs
-idempotent. `--skip-links` leaves the links alone entirely.
+Container migration and conflicts: a legacy whole-dir symlink at
+`~/.claude/skills` pointing at OUR skillsDir (relative targets resolved
+against the link's directory, never cwd) is migrated in place without
+`--force`; a symlink elsewhere is **refused** (`CONFLICT`) unless `--force`;
+a regular file there is refused unconditionally (`IO`). Per-skill merge is
+additive: a same-name real file/dir is **kept** (never clobbered, even with
+`--force`, reported as `keep <name>`), a live foreign link is skipped without
+`--force`, a dangling link is replaced. Links already on target are silent
+no-ops, which keeps re-runs idempotent. `--skip-links` leaves everything
+alone. `yaco doctor`'s `skills-link` check mirrors this tolerance: it
+resolves the manifest via the registry's `yaco` entry and requires every
+shipped skill name to resolve inside the real-directory container, accepting
+user overrides of any shape.
 
 ## Installed Binary Boundary
 
@@ -63,9 +72,9 @@ yaco install [--cli-only] [--skip-hooks] [--no-registry] [--skip-links]
 | `--cli-only` | Skip `npm install` in `app/server` + `app/ui` |
 | `--skip-hooks` | Skip the `~/.claude/settings.json` + `~/.codex/hooks.json` merge (wrapper script is still written) |
 | `--no-registry` | Do not upsert this repo into `${YACO_HOME}/projects.json` |
-| `--skip-links` | Do not write the `~/.claude/skills` / `~/.agents/skills` symlinks |
+| `--skip-links` | Do not write the `~/.claude/skills` per-skill links or the `~/.agents/skills` symlink |
 | `--skip-doctor` | Do not run `yaco doctor` after install |
-| `--force` | Retarget an existing global skills symlink and rebind an existing `yaco` registry entry. Without it both **refuse** when the target differs (see [Global links are additive](#global-links-are-additive) and [Registry safety](#registry-safety-high-5-from-review-pass-1)) |
+| `--force` | Retarget existing skills links whose targets differ (container and per-skill; never a non-symlink) and rebind an existing `yaco` registry entry. Without it both **refuse** when the target differs (see [Global links are additive](#global-links-are-additive) and [Registry safety](#registry-safety-high-5-from-review-pass-1)) |
 | `--dry-run` | Print planned actions to stderr (text mode); zero filesystem mutations |
 | `--repo <path>` | Override repo root (default: `$YACO_REPO_ROOT`, fall back to `process.cwd()`). Flows through to the trailing `yaco doctor` `task-graph` check. |
 | `--bin-dir <path>` | Override the bin dir for legacy symlink cleanup AND for resolving the canonical hook command (default: `$YACO_BIN_DIR`, fall back to `$HOME/.local/bin`) |
