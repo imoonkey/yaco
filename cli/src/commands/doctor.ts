@@ -25,6 +25,7 @@
 import {
   existsSync,
   lstatSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   statSync,
@@ -176,20 +177,50 @@ function checkRegistry(): CheckResult {
   }
 }
 
-function checkSymlinkPresent(name: string, path: string): CheckResult {
-  try {
-    const st = lstatSync(path);
-    if (!st.isSymbolicLink()) return fail(name, `${path}: not a symlink`);
-    const target = readlinkSync(path);
-    if (!existsSync(path)) return fail(name, `${path} → ${target} (dangling)`);
-    return pass(name, `${path} → ${target}`);
-  } catch {
-    return fail(name, `${path}: missing`);
-  }
-}
-
+/** `skills-link` (stable check name): ~/.claude/skills is a real directory
+ *  and every skill shipped by the registered yaco checkout resolves inside
+ *  it. The manifest is the checkout's agent-config/global/skills/ listing,
+ *  resolved via the registry's `yaco` entry so the check is cwd-independent.
+ *  A same-name entry that is a real directory passes — that is a user
+ *  override the installer deliberately keeps. */
 function checkSkillsLink(): CheckResult {
-  return checkSymlinkPresent("skills-link", join(userHome(), ".claude", "skills"));
+  const name = "skills-link";
+  const claudeSkills = join(userHome(), ".claude", "skills");
+  let repoPath: string;
+  try {
+    const yaco = readProjects().find((p) => p.name === "yaco");
+    if (!yaco) return fail(name, `no 'yaco' registry entry — run \`yaco install\``);
+    repoPath = yaco.path;
+  } catch (e) {
+    return fail(name, `cannot resolve yaco repo from registry: ${(e as Error).message}`);
+  }
+  const skillsDir = join(repoPath, "agent-config", "global", "skills");
+  if (!existsSync(skillsDir)) {
+    return fail(name, `${skillsDir} missing — checkout moved? re-run \`yaco install\``);
+  }
+  let st;
+  try {
+    st = lstatSync(claudeSkills);
+  } catch {
+    return fail(name, `${claudeSkills}: missing — run \`yaco install\``);
+  }
+  if (st.isSymbolicLink()) {
+    return fail(
+      name,
+      `${claudeSkills} is a whole-directory symlink (legacy layout) — re-run \`yaco install\` to migrate to per-skill links`,
+    );
+  }
+  if (!st.isDirectory()) return fail(name, `${claudeSkills}: not a directory`);
+  const skills = readdirSync(skillsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+  const missing = skills.filter((s) => !existsSync(join(claudeSkills, s)));
+  if (missing.length > 0) {
+    const shown = missing.slice(0, 3).join(", ");
+    const more = missing.length > 3 ? `, +${missing.length - 3} more` : "";
+    return fail(name, `${missing.length} skill link(s) missing (${shown}${more}) — re-run \`yaco install\``);
+  }
+  return pass(name, `${claudeSkills} (${skills.length} skills from ${skillsDir})`);
 }
 
 /** `agent-hook-config` (stable check name): pass when at least one provider has

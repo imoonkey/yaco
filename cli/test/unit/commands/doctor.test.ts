@@ -240,6 +240,38 @@ describe("runAllChecks — individual failure modes", () => {
     expect(skills?.status).toBe("fail");
   });
 
+  it("skills-link fails on the legacy whole-dir symlink layout", () => {
+    installPrereqs();
+    const container = join(process.env["HOME"]!, ".claude", "skills");
+    rmSync(container, { recursive: true, force: true });
+    symlinkSync(join(repoRoot, "agent-config", "global", "skills"), container);
+    const r = runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("fail");
+    expect(skills?.detail).toContain("legacy");
+  });
+
+  it("skills-link fails when a shipped skill's link is missing, names it", () => {
+    mkdirSync(join(repoRoot, "agent-config", "global", "skills", "gamma"), { recursive: true });
+    installPrereqs();
+    rmSync(join(process.env["HOME"]!, ".claude", "skills", "gamma"), { force: true });
+    const r = runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("fail");
+    expect(skills?.detail).toContain("gamma");
+  });
+
+  it("skills-link passes with a user-override real dir at a shipped name", () => {
+    mkdirSync(join(repoRoot, "agent-config", "global", "skills", "gamma"), { recursive: true });
+    installPrereqs();
+    const link = join(process.env["HOME"]!, ".claude", "skills", "gamma");
+    rmSync(link, { force: true });
+    mkdirSync(link, { recursive: true });
+    const r = runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("pass");
+  });
+
   it("agent-wrapper check fails when ${YACO_HOME}/agent-wrapper.sh is missing", () => {
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
     const r = runAllChecks();

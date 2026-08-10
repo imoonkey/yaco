@@ -20,6 +20,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -60,7 +61,8 @@ Options:
   --skip-hooks     Skip merging provider hooks into ~/.claude + ~/.codex
                    (the wrapper script is still written)
   --no-registry    Do not upsert this repo into \${YACO_HOME}/projects.json
-  --skip-links     Do not write the ~/.claude/skills / ~/.agents/skills symlinks
+  --skip-links     Do not write the ~/.claude/skills per-skill links or the
+                   ~/.agents/skills symlink
   --skip-doctor    Do not run \`yaco doctor\` after install
   --dry-run        Print planned actions to stderr without changing files
   --repo <path>    Override the repo root (default: \$YACO_REPO_ROOT or cwd)
@@ -320,11 +322,16 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
   actions.push(`updated registry ${file}`);
 }
 
-/** Install the global skills symlinks into ~/.claude / ~/.agents.
+/** Install the global skills links: ~/.claude/skills is a REAL directory that
+ *  yaco and the user's other skill sources share; yaco plants one symlink per
+ *  shipped skill (the repo's agent-config/global/skills/ listing IS the
+ *  manifest). ~/.agents/skills stays a whole-directory symlink to it.
  *
- *  Purely additive: install plants skill directories and never claims a
- *  global instruction file, so a pre-existing ~/.claude/CLAUDE.md is left
- *  exactly as the user wrote it. */
+ *  Purely additive: skills the user put in ~/.claude/skills under other names
+ *  coexist untouched, a same-name non-symlink is kept (yaco's link is skipped
+ *  with a note, never clobbered — not even with --force), and install never
+ *  claims a global instruction file, so a pre-existing ~/.claude/CLAUDE.md is
+ *  left exactly as the user wrote it. */
 function installGlobalLinks(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const home = userHome();
   const skillsDir = join(repoRoot, "agent-config", "global", "skills");
@@ -337,8 +344,110 @@ function installGlobalLinks(repoRoot: string, force: boolean, actions: string[],
       `missing ${skillsDir} — repo root is not a YACO checkout (or --repo is wrong)`,
     );
   }
-  upsertSymlink(join(home, ".claude", "skills"), skillsDir, force, actions, dryRun);
-  upsertSymlink(join(home, ".agents", "skills"), join(home, ".claude", "skills"), force, actions, dryRun);
+  const claudeSkills = join(home, ".claude", "skills");
+  ensureSkillsContainer(claudeSkills, skillsDir, force, actions, dryRun);
+  for (const name of listSkillNames(skillsDir)) {
+    plantSkillLink(name, join(claudeSkills, name), join(skillsDir, name), force, actions, dryRun);
+  }
+  upsertSymlink(join(home, ".agents", "skills"), claudeSkills, force, actions, dryRun);
+}
+
+/** Skill names = the child directories of agent-config/global/skills. */
+function listSkillNames(skillsDir: string): string[] {
+  return readdirSync(skillsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Make ~/.claude/skills a real directory to merge into.
+ *
+ *  A pre-existing whole-directory symlink to OUR skillsDir is the pre-v0.1
+ *  layout — migrate it in place (unlink, mkdir; per-skill links follow). A
+ *  symlink anywhere else keeps the same protection upsertSymlink gave the old
+ *  layout: refuse without --force, so an install run from a transient checkout
+ *  can't silently capture the user's global skills. */
+function ensureSkillsContainer(
+  path: string,
+  skillsDir: string,
+  force: boolean,
+  actions: string[],
+  dryRun: boolean,
+): void {
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch {
+    if (dryRun) {
+      actions.push(`create dir ${path}`);
+      return;
+    }
+    mkdirSync(path, { recursive: true });
+    actions.push(`create dir ${path}`);
+    return;
+  }
+  if (st.isSymbolicLink()) {
+    const current = readlinkSync(path);
+    const ours = realpathOr(current) === realpathOr(skillsDir);
+    if (!ours && !force) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `${path} already points at ${current}; refusing to retarget to a per-skill directory (re-run with --force, or --skip-links to leave it alone)`,
+        { linkPath: path, currentTarget: current },
+      );
+    }
+    if (dryRun) {
+      actions.push(`migrate ${path}: whole-dir symlink → per-skill links`);
+      return;
+    }
+    unlinkSync(path);
+    mkdirSync(path, { recursive: true });
+    actions.push(`migrate ${path}: whole-dir symlink → per-skill links`);
+    return;
+  }
+  if (!st.isDirectory()) {
+    throw new CliError(
+      ErrCode.IO,
+      `refusing to replace non-directory at ${path} (move it aside and re-run)`,
+    );
+  }
+}
+
+/** Plant one per-skill symlink, additively: never clobber a user's real
+ *  file/dir of the same name; retarget a foreign live symlink only with
+ *  --force; always replace a dangling one (it serves nobody). */
+function plantSkillLink(
+  name: string,
+  linkPath: string,
+  target: string,
+  force: boolean,
+  actions: string[],
+  dryRun: boolean,
+): void {
+  let st;
+  try {
+    st = lstatSync(linkPath);
+  } catch {
+    if (!dryRun) symlinkSync(target, linkPath);
+    actions.push(`symlink skill ${name}`);
+    return;
+  }
+  if (!st.isSymbolicLink()) {
+    actions.push(`keep ${name}: existing user skill (not a yaco link)`);
+    return;
+  }
+  const current = readlinkSync(linkPath);
+  if (realpathOr(current) === realpathOr(target)) return;
+  const dangling = !existsSync(linkPath);
+  if (!dangling && !force) {
+    actions.push(`skip ${name}: links to ${current} (user-managed; --force to retarget)`);
+    return;
+  }
+  if (!dryRun) {
+    unlinkSync(linkPath);
+    symlinkSync(target, linkPath);
+  }
+  actions.push(`relink skill ${name}`);
 }
 
 /** Run npm install in app/server and app/ui (no-op when --cli-only). */

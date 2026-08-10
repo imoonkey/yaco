@@ -56,9 +56,10 @@ beforeEach(() => {
   binDir = process.env["YACO_BIN_DIR"]!;
   mkdirSync(binDir, { recursive: true });
   // Stage a fake YACO repo root that has the agent-config skeleton install
-  // needs (an empty skills dir — nothing else).
+  // needs — a skills dir with two skills to plant per-skill links for.
   repoRoot = join(sandbox, "repo");
-  mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
+  mkdirSync(join(repoRoot, "agent-config", "global", "skills", "alpha"), { recursive: true });
+  mkdirSync(join(repoRoot, "agent-config", "global", "skills", "beta"), { recursive: true });
   // Minimal valid tasks graph so the doctor's task-graph check passes when
   // tests opt into running doctor (skipDoctor: false).
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
@@ -116,15 +117,18 @@ describe("runInstall — basic shape", () => {
     expect((st.mode & 0o111)).not.toBe(0);
   });
 
-  it("links global skills into ~/.claude and ~/.agents", () => {
+  it("creates ~/.claude/skills as a real dir with one link per skill", () => {
     runInstall(baseOpts());
     const home = process.env["HOME"]!;
-    expect(readlinkSync(join(home, ".claude", "skills"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills"),
-    );
-    expect(readlinkSync(join(home, ".agents", "skills"))).toBe(
-      join(home, ".claude", "skills"),
-    );
+    const container = join(home, ".claude", "skills");
+    expect(lstatSync(container).isDirectory()).toBe(true);
+    expect(lstatSync(container).isSymbolicLink()).toBe(false);
+    for (const name of ["alpha", "beta"]) {
+      expect(readlinkSync(join(container, name))).toBe(
+        join(repoRoot, "agent-config", "global", "skills", name),
+      );
+    }
+    expect(readlinkSync(join(home, ".agents", "skills"))).toBe(container);
     // Install is purely additive: it claims no global instruction file.
     expect(existsSync(join(home, ".claude", "CLAUDE.md"))).toBe(false);
     expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
@@ -155,7 +159,7 @@ describe("runInstall — idempotency (AC 2)", () => {
 
   it("does not relink an already-correct symlink", () => {
     runInstall(baseOpts());
-    const link = join(process.env["HOME"]!, ".claude", "skills");
+    const link = join(process.env["HOME"]!, ".claude", "skills", "alpha");
     const beforeM = lstatSync(link).mtimeMs;
     // tiny delay to make any rewrite detectable in mtime
     const start = Date.now();
@@ -335,14 +339,17 @@ describe("runInstall — global-link safety", () => {
     expect(readlinkSync(join(claudeDir, "skills"))).toBe(stalePath);
   });
 
-  it("--force retargets a different-target link", () => {
+  it("--force converts a different-target link into the per-skill dir", () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     symlinkSync("/some/old/skills", join(claudeDir, "skills"));
     runInstall(baseOpts({ force: true }));
-    const newTarget = readlinkSync(join(claudeDir, "skills"));
-    expect(newTarget).toBe(join(repoRoot, "agent-config", "global", "skills"));
+    const container = join(claudeDir, "skills");
+    expect(lstatSync(container).isDirectory()).toBe(true);
+    expect(readlinkSync(join(container, "alpha"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "alpha"),
+    );
   });
 
   it("--skip-links leaves all global links untouched (even when stale)", () => {
@@ -362,7 +369,7 @@ describe("runInstall — global-link safety", () => {
     // First install plants canonical links.
     runInstall(baseOpts());
     const home = process.env["HOME"]!;
-    const before = readlinkSync(join(home, ".claude", "skills"));
+    const before = readlinkSync(join(home, ".claude", "skills", "alpha"));
     // Re-install via a symlink alias of the same repoRoot — should NOT throw.
     const aliasDir = join(process.env["HOME"]!, "..", "repo-alias-link");
     try {
@@ -372,11 +379,81 @@ describe("runInstall — global-link safety", () => {
     }
     try {
       runInstall(baseOpts({ repoRoot: aliasDir }));
-      // Original link target preserved.
-      expect(readlinkSync(join(home, ".claude", "skills"))).toBe(before);
+      // Original per-skill link target preserved.
+      expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(before);
     } finally {
       try { unlinkSync(aliasDir); } catch { /* best-effort */ }
     }
+  });
+
+  it("migrates a legacy whole-dir symlink to per-skill links without --force", () => {
+    const home = process.env["HOME"]!;
+    const claudeDir = join(home, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    // Pre-v0.1 layout: the whole dir symlinked at OUR canonical skillsDir.
+    symlinkSync(join(repoRoot, "agent-config", "global", "skills"), join(claudeDir, "skills"));
+    runInstall(baseOpts());
+    const container = join(claudeDir, "skills");
+    expect(lstatSync(container).isSymbolicLink()).toBe(false);
+    expect(lstatSync(container).isDirectory()).toBe(true);
+    expect(readlinkSync(join(container, "beta"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "beta"),
+    );
+  });
+
+  it("merges into an existing real dir, keeping the user's own skills", () => {
+    const home = process.env["HOME"]!;
+    const mine = join(home, ".claude", "skills", "mine");
+    mkdirSync(mine, { recursive: true });
+    writeFileSync(join(mine, "SKILL.md"), "user skill\n");
+    runInstall(baseOpts());
+    expect(readFileSync(join(mine, "SKILL.md"), "utf-8")).toBe("user skill\n");
+    expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "alpha"),
+    );
+  });
+
+  it("keeps a same-name user skill (real dir) and still installs the rest", () => {
+    const home = process.env["HOME"]!;
+    const userAlpha = join(home, ".claude", "skills", "alpha");
+    mkdirSync(userAlpha, { recursive: true });
+    writeFileSync(join(userAlpha, "SKILL.md"), "my alpha\n");
+    const r = runInstall(baseOpts());
+    // User's alpha untouched — a real dir is never clobbered.
+    expect(lstatSync(userAlpha).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(userAlpha, "SKILL.md"), "utf-8")).toBe("my alpha\n");
+    // beta still linked; the skip is reported in actions.
+    expect(readlinkSync(join(home, ".claude", "skills", "beta"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "beta"),
+    );
+    expect(r.actions.some((a) => a.includes("keep alpha"))).toBe(true);
+  });
+
+  it("replaces a dangling same-name skill link", () => {
+    const home = process.env["HOME"]!;
+    const container = join(home, ".claude", "skills");
+    mkdirSync(container, { recursive: true });
+    symlinkSync(join(sandbox, "gone", "alpha"), join(container, "alpha"));
+    runInstall(baseOpts());
+    expect(readlinkSync(join(container, "alpha"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "alpha"),
+    );
+  });
+
+  it("skips a same-name link to a live foreign target without --force, retargets with it", () => {
+    const home = process.env["HOME"]!;
+    const container = join(home, ".claude", "skills");
+    mkdirSync(container, { recursive: true });
+    const foreign = join(sandbox, "other-skills", "alpha");
+    mkdirSync(foreign, { recursive: true });
+    symlinkSync(foreign, join(container, "alpha"));
+    const r = runInstall(baseOpts());
+    expect(readlinkSync(join(container, "alpha"))).toBe(foreign);
+    expect(r.actions.some((a) => a.includes("skip alpha"))).toBe(true);
+    runInstall(baseOpts({ force: true }));
+    expect(readlinkSync(join(container, "alpha"))).toBe(
+      join(repoRoot, "agent-config", "global", "skills", "alpha"),
+    );
   });
 });
 
