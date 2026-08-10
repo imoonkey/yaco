@@ -251,9 +251,11 @@ async function loadClaudeIndex(projectDir: string): Promise<Map<string, ClaudeIn
 async function claudeList(projectPath: string): Promise<HistorySession[]> {
   const projectDir = claudeProjectDir(projectPath);
 
+  // Sorted: the row order a raw directory read produces is undefined, and it
+  // survives into the output as the tie order of the newest-first history sort.
   let files: string[];
   try {
-    files = (await readdir(projectDir)).filter((f) => f.endsWith(".jsonl"));
+    files = (await readdir(projectDir)).filter((f) => f.endsWith(".jsonl")).sort();
   } catch { return []; }
   if (files.length === 0) return [];
 
@@ -406,9 +408,11 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
     try {
       rows = db
         .query<CodexThreadRow, [string]>(
+          // `id` breaks the updated_at tie: SQLite leaves the order of tied rows
+          // to the query plan, so without it the row order is undefined.
           `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
            FROM threads WHERE cwd = ? AND archived = 0
-           ORDER BY updated_at DESC`,
+           ORDER BY updated_at DESC, id ASC`,
         )
         .all(cwd);
     } finally {
@@ -446,9 +450,11 @@ async function codexRolloutSummary(sessionId: string, handle?: string): Promise<
 
     let files: string[];
     try {
-      files = await readdir(dayDir);
+      files = (await readdir(dayDir)).sort();
     } catch { continue; }
 
+    // Sorted, so "the first file naming this session" is a defined choice when
+    // a day holds more than one.
     const match = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
     if (!match) continue;
 
@@ -518,9 +524,26 @@ export function codexHistory(): ProviderHistory {
 
 // -- Generic merge + live tagging --
 
+/** Sort rank for an `updatedAt`: its epoch time, or −∞ when it does not parse so
+ *  it ranks after every real timestamp. Never NaN — a NaN rank compares unequal
+ *  to itself, which would make the history comparator intransitive and hand the
+ *  order back to the sort's internals. */
+function updatedAtRank(updatedAt: string): number {
+  const t = new Date(updatedAt).getTime();
+  return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+}
+
 /** Sort merged provider rows newest-first, cap them, and tag rows whose
  *  sessionId matches a live YACO session. Live tagging is provider-agnostic and
- *  keyed by YACO `sessionId`. */
+ *  keyed by YACO `sessionId`.
+ *
+ *  Rows sharing an `updatedAt` — routine once two providers' clocks are merged —
+ *  are ordered by ascending `sessionId`. Without that the tie falls through to
+ *  the merge order, which is a directory read, so the window boundary at `limit`
+ *  could include a different row on each call. An `updatedAt` that does not parse
+ *  ranks after every real timestamp rather than comparing as NaN, which would
+ *  make the comparator intransitive and hand the order back to the sort's
+ *  internals. */
 export function finalizeHistory(
   rows: HistorySession[],
   liveSessions: readonly SessionState[],
@@ -528,9 +551,12 @@ export function finalizeHistory(
 ): HistoryWindow {
   const limit = options.limit ?? DEFAULT_HISTORY_LIMIT;
   const cutoff = options.since?.getTime();
-  const sorted = [...rows].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  );
+  const sorted = [...rows].sort((a, b) => {
+    const at = updatedAtRank(a.updatedAt);
+    const bt = updatedAtRank(b.updatedAt);
+    if (at !== bt) return bt - at;
+    return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0;
+  });
   const matching = cutoff === undefined
     ? sorted
     : sorted.filter((row) => new Date(row.updatedAt).getTime() >= cutoff);

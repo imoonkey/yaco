@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: 2026-06-09 (codex-async-title-sync)
+> Last updated: 2026-08-10 (cli-order-determinism)
 
 ## Overview
 
@@ -183,15 +183,39 @@ remains as the focused command for re-installing hooks only.
 | Provider | Source | Method |
 |----------|--------|--------|
 | Claude | `~/.claude/sessions/<pid>.json` | Direct PID filename match, then fallback scan |
-| Codex | `~/.codex/sessions/` rollout files (primary), `~/.codex/state_5.sqlite` threads table (fallback) | Rollout birthtime ms-match → DB `SELECT id FROM threads WHERE cwd = ? AND created_at > ? AND created_at < ? ORDER BY created_at ASC LIMIT 1` |
+| Codex | `~/.codex/sessions/` rollout files (primary), `~/.codex/state_5.sqlite` threads table (fallback) | Rollout birthtime ms-match → DB `SELECT id FROM threads WHERE cwd = ? AND created_at > ? AND created_at < ? ORDER BY created_at ASC, id ASC LIMIT 1` |
 
 **Claude resolution:** PID-based. The state file `pid` field stores the agent CLI PID (not the tmux pane PID). `getAgentPid()` in `tmux.ts` searches the live descendant tree under `#{pane_pid}` and prefers the expected provider command (`claude` / `codex`) instead of assuming a fixed 1-2 level shape. `status --json` repairs stale PIDs on read.
 
-**Codex resolution:** Two-tier, no PID. Codex decoupled thread identity from OS processes — the `threads` table has no PID column. Primary: rollout file scan (`~/.codex/sessions/YYYY/MM/DD/`) matches by birthtime (ms precision, ±1s skew / 60s delay window). Fallback: SQLite `threads` table query by CWD + bounded time window (`[sessionStart - 1s, sessionStart + 60s]`, `ASC` to pick earliest match). Rollout scan is preferred because ms-precision birthtimes reliably distinguish concurrent same-CWD sessions; the DB's epoch-second `created_at` cannot.
+**Codex resolution:** Two-tier, no PID. Codex decoupled thread identity from OS processes — the `threads` table has no PID column. Primary: rollout file scan (`~/.codex/sessions/YYYY/MM/DD/`) matches by birthtime (ms precision, ±1s skew / 60s delay window). Fallback: SQLite `threads` table query by CWD + bounded time window (`[sessionStart - 1s, sessionStart + 60s]`, `ASC` to pick earliest match). Rollout scan is preferred because ms-precision birthtimes reliably distinguish concurrent same-CWD sessions; the DB's epoch-second `created_at` cannot. Both selections are total: equal-delay rollouts resolve to the smallest rollout path, equal-`created_at` threads to the smallest `id`. -> See: [Read Ordering](#read-ordering).
 
 **Timing:** Claude session files exist at CLI boot. Unnamed empty Codex starts can legitimately stay `"pending:awaiting-first-prompt"` until a real prompt creates a thread. Named empty Codex starts may resolve earlier because `/rename` itself submits input, but that timing is not guaranteed. Resume sessions skip polling entirely — the sessionId is known upfront from the `--resume` flag.
 
 **Race avoidance:** `session-state.ts` writes state atomically via temp-file + rename. `start()` syncs the latest state file after readiness instead of trusting hook order, and `status --json` repairs PID/sessionId drift on read without persisting undocumented fields. The wrapper EXIT trap compares `createdAt` before deleting so older exits cannot wipe a newer recycled handle. Codex rollout scan only accepts files created within [sessionStart - 1s, sessionStart + 60s], preventing stale thread reuse. Codex DB fallback uses the same bounded window with `ASC` ordering to pick the earliest match — concurrent same-CWD sessions each claim their own thread as long as they start >1s apart.
+
+### Read Ordering
+
+Every read path that enumerates a directory or resolves a tie returns a **total,
+name-derived order**. A raw directory read has none: Bun and Node return different
+stable orders for the same directory, so `agent list` row order was undefined by
+construction until this was made explicit.
+
+| Rule | Where |
+|------|-------|
+| Session handles are enumerated ascending — the order behind `agent list`, `agent summaries`, and every `listByPath` caller | `session-state.ts#listStateHandles` |
+| Claude project logs and Codex rollout day directories are read sorted, so "the first file naming this session" is a defined choice | `providers/history.ts`, `providers/output.ts`, `session-id.ts` |
+| History rows sort by recency, then ascending `sessionId`; an unparseable `updatedAt` ranks after every real timestamp | `providers/history.ts#finalizeHistory` |
+| Every `threads` query orders by its timestamp **and** `id` — `created_at` is second-precision, so concurrent threads tie routinely and SQLite leaves tied rows to the query plan | `providers/history.ts`, `session-id.ts` |
+| Equal-delay rollout selection resolves to the smallest rollout path, not to whichever the directory read reached first | `session-id.ts#scanCodexRollouts` |
+
+Comparison is by code unit — plain `.sort()`, never `localeCompare` — so the order
+is a property of the names alone, not of the runtime or the machine's locale.
+Two consequences worth stating: the `--limit` window boundary in
+`agent history` admits the same row on every call, and `agent list` rows are a
+stable diffable sequence rather than a set that happens to have an order.
+
+Enforced end to end by the golden matrix -> See:
+[doc/dev/cli/workflow.md#golden-matrix](../../dev/cli/workflow.md#golden-matrix).
 
 -> See: [src/lib/core/agent/session-id.ts](../../../cli/src/lib/core/agent/session-id.ts)
 

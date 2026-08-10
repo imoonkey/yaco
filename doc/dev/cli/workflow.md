@@ -126,6 +126,36 @@ Integration tests live in `test/integration/`. Agent lifecycle tests verify hook
 
 `YACO_TASK_LOCK_TIMEOUT_MS=<ms>` overrides the default 10s task-lock retry budget — handy when locally reproducing cross-host lock contention without a long wait.
 
+### Golden matrix
+
+`test/golden/` freezes the CLI's observable surface — exit code, stdout, stderr,
+and the durable `$YACO_HOME` state — for every case in `cases.ts`, run against a
+hermetic sandbox (`fixture.ts`: its own `$HOME`, `$YACO_HOME`, and a `$PATH`
+holding one empty directory, so `which tmux` and the provider probes fail
+identically everywhere). Machine-specific paths are redacted, so a matrix diff
+can only report behavior. It is the parity baseline for the Node port.
+
+```bash
+bun run test/golden/capture.ts --out test/golden/matrix.json
+```
+
+Two matrices are committed and they are verified differently:
+
+| File | Status | Verified by |
+| --- | --- | --- |
+| `matrix.original.json` | Captured on Bun **before** [read ordering](../../main/cli/architecture.md#read-ordering) was defined. Records one machine's undefined `readdir` order, so it is not reproducible. | Never recaptured. |
+| `matrix.json` | The live baseline, captured after. Machine- and runtime-independent. | `golden.test.ts` recaptures and compares byte for byte. |
+
+`ordering-delta.test.ts` compares the two committed files: a case that reads no
+order-bearing directory must be byte-identical, and only the order-sensitive ones
+get the weaker order-free comparison. Both carry a `casesDigest`; changing
+`cases.ts` changes it and requires recapturing `matrix.json`. `matrix.original.json`
+cannot be recaptured from a checkout that already has the sort — a case-list change
+ends that comparison rather than updating it, so add cases before you need them.
+
+When a change is *meant* to alter output, recapture `matrix.json` in the same
+commit and say in the message which cases moved and why.
+
 ### Mocking a module
 
 `bun test` runs the whole unit suite in one process, and bun's module-mock registry is

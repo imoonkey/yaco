@@ -28,9 +28,10 @@ function scanClaudeSessions(pid: number): string {
     }
   }
 
-  // Fallback: scan all files (PID might differ from filename in edge cases)
+  // Fallback: scan all files (PID might differ from filename in edge cases).
+  // Sorted, so which file wins when two claim the same pid is defined.
   try {
-    for (const file of readdirSync(dir)) {
+    for (const file of readdirSync(dir).sort()) {
       if (!file.endsWith(".json")) continue;
       try {
         const data: ClaudeSessionFile = JSON.parse(readFileSync(join(dir, file), "utf-8"));
@@ -63,9 +64,12 @@ function queryCodexThreadId(cwd: string, sessionCreatedMs?: number): string {
         const upperBound = Math.ceil(sessionCreatedMs / 1000) + MAX_THREAD_STARTUP_SEC;
         const row = db
           .query<{ id: string }, [string, number, number]>(
-            `SELECT id FROM threads
+            // `id` breaks the created_at tie: the column is second-precision, so
+          // two threads started in the same second are routine and SQLite leaves
+          // the order of tied rows to the query plan.
+          `SELECT id FROM threads
              WHERE cwd = ? AND created_at > ? AND created_at < ?
-             ORDER BY created_at ASC LIMIT 1`,
+             ORDER BY created_at ASC, id ASC LIMIT 1`,
           )
           .get(cwd, lowerBound, upperBound);
         return row?.id ?? "";
@@ -74,7 +78,7 @@ function queryCodexThreadId(cwd: string, sessionCreatedMs?: number): string {
       const row = db
         .query<{ id: string }, [string]>(
           `SELECT id FROM threads WHERE cwd = ?
-           ORDER BY created_at DESC LIMIT 1`,
+           ORDER BY created_at DESC, id ASC LIMIT 1`,
         )
         .get(cwd);
       return row?.id ?? "";
@@ -115,7 +119,14 @@ function readRolloutSummary(path: string): string {
 
 /** Scan ~/.codex/sessions/ rollout files to find a thread_id by file birthtime.
  *  Used when DB query fails (e.g., no matching thread in SQLite).
- *  Matches the first rollout created for this session after startup. */
+ *  Matches the first rollout created for this session after startup.
+ *
+ *  Selection is by (smallest delay, then smallest rollout path). Birthtimes
+ *  collide in practice — two rollouts written in the same millisecond, or a
+ *  filesystem with coarse timestamps — and without the path tie break the winner
+ *  would be whichever the directory read happened to reach first, which is a
+ *  different session id on a different runtime. The day-directory read is sorted
+ *  for the same reason. */
 function scanCodexRollouts(sessionCreatedMs: number): RolloutMatch | null {
   const sessionsRoot = join(homedir(), ".codex", "sessions");
   if (!existsSync(sessionsRoot)) return null;
@@ -133,7 +144,7 @@ function scanCodexRollouts(sessionCreatedMs: number): RolloutMatch | null {
         const monthDir = join(yearDir, month);
         for (const day of readdirSync(monthDir).filter(f => isDir(join(monthDir, f))).sort().slice(-7)) {
           const dayDir = join(monthDir, day);
-          for (const file of readdirSync(dayDir)) {
+          for (const file of readdirSync(dayDir).sort()) {
             const m = file.match(ROLLOUT_RE);
             if (!m) continue;
             try {
@@ -143,7 +154,7 @@ function scanCodexRollouts(sessionCreatedMs: number): RolloutMatch | null {
               if (delayMs < -MAX_ROLLOUT_CLOCK_SKEW_MS || delayMs > MAX_ROLLOUT_DELAY_MS) {
                 continue;
               }
-              if (delayMs < bestDelay) {
+              if (delayMs < bestDelay || (delayMs === bestDelay && filePath < bestPath)) {
                 bestDelay = delayMs;
                 bestId = m[1]!;
                 bestPath = filePath;

@@ -317,7 +317,9 @@ async function codexLogPath(sessionId: string): Promise<string | null> {
         const days = (await readdir(monthDir)).filter((s) => /^\d{2}$/.test(s)).sort().reverse();
         for (const day of days) {
           const dayDir = join(monthDir, day);
-          const files = await readdir(dayDir);
+          // Sorted like the year/month/day walk above, so "the first file naming
+          // this session" is a defined choice when a day holds more than one.
+          const files = (await readdir(dayDir)).sort();
           const hit = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
           if (hit) return join(dayDir, hit);
         }
