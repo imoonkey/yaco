@@ -59,9 +59,52 @@ describe("runPlanInit", () => {
     expect(second.initialized).toBe(false);
     expect(second.gitignoreCreated).toBe(false);
     expect(second.excludeUpdated).toBe(false);
+    expect(second.ignoreUpdated).toBe(false);
     // The exclude file did not gain a duplicate entry.
     const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
     expect(exclude.match(/\/plan\//g)?.length).toBe(1);
+  });
+
+  it("creates a root .ignore whitelisting the plan dir", () => {
+    const root = makeHostRepo();
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/\n");
+  });
+
+  it("appends the whitelist to an existing .ignore, preserving its lines", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "node_modules/\ndist/\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!plan/\n");
+  });
+
+  it("glues a newline when the existing .ignore lacks a trailing one", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "dist/");
+    runPlanInit({ cwd: root });
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\n");
+  });
+
+  it("leaves an .ignore that already carries the whitelist untouched", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "dist/\n!plan/\ncustom\n");
+    const r = runPlanInit({ cwd: root });
+    expect(r.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\ncustom\n");
+  });
+
+  it("whitelist and second-run idempotency track the [paths] plan override", () => {
+    const root = makeHostRepo("private-plan");
+    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "private-plan"\n');
+    const first = runPlanInit({ cwd: root });
+    expect(first.ignoreUpdated).toBe(true);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
+
+    const second = runPlanInit({ cwd: root });
+    expect(second.ignoreUpdated).toBe(false);
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
   });
 
   it("refuses when the root .gitignore matches the plan root", () => {
