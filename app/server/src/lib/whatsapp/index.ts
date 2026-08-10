@@ -1,5 +1,4 @@
-import wweb from 'whatsapp-web.js'
-import type { Message } from 'whatsapp-web.js'
+import type { Client, Message } from 'whatsapp-web.js'
 import { spawnSync } from 'node:child_process'
 import { readlinkSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,9 +6,8 @@ import { createRouter, type ChannelReply } from '../channels/router'
 import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
+import { loadWweb, type WwebModule } from './load'
 import { channelScopeDir } from '@yaco/cli/core/paths'
-
-const { Client, LocalAuth, MessageMedia } = wweb
 
 const SESSION_DIR = join(channelScopeDir('whatsapp'), 'session')
 // LocalAuth nests another "session" directory inside SESSION_DIR for the
@@ -209,6 +207,7 @@ async function handleMessage(msg: Message): Promise<void> {
     }
     // file attachment
     try {
+      const { MessageMedia } = await loadWweb()
       const media = MessageMedia.fromFilePath(reply.path)
       media.filename = reply.filename
       // Caption (if any) becomes a separate message.body — also dedup it.
@@ -249,6 +248,37 @@ export function initWhatsApp(): Promise<void> {
   }
   if (client) return Promise.resolve()
 
+  // Published synchronously so a caller that returns getLoginState() right
+  // after firing this off already sees the transition.
+  setState({
+    phase: 'awaiting-qr',
+    startedAt: new Date().toISOString(),
+    qrAscii: undefined,
+    qrRaw: undefined,
+    error: undefined,
+    ready: false,
+    boundChat: BOUND_CHAT_JID ?? undefined,
+    discoveryMode: false,
+  })
+
+  initInflight = startClient().finally(() => { initInflight = null })
+  return initInflight
+}
+
+async function startClient(): Promise<void> {
+  // First, before any side effect: whatsapp-web.js is optional, so its absence
+  // is a normal outcome that must surface as a legible phase, not a crash.
+  let wweb: WwebModule
+  try {
+    wweb = await loadWweb()
+  } catch (err) {
+    const message = (err as Error).message
+    setState({ phase: 'failed', error: message, ready: false })
+    console.error(`[whatsapp] ${message}`)
+    return
+  }
+  const { Client, LocalAuth } = wweb
+
   // Belt-and-suspenders: if any Chrome from a prior unclean exit still
   // holds our profile's SingletonLock, kill it now so puppeteer can take
   // the lock cleanly.
@@ -262,17 +292,6 @@ export function initWhatsApp(): Promise<void> {
     setState({ boundChat: BOUND_CHAT_JID ?? getAuthSnapshot().tofuBound ?? undefined })
   })
 
-  setState({
-    phase: 'awaiting-qr',
-    startedAt: new Date().toISOString(),
-    qrAscii: undefined,
-    qrRaw: undefined,
-    error: undefined,
-    ready: false,
-    boundChat: BOUND_CHAT_JID ?? undefined,
-    discoveryMode: false,
-  })
-
   if (!BOUND_CHAT_JID) {
     const tofuBound = getAuthSnapshot().tofuBound
     if (tofuBound) {
@@ -284,30 +303,31 @@ export function initWhatsApp(): Promise<void> {
     console.log(`[whatsapp] strict mode (env override): bot will only respond in chat ${BOUND_CHAT_JID}`)
   }
 
-  client = new Client({
+  const wa = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
   })
+  client = wa
 
-  client.on('qr', (qrRaw: string) => {
+  wa.on('qr', (qrRaw: string) => {
     setState({ phase: 'awaiting-qr', qrRaw, ready: false })
     void renderQrAscii(qrRaw).then((ascii) => setState({ qrAscii: ascii })).catch(() => undefined)
   })
 
-  client.on('authenticated', () => {
+  wa.on('authenticated', () => {
     setState({ phase: 'authenticating', qrAscii: undefined, qrRaw: undefined })
   })
 
-  client.on('auth_failure', (msg) => {
+  wa.on('auth_failure', (msg) => {
     setState({ phase: 'failed', error: `auth_failure: ${msg}`, ready: false })
   })
 
-  client.on('ready', () => {
+  wa.on('ready', () => {
     try {
-      myJid = client?.info.wid._serialized ?? null
+      myJid = wa.info.wid._serialized
     } catch (e) {
       console.warn('[whatsapp] could not read own JID:', e)
     }
@@ -315,25 +335,21 @@ export function initWhatsApp(): Promise<void> {
     console.log(`[whatsapp] client ready (jid=${myJid ?? 'unknown'})`)
   })
 
-  client.on('disconnected', (reason) => {
+  wa.on('disconnected', (reason) => {
     setState({ phase: 'disconnected', ready: false, error: `disconnected: ${reason}` })
     myJid = null
     console.warn('[whatsapp] disconnected:', reason)
   })
 
-  client.on('message_create', (msg) => {
+  wa.on('message_create', (msg) => {
     if (!myJid) return
     void handleMessage(msg)
   })
 
-  initInflight = client.initialize()
-    .catch((err) => {
-      setState({ phase: 'failed', error: (err as Error).message, ready: false })
-      console.error('[whatsapp] initialize failed:', err)
-    })
-    .finally(() => { initInflight = null })
-
-  return initInflight
+  await wa.initialize().catch((err) => {
+    setState({ phase: 'failed', error: (err as Error).message, ready: false })
+    console.error('[whatsapp] initialize failed:', err)
+  })
 }
 
 export async function logoutWhatsApp(): Promise<void> {
