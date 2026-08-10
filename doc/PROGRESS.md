@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-08-09: `yaco plan init` also writes the root `.ignore` whitelist for the plan dir
+
+**What changed:**
+- `runPlanInit` gained a step between host-exclusion and `--remote`: ensure the repo-root `.ignore` contains `!<plan>/` (plan name resolved from `[paths]`). Created when absent, appended when missing, existing lines never rewritten or reordered; `PlanInitResult.ignoreUpdated` reports it and the text render shows it.
+- The line-ensure logic shared with the `info/exclude` step was extracted into one `ensureLine(filePath, entry)` helper; `ensureExcluded` now only resolves the git path and delegates.
+
+**Why:**
+- The `info/exclude` entry that hides the colocated plan repo from host git also blinds ignore-stack tools (rg, fd, agent file search) to `plan/`. A root `.ignore` negation re-includes it at higher precedence than any gitignore source, and is a no-op for tools when the plan dir is tracked. yaco itself got the line by hand (`e6893e12`); init now ensures it for every user.
+
+**Key files:** `cli/src/commands/plan/init.ts`, `cli/test/unit/commands/plan/init.test.ts`, `doc/main/cli/plan.md`
+**Verification:** `scripts/verify.sh` green (cli 1142 pass); `npx tsc --noEmit -p cli` clean; 6 new unit tests cover create/append/newline-glue/already-present/custom-plan-name/idempotency; `rg --files` E2E check on a fresh private-plan repo lists `plan/` files after init.
+**Commit:** `af4f28c9` + docs commit
+**Next:** —
+**Blockers:** None.
+
 ## 2026-08-08: cli unit tests stop depending on the checkout path — module mocks are file-scoped
 
 **What changed:**

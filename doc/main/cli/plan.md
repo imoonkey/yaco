@@ -1,6 +1,6 @@
 # Plan Subcommand
 
-> Last updated: 2026-06-11 (plan-colocated-repo)
+> Last updated: 2026-08-09 (plan-init-ignore-whitelist)
 
 The `plan` area manages the project's **plan repo** — the `[paths] plan`
 directory promoted into its own private git repo that the host repo never
@@ -47,10 +47,16 @@ yaco plan init [--remote <url>] [--force] [--cwd <path>] [--json]
    `git status` clean and leaves **zero trace in the public repo** (the exclusion
    is local-only, never committed) — unlike a tracked `.gitignore` entry, which
    would leak the reference, dim the dir, and drop it from detection.
-4. **`--remote`.** Add/reconcile `origin` as above. Never pushes.
+4. **Search-tool whitelist.** Ensure `!<plan>/` is a line in the repo-root
+   `.ignore`. The `info/exclude` entry also makes ignore-stack tools (rg, fd,
+   agent file search) blind to the plan dir; the `.ignore` negation re-includes
+   it at higher precedence than any gitignore source. Created when absent,
+   appended when missing, existing lines never rewritten or reordered. A no-op
+   for tools when the plan dir is tracked, so the line is harmless everywhere.
+5. **`--remote`.** Add/reconcile `origin` as above. Never pushes.
 
 Idempotent: a second run reports nothing changed and never duplicates the
-`info/exclude` entry.
+`info/exclude` or `.ignore` entries.
 
 ## Default layout: in-place
 
