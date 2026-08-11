@@ -283,50 +283,43 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(again.stdout).not.toContain("installing cli dependencies");
   }, 180_000);
 
-  /** The three cases below share one piece of damage — a syntax error in
-   *  `cli/src/main.ts` — and differ only in what is in `node_modules`. That is
-   *  deliberate: the damage is the constant, the tree is the variable, and what
-   *  is being pinned is which branch the script takes.
+  /** The cases below share one piece of damage — a syntax error in
+   *  `cli/src/main.ts` — and differ only in what is in `node_modules`.
    *
    *  A source error is the right damage because `npm pack` reifies the
    *  workspace before running `prepack`, so anything merely *missing* from
-   *  `node_modules` gets silently reinstalled and the failing branch is never
-   *  reached. A syntax error is one npm cannot fix, so the script has to decide.
+   *  `node_modules` gets silently reinstalled and the dependency branch is
+   *  never reached. A syntax error is one npm cannot fix.
    *
-   *  These cases end non-zero on purpose: the repair runs, and then the second
-   *  pack fails on the source error the repair could never have addressed. */
+   *  These cases end non-zero on purpose: the dependency install runs, and then
+   *  the second pack fails on the source error it could never have addressed. */
   function breakTheSource(clone: string): void {
     writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", {
       flag: "a",
     });
   }
 
-  it("reinstalls into a dependency tree only this bootstrap has installed into", () => {
-    // An interrupted first run leaves a populated `node_modules` that is not a
-    // developer's install, and the README advertises this script as the
-    // recovery path — so existence alone cannot be the irreversible state
-    // transition. `node_modules/.package-lock.json` is npm's own record of what
-    // it installed, and it distinguishes the two exactly.
+  it("reinstalls into an already-populated tree", () => {
+    // An interrupted first run leaves a populated `node_modules`, and the
+    // README advertises this script as the recovery path — so a populated
+    // directory cannot be the state that stops it.
     const clone = fullClone();
     expect(bootstrap(clone).status).toBe(0);
-    const record = JSON.parse(
-      readFileSync(join(clone, "node_modules", ".package-lock.json"), "utf-8"),
-    );
-    expect(
-      Object.keys(record.packages).filter((k) => k && !k.startsWith("node_modules/") && !k.startsWith("cli")),
-    ).toEqual([]);
+    expect(existsSync(join(clone, "node_modules", "esbuild"))).toBe(true);
+    // The staged install does not carry npm's hidden lock across: the merged
+    // tree is not the one it describes, and its absence makes a later
+    // `npm install` verify rather than trust.
+    expect(existsSync(join(clone, "node_modules", ".package-lock.json"))).toBe(false);
 
     breakTheSource(clone);
     const r = bootstrap(clone);
     expect(r.stdout).toContain("installing cli dependencies");
-    expect(r.stderr).not.toContain("wider than this bootstrap's");
   }, 300_000);
 
   it("reinstalls into a tree whose install never got as far as a record", () => {
     // npm replaces `node_modules` while installing, so an install killed early
-    // leaves a directory with no `.package-lock.json` in it. That is exactly the
-    // state a marker file placed inside `node_modules` could not survive, and it
-    // is the one that most needs repairing.
+    // leaves a directory with no `.package-lock.json` in it — the state a marker
+    // file placed inside `node_modules` could not survive either.
     const clone = fullClone();
     mkdirSync(join(clone, "node_modules", "half-extracted"), { recursive: true });
     expect(existsSync(join(clone, "node_modules", ".package-lock.json"))).toBe(false);
@@ -337,39 +330,42 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(r.stderr).not.toContain("wider than this bootstrap's");
   }, 300_000);
 
-  it("refuses to reinstall over an install wider than its own, and prunes nothing", () => {
-    // `npm ci --workspace cli` deletes every workspace it was not asked about,
-    // so on a developer machine the remedial install would silently take out
-    // the app's dependency tree — minutes of native compilation, removed to fix
-    // a problem the script cannot even diagnose.
+  it("installs dependencies without pruning a wider install, whatever npm's metadata says", () => {
+    // The load-bearing property. `npm ci --workspace cli` run against the repo
+    // deletes every workspace it was not asked about, which on a developer
+    // machine is an app/ tree and minutes of native compilation. Deciding when
+    // that is safe was the wrong question — every ownership signal tried either
+    // could not survive the operation it described or failed open when missing —
+    // so the install resolves in an isolated stage and is copied in.
+    //
+    // The metadata here is deliberately unusable: a real second workspace is
+    // installed, a foreign directory is planted, and npm's hidden lock is
+    // corrupted. Nothing about this tree says it is ours, and nothing needs to.
     const clone = fullClone();
     expect(bootstrap(clone).status).toBe(0);
 
-    // A second workspace really installed — `codex-transcribe` has no runtime
-    // dependencies, so this is cheap and still writes a real foreign key into
-    // npm's record rather than a hand-forged one.
+    // `codex-transcribe` has no runtime dependencies, so this is cheap and
+    // still a real second-workspace install rather than a forged one.
     const second = spawnSync(
       "npm",
       ["install", "--workspace", "packages/codex-transcribe", "--ignore-scripts", "--omit=optional"],
       { cwd: clone, encoding: "utf-8", timeout: 300_000 },
     );
     expect(second.status).toBe(0);
-    const record = JSON.parse(
-      readFileSync(join(clone, "node_modules", ".package-lock.json"), "utf-8"),
-    );
-    expect(Object.keys(record.packages)).toContain("packages/codex-transcribe");
+    const secondWorkspaceLink = join(clone, "node_modules", "@yaco", "codex-transcribe");
+    expect(existsSync(secondWorkspaceLink)).toBe(true);
 
-    const otherWorkspaceDep = join(clone, "node_modules", "not-ours");
-    mkdirSync(otherWorkspaceDep, { recursive: true });
-    writeFileSync(join(otherWorkspaceDep, "marker"), "someone else's install\n");
+    const foreign = join(clone, "node_modules", "not-ours");
+    mkdirSync(foreign, { recursive: true });
+    writeFileSync(join(foreign, "marker"), "someone else's install\n");
+    writeFileSync(join(clone, "node_modules", ".package-lock.json"), "{{{ corrupt\n");
     breakTheSource(clone);
 
     const r = bootstrap(clone);
-    expect(r.status).not.toBe(0);
-    expect(r.stdout).not.toContain("installing cli dependencies");
-    expect(r.stderr).toContain("wider than this bootstrap's");
-    expect(r.stderr).toContain("npm ci");
-    expect(existsSync(join(otherWorkspaceDep, "marker"))).toBe(true);
+    expect(r.stdout).toContain("installing cli dependencies");
+    // Everything that was there before is still there.
+    expect(existsSync(join(foreign, "marker"))).toBe(true);
+    expect(existsSync(secondWorkspaceLink)).toBe(true);
   }, 300_000);
 
   it("bootstraps from a checkout path containing a URL-significant character", () => {

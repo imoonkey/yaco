@@ -113,38 +113,37 @@ written the file list. Every cheaper check tried before (a `node_modules`
 directory existing; each dependency's own manifest existing) mistook a partially
 installed tree for a usable one.
 
-When the pack fails, the remedy depends on what is already there:
+When the pack fails, the CLI workspace's dependencies are installed — and that
+install **deletes nothing**.
 
-| `node_modules` at the repo root | Behavior |
+`npm ci --workspace cli` prunes every workspace it was not asked about, so run
+straight at the repo it would take out an app/ install: minutes of native
+compilation, removed to fix a problem it cannot even diagnose. The obvious
+response is to decide when repairing is safe, and that turned out to be the
+wrong question. Every ownership signal tried either cannot survive the operation
+it describes or fails open when it is missing:
+
+| Signal | Why it failed |
 |---|---|
-| `node_modules/.package-lock.json` records only the `cli` workspace, or is absent | `npm ci --workspace cli --include-workspace-root --omit=optional`, then pack again. About 3 s and 74 MB — the CLI's workspace only, no `node-pty` or `better-sqlite3` compile. |
-| it records any other workspace | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
+| `node_modules` exists | a developer's tree and an interrupted bootstrap look identical |
+| a marker file inside `node_modules` | npm replaces that directory while installing, so the marker is gone exactly when it is needed |
+| `node_modules/.package-lock.json` names only `cli` | absent, truncated, or unreadable records are ambiguous, and treating ambiguity as permission is how a destructive repair gets authorized by *absence of evidence* |
 
-The second row is not timidity. `npm ci --workspace` **prunes every workspace it
-was not asked about**: run against a developer's full tree it would delete the
-app's dependencies — minutes of native compilation — to fix a problem it cannot
-even diagnose.
+So the repair is not destructive. npm resolves from the manifests and the
+lockfile and nothing else, so an isolated copy of those — the root manifest with
+its `scripts` stripped, the lockfile, and every workspace member's
+`package.json` — produces the same tree in a directory that is entirely ours to
+prune. The result is then **copied into** `node_modules`, never swapped for it.
+`.bin` entries and the workspace self-links npm writes are relative, so they
+resolve correctly once moved. This is the same non-destructive shape the
+Bun-era bootstrap used, which had the identical problem.
 
-The signal is npm's own record of what it installed, because existence of
-`node_modules` cannot tell an interrupted first run from a developer's tree, and
-this script is the advertised recovery path for the first. This bootstrap
-installs `cli` and nothing else, so any other workspace key means a wider
-install is present. An absent record means no install ever completed here —
-the interrupted case, and the one that most needs repairing.
-
-A marker file inside `node_modules` was tried first and does not work: npm
-replaces that directory while installing, so the signal is gone exactly when it
-is needed.
-
-One caveat worth stating: a developer whose *own* full `npm install` was
-interrupted before npm wrote a record also lands in the first row and gets
-reduced to the CLI workspace. That tree was unusable either way, and `npm ci`
-restores it.
-
-The probe cannot say *why* the pack failed, so a source error selects the
-dependency branch too. Its log is kept and printed if the install then fails —
-on a machine that cannot reach a registry the install's own error is a red
-herring, and the cause has to survive.
+Two consequences worth knowing. The root `scripts` are stripped from the staged
+manifest because the repo's own `postinstall` reaches into `app/scripts/`, which
+a dependency stage has no reason to carry; each *dependency's* install scripts
+still run, which is what makes the copied tree usable. And npm's hidden lock is
+not copied across: the merged tree is not the one either record describes, so
+leaving it absent makes a later `npm install` verify rather than trust.
 
 `cli/test/integration/install.test.ts` bootstraps a real `git archive` clone for
 each of these paths, and `cli/test/integration/pack.test.ts` takes the tarball

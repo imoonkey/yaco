@@ -87,56 +87,65 @@ pack() {
   (cd "$REPO_ROOT" && npm pack --workspace @yaco/cli --pack-destination "$stage")
 }
 
-# Is this dependency tree one only this script has installed into?
+# Install the CLI workspace's dependencies **without deleting anything**.
 #
-# It matters because `npm ci --workspace` prunes every workspace it was not
-# asked about, so repairing the wrong tree deletes an app/ install — minutes of
-# native compilation — this script has no business touching. Existence of
-# `node_modules` cannot answer it: a developer's tree and an interrupted
-# bootstrap look identical from outside.
+# `npm ci --workspace cli` prunes every workspace it was not asked about, so run
+# straight at the repo it would take out an app/ install — minutes of native
+# compilation — that this script has no business touching. Deciding when that is
+# safe turned out to be the wrong question: every signal tried (the directory
+# existing, a marker file inside it, npm's own hidden lock) either cannot
+# survive the operation it describes or fails open when it is missing, and
+# "absence of evidence" must never authorize a destructive repair.
 #
-# `node_modules/.package-lock.json` is npm's own record of what it installed and
-# answers it exactly: this bootstrap installs the `cli` workspace and nothing
-# else, so any other workspace key means somebody's wider install is in there.
-# An absent or unreadable record means no install ever completed here, which is
-# the interrupted first run — the case that most needs repairing. (A developer
-# whose *own* full install was interrupted also lands there and gets reduced to
-# the cli workspace; their tree was unusable either way and `npm ci` restores
-# it.)
+# So the repair is not destructive. npm resolves from the manifests and the
+# lockfile, nothing else, so an isolated copy of those produces the same tree in
+# a directory that is entirely ours to prune — and the result is *copied in*,
+# never swapped for what is already there. This is the same non-destructive
+# shape the Bun-era bootstrap used, which had the identical problem.
 #
-# A marker file was tried first and does not work: the obvious place for it is
-# inside `node_modules`, and npm replaces that directory, so the signal is gone
-# by the time it is needed.
-tree_is_bootstrap_only() {
+# The hidden lock is deliberately not copied: the merged tree is not the one
+# either record describes, and an absent one makes npm verify rather than trust
+# on the next install.
+install_cli_dependencies() {
+  echo "  installing cli dependencies ..."
+  local deps="$stage/deps"
+  mkdir -p "$deps"
+
+  # Every manifest npm needs to build the workspace tree: the root, its lockfile,
+  # and each workspace member's package.json (npm reads the `workspaces` globs
+  # and fails on a member it cannot find, even one it is not installing).
+  cp "$REPO_ROOT/package-lock.json" "$deps/"
+  # The root manifest, minus its scripts. The stage exists to resolve
+  # dependencies and nothing else, and the repo's own `postinstall` reaches for
+  # `app/scripts/` — files a dependency stage has no reason to carry. Each
+  # dependency's own install scripts still run, which is what makes the copied
+  # tree usable.
   node -e '
-    const { readFileSync } = require("node:fs");
-    try {
-      const record = JSON.parse(readFileSync(process.argv[1], "utf-8"));
-      const foreign = Object.keys(record.packages ?? {}).filter(
-        (key) => key !== "" && !key.startsWith("node_modules/") && !key.startsWith("cli"),
-      );
-      process.exit(foreign.length === 0 ? 0 : 1);
-    } catch {
-      process.exit(0);
-    }
-  ' "$REPO_ROOT/node_modules/.package-lock.json"
+    const { readFileSync, writeFileSync } = require("node:fs");
+    const manifest = JSON.parse(readFileSync(process.argv[1], "utf-8"));
+    delete manifest.scripts;
+    writeFileSync(process.argv[2], JSON.stringify(manifest));
+  ' "$REPO_ROOT/package.json" "$deps/package.json"
+  [ -f "$REPO_ROOT/.npmrc" ] && cp "$REPO_ROOT/.npmrc" "$deps/"
+  while IFS= read -r manifest; do
+    local relative="${manifest#"$REPO_ROOT"/}"
+    mkdir -p "$deps/$(dirname "$relative")"
+    cp "$manifest" "$deps/$relative"
+  done < <(find "$REPO_ROOT" -maxdepth 3 -name package.json -not -path '*/node_modules/*' -not -path "$REPO_ROOT/package.json")
+
+  (cd "$deps" && npm ci --workspace cli --include-workspace-root --omit=optional) || return 1
+
+  # Copy, never replace: node_modules may already hold something this bootstrap
+  # did not put there. The `.bin` entries and the workspace self-links npm writes
+  # are relative, so they resolve correctly against the real tree once moved.
+  rm -f "$deps/node_modules/.package-lock.json"
+  mkdir -p "$REPO_ROOT/node_modules"
+  cp -R "$deps/node_modules/." "$REPO_ROOT/node_modules/"
 }
 
 probe_log="$stage/pack.log"
 if ! pack >/dev/null 2>"$probe_log"; then
-  if ! tree_is_bootstrap_only; then
-    echo "install: the cli build failed, and $REPO_ROOT/node_modules holds an install" >&2
-    echo "install: wider than this bootstrap's — repairing it would prune the rest." >&2
-    echo "install: run \`npm ci\` in $REPO_ROOT and retry." >&2
-    cat "$probe_log" >&2
-    exit 1
-  fi
-  # Either a clone that has never been installed — the README's first-run case —
-  # or one of this script's own installs that did not finish. Only the CLI's own
-  # workspace: the app's native dependencies take minutes to compile and
-  # `--cli-only` exists precisely to skip them.
-  echo "  installing cli dependencies ..."
-  if ! (cd "$REPO_ROOT" && npm ci --workspace cli --include-workspace-root --omit=optional); then
+  if ! install_cli_dependencies; then
     echo "install: could not install the cli dependencies." >&2
     echo "install: the build failure that asked for them was:" >&2
     cat "$probe_log" >&2
@@ -145,9 +154,6 @@ if ! pack >/dev/null 2>"$probe_log"; then
   pack
 fi
 
-# `find`, not a glob: under `set -o pipefail` an unmatched `ls "$stage"/*.tgz`
-# fails the assignment and `set -e` exits before the check below can say
-# anything useful. find prints nothing and succeeds, so the check is reachable.
 tarball="$(find "$stage" -maxdepth 1 -name '*.tgz' | head -1)"
 if [ -z "$tarball" ]; then
   echo "install: npm pack reported success but produced no tarball" >&2
