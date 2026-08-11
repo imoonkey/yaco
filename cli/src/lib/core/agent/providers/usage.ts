@@ -12,9 +12,11 @@
  *  are never logged, cached, or returned.
  */
 
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdirSync, renameSync, statSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { Readable } from "node:stream";
 import { CliError, ErrCode } from "../../errors.ts";
 import { usageCacheFile } from "../../paths/yaco-home.ts";
 
@@ -196,28 +198,75 @@ export function normalizeCodexQuota(result: CodexRateLimits): Quota {
   return { ...(plan ? { plan } : {}), windows };
 }
 
-type CodexProc = ReturnType<typeof spawnCodexAppServer>;
-
-/** Spawn the app-server with all three stdio streams bound. Kept separate so
- *  the literal stdio options stay visible to the return type — a widened
- *  `Bun.spawn` annotation loses the FileSink/ReadableStream narrowing. */
-function spawnCodexAppServer() {
-  try {
-    return Bun.spawn(["codex", "app-server", "--listen", "stdio://"], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-  } catch {
-    throw new CliError(ErrCode.ENV, "codex CLI not found on PATH");
-  }
+/** The app-server child, wrapped so that nothing about talking to it can take
+ *  the command down instead of diagnosing it.
+ *
+ *  Two failures are reported asynchronously and away from the call that caused
+ *  them. A child that never starts reports `ENOENT` on an `error` event a tick
+ *  after `spawn` returns; a write to a child whose read end is already gone
+ *  reports `EPIPE` on stdin. Unobserved, either is an uncaught exception —
+ *  verified for the stdin one on Node 24, which crashes the process on a write
+ *  to a closed pipe unless a listener exists.
+ *
+ *  Only the spawn failure is worth *reporting*, because only it says something
+ *  the read outcome does not: "codex is not installed" is a different fix from
+ *  "codex was there and did not answer". A stdin failure is observed and
+ *  dropped — the three requests go out in the same tick as the spawn, long
+ *  before any child could die, so a broken input pipe here means the child was
+ *  never there, which the read already reports better. */
+interface CodexProc {
+  child: ChildProcessWithoutNullStreams;
+  /** Resolves once the child process itself is gone. Deliberately not `close`,
+   *  which additionally waits for every stdio stream to end: an orphaned
+   *  grandchild inherits those pipes and holds them open after the app-server
+   *  is dead, so waiting on them would hang the command forever. Draining the
+   *  stderr tail is what has a grace bound for exactly that case. */
+  exited: Promise<void>;
+  /** Write one JSON-RPC line. Resolves when the line is flushed *or* when it
+   *  could not be — either way the write is over and the read decides. Never
+   *  ends the stream: the app-server treats EOF on its input as a shutdown
+   *  signal and exits before answering. */
+  send(message: Record<string, unknown>): Promise<void>;
+  /** Why the child never started, if it did not. */
+  spawnError(): NodeJS.ErrnoException | undefined;
 }
 
-/** SIGTERM, escalating to SIGKILL, and always await `exited` so no app-server
- *  child outlives the command. Safe to call twice. */
+function spawnCodexAppServer(): CodexProc {
+  // Default stdio is a pipe on all three streams, which is both what the
+  // JSON-RPC exchange needs and what narrows the streams to non-null.
+  const child = spawn("codex", ["app-server", "--listen", "stdio://"]);
+  let spawnFailure: NodeJS.ErrnoException | undefined;
+  child.on("error", (error: NodeJS.ErrnoException) => { spawnFailure ??= error; });
+  child.stdin.on("error", () => { /* observed so EPIPE cannot crash the command */ });
+
+  return {
+    child,
+    exited: new Promise<void>((resolve) => {
+      // Either event ends the child's story: `exit` when it ran, `error` when
+      // it never started. Resolving on both is what stops `terminate` from
+      // waiting on a process that does not exist.
+      child.once("exit", () => resolve());
+      child.once("error", () => resolve());
+    }),
+    send: (message) =>
+      new Promise<void>((resolve) => {
+        child.stdin.write(JSON.stringify(message) + "\n", () => resolve());
+      }),
+    spawnError: () => spawnFailure,
+  };
+}
+
+/** The spawn wrapper, for the tests that drive a child which is not there.
+ *  Everything they assert — a write that cannot land still resolves, the stdin
+ *  guard is installed — is unreachable through the command, which needs a real
+ *  `codex` to get that far. */
+export const _spawnCodexAppServerForTests = spawnCodexAppServer;
+
+/** SIGTERM, escalating to SIGKILL, and always await the child so no app-server
+ *  outlives the command. Safe to call twice. */
 async function terminate(proc: CodexProc): Promise<void> {
-  proc.kill();
-  const escalate = setTimeout(() => proc.kill("SIGKILL"), TERMINATE_GRACE_MS);
+  proc.child.kill();
+  const escalate = setTimeout(() => proc.child.kill("SIGKILL"), TERMINATE_GRACE_MS);
   try {
     await proc.exited;
   } finally {
@@ -232,21 +281,20 @@ async function terminate(proc: CodexProc): Promise<void> {
  *  otherwise be materialized in full just to quote its last line, and a child
  *  that never exits would leave the pipe unread until the buffer filled and
  *  blocked it. Only the last `STDERR_TAIL_BYTES` are retained. */
-function drainStderr(stream: ReadableStream<Uint8Array>): {
+function drainStderr(stream: Readable): {
   settle(): Promise<void>;
-  cancel(): Promise<void>;
+  cancel(): void;
   text(): string;
 } {
   let buffered = "";
-  const reader = stream.getReader();
-  const drained = (async () => {
-    const decoder = new TextDecoder();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffered = (buffered + decoder.decode(value, { stream: true })).slice(-STDERR_TAIL_BYTES);
-    }
-  })().catch(() => {});
+  const decoder = new TextDecoder();
+  stream.on("data", (chunk: Buffer) => {
+    buffered = (buffered + decoder.decode(chunk, { stream: true })).slice(-STDERR_TAIL_BYTES);
+  });
+  // A broken pipe ends the drain rather than failing the probe: what the child
+  // did is reported from its exit, not from the stream that carried its words.
+  stream.on("error", () => {});
+  const drained = new Promise<void>((resolve) => stream.once("close", resolve));
   return {
     // Bounded, and armed only when a diagnosis is actually being written: an
     // orphaned grandchild can hold the write end of the pipe open after the
@@ -265,7 +313,7 @@ function drainStderr(stream: ReadableStream<Uint8Array>): {
       }
     },
     // Releases the pending read so it cannot keep the event loop alive.
-    cancel: () => reader.cancel().catch(() => {}),
+    cancel: () => stream.destroy(),
     text: () => {
       const tail = buffered.trim().split("\n").slice(-3).join("; ").trim();
       return tail ? `: ${tail}` : "";
@@ -278,52 +326,63 @@ type RpcOutcome =
   | { ok: true; message: Record<string, unknown> }
   | { ok: false; reason: "timeout" | "exited" };
 
+/** Errors that mean "the stream ended", not "something went wrong worth
+ *  reporting": the timeout destroying it mid-read, or the child's end of the
+ *  pipe going away. The outcome below already says which of the two happened. */
+const STREAM_TEARDOWN_CODES: ReadonlySet<string> = new Set([
+  "ERR_STREAM_PREMATURE_CLOSE",
+  "ERR_STREAM_DESTROYED",
+  "EPIPE",
+  "ECONNRESET",
+]);
+
+function isStreamTeardown(thrown: unknown): boolean {
+  const code = (thrown as NodeJS.ErrnoException | null)?.code;
+  return typeof code === "string" && STREAM_TEARDOWN_CODES.has(code);
+}
+
 /** Read the first JSON-RPC message carrying `id` off a line-delimited stream. */
 async function readRpcResponse(
-  stream: ReadableStream<Uint8Array>,
+  stream: Readable,
   id: number,
   timeoutMs: number,
 ): Promise<RpcOutcome> {
-  const reader = stream.getReader();
   const decoder = new TextDecoder();
-  // Cancelling makes the pending read() resolve `done`; the flag is what tells
-  // an elapsed timeout apart from the child closing its stdout on its own.
+  // Destroying ends the iteration; the flag is what tells an elapsed timeout
+  // apart from the child closing its stdout on its own.
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    // Rejections are swallowed rather than dropped: an unhandled rejection
-    // from a torn-down stream would crash the process on the way out.
-    void reader.cancel().catch(() => {});
+    stream.destroy();
   }, timeoutMs);
   let buffered = "";
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffered += decoder.decode(value, { stream: true });
+    for await (const chunk of stream) {
+      buffered += decoder.decode(chunk as Buffer, { stream: true });
       const lines = buffered.split("\n");
       buffered = lines.pop() ?? "";
       for (const line of lines) {
         if (line.trim() === "") continue;
         // The app-server writes only JSON lines; a malformed one is a broken
-        // peer, surfaced by the probe's catch rather than parsed around.
+        // peer, surfaced by the probe's catch rather than parsed around — so it
+        // is deliberately not one of the teardown codes swallowed below.
         const message = JSON.parse(line) as Record<string, unknown>;
         if (message["id"] === id) return { ok: true, message };
       }
     }
+  } catch (thrown) {
+    if (!isStreamTeardown(thrown)) throw thrown;
   } finally {
     clearTimeout(timer);
-    // `.catch` rather than try/catch so a failing cancel can never skip the
-    // lock release that follows it.
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
+    // Releases the pending read so it cannot keep the event loop alive.
+    stream.destroy();
   }
   return { ok: false, reason: timedOut ? "timeout" : "exited" };
 }
 
 async function probeCodex(): Promise<Quota> {
   const proc = spawnCodexAppServer();
-  const stderr = drainStderr(proc.stderr);
+  const stderr = drainStderr(proc.child.stderr);
   /** The child's last words, once it has actually finished saying them. */
   const diagnosis = async (): Promise<string> => {
     await terminate(proc);
@@ -333,26 +392,15 @@ async function probeCodex(): Promise<Quota> {
   try {
     // The app-server rejects every other request until the initialize response
     // is followed by the `initialized` notification.
-    try {
-      for (const message of [
-        { method: "initialize", id: 1, params: { clientInfo: { name: "yaco", title: "YACO", version: "0.1.0" } } },
-        { method: "initialized", params: {} },
-        { method: "account/rateLimits/read", id: 2 },
-      ]) {
-        await proc.stdin.write(JSON.stringify(message) + "\n");
-      }
-      // Flush but do NOT end stdin: the app-server treats EOF on its input as
-      // a shutdown signal and exits before answering. `terminate` closes the
-      // child down instead.
-      await proc.stdin.flush();
-    } catch {
-      throw new CliError(
-        ErrCode.ENV,
-        `codex app-server closed its input before the quota request was sent${await diagnosis()}`,
-      );
+    for (const message of [
+      { method: "initialize", id: 1, params: { clientInfo: { name: "yaco", title: "YACO", version: "0.1.0" } } },
+      { method: "initialized", params: {} },
+      { method: "account/rateLimits/read", id: 2 },
+    ]) {
+      await proc.send(message);
     }
 
-    const outcome = await readRpcResponse(proc.stdout, 2, CODEX_PROBE_TIMEOUT_MS);
+    const outcome = await readRpcResponse(proc.child.stdout, 2, CODEX_PROBE_TIMEOUT_MS);
     if (!outcome.ok) {
       if (outcome.reason === "timeout") {
         throw new CliError(
@@ -360,9 +408,22 @@ async function probeCodex(): Promise<Quota> {
           `codex app-server did not report quota within ${CODEX_PROBE_TIMEOUT_MS}ms`,
         );
       }
+      // Diagnose before asking why: it awaits the child, so a spawn failure the
+      // runtime reports asynchronously has certainly landed by the time it is
+      // read.
+      const detail = await diagnosis();
+      const failedToStart = proc.spawnError();
+      if (failedToStart) {
+        throw new CliError(
+          ErrCode.ENV,
+          failedToStart.code === "ENOENT"
+            ? "codex CLI not found on PATH"
+            : `could not start the codex CLI: ${failedToStart.message}`,
+        );
+      }
       throw new CliError(
         ErrCode.ENV,
-        `codex app-server exited before reporting quota${await diagnosis()}`,
+        `codex app-server exited before reporting quota${detail}`,
       );
     }
 
@@ -377,7 +438,7 @@ async function probeCodex(): Promise<Quota> {
     return normalizeCodexQuota((outcome.message["result"] ?? {}) as CodexRateLimits);
   } finally {
     await terminate(proc);
-    await stderr.cancel();
+    stderr.cancel();
   }
 }
 
@@ -429,15 +490,15 @@ interface ClaudeCredentials {
  *  undefined on any other platform, or when the item is absent. */
 function readMacosKeychainCredentials(): string | undefined {
   if (process.platform !== "darwin") return undefined;
-  const found = Bun.spawnSync([
+  const found = spawnSync(
     "security",
-    "find-generic-password",
-    "-s",
-    "Claude Code-credentials",
-    "-w",
-  ]);
-  if (!found.success) return undefined;
-  const blob = found.stdout.toString().trim();
+    ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+    { encoding: "utf-8" },
+  );
+  // A missing `security` leaves `status` null, which is not 0 either — no
+  // keychain, no credentials, same answer.
+  if (found.status !== 0) return undefined;
+  const blob = (found.stdout ?? "").trim();
   return blob === "" ? undefined : blob;
 }
 

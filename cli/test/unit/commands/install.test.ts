@@ -600,11 +600,11 @@ describe("runInstall — canonical hook command (HIGH 4)", () => {
       g.hooks?.some((h: any) => /agent hook-event/.test(h.command)));
     expect(yacoEntry).toBeDefined();
     const cmd = yacoEntry.hooks[0].command;
-    // Canonical form: absolute path + `agent hook-event <Event>`. Must NOT be
-    // the deprecated `bun .../hook-event-bin.ts <Event>` form.
+    // Canonical form: absolute path to the installed executable + `agent
+    // hook-event <Event>`. Never a runtime plus a source path — neither the
+    // runtime nor the checkout is guaranteed to be reachable at hook-fire time.
     expect(cmd).toBe(`${join(binDir, "yaco")} agent hook-event SessionStart`);
-    expect(cmd).not.toContain("hook-event-bin.ts");
-    expect(cmd).not.toMatch(/^bun /);
+    expect(cmd).not.toMatch(/^(bun|node) /);
   });
 });
 

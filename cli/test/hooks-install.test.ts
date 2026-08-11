@@ -15,7 +15,7 @@ import { agentWrapperPath } from "../src/lib/core/paths/yaco-home.ts";
  *  signal). Lifecycle groups carry no matcher; tool groups use "*". */
 const isYacoGroup = (g: any): boolean =>
   Array.isArray(g?.hooks) &&
-  g.hooks.some((h: any) => typeof h?.command === "string" && /hook-event-bin\.ts|agent\s+hook-event/.test(h.command));
+  g.hooks.some((h: any) => typeof h?.command === "string" && /\bagent\s+hook-event\b/.test(h.command));
 
 /** Replicate Claude Code's hook `matcher` evaluation. SessionStart filters on
  *  the start *source* (startup|resume|clear|compact); this mirrors the
@@ -90,7 +90,7 @@ describe("ensureClaudeHooks — merge semantics", () => {
       expect(Array.isArray(groups)).toBe(true);
       const ours = groups.find(isYacoGroup);
       expect(ours).toBeDefined();
-      expect(ours.hooks[0].command).toMatch(new RegExp(`hook-event-bin\\.ts ${event}\\b|agent hook-event ${event}\\b`));
+      expect(ours.hooks[0].command).toMatch(new RegExp(`\\bagent hook-event ${event}\\b`));
     }
   });
 
@@ -128,7 +128,7 @@ describe("ensureClaudeHooks — merge semantics", () => {
     // Our Stop entry added alongside
     const ourStop = settings.hooks.Stop.find(isYacoGroup);
     expect(ourStop).toBeDefined();
-    expect(ourStop.hooks[0].command).toMatch(/hook-event-bin\.ts Stop\b|agent hook-event Stop\b/);
+    expect(ourStop.hooks[0].command).toMatch(/\bagent hook-event Stop\b/);
   });
 
   it("is idempotent: a second install adds no new entries", () => {
@@ -171,11 +171,11 @@ describe("ensureClaudeHooks — merge semantics", () => {
     // The stale yaco entry was overwritten in place — exactly one yaco-owned
     // group remains, and its command points at the current binary.
     const yacoOwned = stopGroups.filter((g: any) =>
-      g?.hooks?.some((h: any) => /hook-event-bin\.ts|agent\s+hook-event/.test(h?.command)),
+      g?.hooks?.some((h: any) => /\bagent\s+hook-event\b/.test(h?.command)),
     );
     expect(yacoOwned).toHaveLength(1);
     expect(yacoOwned[0].hooks[0].command).not.toContain("/old/path/that/no/longer/exists.ts");
-    expect(yacoOwned[0].hooks[0].command).toMatch(/hook-event-bin\.ts Stop\b|agent hook-event Stop\b/);
+    expect(yacoOwned[0].hooks[0].command).toMatch(/\bagent hook-event Stop\b/);
   });
 });
 
@@ -185,7 +185,7 @@ describe("ensureCodexHooks — merge semantics", () => {
     const hooks = JSON.parse(readFileSync(join(sandbox, ".codex", "hooks.json"), "utf-8"));
     const sessionStart = hooks.hooks.SessionStart.find(isYacoGroup);
     expect(sessionStart).toBeDefined();
-    expect(sessionStart.hooks[0].command).toMatch(/hook-event-bin\.ts SessionStart\b|agent hook-event SessionStart\b/);
+    expect(sessionStart.hooks[0].command).toMatch(/\bagent hook-event SessionStart\b/);
     // Codex hooks are sync (not async)
     expect(sessionStart.hooks[0].async).toBe(false);
     // Unfiltered so the hook fires on session start (see Claude SessionStart note).

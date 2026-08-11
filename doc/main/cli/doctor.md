@@ -34,7 +34,7 @@ yaco doctor [--repo <path>] [--json]
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
 | 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill shipped by the registered yaco checkout resolves (manifest = `agent-config/global/skills/` listing, resolved via the registry's `yaco` entry) | `<dir> (<N> skills from <manifest>)` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / unresolvable registry or manifest |
-| 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()` — marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
+| 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()`, which passes when the raw config text contains `agent hook-event` — the `yaco-agent-hook` marker alone does not satisfy it; only the lifecycle merge still recognizes marker-owned groups, to migrate them) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
 | 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
 | 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |

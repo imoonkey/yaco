@@ -26,6 +26,7 @@ import {
 import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
 import { recordOriginIfResolved } from "../../lib/core/agent/origin.ts";
 import { deleteState, readState, writeState, listStateHandles, resolveRenamedHandle } from "../../lib/core/agent/session-state.ts";
+import { sleepSync } from "../../lib/core/sleep.ts";
 
 const READY_TIMEOUT_MS = 30000;
 const POLL_MS = 500;
@@ -129,7 +130,7 @@ export function handleStartupInterstitial(
 
     handled.add(key);
     interstitial.keys.forEach((key, i) => {
-      if (i > 0 && interstitial.settleMs) Bun.sleepSync(interstitial.settleMs);
+      if (i > 0 && interstitial.settleMs) sleepSync(interstitial.settleMs);
       sendRawKeys(handle, key);
     });
     return "handled";
@@ -164,7 +165,7 @@ function waitForReady(
       if (outcome === "blocked") return false;
       if (outcome === "handled") {
         idleSince = null;
-        Bun.sleepSync(POLL_MS);
+        sleepSync(POLL_MS);
         continue;
       }
       // Screen fallback only if hook hasn't yet promoted past "starting".
@@ -177,7 +178,7 @@ function waitForReady(
     } catch {
       idleSince = null;
     }
-    Bun.sleepSync(POLL_MS);
+    sleepSync(POLL_MS);
   }
   return false;
 }
@@ -200,7 +201,7 @@ function waitForSessionId(
     // Try provider storage correlation (adapter-owned scan/DB lookup)
     const resolved = prov.sessionId.resolve({ pid, sessionCreatedMs, sessionPath });
     if (resolved) return resolved.sessionId;
-    Bun.sleepSync(SID_POLL_MS);
+    sleepSync(SID_POLL_MS);
   }
   return pending;
 }
@@ -395,7 +396,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   while (Date.now() < pidDeadline) {
     pid = getAgentPid(resolvedName, prov.executable);
     if (pid !== null) break;
-    Bun.sleepSync(200);
+    sleepSync(200);
   }
   if (pid !== null) {
     syncStateAfterStart(resolvedName, pid, false, resumeId ?? "");

@@ -8,6 +8,7 @@ import { execSync } from "child_process";
 import { isResolvedSessionId, recordOriginIfResolved } from "./origin.ts";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
+import { sleepSync } from "../sleep.ts";
 import { clampNotice, PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
 import {
   claudeOutput,
@@ -265,7 +266,7 @@ export async function runHookEventForHandle(
   let stopBaseline: string | null = null;
   if (isStop) {
     stopBaseline = JSON.stringify(state);
-    Bun.sleepSync(STOP_DEBOUNCE_MS);
+    sleepSync(STOP_DEBOUNCE_MS);
     const refreshed = readState(handle);
     if (!refreshed) return;
     if (JSON.stringify(refreshed) !== stopBaseline) {

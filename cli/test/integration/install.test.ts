@@ -152,6 +152,118 @@ describe("tools/install.sh — public fresh clone with no plan/", () => {
   }, 120_000);
 });
 
+describe("tools/install.sh — dependency bootstrap from a never-installed clone", () => {
+  /** `git clone && tools/install.sh`, byte for byte: the whole tree, including
+   *  the root workspace manifest and npm lockfile, and no `node_modules`
+   *  anywhere. That root manifest is exactly what makes this different from the
+   *  published-subset case above — a dependency install run inside `cli/`
+   *  discovers the monorepo workspace through it. A trimmed archive cannot
+   *  stand in: with the other workspace members absent, the root stops being a
+   *  workspace and the discovery never happens. */
+  function fullClone(): string {
+    const clone = join(sandbox, "clone");
+    mkdirSync(clone, { recursive: true });
+    const exported = spawnSync(
+      "bash",
+      ["-c", `git -C "${REPO_ROOT}" archive HEAD | tar -x -C "${clone}"`],
+      { encoding: "utf-8" },
+    );
+    expect(exported.status).toBe(0);
+    expect(existsSync(join(clone, "package-lock.json"))).toBe(true);
+    expect(existsSync(join(clone, "node_modules"))).toBe(false);
+    expect(existsSync(join(clone, "cli", "node_modules"))).toBe(false);
+    return clone;
+  }
+
+  function bootstrap(clone: string): { status: number | null; stdout: string; stderr: string } {
+    const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only", "--skip-doctor"], {
+      env: { ...withShimmedEnv(), YACO_REPO_ROOT: clone },
+      encoding: "utf-8",
+      timeout: 90_000,
+    });
+    return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  }
+
+  it("installs what the build needs, then builds", () => {
+    const clone = fullClone();
+    const r = bootstrap(clone);
+    if (r.status !== 0) console.error("install.sh stdout:\n", r.stdout, "\nstderr:\n", r.stderr);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("installing cli dependencies");
+    // The two ways this has actually broken: the build cannot resolve the
+    // dependency, or the install that was supposed to supply it walked up to
+    // the monorepo workspace and died migrating the npm lockfile.
+    expect(r.stderr).not.toContain("Could not resolve");
+    expect(r.stderr).not.toContain("lockfile is frozen");
+    expect(existsSync(join(sandbox, "bin", "yaco"))).toBe(true);
+  }, 120_000);
+
+  it("re-runs without reinstalling, and repairs either shape of interrupted install", () => {
+    const clone = fullClone();
+    expect(bootstrap(clone).status).toBe(0);
+
+    // Already installed: nothing to fetch.
+    const again = bootstrap(clone);
+    expect(again.status).toBe(0);
+    expect(again.stdout).not.toContain("installing cli dependencies");
+
+    // Two residues an interrupted install leaves, and every readiness signal
+    // short of asking the bundler has mistaken one of them for a finished
+    // install: an empty node_modules, and a package present but incomplete —
+    // its manifest written, its entry point never extracted.
+    const deps = join(clone, "cli", "node_modules");
+    const damage = [
+      () => {
+        rmSync(deps, { recursive: true, force: true });
+        mkdirSync(deps, { recursive: true });
+      },
+      () => {
+        const manifest = readFileSync(join(deps, "smol-toml", "package.json"), "utf-8");
+        rmSync(join(deps, "smol-toml"), { recursive: true, force: true });
+        mkdirSync(join(deps, "smol-toml"), { recursive: true });
+        writeFileSync(join(deps, "smol-toml", "package.json"), manifest);
+      },
+    ];
+    for (const breakIt of damage) {
+      breakIt();
+      const repaired = bootstrap(clone);
+      if (repaired.status !== 0) console.error("install.sh stderr:\n", repaired.stderr);
+      expect(repaired.status).toBe(0);
+      expect(repaired.stdout).toContain("installing cli dependencies");
+      expect(repaired.stderr).not.toContain("Could not resolve");
+    }
+  }, 180_000);
+
+  it("reports the build failure that asked for the install, not the install's own", () => {
+    // The probe cannot say *why* the bundle failed, so a source error selects
+    // the install branch too. On a machine that cannot reach a registry the
+    // install then fails, and its error is a red herring — the cause has to
+    // survive.
+    const clone = fullClone();
+    expect(bootstrap(clone).status).toBe(0);
+    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", { flag: "a" });
+    rmSync(join(clone, "cli", "node_modules"), { recursive: true, force: true });
+
+    const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only", "--skip-doctor"], {
+      env: {
+        ...withShimmedEnv(),
+        YACO_REPO_ROOT: clone,
+        // No reachable registry and no warm cache, so the remedial install
+        // cannot quietly succeed.
+        BUN_CONFIG_REGISTRY: "http://127.0.0.1:9/",
+        BUN_INSTALL_CACHE_DIR: join(sandbox, "empty-bun-cache"),
+      },
+      encoding: "utf-8",
+      timeout: 90_000,
+    });
+
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("could not install the cli dependencies");
+    expect(r.stderr).toContain("Expected");
+    expect(r.stderr).toContain("cli/src/main.ts");
+  }, 120_000);
+});
+
 // One-shot afterAll guard against any stray sandbox.
 afterAll(() => {
   if (sandbox && existsSync(sandbox)) {

@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-08-11: the CLI's production code drops every non-SQLite Bun API
+
+**What changed:**
+- `Bun.sleepSync` → `cli/src/lib/core/sleep.ts` (`Atomics.wait` on a lock nobody notifies), `Bun.TOML.parse` → `smol-toml`, and `Bun.spawn`/`Bun.spawnSync` → `node:child_process` in the codex app-server quota probe. `cli/src/` now contains no `Bun.*` reference.
+- This is the plateau, not the finish: `bun:sqlite` still backs session-id correlation, provider history, and project-move (Bun cannot load `node:sqlite`, so that hop is `cli-sqlite-hop`), `main.ts` keeps its bun shebang until the Node launcher exists, and the tests still run on `bun:test` until `cli-vitest-cohorts`.
+- New `cli/src/package-root.ts` owns the single package-relative expression and the "is this process the yaco executable" test. The agent wrapper and `doctor`'s manifest resolve through it; `hook-event-bin.ts`, two unreferenced path helpers, and legacy `hook-event-bin.ts` recognition in both hook-ownership matchers are deleted.
+- `tools/install.sh` installs the CLI's dependencies from an isolated copy of `cli/package.json` + `cli/bun.lock` when a trial bundle cannot resolve them, and `cli/bun.lock` lists them.
+
+**Why:**
+- Two self-invocation rungs keyed on `process.argv[0]` ending in `/yaco` could never fire: in a compiled artifact `argv[0]` is the bare string `"bun"`. An installed binary that was neither on `$PATH` nor named by `$YACO_BIN_DIR` therefore wrote the literal `"yaco"` into provider hook configs and every hook fire failed silently. `process.execPath` is the live signal, gated on the package root being unreadable — which is the same fact the asset lookups already depend on, so the two cannot disagree.
+- Node reports a missing binary and a broken input pipe asynchronously where Bun raised them in place; unobserved, either is an uncaught exception that replaces a diagnosable quota failure with a crash (measured on Node 24). Teardown waits on the child's `exit`, not its `close`: an orphaned grandchild holds the stdio pipes, and `close` waits for those too — the command hung instead of reporting.
+- The first runtime dependency broke the README's first-run command, because `bun build` resolves from `node_modules` and a clone that has never been installed has none. Caught by the fresh-clone integration test, not by review — and then twice more by review: installing inside `cli/` makes Bun discover the monorepo workspace and die migrating the npm lockfile, and every readiness check short of asking the bundler mistook a partial install (an empty `node_modules`, a package whose manifest arrived without its entry point) for a finished one.
+- The wrapper's checkout fallback chain is deliberately kept: a compiled artifact's package root is Bun's virtual filesystem, so the corrected resolver only becomes correct for the artifact once `dist/yaco.mjs` exists. Deleting the chain now would break the installed binary.
+
+**Key files:** `cli/src/{package-root,main}.ts`, `cli/src/lib/core/sleep.ts`, `cli/src/lib/core/agent/{lifecycle,tmux,hook-event}.ts`, `cli/src/lib/core/agent/providers/{usage,hooks}.ts`, `cli/src/commands/{doctor,agent/start}.ts`, `tools/install.sh`, `cli/bun.lock`, `package-lock.json`
+**Verification:** `scripts/verify.sh` all steps passed; `npx tsc --noEmit -p .` clean in `cli/`; `bun run test` 1187 pass / 0 fail with `cli/test/golden/matrix.json` recaptured byte for byte; the integration suite green including a real `tools/install.sh` bootstrap of a dependency-free `git archive` clone; cross-provider review (Codex) and QA in `plan/all/cli-node-sdk/`.
+**Commit:** 28552acf..HEAD
+**Next:** `cli-vitest-cohorts` — port the tests off `bun:test` in green cohorts.
+**Blockers:** None
+
 ## 2026-08-10: WhatsApp loads lazily — 626 MB of Chromium leaves the default install
 
 **What changed:**

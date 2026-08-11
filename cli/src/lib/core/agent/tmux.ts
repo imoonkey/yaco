@@ -4,6 +4,8 @@ import { resolve } from "path";
 import { listProviders } from "./providers/index.ts";
 import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
+import { sleepSync } from "../sleep.ts";
+import { selfExecutablePath } from "../../../package-root.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
 const INPUT_EMPTY_POLL_MS = 500;
@@ -84,8 +86,8 @@ function selfInvocation(): { command: string; args: string[] } {
     if (existsSync(candidate)) return { command: candidate, args: [] };
   }
 
-  const arg0 = process.argv[0];
-  if (arg0?.endsWith("/yaco")) return { command: arg0, args: [] };
+  const self = selfExecutablePath();
+  if (self) return { command: self, args: [] };
 
   const script = process.argv[1];
   if (script?.endsWith("src/main.ts") || script?.endsWith("/main.ts")) {
@@ -439,7 +441,7 @@ export function waitForInputEmptyThenSend(
       sendKeys(handle, text);
       return "sent";
     }
-    Bun.sleepSync(INPUT_EMPTY_POLL_MS);
+    sleepSync(INPUT_EMPTY_POLL_MS);
   }
   return "timeout";
 }

@@ -7,8 +7,12 @@
  *
  *  Not covered here: the 20s read timeout and its SIGTERM→SIGKILL escalation.
  *  Reproducing it costs 22s of wall clock, too slow for the unit suite; it is
- *  exercised by hand against a TERM-ignoring child (verified: the command exits
- *  in ~22s leaving no child process and no zombie).
+ *  exercised by hand against a TERM-ignoring child (verified under Bun 1.3.13
+ *  after the child_process port: the command exits in ~22s leaving no child
+ *  process and no zombie). That path is also the only one where teardown
+ *  awaiting the child's `close` rather than its `exit` is observable — an
+ *  orphaned grandchild holds the stdio pipes open, and Bun reports neither the
+ *  held pipe nor the resulting stall, so a cheap fixture cannot see it either.
  */
 import { describe, it, expect, afterAll } from "bun:test";
 import { spawnSync } from "node:child_process";

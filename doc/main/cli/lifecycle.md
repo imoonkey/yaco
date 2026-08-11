@@ -138,7 +138,7 @@ sequenceDiagram
     participant M as yaco agent start
     participant T as tmux
     participant A as Claude
-    participant H as hook-event-bin.ts
+    participant H as yaco agent hook-event
     participant S as state file
 
     U->>M: start("claude", args)
@@ -246,7 +246,7 @@ is YACO's own; on **any** uncertainty it returns `false` (block). It enumerates
 
 - global + project `hooks.json` (`~/.codex/hooks.json`,
   `<sessionPath>/.codex/hooks.json`, JSON), and inline `[hooks]` tables in global
-  + project `config.toml` (parsed with `Bun.TOML.parse` — a malformed file throws
+  + project `config.toml` (parsed with `smol-toml` — a malformed file throws
   → block).
 
 Across every source it requires, in order:

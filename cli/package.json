@@ -36,5 +36,8 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "smol-toml": "^1.7.1"
   }
 }

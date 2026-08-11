@@ -39,7 +39,7 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
 }
 
 /** Spawn a detached child that overwrites the state file mid-debounce.
- *  Bun.sleepSync blocks the main thread but not other processes, which is
+ *  The debounce's sleepSync blocks this thread but not other processes, which is
  *  exactly the race the debounce defends against (two provider hooks
  *  running concurrently as separate processes). */
 function scheduleRivalWrite(handle: string, afterMs: number, newState: SessionState): void {

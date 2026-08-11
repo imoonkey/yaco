@@ -29,7 +29,8 @@ test:integration` does this automatically.
 - `--json` success writes exactly one `{ok:true,data:...}` line to stdout.
 - `--json` failure writes exactly one `{ok:false,error:...}` line to stderr.
 - Text mode (no `--json`) is the default readable surface: ordinary result-bearing commands branch once through `dual` (`src/lib/core/render.ts`) and return a `{text}` envelope; `{help}` is usage-only. `render()` writes both verbatim and treats any other bare object in text mode as an `INTERNAL` error. Streaming/process-owning commands (`agent output-follow`, `align poll`, `doctor`) are the explicit exceptions — they own stdout directly. See [../doc/main/cli/command-surface.md](../doc/main/cli/command-surface.md).
-- No npm dependencies beyond Bun built-ins and tmux-facing process calls.
+- One runtime dependency, `smol-toml`. Adding a second is a distribution decision — every dependency has to survive `npm install -g` and the `tools/install.sh` bootstrap ([install.md](../doc/main/cli/install.md#bootstrap-dependencies)); a native one would forfeit the CLI's zero-native-dependency property.
+- Prefer Node built-ins (`node:child_process`, `node:fs`, `node:stream`) over Bun globals. Production code is free of `Bun.*` today; `bun:sqlite` (`agent/session-id.ts`, `agent/providers/{history,project-move}.ts`) and `main.ts`'s bun shebang are the deliberate remainder, retired by `cli-sqlite-hop` and the Node package task.
 - Shell boundary stays narrow: `cli/scripts/agent-wrapper.sh` is the durable shell artifact; new behavior should be TypeScript unless a specific task proves otherwise.
 
 ## Rules
