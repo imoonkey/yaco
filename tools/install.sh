@@ -36,24 +36,14 @@ echo "  bin dir:   $BIN_DIR"
 # isolated copy of the CLI's own manifest is the one thing that behaves
 # identically in both, so install there and copy the result in.
 #
-# Readiness is the dependency actually being resolvable, not a node_modules
-# directory existing — an interrupted install leaves an empty one behind, and
-# treating that as installed puts the unresolvable-import failure back.
-cli_dependencies_missing() {
-  local dep
-  while IFS= read -r dep; do
-    [ -n "$dep" ] || continue
-    if [ ! -f "$REPO_ROOT/node_modules/$dep/package.json" ] \
-      && [ ! -f "$REPO_ROOT/cli/node_modules/$dep/package.json" ]; then
-      return 0
-    fi
-    # Trailing newline deliberately: `read` drops a final unterminated line, so
-    # a single-dependency manifest would otherwise report nothing missing.
-  done < <(cd "$REPO_ROOT/cli" && bun -e 'for (const d of Object.keys(require("./package.json").dependencies ?? {})) console.log(d)')
-  return 1
-}
-
-if cli_dependencies_missing; then
+# Readiness is decided by the bundler, not by inspecting node_modules. It is the
+# same resolution the compile below performs, over the whole import graph, so it
+# is the only signal that cannot mistake a partially installed or damaged
+# package — or a missing transitive dependency — for a usable one. Every cheaper
+# check tried here (a directory existing, then a dependency's own manifest
+# existing) did exactly that. A non-dependency build error trips it too; the
+# install that follows is harmless and the compile then reports the real failure.
+if ! (cd "$REPO_ROOT" && bun build --target=bun cli/src/main.ts) >/dev/null 2>&1; then
   echo "  installing cli dependencies ..."
   stage="$(mktemp -d)"
   trap 'rm -rf "$stage"' EXIT

@@ -198,7 +198,7 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(existsSync(join(sandbox, "bin", "yaco"))).toBe(true);
   }, 120_000);
 
-  it("re-runs without reinstalling, and repairs an interrupted install", () => {
+  it("re-runs without reinstalling, and repairs either shape of interrupted install", () => {
     const clone = fullClone();
     expect(bootstrap(clone).status).toBe(0);
 
@@ -207,15 +207,31 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(again.status).toBe(0);
     expect(again.stdout).not.toContain("installing cli dependencies");
 
-    // An empty node_modules is what an interrupted install leaves behind.
-    // Readiness is the dependency resolving, not the directory existing.
-    rmSync(join(clone, "cli", "node_modules"), { recursive: true, force: true });
-    mkdirSync(join(clone, "cli", "node_modules"), { recursive: true });
-    const repaired = bootstrap(clone);
-    if (repaired.status !== 0) console.error("install.sh stderr:\n", repaired.stderr);
-    expect(repaired.status).toBe(0);
-    expect(repaired.stdout).toContain("installing cli dependencies");
-    expect(repaired.stderr).not.toContain("Could not resolve");
+    // Two residues an interrupted install leaves, and every readiness signal
+    // short of asking the bundler has mistaken one of them for a finished
+    // install: an empty node_modules, and a package present but incomplete —
+    // its manifest written, its entry point never extracted.
+    const deps = join(clone, "cli", "node_modules");
+    const damage = [
+      () => {
+        rmSync(deps, { recursive: true, force: true });
+        mkdirSync(deps, { recursive: true });
+      },
+      () => {
+        const manifest = readFileSync(join(deps, "smol-toml", "package.json"), "utf-8");
+        rmSync(join(deps, "smol-toml"), { recursive: true, force: true });
+        mkdirSync(join(deps, "smol-toml"), { recursive: true });
+        writeFileSync(join(deps, "smol-toml", "package.json"), manifest);
+      },
+    ];
+    for (const breakIt of damage) {
+      breakIt();
+      const repaired = bootstrap(clone);
+      if (repaired.status !== 0) console.error("install.sh stderr:\n", repaired.stderr);
+      expect(repaired.status).toBe(0);
+      expect(repaired.stdout).toContain("installing cli dependencies");
+      expect(repaired.stderr).not.toContain("Could not resolve");
+    }
   }, 180_000);
 });
 
