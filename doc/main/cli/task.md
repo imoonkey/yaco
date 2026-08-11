@@ -65,6 +65,15 @@ Three properties of the read are contract, not implementation detail:
   those envelopes from the pre-cutover build, and
   `test/integration/task/read-parity.integration.ts` holds both routes to them.
 
+**One limit, measured.** The read's worst event-loop stall is bounded by the
+largest single `tasks.json` it must parse, because one file is one `JSON.parse`
+that nothing divides. For the directory store `yaco task set` writes, that is a
+bundle file and the stall is a few milliseconds. A `yaco.toml` may instead point
+`[paths].tasks` at one `.json` file, and at multiple megabytes that parse
+(28-65 ms for 7.5 MB) is comparable to what the subprocess route cost — the
+one case where the cutover does not improve on it.
+-> See: `plan/all/cli-node-sdk/qa-task-read-cutover.md` §2.
+
 Only reads moved. Every mutation still spawns `yaco task …`: the lock, the
 repository gate and the write are one authority, and half of it inside the app
 process is how two writers end up disagreeing about who owns the file. That is

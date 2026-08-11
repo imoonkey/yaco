@@ -30,11 +30,14 @@ import { buildChildProcessEnv } from '../../lib/ssh-auth'
  *  Four fixtures, because a task graph is input-controlled in two dimensions.
  *  Size: this repository's graph, and ten times it. Topology: the directory
  *  store the CLI writes by default, and the single `.json` file a `yaco.toml`
- *  may point at — one file means one `JSON.parse` of the whole graph, which no
- *  amount of chunking divides, so it is the case worth pinning. When the
- *  repository's own `plan/tasks` is present it is the source of all four (a
- *  worktree checkout does not carry it — `plan/` is a separate repository — so
- *  a generated tree of the same scale stands in, and the run says which).
+ *  may point at. Three of the four meet the design's condition by 3-7x. The
+ *  fourth — a multi-megabyte single file — does not, and has its own test
+ *  below saying so rather than a relaxed version of this one.
+ *
+ *  When the repository's own `plan/tasks` is present it is the source of all
+ *  four (a worktree checkout does not carry it — `plan/` is a separate
+ *  repository — so a generated tree of the same scale stands in, and the run
+ *  says which).
  */
 
 const CLI_BIN = fileURLToPath(new URL('../../../../../cli/bin/yaco.mjs', import.meta.url))
@@ -189,6 +192,26 @@ async function measure(route: () => Promise<void>, rounds: number): Promise<Meas
 let bodies: string[]
 let source: 'repository' | 'synthetic'
 
+/** Seed one fixture, measure both routes over it, and print the row that the
+ *  QA artifact's tables are made of. */
+async function compareRoutes(
+  topology: Topology,
+  factor: number,
+  rounds: number,
+  label: string,
+): Promise<{ subprocess: Measured; inProcess: Measured; tasks: number }> {
+  const { root, tasks, files } = seedProject(bodies, factor, topology)
+  const subprocess = await measure(() => subprocessRoute(root), rounds)
+  const inProcess = await measure(() => inProcessRoute(root), rounds)
+  // eslint-disable-next-line no-console
+  console.log(
+    `[read-cutover] ${label} — ${files} file(s), ${tasks} tasks (${source} source)\n` +
+      `  before  subprocess  starvation p95=${subprocess.starvationP95.toFixed(2)}ms  median wall=${subprocess.medianWall.toFixed(1)}ms\n` +
+      `  after   in process  starvation p95=${inProcess.starvationP95.toFixed(2)}ms  median wall=${inProcess.medianWall.toFixed(1)}ms`,
+  )
+  return { subprocess, inProcess, tasks }
+}
+
 beforeAll(() => {
   ({ bodies, source } = sourceFiles())
 })
@@ -198,43 +221,48 @@ afterAll(() => {
 })
 
 describe.skipIf(!cliBuilt)('GET /:project — in process vs the complete subprocess route', () => {
-  for (const [topology, factor, rounds, starvationFactor] of [
-    ['directory', 1, 10, 1],
-    ['directory', 10, 4, 1],
-    ['single file', 1, 10, 1],
-    // A multi-megabyte single file is the one topology where the two routes
-    // are at parity rather than the read winning: both are dominated by one
-    // `JSON.parse` of the same graph, and the subprocess parent parses the
-    // *compact* envelope while the reader parses the pretty-printed file. So
-    // the bound here is 2x, and it exists to catch a return to a blocking
-    // read — which costs 3x or more — not to claim a win that is not there.
-    ['single file', 10, 4, 2],
+  for (const [topology, factor, rounds] of [
+    ['directory', 1, 10],
+    ['directory', 10, 4],
+    ['single file', 1, 10],
   ] as const) {
     const label = `a ${factor === 1 ? 'repository-sized' : 'ten-times'} ${topology} store`
     it(`starves a queued callback no longer than the subprocess route on ${label}`, async () => {
-      const { root, tasks, files } = seedProject(bodies, factor, topology)
-      const subprocess = await measure(() => subprocessRoute(root), rounds)
-      const inProcess = await measure(() => inProcessRoute(root), rounds)
+      const { subprocess, inProcess, tasks } = await compareRoutes(topology, factor, rounds, label)
 
-      // Recorded: this is the harness behind the QA artifact's numbers.
-      // eslint-disable-next-line no-console
-      console.log(
-        `[read-cutover] ${label} — ${files} file(s), ${tasks} tasks (${source} source)\n` +
-          `  before  subprocess  starvation p95=${subprocess.starvationP95.toFixed(2)}ms  median wall=${subprocess.medianWall.toFixed(1)}ms\n` +
-          `  after   in process  starvation p95=${inProcess.starvationP95.toFixed(2)}ms  median wall=${inProcess.medianWall.toFixed(1)}ms`,
-      )
-
-      // The design's gate.
-      expect(inProcess.starvationP95).toBeLessThanOrEqual(
-        subprocess.starvationP95 * starvationFactor,
-      )
-      // And the reason the cutover exists. True on every topology.
+      // The design's condition, unqualified.
+      expect(inProcess.starvationP95).toBeLessThanOrEqual(subprocess.starvationP95)
       expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
       // Anti-vacuity: a route that did nothing would win both.
       expect(tasks).toBeGreaterThan(100)
       expect(subprocess.starvationP95).toBeGreaterThan(0)
     })
   }
+
+  /** The one topology where the design's condition is NOT met.
+   *
+   *  A single multi-megabyte `tasks.json` is one `JSON.parse` of the whole
+   *  graph — 28-65 ms for 7.5 MB — and no chunking divides it. The subprocess
+   *  route's parent parses the same graph too, but from the CLI's *compact*
+   *  envelope rather than the pretty-printed file, so it is doing strictly less
+   *  work: repeated runs land within noise of each other and either can win.
+   *
+   *  This is deliberately not asserted as the design's gate. Calling a relaxed
+   *  bound "no longer than" would let a real regression through under a name
+   *  that says it cannot. What is asserted is what is true and still worth
+   *  gating: the route is faster, and the stall is bounded well below what a
+   *  return to a blocking read would cost. The unmet condition is recorded in
+   *  `plan/all/cli-node-sdk/qa-task-read-cutover.md` and is a design decision,
+   *  not a test-tuning one. */
+  it('does not beat the subprocess route on a ten-times single-file store, and says so', async () => {
+    const label = 'a ten-times single file store'
+    const { subprocess, inProcess } = await compareRoutes('single file', 10, 4, label)
+
+    // Not `<= subprocess.starvationP95`: see above. A blocking read costs 3x or
+    // more, which this catches; parity, which is what it measures, it allows.
+    expect(inProcess.starvationP95).toBeLessThanOrEqual(subprocess.starvationP95 * 2)
+    expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
+  })
 })
 
 describe.skipIf(cliBuilt)('starvation gate', () => {
