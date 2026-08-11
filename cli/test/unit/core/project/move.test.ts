@@ -627,37 +627,48 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
    *  It also pins the transaction statements themselves. `bun:sqlite` ran them
    *  through `db.run`, which `node:sqlite` does not have at all, so a missed
    *  call site is a `TypeError` raised from inside the write path — where it is
-   *  furthest from any test that only ever reads. */
+   *  furthest from any test that only ever reads.
+   *
+   *  Both rows carry the *same* `cwd`, so the planner buckets them together and
+   *  they share one transaction. And the trigger refuses the **second** update
+   *  whichever row that is, rather than naming a row: the planner's SELECT has
+   *  no `ORDER BY`, so a trigger keyed on an id proves atomicity only for the
+   *  scan order SQLite happens to pick, and passes a transaction-free
+   *  implementation under the other one. */
   it("commits a bucket whole or not at all", () => {
     const fix = tmpFixture();
     process.env["YACO_HOME"] = fix.yacoHome;
-    const first = join(fix.oldPath, "first");
-    const second = join(fix.oldPath, "second");
     const dbPath = stageCodexState5(fix, [
-      { id: "t1", cwd: first },
-      { id: "t2", cwd: second },
+      { id: "t1", cwd: fix.oldPath },
+      { id: "t2", cwd: fix.oldPath },
     ]);
 
-    // Both rows share one (oldCwd → newCwd) bucket, so they share one
-    // transaction; the second update is the one that refuses.
     const db = new DatabaseSync(dbPath);
-    db.exec(
-      `CREATE TRIGGER refuse_t2 BEFORE UPDATE OF cwd ON threads
-         WHEN NEW.id = 't2' BEGIN SELECT RAISE(ABORT, 'refused'); END`,
-    );
+    db.exec(`
+      CREATE TABLE updates (n INTEGER NOT NULL);
+      INSERT INTO updates (n) VALUES (0);
+      CREATE TRIGGER refuse_the_second BEFORE UPDATE OF cwd ON threads BEGIN
+        UPDATE updates SET n = n + 1;
+        SELECT CASE WHEN (SELECT n FROM updates) > 1
+          THEN RAISE(ABORT, 'refused') END;
+      END`);
     db.close();
 
     const plan = planMove({
-      oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
       providerHomeOverrides: homes(fix),
     });
-    expect(codexThreadItems(plan).flatMap((i) => i.ids).sort()).toEqual(["t1", "t2"]);
+    const buckets = codexThreadItems(plan);
+    expect(buckets).toHaveLength(1);
+    expect([...buckets[0]!.ids].sort()).toEqual(["t1", "t2"]);
 
     expect(() => applyPlan(plan)).toThrow(/refused/);
 
+    // One update did land before the refusal, so "unchanged" is only reachable
+    // by rolling back — not by never having written.
     const after = readThreadsCwd(dbPath);
-    expect(after.get("t1")!.cwd).toBe(first);
-    expect(after.get("t2")!.cwd).toBe(second);
+    expect(after.get("t1")!.cwd).toBe(fix.oldPath);
+    expect(after.get("t2")!.cwd).toBe(fix.oldPath);
   });
 });
 
