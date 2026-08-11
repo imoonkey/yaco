@@ -2,7 +2,7 @@
 
 > What `@yaco/cli` may publish for in-process use, and the audit that decides it.
 
-Last updated: 2026-08-11 · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts` · Parent: [README.md](README.md)
+Last updated: 2026-08-11 · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/history-stall.ts` · Parent: [README.md](README.md)
 
 `app/server` imports four of the six exported subpaths in process today —
 `core/paths`, `core/task`, `core/agent`, `core/worktree`. (`core/result` and
@@ -108,6 +108,42 @@ Until then it is pinned in `RULE_5_DEBT` as the **exact finding multiset**, not
 by file: waiving the file would hide every further traversal added to it. A
 second one fails, and when the cutover lands the audit fails until the list is
 emptied.
+
+## The one query rule 5 has judged
+
+Rule 5 admits a `node:sqlite` query only against a measured stall bound, because
+`node:sqlite` is synchronous. The history read (`yaco agent history`) was put to
+that test and **failed it, so it stays a subprocess** — `app/server` keeps
+spawning the CLI for the History tab and no history module is exported.
+
+`cli/test/bench/history-stall.ts` is the harness. It serves real HTTP requests
+from the benchmarking process and reports the latency of the requests that
+overlapped each route, so the number is the design's question — how long an
+unrelated request waits — not how fast the read is. Run it against a real
+provider home or against the synthetic fixtures in `history-fixture.ts`:
+
+```bash
+node cli/test/bench/history-stall.ts --home ~ --project /abs/repo   # real
+node cli/test/bench/history-stall.ts --scale 10                     # 10x synthetic
+```
+
+The baseline is the *complete* route: the app pays a synchronous
+`spawnSync("ssh-add","-l")` inside `buildChildProcessEnv()` before every spawn,
+so the harness pays it too.
+
+| Route | p95 of a concurrent request, real provider home |
+|---|---:|
+| subprocess (today) | 2.3 ms |
+| the read called in process | 203.9 ms |
+| a bounded, chunked prototype of it | 6.6 ms |
+
+The database was never the problem — the `threads` query costs 4–9 ms on a
+11.6 MB `state_5.sqlite`. The cost is the per-row provider work it feeds: a
+64 KB rollout tail per Codex row, a 16 KB head plus 64 KB tail per Claude log,
+22 MB of parsing per request. `history-bounded-prototype.ts` is kept alongside
+the harness because it is the evidence that no simpler in-process form wins: it
+caps every scan at the window and yields between chunks, and is still 3–4× over
+the bound.
 
 ## Invariants
 
