@@ -57,8 +57,10 @@ need `--force` to take it back.
 
 Doctor follows: `registry` and `task-graph` **skip** rather than fail when there
 is nothing to check, which is what keeps a package user's first command at
-exit 0 (install throws on *any* failing doctor check). -> See:
-[doctor.md](doctor.md#required-checks-stable-contract)
+exit 0 (install throws on *any* failing doctor check). `providers` skips on the
+same rule for a state that is a machine's rather than a repo's — no agent CLI
+installed yet, which install cannot fix and a user is allowed to be in. -> See:
+[doctor.md](doctor.md#providers-skip--the-machine-with-no-agent-cli-yet)
 
 ## Global links are additive
 

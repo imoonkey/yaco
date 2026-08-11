@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-08-11: an absent agent CLI no longer throws `yaco install`
+
+**What changed:**
+- `yaco doctor`'s `providers` check returns **skip** instead of fail when neither `claude` nor `codex` resolves on `$PATH`, with a detail that names each missing provider and the remedy: `no provider executable on $PATH (claude, codex) — install one before starting agents`. Since a skip counts in neither summary bucket, `summary.fail` stays 0, doctor exits 0, and `yaco install` — which throws when any check fails — completes. The pass path is untouched: one provider present still passes, still names the other as missing, and the whole doctor report on a machine that has both is byte-identical before and after.
+- The decision this task owned was skip vs. warn vs. a fail install tolerates, and the reasoning is the codebase's existing line rather than a new one. YACO ships no agent, so a machine with none installed is a legitimate zero state and the remedy is outside everything install owns — the same shape as `registry` and `task-graph`, and the opposite of `skills-link`, which stays fail-closed because a missing packaged asset *is* this package's doing. A `warn` status would add a fourth value to a published contract (`CheckStatus`, the `{pass, fail}`-only summary, the `--json` envelope) to express what `skip` plus a detail already expresses. A fail that install exempts would put a per-check allowlist inside `install.ts` and still exit 1 from `yaco doctor` on a machine in a state the product allows — the shape `install-without-checkout`'s review declined, fixing the check instead.
+- The golden matrix was recaptured for the one record that moved. `INTENTIONAL_DELTAS` now names `providers` alongside `registry` and `skills-link`, and `ASSERTED_TRANSFORMATIONS` pins its before → after (`fail` → `skip`, the detail, and the summary going from 8 fails to 7) rather than waiving it. The other eight check records in that case go on being compared.
+- `cli/test/integration/pack.test.ts` gains the flow as a whole: the real `npm pack` tarball, installed into a temp prefix, then `yaco install` under a `$PATH` built up from a `node` symlink, a `which` symlink and `tmux`/`git` shims. It is built up rather than subtracted from because on this machine both `~/.local/bin` and the Node distribution's own `bin` carry a provider — the obvious `dirname(process.execPath)` would have quietly supplied `codex`. The test asserts that premise before anything else, and it fails when the source change is reverted.
+
+**Why:**
+- `npm i -g @yaco/cli` then `yaco install` is the documented first pair of commands, and nothing says an agent CLI has to come first. It threw for anyone who did them in that order. This is the second half of the defect whose first half (`install-without-checkout`, absent task-graph store = skip) landed earlier; that task correctly left this one alone, because its rule was scoped to repo-scoped checks and `providers` is not one.
+- Silently dropping the check would have satisfied the exit code and defeated the point. A stranger with no agent CLI should still be told that is why nothing works — just not by an exception. So the condition keeps a line in text mode, a record in `--json`, a line in install's own doctor output, and a paragraph in the README's prerequisites.
+
+**Key files:** `cli/src/commands/doctor.ts`, `cli/test/unit/commands/doctor.test.ts`, `cli/test/integration/pack.test.ts`, `cli/test/golden/{matrix.json,ordering-delta.test.ts}`, `doc/main/cli/{doctor,install}.md`, `README.md`, `cli/CLAUDE.md`
+**Verification:** `cli` typecheck, build, 1346 unit tests and the 13-case pack smoke all pass; `app/ui` lint and the root build pass. The `app/server` step of `scripts/verify.sh` fails in this worktree for an unrelated reason — `node_modules` is symlinked to the main checkout, whose `@yaco/cli` lacks two exports this branch's `app/server` imports — and reproduces identically (10 files, 26 tests) with this diff stashed; standing task `worktree-provision-wrong-cli`. Separately, a 34-assertion hermetic QA harness drove the real tarball end to end: install exits 0 with no provider on `$PATH`, the skip is visible in text and JSON, a provider appearing flips it back to pass, and deleting the wrapper or the skill links still fails doctor and install — the change did not make the closing doctor a rubber stamp. See `plan/all/cli-node-sdk/{qa,review_codex}-doctor-providers-stranger.md`.
+**Commit:** `c530bbeb`
+**Next:** none for this defect; `install.ts` needed no change and was left untouched.
+**Blockers:** None.
+
 ## 2026-08-11: the read/lifecycle split has one document
 
 **What changed:**
