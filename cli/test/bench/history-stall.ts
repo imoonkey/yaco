@@ -22,11 +22,15 @@
  *
  *  Routes:
  *    spawn-noop        a child that prints an empty envelope — the spawn alone
- *    subprocess        the route today — spawn `yaco agent history --json`
- *    in-process        the shipped reader called directly
- *    bounded/N         the best in-process form, chunked N at a time
- *    bounded-child/N   the same bounded reader, spawned — the control that
- *                      separates "bounded scan" from "in process"
+ *    subprocess        the retired route — spawn `yaco agent history --json`
+ *    in-process        the shipped reader called directly — the cutover
+ *    retired           the reader this cutover replaced, verbatim — the control,
+ *                      and the reason any figure below means something
+ *    uncapped          the shipped reader with only its per-provider cap
+ *                      removed, isolating what the cap alone is worth
+ *    in-process-child  the shipped reader spawned — separates "bounded scan"
+ *                      from "runs in the server", so a win can be attributed to
+ *                      whichever change produced it
  *
  *  The bound comes from the design's *Concurrency and event-loop safety*
  *  section: "an already-queued unrelated request is starved no longer by the
@@ -36,21 +40,34 @@
  *  This is a warm-cache steady-server measurement: every route is warmed once
  *  before any sample counts. It is not a cold-start bound.
  *
- *  One caveat on `--scale 10`: the fixture is built by this process, and at that
- *  size that is ~550 MB and 40,000 files written before the first sample. The
- *  parent's heap and native high-water mark carry into every spawn measured
- *  afterwards, so the 10x `spawn-noop` figure is not a clean read of what a
- *  server process pays to spawn — it says the benchmark process paid it. Use
- *  `--home` or `--scale 1` to attribute spawn cost, or build the fixture with
- *  `--keep` in one run and measure it in a fresh one.
+ *  **A spawn baseline is only as clean as the heap it is measured against, and
+ *  two things grow that heap.** The first was fixture construction: at
+ *  `--scale 10` that is ~550 MB and 40,000 files, and a process that has just
+ *  written them carries a native high-water mark into every `fork` it then
+ *  measures. So `main` spawns a child to build and measures in a process that
+ *  never touched the fixture (`--build-inline` restores the old behaviour for
+ *  debugging, and says so in its report).
+ *
+ *  The second is this harness's own routes, and it does not go away: the
+ *  in-process routes allocate, `retired` most of all, and they are interleaved
+ *  with the spawns by design. It is worth what it costs — on the 10x fixture,
+ *  `spawn-noop` p95 measured 99.3 ms in a full run and 33.2 ms in
+ *  `--routes spawn-noop,subprocess,in-process`, same fixture, same machine. So:
+ *  read the acceptance comparison off a full run, where every route pays the
+ *  same inflated baseline and the comparison is what is being asked; read a
+ *  spawn cost off a narrowed one. `--routes` is how, and quoting a spawn figure
+ *  from a full run is the mistake it exists to prevent.
  *
  *  Usage:
  *    node cli/test/bench/history-stall.ts [--scale 1|10] [--iterations N]
  *         [--concurrency N] [--root DIR] [--home DIR] [--project PATH]
- *         [--chunks 1,2,4,8,16] [--bare-spawn] [--keep] [--json FILE]
+ *         [--bare-spawn] [--build-inline] [--keep] [--json FILE]
+ *         [--routes a,b,c] [--sqlite-probe]
  *
  *  `--home` measures a real provider home instead of a synthetic fixture; it is
  *  read-only and needs `--project` to say which project to read.
+ *  `--sqlite-probe` times the windowed `threads` query alone and prints its
+ *  plan — the evidence behind the rule-5 admission in the export audit.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -62,15 +79,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildFixture, FIXTURE_PROJECT, SCALES, type FixtureScale } from "./history-fixture.ts";
-import { boundedHistory } from "./history-bounded-prototype.ts";
 import {
   DEFAULT_HISTORY_LIMIT,
+  finalizeHistory,
+  historyReaderForProvider,
   readProjectHistory,
 } from "../../src/lib/core/agent/providers/history.ts";
+import {
+  claudeList as retiredClaudeList,
+  codexList as retiredCodexList,
+  retiredFinalizeHistory,
+} from "./history-retired-control.ts";
 import { isOk } from "../../src/lib/core/result.ts";
 
 const CLI_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const BOUNDED_ENTRY = fileURLToPath(new URL("./bounded-entry.ts", import.meta.url));
+const HISTORY_ENTRY = fileURLToPath(new URL("./history-entry.ts", import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
 
 /** Milliseconds since process start. */
 const T0 = process.hrtime.bigint();
@@ -90,10 +114,19 @@ interface Options {
   /** Spawn without the app's synchronous child-environment discovery — the
    *  thinner baseline, kept to show what that discovery is worth. */
   bareSpawn: boolean;
-  /** Chunk sizes to run the bounded prototype at, one route each. */
-  chunks: number[];
   /** Time the windowed `threads` query alone — the rule-5 admission evidence. */
   sqliteProbe: boolean;
+  /** Build the fixture in this process instead of a child. Debugging only: it
+   *  reintroduces the heap confound the child build exists to remove. */
+  buildInline: boolean;
+  /** Build the fixture and exit — how the child half of a clean build runs. */
+  buildOnly: boolean;
+  /** Run only these routes. The spawn baselines are the reason it exists: the
+   *  in-process routes allocate, and at `--scale 10` the `retired` control
+   *  allocates a great deal, so a `spawn-noop` interleaved with them is read
+   *  against a heap they grew. Narrowing to the routes a question needs is how
+   *  that is checked rather than assumed. Empty means every route. */
+  routes: string[];
 }
 
 function parseOptions(argv: string[]): Options {
@@ -108,8 +141,10 @@ function parseOptions(argv: string[]): Options {
     keep: false,
     json: null,
     bareSpawn: false,
-    chunks: [1, 2, 4, 8, 16],
     sqliteProbe: false,
+    buildInline: false,
+    buildOnly: false,
+    routes: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -125,19 +160,16 @@ function parseOptions(argv: string[]): Options {
     else if (arg === "--home") o.home = value();
     else if (arg === "--project") o.project = value();
     else if (arg === "--json") o.json = value();
-    else if (arg === "--chunks") o.chunks = value().split(",").map(Number);
     else if (arg === "--keep") o.keep = true;
     else if (arg === "--bare-spawn") o.bareSpawn = true;
     else if (arg === "--sqlite-probe") o.sqliteProbe = true;
+    else if (arg === "--build-inline") o.buildInline = true;
+    else if (arg === "--build-only") o.buildOnly = true;
+    else if (arg === "--routes") o.routes = value().split(",");
     else throw new Error(`unknown flag: ${arg}`);
   }
   if (!o.home && !SCALES[o.scale]) throw new Error(`unknown --scale ${o.scale} (have ${Object.keys(SCALES)})`);
-  // A zero or fractional chunk makes the prototype's `i += chunk` loop forever,
-  // which reads as a hung benchmark rather than as bad input.
   const positive = (n: number): boolean => Number.isSafeInteger(n) && n > 0;
-  if (!o.chunks.every(positive) || new Set(o.chunks).size !== o.chunks.length) {
-    throw new Error(`--chunks must be distinct positive integers (got: ${o.chunks.join(",")})`);
-  }
   if (!positive(o.iterations)) throw new Error(`--iterations must be a positive integer`);
   if (!positive(o.concurrency)) throw new Error(`--concurrency must be a positive integer`);
   return o;
@@ -241,14 +273,41 @@ function inProcessRoute(projectPath: string): Route {
   };
 }
 
-/** The most favourable in-process form this cutover could ship: provider scans
- *  capped at the window, every fan-out chunked with a loop yield, the origin
- *  index read asynchronously. See `history-bounded-prototype.ts`. */
-function boundedRoute(projectPath: string, chunk: number): Route {
+/** The control: the reader this cutover replaced, run through the same call
+ *  mechanism. See `history-retired-control.ts`.
+ *
+ *  This is what makes the harness falsifiable. Had it measured like the shipped
+ *  route, no figure printed here about the in-process route would mean anything.
+ *
+ *  `uncapped` beside it isolates one of the three changes — the per-provider cap
+ *  — by running the *shipped* code with the cap removed and nothing else
+ *  altered. The two together are what say which change bought what, and they do
+ *  not answer the same question: the cap buys wall time, the chunked yield buys
+ *  the starvation bound, and reading only `uncapped` would credit the cap with
+ *  a stall improvement it does not produce. */
+function retiredRoute(projectPath: string): Route {
   return async () => {
     const started = now();
-    const rows = await boundedHistory(projectPath, DEFAULT_HISTORY_LIMIT, chunk);
-    return { rows: rows.length, wallMs: now() - started };
+    const perProvider = await Promise.all([
+      retiredClaudeList(projectPath),
+      retiredCodexList(projectPath),
+    ]);
+    const window = retiredFinalizeHistory(perProvider.flat(), []);
+    return { rows: window.returned, wallMs: now() - started };
+  };
+}
+
+function uncappedRoute(projectPath: string): Route {
+  // Larger than any provider can hold for one project, which is what "no cap"
+  // means to a reader whose only knob is the cap.
+  const NO_CAP = Number.MAX_SAFE_INTEGER;
+  return async () => {
+    const started = now();
+    const perProvider = await Promise.all(
+      ["claude", "codex"].map((id) => historyReaderForProvider(id)!(projectPath, NO_CAP)),
+    );
+    const window = await finalizeHistory(perProvider.flat(), []);
+    return { rows: window.returned, wallMs: now() - started };
   };
 }
 
@@ -430,8 +489,34 @@ function fmt(s: Stats): string {
     s.p95.toFixed(1).padStart(7)}  p99=${s.p99.toFixed(1).padStart(7)}  max=${s.max.toFixed(1).padStart(8)}`;
 }
 
+/** Build the fixture in a child and return where it landed.
+ *
+ *  Writing ~550 MB and 40,000 files leaves a heap and a native high-water mark
+ *  that every subsequent `fork` in the same process inherits, which is exactly
+ *  what the `spawn-noop` baseline is supposed to be free of. Paying that in a
+ *  child leaves this process as clean as a server that simply found the files
+ *  already there. The child reports the paths rather than this process
+ *  recomputing them, so the two halves cannot disagree about where they are. */
+function buildFixtureInChild(scale: string, root: string): { home: string; yacoHome: string } {
+  const child = spawnSync(
+    process.execPath,
+    [SELF, "--build-only", "--scale", scale, "--root", root],
+    { encoding: "utf-8", stdio: ["ignore", "pipe", "inherit"] },
+  );
+  if (child.status !== 0) throw new Error(`fixture build child exited ${child.status}`);
+  return JSON.parse(child.stdout.trim()) as { home: string; yacoHome: string };
+}
+
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
+
+  if (options.buildOnly) {
+    const scale = SCALES[options.scale];
+    if (!scale) throw new Error(`--build-only needs a known --scale (got ${options.scale})`);
+    const built = buildFixture(options.root, scale);
+    process.stdout.write(JSON.stringify({ home: built.home, yacoHome: built.yacoHome }));
+    return;
+  }
 
   // Everything that can leave state behind is registered before it is created,
   // so a failure part-way through fixture construction still cleans up.
@@ -455,8 +540,11 @@ async function main(): Promise<void> {
       scale = SCALES[options.scale]!;
       if (options.keep) retained = options.root;
       else removeFixture = () => rmSync(options.root, { recursive: true, force: true });
-      console.log(`building fixture (scale ${options.scale}) under ${options.root} …`);
-      const built = buildFixture(options.root, scale);
+      console.log(`building fixture (scale ${options.scale}) under ${options.root}${
+        options.buildInline ? " (inline — heap confound NOT removed)" : " in a child process"} …`);
+      const built = options.buildInline
+        ? buildFixture(options.root, scale)
+        : buildFixtureInChild(options.scale, options.root);
       home = built.home;
       yacoHome = built.yacoHome;
     }
@@ -479,7 +567,7 @@ async function main(): Promise<void> {
     const childEnv = { ...process.env, HOME: home, YACO_HOME: yacoHome };
     const limit = String(DEFAULT_HISTORY_LIMIT);
 
-    const routes: [string, Route][] = [
+    let routes: [string, Route][] = [
       // A child that does nothing but print an empty envelope: the price of the
       // spawn alone, with no read attached, so the ~16 ms the subprocess
       // baseline pays before any work is attributable rather than inferred.
@@ -494,19 +582,26 @@ async function main(): Promise<void> {
         !options.bareSpawn,
       )],
       ["in-process", inProcessRoute(options.project)],
-      // The chunk size is the prototype's only tuning knob and it trades wall
-      // time against how long one uninterrupted run of parsing lasts. Sweeping
-      // it is the difference between "this bounded reader loses" and "every
-      // bounded reader loses" — only the sweep can support the second claim.
-      ...options.chunks.flatMap((chunk): [string, Route][] => [
-        [`bounded/${chunk}`, boundedRoute(options.project, chunk)],
-        [`bounded-child/${chunk}`, spawnRoute(
-          [BOUNDED_ENTRY, options.project, limit, String(chunk)],
-          childEnv,
-          !options.bareSpawn,
-        )],
-      ]),
+      ["retired", retiredRoute(options.project)],
+      ["uncapped", uncappedRoute(options.project)],
+      // The same shipped reader, spawned: what separates it from `in-process` is
+      // the call mechanism alone, so a win can be attributed to whichever change
+      // produced it rather than to both at once.
+      ["in-process-child", spawnRoute(
+        [HISTORY_ENTRY, options.project, limit],
+        childEnv,
+        !options.bareSpawn,
+      )],
     ];
+
+    if (options.routes.length > 0) {
+      const known = new Set(routes.map(([n]) => n));
+      const unknown = options.routes.filter((n) => !known.has(n));
+      if (unknown.length > 0) {
+        throw new Error(`unknown --routes ${unknown.join(",")} (have ${[...known].join(",")})`);
+      }
+      routes = routes.filter(([n]) => options.routes.includes(n));
+    }
 
     load = new BackgroundLoad(payloadPath);
     await load.start(options.concurrency);
@@ -553,6 +648,9 @@ load         ${options.concurrency} concurrent background HTTP requests (idle fl
 metric       worst delay suffered by a continuously re-queued probe while the route ran,
              one value per invocation; ${options.iterations} invocations per route
 baseline     spawn ${options.bareSpawn ? "WITHOUT" : "with"} a replica of the app's synchronous child-environment discovery
+fixture built${options.home ? "  n/a — real home" : options.buildInline
+      ? "  IN THIS PROCESS (--build-inline): the spawn baselines carry its heap"
+      : "  in a child process, so no spawn baseline carries its heap"}
 `);
     console.log("worst starvation of an already-queued timer per invocation (ms) — the acceptance metric");
     for (const r of results) console.log(`  ${r.name.padEnd(17)} ${fmt(r.timer)}`);
@@ -561,9 +659,20 @@ baseline     spawn ${options.bareSpawn ? "WITHOUT" : "with"} a replica of the ap
     console.log("\nroute wall time (ms)");
     for (const r of results) console.log(`  ${r.name.padEnd(17)} ${fmt(r.wall)}   rows=${r.rows}`);
 
-    const sub = results.find((r) => r.name === "subprocess")!;
+    const sub = results.find((r) => r.name === "subprocess");
+    if (!sub) {
+      console.log("\n(no subprocess route in this run — no bound to compare against)");
+      return;
+    }
+    // Only the shipped route can pass or fail the acceptance. The controls are
+    // printed beside it because they are what make its figure mean something,
+    // but a verdict computed over "every in-process form" would report success
+    // whenever *any* of them cleared the bound — including a run where a control
+    // passed and the route being shipped did not.
     const inProcess = results.filter((r) =>
-      r.name !== "subprocess" && r.name !== "spawn-noop" && !r.name.startsWith("bounded-child/"));
+      r.name === "in-process" || r.name === "retired" || r.name === "uncapped");
+    const shipped = results.find((r) => r.name === "in-process");
+    const shippedWithin = shipped !== undefined && shipped.timer.p95 <= sub.timer.p95;
     const within = inProcess.filter((c) => c.timer.p95 <= sub.timer.p95);
     console.log(`
 bound        in-process p95 timer starvation <= subprocess p95 (design: Concurrency and event-loop safety)
@@ -574,9 +683,12 @@ bound        in-process p95 timer starvation <= subprocess p95 (design: Concurre
         c.wall.p50.toFixed(0).padStart(5)} ms  ->  ${c.timer.p95 <= sub.timer.p95 ? "within bound" : "over bound"}`);
     }
     console.log(`verdict      ${
-      within.length === 0
-        ? "no in-process form is within the bound"
-        : `within the bound: ${within.map((c) => c.name).join(", ")}`}`);
+      shipped === undefined
+        ? "NOT RUN — the shipped in-process route was not among --routes"
+        : shippedWithin
+        ? "PASS — the shipped in-process route is within the bound"
+        : "FAIL — the shipped in-process route is OVER the bound"}`);
+    if (within.length > 0) console.log(`             (also within: ${within.map((c) => c.name).join(", ")})`);
 
     if (options.json) {
       writeFileSync(options.json, JSON.stringify({
@@ -584,10 +696,12 @@ bound        in-process p95 timer starvation <= subprocess p95 (design: Concurre
         project: options.project,
         concurrency: options.concurrency,
         iterations: options.iterations,
-        chunks: options.chunks,
+        buildInline: options.buildInline,
         envDiscovery: !options.bareSpawn,
         idleFloor,
         routes: results,
+        // The acceptance is one boolean about one route. `within` is diagnostic.
+        shippedWithin,
         within: within.map((c) => c.name),
       }, null, 2) + "\n");
     }

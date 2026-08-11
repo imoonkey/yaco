@@ -11,7 +11,7 @@
  *  concurrency section requires alongside it — a graph is input-controlled, so
  *  no single sample bounds it. */
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
@@ -30,14 +30,30 @@ export interface FixtureScale {
   claudeSessions: number;
   /** Files in `$YACO_HOME/agent/origins` — the durable origin side index. */
   originFiles: number;
+  /** Records in `~/.codex/session_index.jsonl`.
+   *
+   *  Its own dimension because the reader splits and scans the **whole** file
+   *  regardless of the window, so it is an input the cap does not bound. Getting
+   *  this wrong is not hypothetical: the fixture used to write
+   *  `min(codexThreadsForProject, 200)` records, which is 200 at *both* scales —
+   *  a tenth of the reference home at 1x and a hundredth of what 10x claims to
+   *  be, on the exact topology meant to prove the read scales. */
+  codexNameRecords: number;
 }
 
 /** Measured on the reference machine on 2026-08-11: 2,275 Codex threads
  *  (587 for the busiest cwd) in an 11.6 MB `state_5.sqlite`, 81 Claude JSONL
- *  files in the busiest project directory, 1,785 origin records. */
+ *  files in the busiest project directory, 1,785 origin records, and a 266 KB
+ *  `session_index.jsonl` of 2,013 records. */
 export const SCALES: Record<string, FixtureScale> = {
-  "1": { codexThreads: 2275, codexThreadsForProject: 587, claudeSessions: 81, originFiles: 1785 },
-  "10": { codexThreads: 22750, codexThreadsForProject: 5870, claudeSessions: 810, originFiles: 17850 },
+  "1": {
+    codexThreads: 2275, codexThreadsForProject: 587, claudeSessions: 81,
+    originFiles: 1785, codexNameRecords: 2013,
+  },
+  "10": {
+    codexThreads: 22750, codexThreadsForProject: 5870, claudeSessions: 810,
+    originFiles: 17850, codexNameRecords: 20130,
+  },
 };
 
 /** Bytes of rollout tail the read path examines per Codex row. Real rollout
@@ -172,7 +188,7 @@ export interface Fixture {
   /** Absolute path of the project whose history is read. */
   projectPath: string;
   /** Bytes written, for the report. */
-  bytes: { codexDb: number; rollouts: number; claude: number };
+  bytes: { codexDb: number; rollouts: number; claude: number; codexNameIndex: number };
 }
 
 /** Build the fixture under `root`, replacing anything already there. */
@@ -233,11 +249,13 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
   } finally {
     db.close();
   }
-  writeFileSync(
-    join(home, ".codex", "session_index.jsonl"),
-    Array.from({ length: Math.min(scale.codexThreadsForProject, 200) }, (_, i) =>
-      JSON.stringify({ id: fixtureId(i), thread_name: `named-${i}` })).join("\n") + "\n",
-  );
+  // Every record is scanned whatever the window is, so this scales with the
+  // fixture rather than with the window. Ids repeat once the record count passes
+  // the thread count, which is what the real file does too — a rename appends,
+  // and the reader is last-entry-wins.
+  const nameIndex = Array.from({ length: scale.codexNameRecords }, (_, i) =>
+    JSON.stringify({ id: fixtureId(i % scale.codexThreads), thread_name: `named-${i}` })).join("\n") + "\n";
+  writeFileSync(join(home, ".codex", "session_index.jsonl"), nameIndex);
 
   // -- Claude: one JSONL per session plus the optional sessions index --
   const claudeDir = join(home, ".claude", "projects", encodeClaudeCwd(FIXTURE_PROJECT));
@@ -277,6 +295,11 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
     home,
     yacoHome,
     projectPath: FIXTURE_PROJECT,
-    bytes: { codexDb: 0, rollouts: rolloutBytes, claude: claudeBytes },
+    bytes: {
+      codexDb: statSync(dbPath).size,
+      rollouts: rolloutBytes,
+      claude: claudeBytes,
+      codexNameIndex: nameIndex.length,
+    },
   };
 }

@@ -9,6 +9,11 @@
  *  provider scan at the window and reads it in chunked instalments, which is
  *  what admitted it under eligibility rule 5. Its live sessions are an explicit
  *  input, so it reaches no session-state writer.
+ *
+ *  It is also the *only* read published here, and the individual provider scans
+ *  are deliberately not: each takes its cap as an argument, so a caller holding
+ *  one could scan a whole provider home from inside the server. The cap is an
+ *  invariant of the composed read, not a parameter offered to consumers.
  *  -> See: `doc/main/cli/exports.md`, `doc/main/cli/read-path.md`. */
 
 export {
@@ -27,7 +32,6 @@ export { providerCatalog, type ProviderCatalogEntry } from "./provider-catalog.t
 
 export {
   DEFAULT_HISTORY_LIMIT,
-  historyReaderForProvider,
   readProjectHistory,
   type HistoryLiveSession,
 } from "./providers/history.ts";

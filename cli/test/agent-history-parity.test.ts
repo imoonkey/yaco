@@ -4,8 +4,9 @@
  *  spawn; it now answers with an in-process `readProjectHistory`. This file pins
  *  that the two mechanisms agree — not by describing the subprocess route, but
  *  by *running* it: `viaSubprocess` spawns the real `bin/yaco.mjs` against the
- *  same hermetic HOME the in-process read gets, and both the success payload and
- *  the failure body are compared, because the app renders whichever it gets.
+ *  same hermetic HOME the in-process read gets, and the two payloads are
+ *  compared across six windows. The failure envelope is pinned rather than
+ *  compared, and the last test says why.
  *
  *  The fixture is deliberately larger than the window in both providers, so the
  *  comparison exercises the cap, the merge across two providers, `--since`, and
@@ -53,8 +54,15 @@ type ParityResult =
   | { ok: true; window: HistoryWindow }
   | { ok: false; message: string };
 
-/** The retired route, verbatim: spawn the real binary, with
- *  `runYacoAgentJson`'s envelope translation on failure. */
+/** The retired route: spawn the real binary, and translate a failure envelope
+ *  the way `app/server`'s `runYacoAgentJson` was written to.
+ *
+ *  "Was written to" and not "did": that helper builds the structured message
+ *  inside the same `try` whose `catch` swallows it, so what it actually threw
+ *  was the opaque `exit <code>: <stderr>`. The intended translation is used here
+ *  because it is the one both sides can be compared on, and because the HTTP
+ *  body does not distinguish them — an uncaught route error is
+ *  `500 "Internal Server Error"` whichever message it carries. */
 function viaSubprocess(args: string[]): ParityResult {
   const r = runCli(["agent", "history", "--path", PROJECT, ...args, "--json"], {
     env: { ...process.env, ...env },
@@ -220,10 +228,12 @@ describe("agent history — subprocess and in-process agree", () => {
       .toEqual(["live-claude", "live-codex"]);
   });
 
-  it("returns the same failure body when the arguments are rejected", async () => {
-    // USAGE is the failure both mechanisms can reach: the readers answer a
-    // missing or unreadable provider home with an empty list rather than an
-    // error, by design, so a bad flag is what exercises the failure path.
+  it("renders a rejected argument as a structured failure envelope", async () => {
+    // USAGE is the only failure the subprocess route can be made to produce
+    // here: the readers answer a missing or unreadable provider home with an
+    // empty list rather than an error, by design. It is also a failure the
+    // in-process caller cannot reach — the app passes no flags — so this pins
+    // the envelope the translation reads, not a two-sided comparison.
     const subprocess = viaSubprocess(["--limit", "0"]);
     expect(subprocess).toEqual({
       ok: false,

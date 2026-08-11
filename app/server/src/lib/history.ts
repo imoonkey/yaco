@@ -29,8 +29,16 @@ export interface HistorySession {
  *  out of an exported closure. The app then tags rows from the same list it
  *  already holds, exactly as it did behind the subprocess.
  *
- *  A failure is raised as the message the subprocess route raised, so the HTTP
- *  body this route produces is unchanged by the cutover.
+ *  A failure is raised as `yaco agent history failed [CODE]: message`, and the
+ *  route has no handler of its own, so the HTTP response is the same
+ *  `500 "Internal Server Error"` the subprocess route produced — the body is
+ *  byte-identical either way. What changes is the *logged* message, and it
+ *  changes for the better: the retired route reached this line through
+ *  `runYacoAgentJson`, whose structured throw is built inside the same `try`
+ *  whose `catch` then swallows it, so what actually surfaced was the opaque
+ *  `exit <code>: <stderr>`. That is a live defect in `agent.ts` affecting every
+ *  route still going through it; it is not fixed here, because fixing it changes
+ *  what those other routes raise.
  *
  *  -> See: `doc/main/cli/read-path.md`. */
 export async function getHistory(

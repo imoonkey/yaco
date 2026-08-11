@@ -274,14 +274,16 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "resolveProjectForPath",
         "toSessionRow",
       ],
-      // One read verb, the shape of its live-session input, the window's
-      // default, and the reader registry as the only answer to which reader a
-      // provider uses. No provider scan is published on its own: a caller that
-      // could reach one could scan a provider without the window.
+      // One read verb, the shape of its live-session input, and the window's
+      // default. The per-provider scans are pointedly absent: each takes its cap
+      // as an argument, so publishing one would hand a server consumer a way to
+      // scan a whole provider home — the cap is an invariant of the composed
+      // read, not a parameter. `historyReaderForProvider` stays a module export
+      // for the provider-completeness test and the benchmark control; that the
+      // barrel does not re-export it is what this list asserts.
       "src/lib/core/agent/providers/history.ts": [
         "DEFAULT_HISTORY_LIMIT",
         "HistoryLiveSession",
-        "historyReaderForProvider",
         "readProjectHistory",
       ],
       "src/lib/core/agent/providers/types.ts": [

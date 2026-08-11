@@ -5,9 +5,10 @@
  *  claim to its parts: the spawn is gone and the provider homes are read
  *  directly; the rows are mapped to the UI shape from real provider storage;
  *  live tagging still comes from the list the app already holds; and a failure
- *  is raised as the message the subprocess route raised. The exact payload
- *  parity against the real CLI binary is pinned in
- *  `cli/test/agent-history-parity.test.ts`.
+ *  is raised as a structured message, which this route — having no handler of
+ *  its own — renders as the same `500 "Internal Server Error"` the subprocess
+ *  route rendered. The exact payload parity against the real CLI binary is
+ *  pinned in `cli/test/agent-history-parity.test.ts`.
  *
  *  The suite runs against a temporary HOME and YACO_HOME, so it reads the same
  *  kind of provider storage a real session writes and never the operator's own. */
@@ -189,7 +190,7 @@ describe('getHistory', () => {
     expect(probe.spawns).toEqual([])
   })
 
-  it('raises the failure message the subprocess route raised', async () => {
+  it('raises a structured failure, which the route renders as the same 500', async () => {
     control.fail = { code: 'INTERNAL', message: 'boom' }
     try {
       await expect(getHistory(PROJECT_A, [])).rejects.toThrow(
