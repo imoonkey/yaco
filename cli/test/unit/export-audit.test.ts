@@ -234,6 +234,38 @@ const EXPECTED: Record<string, ExpectedExport> = {
       ],
     },
   },
+  // The one message-inventory read. Its closure reaches the provider log-path
+  // and line-classification half of `providers/output.ts`; the polling tailer
+  // that used to sit in that file lives in `providers/follow.ts`, which nothing
+  // exported reaches.
+  "./core/agent/messages": {
+    files: [
+      "src/lib/core/agent/model.ts",
+      "src/lib/core/agent/providers/message-read.ts",
+      "src/lib/core/agent/providers/messages.ts",
+      "src/lib/core/agent/providers/output.ts",
+      "src/lib/core/agent/words.ts",
+      "src/lib/core/errors.ts",
+      "src/lib/core/project/encode.ts",
+      "src/lib/core/result.ts",
+    ],
+    externals: ["node:crypto", "node:fs", "node:fs/promises", "node:os", "node:path"],
+    // One read verb plus the shape of its inputs and rows. No writer, no
+    // follower, no provider registry: the TUI registry reaches tmux and the
+    // session lifecycle, so the message-capable providers are listed here.
+    names: {
+      "src/lib/core/agent/providers/message-read.ts": [
+        "MessageFilter",
+        "MessagesRange",
+        "messagesForProvider",
+        "readMessageRows",
+      ],
+      "src/lib/core/agent/providers/types.ts": [
+        "MessageFull",
+        "MessageRole",
+      ],
+    },
+  },
   "./core/worktree": {
     files: [
       "src/lib/core/errors.ts",

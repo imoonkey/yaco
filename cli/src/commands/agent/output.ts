@@ -12,12 +12,12 @@
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
+import { decodeCursorToken } from "../../lib/core/agent/providers/output.ts";
 import {
-  decodeCursorToken,
   followOutput,
   DEFAULT_MAX_LIFETIME_MS,
   type FollowEndReason,
-} from "../../lib/core/agent/providers/output.ts";
+} from "../../lib/core/agent/providers/follow.ts";
 import type { AgentOutputEvent, OutputCursor, ProviderOutput } from "../../lib/core/agent/providers/types.ts";
 import { validateName, type SessionState } from "../../lib/core/agent/model.ts";
 import { readState } from "../../lib/core/agent/session-state.ts";

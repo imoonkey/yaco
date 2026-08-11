@@ -17,10 +17,9 @@ import {
   codexOutput,
   decodeCursorToken,
   encodeCursorToken,
-  followOutput,
   turnStateFromTranscript,
-  type FollowFrame,
 } from "../../src/lib/core/agent/providers/output.ts";
+import { followOutput, type FollowFrame } from "../../src/lib/core/agent/providers/follow.ts";
 import {
   captureWaitCursor,
   parseByteOffset,
