@@ -407,6 +407,9 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   }
 
   const visit = (node: ts.Node): void => {
+    // A type node is erased whole. Nothing inside one runs, so `type Exit =
+    // typeof process.exit` is not a read of anything.
+    if (ts.isTypeNode(node)) return;
     const member = memberOn(node, isProcess);
     const consoleMember = memberOn(node, isConsole);
     if (member !== undefined) {
@@ -590,8 +593,8 @@ function isLooseGlobalReference(node: ts.Node): boolean {
   const parent = outer.parent;
 
   // Positions where the identifier names something rather than reading the
-  // global: a member name, an object key, a declared binding, a specifier, or
-  // a type position such as the `typeof console` inside an assertion.
+  // global: a member name, an object key, a declared binding, a specifier.
+  // Type positions never reach here — `scanFile` does not descend into them.
   const isName =
     ((ts.isPropertyAccessExpression(parent) ||
       ts.isPropertyAssignment(parent) ||
@@ -601,9 +604,7 @@ function isLooseGlobalReference(node: ts.Node): boolean {
       ts.isPropertySignature(parent)) &&
       parent.name === outer) ||
     ts.isImportSpecifier(parent) ||
-    ts.isExportSpecifier(parent) ||
-    ts.isTypeQueryNode(parent) ||
-    ts.isTypeReferenceNode(parent);
+    ts.isExportSpecifier(parent);
   if (isName) return false;
 
   // A real read. The only admitted shape is the one the member scan above
@@ -638,6 +639,10 @@ function collectEnvNames(
   node: ts.Node,
   emit: (node: ts.Node, name: string | null) => void,
 ): void {
+  // `(process.env as Record<string, string>)["HOME"]` reads `HOME`; judging the
+  // immediate parent would call it opaque, and a false positive on a legal read
+  // is how a gate gets switched off.
+  node = outermostErasable(node);
   const parent = node.parent;
 
   if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {

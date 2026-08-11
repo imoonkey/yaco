@@ -577,11 +577,21 @@ describe("the audit itself", () => {
     const { root } = plant({
       "index.ts":
         `export const a = process.env["HOME" as const];\n` +
-        `export const b = process.env[("YACO_HOME")];\n`,
+        `export const b = process.env[("YACO_HOME")];\n` +
+        `export const c = (process.env as Record<string, string>)["HOME"];\n` +
+        `export const d = process.env!.YACO_AGENT_SESSIONS_DIR;\n` +
+        // Erased declarations name members without reading them.
+        `export type Exit = typeof process.exit;\n` +
+        `export type Log = typeof console.log;\n`,
     });
     try {
       const scan = scanFile(join(root, "index.ts"), root);
-      expect(scan.envReads.map((r) => r.name)).toEqual(["HOME", "YACO_HOME"]);
+      expect(scan.envReads.map((r) => r.name)).toEqual([
+        "HOME",
+        "YACO_HOME",
+        "HOME",
+        "YACO_AGENT_SESSIONS_DIR",
+      ]);
       expect(scan.violations).toEqual([]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
