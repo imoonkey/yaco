@@ -19,7 +19,7 @@ import {
   describeLock,
   lockPathFor,
   withLock,
-} from "../../../../src/lib/core/task/index.ts";
+} from "../../../../src/lib/core/task/lock.ts";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "task-lock-"));

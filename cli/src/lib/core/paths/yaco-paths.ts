@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
-import { parseScopedToml, TomlParseError } from "./toml.ts";
+import { parseScopedToml } from "./toml.ts";
 
 export interface YacoProjectPaths {
   plan: string;
@@ -73,15 +73,9 @@ export function readYacoProjectPaths(repoRoot: string): YacoProjectPaths {
     );
   }
 
-  let sections: ReturnType<typeof parseScopedToml>;
-  try {
-    sections = parseScopedToml(raw);
-  } catch (err: unknown) {
-    if (err instanceof TomlParseError) {
-      throw new CliError(ErrCode.ENV, err.message);
-    }
-    throw err;
-  }
+  // The parser already raises CliError(ENV) with the line-numbered message, so
+  // there is nothing left to translate here.
+  const sections = parseScopedToml(raw);
 
   const paths = sections["paths"] ?? {};
   const cfg = { ...RAW_DEFAULTS };

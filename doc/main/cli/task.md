@@ -1,6 +1,6 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-08-08 (oss-doc-cleanup; prior yaco-read-surface: `task get` single-record read, `task list --state`)
+> Last updated: 2026-08-11 (read-export-gate: the barrel narrows to reads; prior oss-doc-cleanup)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`. It
 defaults to `plan/tasks` and is overridden by `yaco.toml [paths]`: `tasks` is
@@ -10,23 +10,27 @@ prints the resolved absolute path. If the path is a directory, every descendant
 `tasks.json` is loaded recursively; if it is a `.json` file, that file is
 treated as a single-file task store.
 
-The pure library lives under `cli/src/lib/core/task/` and is published over
-the workspace exports map as `@yaco/cli/core/task`. CLI handlers in
-`cli/src/commands/task/` wrap the library with locking, payload parsing,
-and the `--json` envelope.
+The pure library lives under `cli/src/lib/core/task/`. The **read half** —
+model, graph analysis, store loads — is published over the workspace exports map
+as `@yaco/cli/core/task`; the writers, the lock, `archive.ts` and `link.ts` are
+not, because task mutation is one authority (lock + repository gate + write) and
+it stays behind the CLI subprocess boundary. CLI handlers in
+`cli/src/commands/task/` import those modules directly and wrap the library with
+locking, payload parsing, and the `--json` envelope.
+-> See: [exports.md](exports.md) for the eligibility rules and the audit.
 
 ## Files
 
 | File | Surface | Notes |
 |------|---------|-------|
-| `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `AGENT_HANDLE_RE`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. `agents?: string[]` holds session-handle links (validated against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/`); the legacy scalar `agent` is upgraded to `agents` on load. Both `agent` and a full `agents` array are rejected on `set` — links are mutated only through `attach`/`detach`. |
+| `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `AGENT_HANDLE_RE`, `DEFAULT_TASK_LOCK_TIMEOUT_MS`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. `agents?: string[]` holds session-handle links (validated against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/`); the legacy scalar `agent` is upgraded to `agents` on load. Both `agent` and a full `agents` array are rejected on `set` — links are mutated only through `attach`/`detach`. |
 | `validation.ts` | `validateTypes`, `isAcceptCriteriaBlank` | Shape checks for a `set` payload. Throws `CliError(INVALID)`. |
 | `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `rollup`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard + milestone-rollup checks. `validateGraph` collects **all** problems for the `validate` command. |
-| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
+| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O. Exported: `loadTasks`, `loadTaskStore`, `sourceForTask`, `sourceForNewTask`, `defaultTaskFileFor`, `defaultTaskFileForId`, `resolveTasksPathForSessionPath`, `formatJson`. Not exported: `saveTasks`, `saveTaskStore`. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
 | `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
 | `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
-| `index.ts` | Re-exports the public surface | Always import through this barrel. |
+| `index.ts` | Re-exports a selected **read** surface, not whole modules: all of `graph.ts`; `model.ts` minus `AGENT_HANDLE_RE`; `validation.ts` minus `isObject`/`Json`; `store.ts` minus `saveTasks`/`saveTaskStore`. `test/unit/export-audit.test.ts` pins the exact list | The published `@yaco/cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
 
 ## CLI surface
 
@@ -196,9 +200,17 @@ single-file owner record at `<lock-dir>/owner.json`:
   "command": "yaco task set <id>" }
 ```
 
-Default retry budget is 10s, polled every 50ms; override with
-`YACO_TASK_LOCK_TIMEOUT_MS=<ms>` (used by integration tests to exercise
-the LOCK exit path without waiting the full default).
+Default retry budget is `DEFAULT_TASK_LOCK_TIMEOUT_MS` (10s, in `model.ts`),
+polled every 50ms; override with `YACO_TASK_LOCK_TIMEOUT_MS=<ms>` (used by
+integration tests to exercise the LOCK exit path without waiting the full
+default).
+
+The override is read in exactly one place — `cli/src/commands/task/lock-timeout.ts`
+— and passed down as an explicit `AcquireOptions.timeoutMs` by every command that
+takes the lock (`set`, `rm`, `archive`, `attach`/`detach`, `agent rename`).
+Below that seam the deadline is an argument, never an ambient read: `core/task`
+is an exported closure and its ambient surface is capped at three names.
+-> See: [exports.md](exports.md)
 
 Stale-lock handling:
 

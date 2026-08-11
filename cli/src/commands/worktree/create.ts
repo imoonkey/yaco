@@ -2,7 +2,7 @@
 
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import { createWorktree } from "../../lib/core/worktree/index.ts";
+import { createWorktree } from "../../lib/core/worktree/create.ts";
 
 export interface CreateHandlerOpts {
   json: boolean;

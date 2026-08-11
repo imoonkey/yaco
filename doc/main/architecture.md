@@ -18,8 +18,12 @@ app, the `yaco` CLI/runtime, and global agent configuration.
 - `app/server` invokes installed `yaco ... --json` commands for agent, task,
   and worktree operations, then maps the CLI envelope into HTTP responses.
 - `cli/package.json` exports shared TypeScript primitives for app/server:
-  `@yaco/cli/core/paths`, `@yaco/cli/core/task`, `@yaco/cli/core/result`, and
-  `@yaco/cli/core/errors`.
+  `@yaco/cli/core/paths`, `@yaco/cli/core/task`, `@yaco/cli/core/agent`,
+  `@yaco/cli/core/worktree`, `@yaco/cli/core/result`, and
+  `@yaco/cli/core/errors`. What an entry may publish is a contract, not a
+  preference — these run inside the app's event loop — and a checked-in audit
+  enforces it over each export's transitive import closure.
+  -> See: [cli/exports.md](cli/exports.md)
 - Runtime state resolves through `${YACO_HOME:-~/.yaco}`. Path helpers under
   `@yaco/cli/core/paths` are the shared source of truth.
 - `tools/install.sh` is the recovery-safe bootstrap. It packs `@yaco/cli` and

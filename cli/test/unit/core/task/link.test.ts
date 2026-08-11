@@ -5,12 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import {
-  applyAgentLink,
-  formatJson,
-  loadTaskStore,
-  mutateTaskAgentLink,
-} from "../../../../src/lib/core/task/index.ts";
+import { formatJson, loadTaskStore } from "../../../../src/lib/core/task/index.ts";
+import { applyAgentLink, mutateTaskAgentLink } from "../../../../src/lib/core/task/link.ts";
 
 function repoWith(task: Record<string, unknown>): { tasksPath: string; file: string } {
   const root = mkdtempSync(join(tmpdir(), "task-link-"));

@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-11: export eligibility is a test, not a review judgment
+
+**What changed:**
+- `cli/test/unit/export-audit.test.ts` audits every `cli/package.json#exports` entry through its transitive production import closure, walked with the TypeScript compiler (`cli/test/helpers/export-closure.ts`). Four things are pinned per export: the file closure, the specifiers the walk could not follow, the exported names grouped by origin file, and the exported error classes. Excluded subsystems (tmux, reconciliation, lifecycle, usage, mutation, synchronous sleep) are named by file, asserted unreachable, **and asserted to exist**.
+- `@yaco/cli/core/worktree` narrows to `validateSlug`, `worktreePath`, `worktreeBranch`. `@yaco/cli/core/task` narrows to the model, the pure graph analysis and the read half of the store — the writers, the tasks-file lock, `archive.ts` and `link.ts` left the barrel, and `cli/src/commands/task/*` imports them directly. `DEFAULT_TASK_LOCK_TIMEOUT_MS` moved to `task/model.ts`.
+- `YACO_TASK_LOCK_TIMEOUT_MS` is read only at `cli/src/commands/task/lock-timeout.ts` and threaded down as an explicit `AcquireOptions.timeoutMs`; `mutateTaskAgentLink` and `rewriteTaskAgentHandle` gained the parameter.
+- `TomlParseError` is deleted; `parseScopedToml` raises `CliError(ENV, "yaco.toml:<line>: …")` — same message, same code, no `details`, so the envelope is byte-identical.
+- New SOTA doc `doc/main/cli/exports.md`.
+
+**Why:**
+- Phase 2 of `cli-node-sdk` moves five app read paths in process. What an export may contain then runs inside the app's event loop under the app's lifetime, so it is a contract; four cutovers depend on this gate being real before they land.
+- The compiler, not a regex, because the two shapes that decide the answer are one AST node apart: a re-export is an edge with no `import` statement, and a type-only import is not an edge at all. An audit that gets either wrong is worse than none, because it reads as enforcement.
+- Nine cross-provider review rounds turned the gate from a name-matching scan into one that judges what names stand for: origins pinned by declaration file (a same-named writer in an already-reachable module), `isProcess` covering `globalThis["process"]` aliases, `…Sync` failing closed against a bounded allowlist rather than a forbidden list, constant-truthy loop conditions, rule 6 asking the type system rather than the heritage clause's spelling, and one `unwrap` in front of every expression the scan examines so that `while (true as boolean)` and `(cp as typeof cp)["execSync"]()` read as the program Node runs. One regression was introduced and caught in review: skipping type nodes wholesale walked past a class `extends` expression, which executes.
+- Every check has been watched fail. Planted and reverted: a fourth ambient env name, a re-exported `runGit`, `saveTasks` republished as `loadTasks`, `withLock` back on the barrel, a second `readdirSync` in the debt file, a second error class, a same-named writer in `graph.ts`, and a dropped `timeoutMs` (which the integration test catches at 10125ms against a 5000ms bound).
+
+**Known debt:** `loadTaskStore` still walks the task tree with a synchronous recursive `readdir`, which rule 5 excludes. It is pinned in the audit as an exact finding multiset (not waived by file), so a second traversal fails and the entry must be deleted when the design's Phase-2 cutover 1 lands the `fs/promises` chunked reader. Converting it here would change `app/server`'s call site and take that cutover's work.
+
+**Key files:** `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/src/lib/core/{task,worktree,paths}/index.ts`, `cli/src/commands/task/lock-timeout.ts`, `cli/src/lib/core/paths/toml.ts`, `doc/main/cli/exports.md`
+**Verification:** at `a5c529df`, `bash scripts/verify.sh` all steps pass (1262 CLI unit tests, 10 pack-smoke, 825 app/server tests); `task-cli` integration 27/27; a 24-assertion CLI QA harness on the built launcher; eight falsification plants, each reverted.
+**Commit:** `50bde3b4..a5c529df` (code) + `54bed434` (docs)
+**Next:** Phase-2 cutover 1 — task GET against a shared `fs/promises` chunked reader, which also clears the rule-5 debt.
+**Blockers:** None.
+
 ## 2026-08-11: the CLI ships as an npm package — two artifacts, one source tree
 
 **What changed:**

@@ -1,6 +1,6 @@
 # Worktree Subcommand
 
-> Last updated: 2026-06-07 (yaco-read-surface: slug↔path↔branch convention export; prior yc-worktree-ts)
+> Last updated: 2026-08-11 (read-export-gate: the barrel narrows to slug + convention; prior yaco-read-surface)
 
 The `worktree` area provisions, merges, and cleans up git worktrees keyed
 by task slug. It is a pure-TypeScript port of the three legacy shell helpers
@@ -24,7 +24,7 @@ strings, no command-injection surface**.
 | `create.ts` | `createWorktree`, `CreateResult` | Idempotent create + reuse + branch reattach. Runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) on first create. |
 | `merge.ts` | `mergeWorktree`, `MergeMode`, `MergeResult` | Two modes: `pr` (push + `gh pr create`) and `local` (rebase + ff-merge). |
 | `cleanup.ts` | `cleanupWorktree`, `CleanupResult` | `git worktree remove` + `git branch -d` (conservative; `--force` switches to `-D` and `--force`). Tolerant of partially-cleaned state. |
-| `index.ts` | Re-exports the public surface | Always import through this barrel. |
+| `index.ts` | Re-exports `validateSlug`, `worktreePath`, `worktreeBranch` — nothing else | The published `@yaco/cli/core/worktree`. Everything that *does* something to a worktree spawns git or gh synchronously and reads `process.cwd()`, so it fails export eligibility and is imported from its own module by `cli/src/commands/worktree/*`. -> See: [exports.md](exports.md) |
 
 ## CLI surface
 
@@ -64,9 +64,11 @@ export const worktreeBranch = (slug: string): string => `task/${slug}`;
 
 Both are re-exported from the `cli/src/lib/core/worktree/index.ts` barrel and
 published over the workspace exports map as `@yaco/cli/core/worktree`
-(`cli/package.json#exports`). `create.ts`, `merge.ts`, and `cleanup.ts` all use
-them (and `create.ts` derives its `.worktrees` parent dir via
-`dirname(worktreePath(...))`), so the scheme is never re-spelled inside the CLI.
+(`cli/package.json#exports`), together with `validateSlug` — and that is the
+whole export. `create.ts`, `merge.ts`, and `cleanup.ts` all use them (and
+`create.ts` derives its `.worktrees` parent dir via
+`dirname(worktreePath(...))`), so the scheme is never re-spelled inside the CLI,
+but those three are behind the subprocess boundary rather than on the barrel.
 
 `app/server/src/lib/worktree.ts` imports `worktreePath` / `worktreeBranch` from
 `@yaco/cli/core/worktree` instead of hardcoding `.worktrees/<slug>` and

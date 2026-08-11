@@ -10,24 +10,29 @@
  *  files surface clearly rather than parse to silent defaults.
  */
 
+import { CliError, ErrCode } from "../errors.ts";
+
 export interface ParsedTomlSections {
   [section: string]: Record<string, string>;
 }
 
-export class TomlParseError extends Error {
-  public readonly line: number;
-  constructor(message: string, line: number) {
-    super(`yaco.toml:${line}: ${message}`);
-    this.name = "TomlParseError";
-    this.line = line;
-  }
-}
+/** A parse failure, in the one error vocabulary the exports map publishes.
+ *
+ *  This used to be a `TomlParseError` class, exported alongside the parser.
+ *  Export eligibility rule 6 admits one vocabulary, and an in-process caller
+ *  that has to learn a second error type is how a second one spreads —
+ *  `app/server` imports this parser directly. The message and the `ENV` code
+ *  are exactly what `readYacoProjectPaths` used to translate the class into,
+ *  and no `details` is attached, so the CLI envelope is byte-identical — the
+ *  line number stays where it always was, in the message. */
+const parseError = (message: string, line: number): CliError =>
+  new CliError(ErrCode.ENV, `yaco.toml:${line}: ${message}`);
 
 const SECTION_RE = /^\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$/;
 const KEY_RE = /^([A-Za-z0-9_-]+)\s*=\s*(.*)$/;
 
 /** Parse a yaco.toml source string into `{ section: { key: string } }`.
- *  Only string values are accepted; other TOML types throw TomlParseError. */
+ *  Only string values are accepted; other TOML types throw CliError(ENV). */
 export function parseScopedToml(source: string): ParsedTomlSections {
   const sections: ParsedTomlSections = {};
   let current: string | null = null;
@@ -48,10 +53,10 @@ export function parseScopedToml(source: string): ParsedTomlSections {
 
     const kv = KEY_RE.exec(trimmed);
     if (!kv) {
-      throw new TomlParseError(`expected "key = value" or "[section]"`, lineNo);
+      throw parseError(`expected "key = value" or "[section]"`, lineNo);
     }
     if (current === null) {
-      throw new TomlParseError(
+      throw parseError(
         `key "${kv[1]}" outside any [section]; yaco.toml uses [paths]`,
         lineNo,
       );
@@ -59,7 +64,7 @@ export function parseScopedToml(source: string): ParsedTomlSections {
 
     const key = kv[1] ?? "";
     if (key in sections[current]!) {
-      throw new TomlParseError(
+      throw parseError(
         `duplicate key "${key}" in [${current}]`,
         lineNo,
       );
@@ -101,7 +106,7 @@ function stripComment(line: string): string {
 function parseStringValue(raw: string, lineNo: number): string {
   const s = raw.trim();
   if (s.length < 2) {
-    throw new TomlParseError(`value must be a quoted string`, lineNo);
+    throw parseError(`value must be a quoted string`, lineNo);
   }
   const first = s[0];
   const last = s[s.length - 1];
@@ -110,13 +115,13 @@ function parseStringValue(raw: string, lineNo: number): string {
     if (first === "'") {
       // Literal string: no escapes.
       if (body.includes("'")) {
-        throw new TomlParseError(`unterminated literal string`, lineNo);
+        throw parseError(`unterminated literal string`, lineNo);
       }
       return body;
     }
     return decodeBasicString(body, lineNo);
   }
-  throw new TomlParseError(`value must be a quoted string, got: ${s}`, lineNo);
+  throw parseError(`value must be a quoted string, got: ${s}`, lineNo);
 }
 
 function decodeBasicString(body: string, lineNo: number): string {
@@ -125,7 +130,7 @@ function decodeBasicString(body: string, lineNo: number): string {
     const c = body[i];
     if (c !== "\\") {
       if (c === '"') {
-        throw new TomlParseError(`unescaped quote inside basic string`, lineNo);
+        throw parseError(`unescaped quote inside basic string`, lineNo);
       }
       out += c;
       continue;
@@ -149,7 +154,7 @@ function decodeBasicString(body: string, lineNo: number): string {
         out += "\r";
         break;
       default:
-        throw new TomlParseError(
+        throw parseError(
           `unsupported escape \\${esc ?? ""} (use a literal 'string' if needed)`,
           lineNo,
         );

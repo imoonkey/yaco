@@ -9,12 +9,10 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import {
-  loadTaskStore,
-  rollup,
-  saveTaskStore,
-  withLock,
-} from "../../lib/core/task/index.ts";
+import { loadTaskStore, rollup } from "../../lib/core/task/index.ts";
+import { withLock } from "../../lib/core/task/lock.ts";
+import { saveTaskStore } from "../../lib/core/task/store.ts";
+import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface RmOpts {
@@ -52,7 +50,7 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
       }
       saveTaskStore(store);
     },
-    { command: `yaco task rm ${id}` },
+    { command: `yaco task rm ${id}`, timeoutMs: taskLockTimeoutMs() },
   );
 
   return dual(opts.json, { id, removed: true, tasksPath: paths.tasksPath }, () => `removed task '${id}'\n`);

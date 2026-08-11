@@ -2,11 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 
-import {
-  archiveTask,
-  collectDescendants,
-  type TaskGraph,
-} from "../../../../src/lib/core/task/index.ts";
+import { type TaskGraph } from "../../../../src/lib/core/task/index.ts";
+import { archiveTask, collectDescendants } from "../../../../src/lib/core/task/archive.ts";
 
 describe("collectDescendants", () => {
   it("returns all transitive children", () => {

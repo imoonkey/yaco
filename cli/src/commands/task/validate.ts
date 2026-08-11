@@ -12,12 +12,8 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { err, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import {
-  describeLock,
-  loadTaskStore,
-  validateGraph,
-  type LockStatus,
-} from "../../lib/core/task/index.ts";
+import { loadTaskStore, validateGraph } from "../../lib/core/task/index.ts";
+import { describeLock, type LockStatus } from "../../lib/core/task/lock.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface ValidateOpts {

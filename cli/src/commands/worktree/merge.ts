@@ -5,7 +5,7 @@ import { dual } from "../../lib/core/render.ts";
 import {
   mergeWorktree,
   type MergeMode,
-} from "../../lib/core/worktree/index.ts";
+} from "../../lib/core/worktree/merge.ts";
 
 export interface MergeHandlerOpts {
   json: boolean;
