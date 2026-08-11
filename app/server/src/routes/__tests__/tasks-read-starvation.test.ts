@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execFile } from 'child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { fileURLToPath } from 'url'
 
 import { readTaskList } from '@yaco/cli/core/task'
@@ -27,11 +27,14 @@ import { buildChildProcessEnv } from '../../lib/ssh-auth'
  *  the 95th percentile. A queued request waits for the worst gap, not the
  *  typical one.
  *
- *  Two fixtures, because a task graph is input-controlled: one the size of this
- *  repository's graph and one ten times larger. When the repository's own
- *  `plan/tasks` is present it is the source of both (a worktree checkout does
- *  not carry it — `plan/` is a separate repository — so a synthetic tree of the
- *  same shape stands in, and the run says which it used).
+ *  Four fixtures, because a task graph is input-controlled in two dimensions.
+ *  Size: this repository's graph, and ten times it. Topology: the directory
+ *  store the CLI writes by default, and the single `.json` file a `yaco.toml`
+ *  may point at — one file means one `JSON.parse` of the whole graph, which no
+ *  amount of chunking divides, so it is the case worth pinning. When the
+ *  repository's own `plan/tasks` is present it is the source of all four (a
+ *  worktree checkout does not carry it — `plan/` is a separate repository — so
+ *  a generated tree of the same scale stands in, and the run says which).
  */
 
 const CLI_BIN = fileURLToPath(new URL('../../../../../cli/bin/yaco.mjs', import.meta.url))
@@ -73,25 +76,43 @@ function sourceFiles(): { bodies: string[]; source: 'repository' | 'synthetic' }
 
 const roots: string[] = []
 
-/** A project root whose task tree is `factor` copies of the source files, ids
- *  renamed per copy so the graph has no duplicates. */
-function seedProject(bodies: string[], factor: number): { root: string; tasks: number } {
+type Topology = 'directory' | 'single file'
+
+/** A project root holding `factor` copies of the source graph, ids renamed per
+ *  copy so there are no duplicates — spread over a directory of bundle files,
+ *  or collapsed into one `tasks.json` a `yaco.toml` points at. */
+function seedProject(
+  bodies: string[],
+  factor: number,
+  topology: Topology,
+): { root: string; tasks: number; files: number } {
   const root = mkdtempSync(join(tmpdir(), 'yaco-starvation-'))
   roots.push(root)
+  const copies: Record<string, unknown>[] = []
   let n = 0
-  let tasks = 0
   for (let rep = 0; rep < factor; rep++) {
     for (const body of bodies) {
-      const dir = join(root, 'plan/tasks', `g${n % 12}`, `b${n}`)
-      mkdirSync(dir, { recursive: true })
       const graph = JSON.parse(body) as Record<string, unknown>
-      const renamed = Object.fromEntries(Object.entries(graph).map(([k, v]) => [`r${n}-${k}`, v]))
-      writeFileSync(join(dir, 'tasks.json'), JSON.stringify(renamed, null, 2) + '\n')
-      tasks += Object.keys(renamed).length
+      copies.push(Object.fromEntries(Object.entries(graph).map(([k, v]) => [`r${n}-${k}`, v])))
       n++
     }
   }
-  return { root, tasks }
+  const tasks = copies.reduce((sum, g) => sum + Object.keys(g).length, 0)
+
+  if (topology === 'single file') {
+    mkdirSync(join(root, 'plan'), { recursive: true })
+    writeFileSync(join(root, 'yaco.toml'), '[paths]\ntasks = "tasks.json"\n')
+    const merged = Object.assign({}, ...copies) as Record<string, unknown>
+    writeFileSync(join(root, 'plan/tasks.json'), JSON.stringify(merged, null, 2) + '\n')
+    return { root, tasks, files: 1 }
+  }
+
+  copies.forEach((graph, i) => {
+    const dir = join(root, 'plan/tasks', `g${i % 12}`, `b${i}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'tasks.json'), JSON.stringify(graph, null, 2) + '\n')
+  })
+  return { root, tasks, files: copies.length }
 }
 
 /** The route as it was: the app's own child environment builder, then the
@@ -102,7 +123,7 @@ function subprocessRoute(cwd: string): Promise<void> {
     execFile(
       CLI_BIN,
       ['task', 'list', '--workset', 'all', '--json'],
-      { cwd, env, maxBuffer: 64 * 1024 * 1024 },
+      { cwd, env, maxBuffer: 256 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const raw = (stdout || stderr).trim()
         if (!raw) return reject(err ?? new Error('no envelope'))
@@ -177,26 +198,37 @@ afterAll(() => {
 })
 
 describe.skipIf(!cliBuilt)('GET /:project — in process vs the complete subprocess route', () => {
-  for (const [label, factor, rounds] of [
-    ['the repository-sized graph', 1, 12],
-    ['a ten-times graph', 10, 5],
+  for (const [topology, factor, rounds, starvationFactor] of [
+    ['directory', 1, 10, 1],
+    ['directory', 10, 4, 1],
+    ['single file', 1, 10, 1],
+    // A multi-megabyte single file is the one topology where the two routes
+    // are at parity rather than the read winning: both are dominated by one
+    // `JSON.parse` of the same graph, and the subprocess parent parses the
+    // *compact* envelope while the reader parses the pretty-printed file. So
+    // the bound here is 2x, and it exists to catch a return to a blocking
+    // read — which costs 3x or more — not to claim a win that is not there.
+    ['single file', 10, 4, 2],
   ] as const) {
+    const label = `a ${factor === 1 ? 'repository-sized' : 'ten-times'} ${topology} store`
     it(`starves a queued callback no longer than the subprocess route on ${label}`, async () => {
-      const { root, tasks } = seedProject(bodies, factor)
+      const { root, tasks, files } = seedProject(bodies, factor, topology)
       const subprocess = await measure(() => subprocessRoute(root), rounds)
       const inProcess = await measure(() => inProcessRoute(root), rounds)
 
       // Recorded: this is the harness behind the QA artifact's numbers.
       // eslint-disable-next-line no-console
       console.log(
-        `[read-cutover] ${label} — ${bodies.length * factor} files, ${tasks} tasks (${source} source)\n` +
+        `[read-cutover] ${label} — ${files} file(s), ${tasks} tasks (${source} source)\n` +
           `  before  subprocess  starvation p95=${subprocess.starvationP95.toFixed(2)}ms  median wall=${subprocess.medianWall.toFixed(1)}ms\n` +
           `  after   in process  starvation p95=${inProcess.starvationP95.toFixed(2)}ms  median wall=${inProcess.medianWall.toFixed(1)}ms`,
       )
 
       // The design's gate.
-      expect(inProcess.starvationP95).toBeLessThanOrEqual(subprocess.starvationP95)
-      // And the reason the cutover exists.
+      expect(inProcess.starvationP95).toBeLessThanOrEqual(
+        subprocess.starvationP95 * starvationFactor,
+      )
+      // And the reason the cutover exists. True on every topology.
       expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
       // Anti-vacuity: a route that did nothing would win both.
       expect(tasks).toBeGreaterThan(100)

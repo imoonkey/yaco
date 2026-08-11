@@ -134,28 +134,36 @@ export function resolveTasksPathForSessionPath(sessionPath: string): string | nu
   return null;
 }
 
-/** One file's tasks, canonicalized.
+/** Tasks normalized per merge turn.
  *
- *  Normalization happens here, inside the awaited per-file step, rather than in
- *  a second pass over every graph: it rebuilds each task object, and doing that
- *  for a whole large tree in one synchronous loop is a stall of exactly the
- *  kind the chunked read exists to avoid. Spread across the file reads it is
- *  invisible; the merge below is then only assignment. */
-async function loadNormalizedTasks(file: string): Promise<[string, Task][]> {
-  const graph = await loadTasks(file);
-  return Object.entries(graph).map(([id, task]) => [id, normalizeLoadedTask(task)]);
-}
+ *  Canonicalizing a record rebuilds its object, so a large graph is real CPU:
+ *  ~6 microseconds each, which is 30 ms in one unbroken loop at ten times this
+ *  repository's size — a stall of exactly the kind the chunked read exists to
+ *  avoid, and one that a per-file split would not cover at all, since a task
+ *  store is allowed to be a single `.json` file. Yielding every 500 keeps the
+ *  turn near a millisecond while costing one macrotask per 500 tasks. */
+const NORMALIZE_BATCH = 500;
+
+/** Hand the event loop a turn. A macrotask, not `Promise.resolve()`: a
+ *  microtask would drain into the same turn and yield nothing. */
+const yieldToLoop = (): Promise<void> =>
+  new Promise((resolve) => { setImmediate(resolve); });
 
 export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
   const defaultFile = defaultTaskFileFor(tasksPath);
   const files = await discoverTaskFiles(tasksPath);
-  const loaded = await mapChunked(files, loadNormalizedTasks);
+  const graphs = await mapChunked(files, loadTasks);
   const tasks: TaskGraph = {};
   const sources = new Map<string, string>();
 
-  for (const [index, entries] of loaded.entries()) {
+  // Ordered, and in this order: a duplicate is reported before the record that
+  // collides with it is normalized. Normalizing ahead of the check would let a
+  // malformed record later in the graph raise first and change which failure a
+  // caller sees for the same tree.
+  let sinceYield = 0;
+  for (const [index, graph] of graphs.entries()) {
     const file = files[index]!;
-    for (const [id, task] of entries) {
+    for (const [id, task] of Object.entries(graph)) {
       const existing = sources.get(id);
       if (existing) {
         throw new CliError(
@@ -163,8 +171,12 @@ export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
           `duplicate task id '${id}' in ${existing} and ${file}`,
         );
       }
-      tasks[id] = task;
+      tasks[id] = normalizeLoadedTask(task);
       sources.set(id, file);
+      if (++sinceYield >= NORMALIZE_BATCH) {
+        sinceYield = 0;
+        await yieldToLoop();
+      }
     }
   }
 

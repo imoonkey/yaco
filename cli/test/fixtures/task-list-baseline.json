@@ -553,5 +553,57 @@
         "ok": false
       }
     }
+  },
+  "duplicateBeforeMalformed": {
+    "all": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+        },
+        "ok": false
+      }
+    }
   }
 }

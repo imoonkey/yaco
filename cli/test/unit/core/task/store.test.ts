@@ -196,6 +196,23 @@ describe("loadTaskStore", () => {
     }
   });
 
+  it("reports a duplicate before canonicalizing a later unusable record", async () => {
+    // The merge checks, then normalizes, in that order. Normalizing the whole
+    // graph first — which is one way to spread the CPU cost — lets a record the
+    // canonicalizer cannot touch raise INTERNAL from a graph whose real defect
+    // is a duplicate id, changing the CLI envelope and the HTTP body for the
+    // same tree.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    writeGraph(join(tasksRoot, "a", "tasks.json"), { dup: task() });
+    writeGraph(join(tasksRoot, "b", "tasks.json"), { dup: task(), bad: null });
+
+    await expect(loadTaskStore(tasksRoot)).rejects.toMatchObject({
+      code: "INVALID",
+      message: expect.stringContaining("duplicate task id 'dup'"),
+    });
+  });
+
   it("does not block the event loop while it walks", async () => {
     // The whole point of rule 5: an unrelated queued callback must get to run
     // during the walk, which a synchronous recursive readdir never allows.

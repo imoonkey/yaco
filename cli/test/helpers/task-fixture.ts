@@ -20,6 +20,7 @@ export const FIXTURE_KINDS = [
   "absoluteTasksPath",
   "brokenToml",
   "unreadableDirs",
+  "duplicateBeforeMalformed",
 ] as const;
 
 export type FixtureKind = (typeof FIXTURE_KINDS)[number];
@@ -108,6 +109,19 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
       return;
     case "brokenToml":
       write(root, "yaco.toml", "[paths\ntasks =\n");
+      return;
+    case "duplicateBeforeMalformed":
+      // A duplicate id in the *first* file by sort order, and a record the
+      // canonicalizer cannot touch later in the second. Which of the two the
+      // loader reports is decided by whether it normalizes before or after the
+      // duplicate check, and the answer is part of the error contract.
+      write(root, "plan/tasks/a/tasks.json", graph({
+        dup: { parent: null, depends: [], state: "ready", title: "first" },
+      }));
+      write(root, "plan/tasks/b/tasks.json", graph({
+        dup: { parent: null, depends: [], state: "ready", title: "second" },
+        bad: null,
+      }));
       return;
     case "unreadableDirs":
       // Two unreadable directories at different depths. Which one the loader
