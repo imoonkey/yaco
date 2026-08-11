@@ -1,10 +1,10 @@
 # Development Guide
 
-> Last updated: 2026-08-10 (dual Vitest/Bun test cohorts)
+> Last updated: 2026-08-10 (node:sqlite hop — one runner)
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) runtime
+- Node 24.15+ (the CLI type-strips its own TypeScript; `node:sqlite` is a built-in)
 - tmux installed and in PATH
 - Claude Code and/or Codex CLI installed
 
@@ -12,9 +12,9 @@
 
 ```bash
 # From source
-bun run src/main.ts <area> <command> [args]
-bun run src/main.ts agent start claude
-bun run src/main.ts agent list --all --json
+node src/main.ts <area> <command> [args]
+node src/main.ts agent start claude
+node src/main.ts agent list --all --json
 
 # If installed via the monorepo install script
 yaco <area> <command> [args]
@@ -48,19 +48,25 @@ The root `scripts/verify.sh` runs it automatically.
 
 ## Building
 
-```bash
-bun build src/main.ts --compile --outfile yaco
-```
+There is no working build on this plateau. It was `bun build --compile`, and
+`cli-sqlite-hop` made the compiled binary unable to start (see "One runner, two
+projects"). `cli-dual-artifact-package` replaces it with `bin/yaco.mjs` over an
+esbuild bundle; until then, run from source with `node src/main.ts`.
 
-This only writes `cli/yaco`. Provider hooks and normal `yaco ...` commands use
-the installed binary (`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source build
-does **not** update live Claude/Codex hook behavior.
+Provider hooks and normal `yaco ...` commands use the installed binary
+(`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source run never updates live
+Claude/Codex hook behavior in any case.
 
 ## Installing / Updating
 
 ```bash
 tools/install.sh --cli-only
 ```
+
+> **Broken on this plateau.** The script ends by running the binary it just
+> built, and that binary is `bun build --compile`, which cannot load
+> `node:sqlite`. `cli-dual-artifact-package` owns the fix. The description below
+> is otherwise current.
 
 `tools/install.sh` is a thin bootstrap: it installs the CLI's runtime
 dependencies when a trial bundle cannot resolve them — from an isolated copy of
@@ -99,8 +105,8 @@ tools/install.sh --cli-only
 
 before starting a live Claude/Codex session or interpreting an integration-test
 failure. Hooks in `~/.claude/settings.json` and `~/.codex/hooks.json` call the
-installed `yaco agent hook-event ...`; running only `bun run build` leaves those
-hooks on the old binary.
+installed `yaco agent hook-event ...`; a source run leaves those hooks on the old
+binary. (`cli-sqlite-hop` broke that build — see "One runner, two projects".)
 
 -> See: [install.md](../../main/cli/install.md), [doctor.md](../../main/cli/doctor.md)
 
@@ -111,64 +117,57 @@ The agent runtime skill source of truth is
 ## Testing
 
 ```bash
-bun run test              # unit tests, no tmux required
-bun run test:integration  # reinstalls CLI, then tmux-backed integration tests
+npm run test              # unit tests, no tmux required
+npm run test:integration  # reinstalls CLI, then tmux-backed integration tests
 ```
 
-### Two runners, one command
+### One runner, two projects
 
-The suite is mid-migration to Vitest. Which runner owns a file is a fact *about
-the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
-reads that — from an **import declaration**, not from prose that mentions a
-runner — runs both cohorts, and **fails closed** four ways: a file naming
-neither runner or both, a suite selecting no files, a bun-cohort file whose
-**source declares no test**, and one whose **JUnit report** says none executed —
-no report at all, or every case parked behind `.skip`/`.todo`, which bun counts
-in `tests`. (`bun test` exits 0 in all of those; `vitest run` rejects them
-itself.)
+Everything runs under Vitest. `cli-sqlite-hop` moved the last six files —
+database fixtures that opened `bun:sqlite` — onto `node:sqlite`, which deleted
+the temporary `test/cohorts.mjs` dual runner along with its stub and guard.
 
-The source check is the authoritative one, and it is deliberately not derived
-from the run: everything a run produces — console, exit status, and the report
-file, whose path the child reads off its own `argv` — is written by the same
-process as the tests. The source is read before that process exists. The report
-check then catches the other half, a file whose declared tests never run. So a
-new test cannot land in no suite, and a cohort cannot pass by running nothing.
-Both `test:unit` and `test:integration` are that script; there is no list to
-keep in sync, and `test/cohorts.test.ts` pins both rules.
+`vitest.config.ts` declares the two suites as projects, and the split is one
+directory: `integration` is `test/integration/**`, `unit` is everything else.
+Both include `*.test.ts` **and** `*.integration.ts`, so a file cannot land in no
+suite by being named the other way, and neither list is hand-maintained.
 
-Only 6 files are left on Bun, all of them database fixtures that open
-`bun:sqlite`: `test/{history,session-id,summary}.test.ts`,
-`test/unit/{commands,core}/project/move.test.ts`,
-`test/unit/core/agent/ordering.test.ts`. `cli-sqlite-hop` moves them to
-`node:sqlite` and deletes `cohorts.mjs`.
+```bash
+npx vitest run --project unit          # == npm run test:unit
+npx vitest run --project integration
+npx vitest run <files>                 # focused, any project
+npx vitest run --sequence.shuffle --sequence.seed=<n>   # smoke out order coupling
+```
 
-Everything else runs under Vitest, so a focused run is `npx vitest run <files>`
-— and `npx vitest run --sequence.shuffle --sequence.seed=<n>` is the cheapest
-way to smoke out order coupling.
+`test/helpers/cli-process.ts` owns how a test starts the CLI: `runCli(args,
+opts)` spawns `process.execPath` on `src/main.ts`, which Node 24 type-strips on
+the way in. Never spell the runtime at a call site — `runCli` is absolute
+because the golden sandbox hands its child an empty `PATH`.
 
-Two things exist only to bridge the gap and die with `cli-sqlite-hop`:
+**Bun no longer runs this CLI at all.** `src/lib/core/agent/session-id.ts` and
+`providers/{history,project-move}.ts` import `node:sqlite`, which Bun 1.3
+cannot resolve, so `bun build --compile` still produces a binary and that binary
+exits before `main`. `tools/install.sh` builds exactly that binary, so it is
+broken until `cli-dual-artifact-package` ships the Node artifact; one integration
+case (`install.test.ts`'s clean-`$BIN_DIR` bootstrap) is skipped on that
+ticket's name.
 
-- `vitest.config.ts` aliases `bun:sqlite` to `test/helpers/bun-sqlite-stub.ts`,
-  whose `Database` constructor throws. 32 files reach that specifier only
-  through `providers/claude.ts`'s eager `history`/`project-move` imports and
-  never open a database; a test that really wants one fails loudly and belongs
-  in the Bun cohort.
-- `test/helpers/cli-process.ts` owns how a test starts the CLI. `src/main.ts`
-  still imports `bun:sqlite` transitively, so the child is a Bun process
-  whichever runner hosts the test — `process.execPath` is the *host*, which
-  under Vitest is node. Use `runCli(args, opts)`; never spell the runtime at a
-  call site.
+The `node:sqlite` mapping, for reading the three files: `Database` →
+`DatabaseSync`, `{readonly}` → `{readOnly}`, `db.query(sql)` → `db.prepare(sql)`,
+and raw SQL through `db.exec` — `DatabaseSync` has no `run`. One behavior
+difference, not a rename: a `.get()` that matches nothing is `undefined`, where
+`bun:sqlite` gave `null`.
 
 Test split:
-- `bun run test` / `bun run test:unit`: pure unit tests (model, state, providers, lifecycle, hook-event, hooks-install, agent-wrapper.sh content+exec, agent-dispatch parseStartArgs / send --stdin / capture envelope, dispatcher + envelope, task validation / graph / store / archive / lock, worktree slug validation), no tmux required.
-- `bun run test:integration`: first runs `bun run reinstall`
+- `npm run test` / `npm run test:unit`: pure unit tests (model, state, providers, lifecycle, hook-event, hooks-install, agent-wrapper.sh content+exec, agent-dispatch parseStartArgs / send --stdin / capture envelope, dispatcher + envelope, task validation / graph / store / archive / lock, worktree slug validation), no tmux required.
+- `npm run test:integration`: first runs `npm run reinstall`
   (`../tools/install.sh --cli-only`) so provider hooks execute the current
   binary, then runs tmux-backed integration tests (path-scoped, real-agent
   lifecycle/sync, lifecycle guards), task CLI integration
   (`task-cli.integration.ts`), and the worktree lifecycle suite
   (`worktree.integration.ts` — tmpdir git repo + fake `gh` on PATH, no network).
-  The script runs the integration files sequentially so real-agent cases do not
-  overlap in tmux.
+  Real-agent cases must not overlap in tmux, so the integration project is run
+  as its own Vitest invocation rather than alongside the unit files.
 
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
@@ -184,7 +183,7 @@ identically everywhere). Machine-specific paths are redacted, so a matrix diff
 can only report behavior. It is the parity baseline for the Node port.
 
 ```bash
-bun run test/golden/capture.ts --out test/golden/matrix.json
+node test/golden/capture.ts --out test/golden/matrix.json
 ```
 
 Two matrices are committed and they are verified differently:
@@ -231,7 +230,9 @@ module's functions call each other, mock the *entry* the code under test
 actually reaches (`test/lifecycle-guards.test.ts` has a worked example).
 
 `test/unit/module-mock-scope.test.ts` fails the suite if any test file calls
-`mock.module(` — for as long as anything still runs under bun.
+`mock.module(`. The registry it guarded is gone with the runner; the guard stays
+because the call is still writable, and it names the real problem where an
+unresolvable `bun:test` import would not.
 
 ### Verifying provider adapter changes
 
@@ -249,23 +250,22 @@ npx vitest run test/providers.test.ts test/start.test.ts test/rename.test.ts \
 npx vitest run test/hooks-install.test.ts test/unit/commands/doctor.test.ts \
   test/unit/commands/install.test.ts
 
-# Providers JSON surfaces; history/summary are still Bun-cohort fixtures
-npx vitest run test/agent-json-surfaces.test.ts
-bun test ./test/history.test.ts ./test/summary.test.ts
+# Providers JSON surfaces + the codex SQLite history/summary fixtures
+npx vitest run test/agent-json-surfaces.test.ts test/history.test.ts test/summary.test.ts
 
 # Output cursor + output-follow NDJSON stream
 npx vitest run test/unit/agent-output.test.ts
 
-# Provider-owned project move (Bun cohort — opens a database)
-bun test ./test/unit/core/project/move.test.ts ./test/unit/commands/project/move.test.ts
+# Provider-owned project move (opens a database)
+npx vitest run test/unit/core/project/move.test.ts test/unit/commands/project/move.test.ts
 
 # Full gate (always run before commit)
-bun run test:unit
-tsc --noEmit
+npm run test:unit
+npx tsc --noEmit -p .
 ```
 
 Real-agent / tmux behavior (startup, resume, OSC color responder, install
-bootstrap) is covered by `bun run test:integration`, which reinstalls first.
+bootstrap) is covered by `npm run test:integration`, which reinstalls first.
 App-side consumers of the CLI JSON/stream surfaces have their own suites under
 `app/server` (e.g.
 `npx vitest run agent-output history session-summary`); changing a CLI surface
@@ -296,7 +296,7 @@ doc/progress/cli.md         # Imported CLI history
 
 ## Conventions
 
-- **Runtime**: Bun (TypeScript). One runtime dependency, `smol-toml` — Node has no built-in TOML parser and the Codex trust gate has to read `config.toml`. Adding a second is a distribution decision, not a convenience: see [doc/main/cli/install.md](../../main/cli/install.md#bootstrap-dependencies).
+- **Runtime**: Node 24.15+ (TypeScript, type-stripped at load). One runtime dependency, `smol-toml` — Node has no built-in TOML parser and the Codex trust gate has to read `config.toml`. Adding a second is a distribution decision, not a convenience: see [doc/main/cli/install.md](../../main/cli/install.md#bootstrap-dependencies).
 - **Commits**: conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
 - **Max 400 lines/file** — extract when larger
 - **No hardcoded secrets** — env vars for sensitive data

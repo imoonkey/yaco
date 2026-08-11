@@ -1,6 +1,13 @@
 # Install Subcommand
 
-> Last updated: 2026-08-11 (portable runtime)
+> Last updated: 2026-08-10 (node:sqlite hop)
+
+> **`tools/install.sh` does not currently succeed.** Its last step runs the
+> binary it just built, and that binary is `bun build --compile` — which since
+> `cli-sqlite-hop` cannot load the CLI's `node:sqlite` import and exits before
+> `main`. Everything up to and including the build still behaves as described
+> below. `cli-dual-artifact-package` replaces the compiled binary with
+> `bin/yaco.mjs` over a Node bundle and is what makes this page true again.
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
