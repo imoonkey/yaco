@@ -50,12 +50,14 @@
   "files": [
     "bin",
     "dist",
+    "agent-config",
     "scripts/agent-wrapper.sh",
     "LICENSE"
   ],
   "scripts": {
-    "clean": "rm -rf dist",
-    "build": "npm run build:bundle && npm run build:lib",
+    "clean": "rm -rf dist agent-config",
+    "build": "npm run build:assets && npm run build:bundle && npm run build:lib",
+    "build:assets": "node scripts/sync-agent-config.mjs",
     "build:bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/yaco.mjs",
     "build:lib": "tsc -p tsconfig.build.json",
     "prepack": "npm run clean && npm run build",

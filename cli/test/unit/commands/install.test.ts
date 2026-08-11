@@ -16,6 +16,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -23,11 +24,26 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
+import { PACKAGE_ROOT, PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
 import { runInstall, type InstallReport } from "../../../src/commands/install.ts";
 import { runCli } from "../../helpers/cli-process.ts";
 
+/** The manifest is the package's own skills listing, so the fixtures are the
+ *  skills this package actually ships — there is no way to stage a different
+ *  one, and asserting against the real names is what makes these tests agree
+ *  with what an installed user gets. */
+const SHIPPED_SKILLS: string[] = readdirSync(PACKAGED_SKILLS_DIR, { withFileTypes: true })
+  .filter((e) => e.isDirectory())
+  .map((e) => e.name)
+  .sort();
+const SKILL_A = SHIPPED_SKILLS[0]!;
+const SKILL_B = SHIPPED_SKILLS[1]!;
+
+function shippedSkill(name: string): string {
+  return join(PACKAGED_SKILLS_DIR, name);
+}
 
 const ORIG = {
   HOME: process.env["HOME"],
@@ -54,11 +70,11 @@ beforeEach(() => {
   process.env["YACO_BIN_DIR"] = join(sandbox, "bin");
   binDir = process.env["YACO_BIN_DIR"]!;
   mkdirSync(binDir, { recursive: true });
-  // Stage a fake YACO repo root that has the agent-config skeleton install
-  // needs — a skills dir with two skills to plant per-skill links for.
+  // Stage a fake YACO repo root carrying the marker that makes it a checkout —
+  // the skills source the package ships a mirror of. Install reads the mirror,
+  // not this; what this decides is whether there is a repo to register.
   repoRoot = join(sandbox, "repo");
-  mkdirSync(join(repoRoot, "agent-config", "global", "skills", "alpha"), { recursive: true });
-  mkdirSync(join(repoRoot, "agent-config", "global", "skills", "beta"), { recursive: true });
+  mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   // Minimal valid tasks graph so the doctor's task-graph check passes when
   // tests opt into running doctor (skipDoctor: false).
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
@@ -145,21 +161,37 @@ describe("runInstall — basic shape", () => {
     expect((st.mode & 0o111)).not.toBe(0);
   });
 
-  it("creates ~/.claude/skills as a real dir with one link per skill", () => {
+  it("creates ~/.claude/skills as a real dir with one link per shipped skill", () => {
     runInstall(baseOpts());
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     expect(lstatSync(container).isDirectory()).toBe(true);
     expect(lstatSync(container).isSymbolicLink()).toBe(false);
-    for (const name of ["alpha", "beta"]) {
-      expect(readlinkSync(join(container, name))).toBe(
-        join(repoRoot, "agent-config", "global", "skills", name),
-      );
+    expect(SHIPPED_SKILLS.length).toBeGreaterThan(0);
+    for (const name of SHIPPED_SKILLS) {
+      expect(readlinkSync(join(container, name))).toBe(shippedSkill(name));
     }
     expect(readlinkSync(join(home, ".agents", "skills"))).toBe(container);
     // Install is purely additive: it claims no global instruction file.
     expect(existsSync(join(home, ".claude", "CLAUDE.md"))).toBe(false);
     expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
+
+  it("points every skill link inside the package, never at the checkout", () => {
+    // The property the whole packaging change exists for: an `npm i -g` user has
+    // no checkout, so a target outside the package is a link that resolves on
+    // the machine it was built on and nowhere else.
+    const r = runInstall(baseOpts());
+    const container = join(process.env["HOME"]!, ".claude", "skills");
+    for (const name of SHIPPED_SKILLS) {
+      const target = readlinkSync(join(container, name));
+      expect(target.startsWith(PACKAGE_ROOT)).toBe(true);
+      expect(target.startsWith(repoRoot)).toBe(false);
+      expect(existsSync(target)).toBe(true);
+    }
+    expect(r.actions.filter((a) => a.startsWith("symlink skill "))).toHaveLength(
+      SHIPPED_SKILLS.length,
+    );
   });
 
   it("upserts {id: yaco, path: repoRoot} into the registry", () => {
@@ -187,7 +219,7 @@ describe("runInstall — idempotency (AC 2)", () => {
 
   it("does not relink an already-correct symlink", () => {
     runInstall(baseOpts());
-    const link = join(process.env["HOME"]!, ".claude", "skills", "alpha");
+    const link = join(process.env["HOME"]!, ".claude", "skills", SKILL_A);
     const beforeM = lstatSync(link).mtimeMs;
     // tiny delay to make any rewrite detectable in mtime
     const start = Date.now();
@@ -271,17 +303,6 @@ describe("runInstall — legacy bin cleanup (AC 5)", () => {
 });
 
 describe("runInstall — error paths", () => {
-  it("ENV when agent-config/global/skills is missing", () => {
-    rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
-    let code: string | undefined;
-    try {
-      runInstall(baseOpts());
-    } catch (e) {
-      code = (e as { code?: string }).code;
-    }
-    expect(code).toBe("ENV");
-  });
-
   it("IO when a regular file blocks a target symlink path", () => {
     const claudeDir = join(process.env["HOME"]!, ".claude");
     mkdirSync(claudeDir, { recursive: true });
@@ -375,9 +396,7 @@ describe("runInstall — global-link safety", () => {
     runInstall(baseOpts({ force: true }));
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isDirectory()).toBe(true);
-    expect(readlinkSync(join(container, "alpha"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "alpha"),
-    );
+    expect(readlinkSync(join(container, SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 
   it("--skip-links leaves all global links untouched (even when stale)", () => {
@@ -393,55 +412,17 @@ describe("runInstall — global-link safety", () => {
     expect(existsSync(join(home, ".agents", "skills"))).toBe(false);
   });
 
-  it("same-realpath alias is no-op (idempotent — no --force needed)", () => {
-    // First install plants canonical links.
-    runInstall(baseOpts());
-    const home = process.env["HOME"]!;
-    const before = readlinkSync(join(home, ".claude", "skills", "alpha"));
-    // Re-install via a symlink alias of the same repoRoot — should NOT throw.
-    const aliasDir = join(process.env["HOME"]!, "..", "repo-alias-link");
-    try {
-      symlinkSync(repoRoot, aliasDir);
-    } catch {
-      return; // sandbox refused symlink creation
-    }
-    try {
-      runInstall(baseOpts({ repoRoot: aliasDir }));
-      // Original per-skill link target preserved.
-      expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(before);
-    } finally {
-      try { unlinkSync(aliasDir); } catch { /* best-effort */ }
-    }
-  });
-
   it("migrates a RELATIVE legacy whole-dir symlink without --force (cwd-independent)", () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     // Relative link that correctly resolves to OUR skillsDir from the link's
     // own directory — must be treated as ours regardless of process cwd.
-    symlinkSync(
-      join("..", "..", "repo", "agent-config", "global", "skills"),
-      join(claudeDir, "skills"),
-    );
+    symlinkSync(relative(claudeDir, PACKAGED_SKILLS_DIR), join(claudeDir, "skills"));
     runInstall(baseOpts());
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isSymbolicLink()).toBe(false);
-    expect(readlinkSync(join(container, "alpha"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "alpha"),
-    );
-  });
-
-  it("ENV when agent-config/global/skills is a file, not a directory", () => {
-    rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
-    writeFileSync(join(repoRoot, "agent-config", "global", "skills"), "not a dir\n");
-    let code: string | undefined;
-    try {
-      runInstall(baseOpts());
-    } catch (e) {
-      code = (e as { code?: string }).code;
-    }
-    expect(code).toBe("ENV");
+    expect(readlinkSync(join(container, SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 
   it("migrates a legacy whole-dir symlink to per-skill links without --force", () => {
@@ -449,14 +430,12 @@ describe("runInstall — global-link safety", () => {
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     // Pre-v0.1 layout: the whole dir symlinked at OUR canonical skillsDir.
-    symlinkSync(join(repoRoot, "agent-config", "global", "skills"), join(claudeDir, "skills"));
+    symlinkSync(PACKAGED_SKILLS_DIR, join(claudeDir, "skills"));
     runInstall(baseOpts());
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isSymbolicLink()).toBe(false);
     expect(lstatSync(container).isDirectory()).toBe(true);
-    expect(readlinkSync(join(container, "beta"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "beta"),
-    );
+    expect(readlinkSync(join(container, SKILL_B))).toBe(shippedSkill(SKILL_B));
   });
 
   it("merges into an existing real dir, keeping the user's own skills", () => {
@@ -466,52 +445,44 @@ describe("runInstall — global-link safety", () => {
     writeFileSync(join(mine, "SKILL.md"), "user skill\n");
     runInstall(baseOpts());
     expect(readFileSync(join(mine, "SKILL.md"), "utf-8")).toBe("user skill\n");
-    expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "alpha"),
-    );
+    expect(readlinkSync(join(home, ".claude", "skills", SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 
   it("keeps a same-name user skill (real dir) and still installs the rest", () => {
     const home = process.env["HOME"]!;
-    const userAlpha = join(home, ".claude", "skills", "alpha");
-    mkdirSync(userAlpha, { recursive: true });
-    writeFileSync(join(userAlpha, "SKILL.md"), "my alpha\n");
+    const userOwned = join(home, ".claude", "skills", SKILL_A);
+    mkdirSync(userOwned, { recursive: true });
+    writeFileSync(join(userOwned, "SKILL.md"), "my own\n");
     const r = runInstall(baseOpts());
-    // User's alpha untouched — a real dir is never clobbered.
-    expect(lstatSync(userAlpha).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(userAlpha, "SKILL.md"), "utf-8")).toBe("my alpha\n");
-    // beta still linked; the skip is reported in actions.
-    expect(readlinkSync(join(home, ".claude", "skills", "beta"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "beta"),
-    );
-    expect(r.actions.some((a) => a.includes("keep alpha"))).toBe(true);
+    // The user's own is untouched — a real dir is never clobbered.
+    expect(lstatSync(userOwned).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(userOwned, "SKILL.md"), "utf-8")).toBe("my own\n");
+    // The rest are still linked; the skip is reported in actions.
+    expect(readlinkSync(join(home, ".claude", "skills", SKILL_B))).toBe(shippedSkill(SKILL_B));
+    expect(r.actions.some((a) => a.includes(`keep ${SKILL_A}`))).toBe(true);
   });
 
   it("replaces a dangling same-name skill link", () => {
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     mkdirSync(container, { recursive: true });
-    symlinkSync(join(sandbox, "gone", "alpha"), join(container, "alpha"));
+    symlinkSync(join(sandbox, "gone", SKILL_A), join(container, SKILL_A));
     runInstall(baseOpts());
-    expect(readlinkSync(join(container, "alpha"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "alpha"),
-    );
+    expect(readlinkSync(join(container, SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 
   it("skips a same-name link to a live foreign target without --force, retargets with it", () => {
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     mkdirSync(container, { recursive: true });
-    const foreign = join(sandbox, "other-skills", "alpha");
+    const foreign = join(sandbox, "other-skills", SKILL_A);
     mkdirSync(foreign, { recursive: true });
-    symlinkSync(foreign, join(container, "alpha"));
+    symlinkSync(foreign, join(container, SKILL_A));
     const r = runInstall(baseOpts());
-    expect(readlinkSync(join(container, "alpha"))).toBe(foreign);
-    expect(r.actions.some((a) => a.includes("skip alpha"))).toBe(true);
+    expect(readlinkSync(join(container, SKILL_A))).toBe(foreign);
+    expect(r.actions.some((a) => a.includes(`skip ${SKILL_A}`))).toBe(true);
     runInstall(baseOpts({ force: true }));
-    expect(readlinkSync(join(container, "alpha"))).toBe(
-      join(repoRoot, "agent-config", "global", "skills", "alpha"),
-    );
+    expect(readlinkSync(join(container, SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 });
 
@@ -718,6 +689,46 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     expect(taskGraph?.status).toBe("skip");
     expect(taskGraph?.detail).toContain(otherRepo);
     expect(report.doctor!.summary.fail).toBe(0);
+  });
+});
+
+describe("runInstall — no checkout at all (the `npm i -g @yaco/cli` user)", () => {
+  /** Everything the package needs, and nothing a checkout would have provided:
+   *  a directory that is simply where the user happened to be standing. */
+  function stageNoCheckout(): string {
+    writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(binDir, "yaco"), 0o755);
+    const nowhere = join(sandbox, "nowhere");
+    mkdirSync(nowhere, { recursive: true });
+    return nowhere;
+  }
+
+  it("plants every skill link and registers nothing", () => {
+    const nowhere = stageNoCheckout();
+    const r = runInstall(baseOpts({ repoRoot: nowhere }));
+
+    const container = join(process.env["HOME"]!, ".claude", "skills");
+    for (const name of SHIPPED_SKILLS) {
+      expect(readlinkSync(join(container, name))).toBe(shippedSkill(name));
+    }
+    // No repo to register — and the skip is reported, not silent.
+    expect(existsSync(join(process.env["YACO_HOME"]!, "projects.json"))).toBe(false);
+    expect(r.actions.some((a) => a.startsWith("skipped registry:"))).toBe(true);
+  });
+
+  it("runs the closing doctor to zero failures, skipping the repo-scoped checks", () => {
+    const nowhere = stageNoCheckout();
+    const r = runInstall(baseOpts({ repoRoot: nowhere, skipDoctor: false }));
+
+    const status = (name: string) =>
+      r.doctor!.checks.find((c) => c.name === name)?.status;
+    // Nothing to check: no registry was written, and a directory that is not a
+    // repo has no task graph.
+    expect(status("registry")).toBe("skip");
+    expect(status("task-graph")).toBe("skip");
+    // The skills came out of the package, so this one is answerable and passes.
+    expect(status("skills-link")).toBe("pass");
+    expect(r.doctor!.summary.fail).toBe(0);
   });
 });
 

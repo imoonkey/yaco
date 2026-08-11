@@ -11,7 +11,12 @@
  *
  *  Both files are static, so this comparison is machine-independent even though
  *  the original capture was not: it verifies the recorded artifacts, it does not
- *  re-run the pre-ordering code. */
+ *  re-run the pre-ordering code.
+ *
+ *  A case whose observable was later changed on purpose is no longer comparable
+ *  at all, and pretending otherwise would mean loosening the comparison for
+ *  every case to excuse two. {@link INTENTIONAL_DELTAS} names those two instead,
+ *  so the exemption is as narrow and as legible as the change that earned it. */
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -53,8 +58,23 @@ function orderFreeStdout(stdout: string): string {
   }
 }
 
+/** Cases whose output changed deliberately after `matrix.original.json` was
+ *  captured, mapped to the change that did it. Everything not named here is
+ *  still held to order-only. */
+const INTENTIONAL_DELTAS: Record<string, string> = {
+  "doctor-json":
+    "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
+    "`skills-link` resolves the manifest from the package rather than through it",
+  "install-dry-run-json":
+    "`install` no longer needs a checkout, so a root that is not one plans the " +
+    "install (exit 0) instead of refusing it (ENV)",
+};
+
+/** Case pairs still comparable between the two matrices. */
 function pairs(): [CaseResult, CaseResult][] {
-  return original.cases.map((before, i) => [before, current.cases[i]!]);
+  return original.cases
+    .map((before, i): [CaseResult, CaseResult] => [before, current.cases[i]!])
+    .filter(([before]) => !(before.id in INTENTIONAL_DELTAS));
 }
 
 describe("ordering delta: original Bun baseline → post-ordering baseline", () => {
@@ -79,6 +99,12 @@ describe("ordering delta: original Bun baseline → post-ordering baseline", () 
         [before.id]: orderFreeStdout(before.stdout),
       });
     }
+  });
+
+  it("exempts nothing it did not name", () => {
+    const ids = new Set(current.cases.map((c) => c.id));
+    for (const id of Object.keys(INTENTIONAL_DELTAS)) expect(ids.has(id)).toBe(true);
+    expect(pairs()).toHaveLength(original.cases.length - Object.keys(INTENTIONAL_DELTAS).length);
   });
 
   it("actually reordered output — the delta is not vacuous", () => {

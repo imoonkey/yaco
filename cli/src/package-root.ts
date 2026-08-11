@@ -1,10 +1,11 @@
 /** How this installation names its own files to code that runs later.
  *
- *  Three things have to be found relative to the package rather than to a
+ *  Four things have to be found relative to the package rather than to a
  *  checkout or a working directory, or an installed copy cannot work:
- *  `scripts/agent-wrapper.sh`, `package.json`, and the `yaco` executable
- *  itself — yaco writes its own invocation into provider hook configs and into
- *  queued tmux commands, and both fire later in a stripped environment.
+ *  `scripts/agent-wrapper.sh`, `package.json`, `agent-config/global/skills`, and
+ *  the `yaco` executable itself — yaco writes its own invocation into provider
+ *  hook configs and into queued tmux commands, and both fire later in a stripped
+ *  environment.
  *
  *  The hazard is that the relative distance from *a source file* to the package
  *  root is not the distance from *the built artifact* to it: a bundler rewrites
@@ -28,6 +29,14 @@ export const PACKAGE_ROOT = fileURLToPath(new URL("../", import.meta.url));
 export function packagedAssetPath(...segments: string[]): string {
   return join(PACKAGE_ROOT, ...segments);
 }
+
+/** The skills `yaco install` plants `~/.claude/skills` links to, and the listing
+ *  `yaco doctor` checks those links against — one manifest, named once.
+ *
+ *  Mirrored into the package from the repo's `agent-config/global/` by
+ *  `scripts/sync-agent-config.mjs` at build time, because npm cannot pack a path
+ *  outside the package directory. */
+export const PACKAGED_SKILLS_DIR = packagedAssetPath("agent-config", "global", "skills");
 
 /** A `yaco` on PATH that is a real installation — memoized against the PATH it
  *  was found under.

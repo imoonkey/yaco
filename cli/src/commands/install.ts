@@ -1,11 +1,16 @@
 /** `yaco install` — canonical, idempotent installer.
  *
  *  Two-stage bootstrap per design:
- *    1. `tools/install.sh` builds the bun binary into $BIN_DIR/yaco, codesigns
- *       on macOS, then `exec "$BIN_DIR/yaco" install "$@"`.
- *    2. `yaco install` (this module) does the rest: npm deps, hook merge,
- *       wrapper write, global agent-config symlinks, projects.json upsert,
- *       legacy bin cleanup, and a trailing `yaco doctor` run.
+ *    1. the package lands on the machine — `npm install -g @yaco/cli`, or
+ *       `tools/install.sh`, which packs that same tarball, installs it into
+ *       $BIN_DIR's prefix and `exec`s `"$BIN_DIR/yaco" install "$@"`. Landing is
+ *       inert: it writes files and the `yaco` executable, nothing else.
+ *    2. `yaco install` (this module) configures the machine: hook merge, wrapper
+ *       write, skill symlinks, legacy bin cleanup, and a trailing `yaco doctor`
+ *       run. Everything it plants comes out of the installed package, so none of
+ *       it needs a checkout. The two steps that do — `npm install` in the app
+ *       workspaces, and registering the yaco repo itself in projects.json — are
+ *       skipped when there is no checkout to run them against.
  *
  *  Re-running `yaco install` MUST be a no-op (idempotent). `--dry-run`
  *  prints the planned action list to stderr without touching the
@@ -45,6 +50,7 @@ import {
   writeProjects,
   type Project,
 } from "../lib/core/paths/index.ts";
+import { PACKAGED_SKILLS_DIR } from "../package-root.ts";
 import { readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
@@ -155,6 +161,14 @@ function resolveBinDir(opt?: string): string {
   return join(userHome(), ".local", "bin");
 }
 
+function isDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function pathKind(p: string): "missing" | "symlink" | "other" {
   try {
     const st = lstatSync(p);
@@ -263,6 +277,17 @@ function realpathOr(p: string): string {
   }
 }
 
+/** Whether `repoRoot` is the yaco source repo, which is a different question
+ *  from whether it is a project.
+ *
+ *  The marker is the skills source the package ships a mirror of: a checkout has
+ *  it, and a directory an `npm i -g` user happened to be standing in does not.
+ *  Only the source repo has a "yaco" registry entry to upsert — see
+ *  {@link upsertRegistry}. */
+function isYacoCheckout(repoRoot: string): boolean {
+  return isDirectory(join(repoRoot, "agent-config", "global", "skills"));
+}
+
 /** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json.
  *  Refuses to overwrite a malformed registry — operator must repair the file
  *  manually rather than silently lose other project entries.
@@ -322,27 +347,29 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
 
 /** Install the global skills links: ~/.claude/skills is a REAL directory that
  *  yaco and the user's other skill sources share; yaco plants one symlink per
- *  shipped skill (the repo's agent-config/global/skills/ listing IS the
+ *  shipped skill (the packaged agent-config/global/skills/ listing IS the
  *  manifest). ~/.agents/skills stays a whole-directory symlink to it.
+ *
+ *  The manifest is a package asset, located the same way every other one is, so
+ *  `npm i -g @yaco/cli` installs the skills too and no checkout is involved.
+ *  Resolving it from `repoRoot` instead is what made the CLI alone deliver a
+ *  third of the product: the skills are what the commands exist to drive.
  *
  *  Purely additive: skills the user put in ~/.claude/skills under other names
  *  coexist untouched, a same-name non-symlink is kept (yaco's link is skipped
  *  with a note, never clobbered — not even with --force), and install never
  *  claims a global instruction file, so a pre-existing ~/.claude/CLAUDE.md is
  *  left exactly as the user wrote it. */
-function installGlobalLinks(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
+function installGlobalLinks(force: boolean, actions: string[], dryRun: boolean): void {
   const home = userHome();
-  const skillsDir = join(repoRoot, "agent-config", "global", "skills");
-  // Hard precondition: if agent-config/global/skills is missing or not a
-  // directory, refuse to install — silently linking to a non-existent target
-  // would mask a broken checkout and only surface as a confusing error from
-  // doctor later.
-  let skillsDirIsDir = false;
-  try { skillsDirIsDir = statSync(skillsDir).isDirectory(); } catch { /* missing */ }
-  if (!skillsDirIsDir) {
+  const skillsDir = PACKAGED_SKILLS_DIR;
+  // Hard precondition: a package that cannot show its own skills is broken, not
+  // merely bare — silently linking to a non-existent target would mask that and
+  // only surface as a confusing error from doctor later.
+  if (!isDirectory(skillsDir)) {
     throw new CliError(
       ErrCode.ENV,
-      `missing ${skillsDir} — repo root is not a YACO checkout (or --repo is wrong)`,
+      `missing ${skillsDir} — this @yaco/cli installation is incomplete (reinstall it)`,
     );
   }
   const claudeSkills = join(home, ".claude", "skills");
@@ -554,7 +581,7 @@ export function runInstall(opts: InstallOptions): InstallReport {
   }
 
   if (!opts.skipLinks) {
-    installGlobalLinks(repoRoot, opts.force, actions, opts.dryRun);
+    installGlobalLinks(opts.force, actions, opts.dryRun);
   }
 
   // Legacy bin symlinks left over from multmux's prior install footprint.
@@ -565,8 +592,17 @@ export function runInstall(opts: InstallOptions): InstallReport {
     installAppDeps(repoRoot, actions, opts.dryRun);
   }
 
+  // The registry entry names the yaco source repo as a project. An `npm i -g`
+  // user has no such repo, so there is nothing to register and the step is
+  // skipped rather than pointed at whatever directory they were standing in.
+  // It is not a capability gap: they register their own repos with
+  // `yaco project add`.
   if (!opts.noRegistry) {
-    upsertRegistry(repoRoot, opts.force, actions, opts.dryRun);
+    if (isYacoCheckout(repoRoot)) {
+      upsertRegistry(repoRoot, opts.force, actions, opts.dryRun);
+    } else {
+      actions.push(`skipped registry: ${repoRoot} is not a yaco checkout (\`yaco project add\` registers your own repos)`);
+    }
   }
 
   if (opts.dryRun && !opts.json) {

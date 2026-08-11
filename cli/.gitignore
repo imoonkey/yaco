@@ -52,3 +52,6 @@ AGENTS.md
 GEMINI.md
 .claude/agents/
 .claude/skills/
+
+# skills mirrored in from ../agent-config by `npm run build:assets`
+/agent-config
