@@ -45,10 +45,11 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { buildFixture, FIXTURE_PROJECT, SCALES, type FixtureScale } from "./summary-fixture.ts";
 import { readSessionSummaries } from "../../src/lib/core/agent/providers/summary-read.ts";
@@ -76,6 +77,9 @@ interface Options {
   keep: boolean;
   json: string | null;
   bareSpawn: boolean;
+  /** Report only the SQLite point query's plan and open/get/close cost — the
+   *  measurement `RULE_5_SQLITE` names, on its own, reproducibly. */
+  sqliteProbe: boolean;
 }
 
 function parseOptions(argv: string[]): Options {
@@ -89,6 +93,7 @@ function parseOptions(argv: string[]): Options {
     keep: false,
     json: null,
     bareSpawn: false,
+    sqliteProbe: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -106,6 +111,8 @@ function parseOptions(argv: string[]): Options {
     else if (arg === "--json") o.json = value();
     else if (arg === "--keep") o.keep = true;
     else if (arg === "--bare-spawn") o.bareSpawn = true;
+    else if (arg === "--sqlite-probe") o.sqliteProbe = true;
+    else if (arg === "--long-record") o.scale = "long-record";
     else throw new Error(`unknown flag: ${arg}`);
   }
   if (!o.home && !SCALES[o.scale]) throw new Error(`unknown --scale ${o.scale} (have ${Object.keys(SCALES)})`);
@@ -280,6 +287,59 @@ function spawnRoute(argv: string[], env: NodeJS.ProcessEnv, envDiscovery: boolea
     });
 }
 
+// -- the SQLite admission's own measurement --
+
+/** Report the `threads` point query on its own: the database it ran against,
+ *  the plan SQLite chose, and what one open/get/close costs.
+ *
+ *  This is what `RULE_5_SQLITE` names. The route benchmark measures the whole
+ *  summary read, in which this query is one component among provider log reads;
+ *  an admission that says "1.4 ms for the query" has to be reproducible as
+ *  exactly that, not inferred from a route total. */
+function sqliteProbe(dbPath: string, samples = 40): void {
+  if (!existsSync(dbPath)) throw new Error(`no database at ${dbPath}`);
+  const SQL = "SELECT title, first_user_message FROM threads WHERE id = ?";
+
+  const opened = new DatabaseSync(dbPath, { readOnly: true });
+  let rows: number;
+  let plan: string;
+  let ids: string[];
+  try {
+    rows = (opened.prepare("SELECT count(*) AS n FROM threads").get() as { n: number }).n;
+    plan = (opened.prepare(`EXPLAIN QUERY PLAN ${SQL}`).all("probe") as { detail: string }[])
+      .map((r) => r.detail).join(" / ");
+    // Real ids, so the lookup finds rows rather than measuring a miss.
+    ids = (opened.prepare(`SELECT id FROM threads LIMIT ${samples}`).all() as { id: string }[])
+      .map((r) => r.id);
+  } finally {
+    opened.close();
+  }
+
+  // Warm the page cache the way a steady server has it warm.
+  for (let i = 0; i < 3; i++) {
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    db.prepare(SQL).get(ids[0] ?? "probe");
+    db.close();
+  }
+
+  const times: number[] = [];
+  for (const id of ids) {
+    const started = now();
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    db.prepare(SQL).get(id);
+    db.close();
+    times.push(now() - started);
+  }
+
+  console.log(`
+database     ${dbPath}
+size         ${(statSync(dbPath).size / 1024 / 1024).toFixed(1)} MB, ${rows} rows in \`threads\`
+query        ${SQL}
+plan         ${plan}
+cost         open + get + close, ${times.length} samples, warm`);
+  console.log(`             ${fmt(stats(times))}`);
+}
+
 // -- run --
 
 /** One invocation's starvation: the worst delay an already-queued timer
@@ -340,6 +400,11 @@ async function main(): Promise<void> {
       home = built.home;
       yacoHome = built.yacoHome;
       fixtureBytes = built.bytes;
+    }
+
+    if (options.sqliteProbe) {
+      sqliteProbe(join(home, ".codex", "state_5.sqlite"));
+      return;
     }
 
     loadDir = mkdtempSync(join(tmpdir(), "yaco-summary-load-"));

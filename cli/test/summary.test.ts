@@ -204,6 +204,23 @@ describe("codex summarize", () => {
     expect(await labelOf(session({ provider: "codex", sessionId }))).toBe("real codex prompt");
   });
 
+  it("keeps looking at older rollouts when the newest one yields no label", async () => {
+    // A resumed session gets a fresh rollout that can open with nothing but a
+    // filtered context block. Stopping at the newest match would lose the real
+    // prompt, which is still sitting in yesterday's rollout for the same id.
+    const sessionId = "33333333-4444-5555-6666-777777777777";
+    writeCodexRollout(sessionId, ["# AGENTS context only"]);
+    writeCodexRollout(sessionId, ["yesterday's real prompt"], new Date(Date.now() - 86400000));
+    expect(await labelOf(session({ provider: "codex", sessionId }))).toBe("yesterday's real prompt");
+  });
+
+  it("prefers the newest rollout when both carry a prompt", async () => {
+    const sessionId = "44444444-5555-6666-7777-888888888888";
+    writeCodexRollout(sessionId, ["today's prompt"]);
+    writeCodexRollout(sessionId, ["yesterday's prompt"], new Date(Date.now() - 86400000));
+    expect(await labelOf(session({ provider: "codex", sessionId }))).toBe("today's prompt");
+  });
+
   it("finds a rollout older than the week the previous reader searched", async () => {
     // The private eight-day walk this replaced returned null here and fell
     // through to `title`; the shared log-path resolver walks the whole tree.
@@ -262,6 +279,48 @@ describe("bounded scan", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "c-void.jsonl"), "");
     expect(await labelOf(session({ sessionId: "c-void" }))).toBeNull();
+  });
+
+  it("decodes a multibyte code point that straddles the 256 KB read boundary", async () => {
+    // Framing on newline bytes is what makes this exact: a newline never occurs
+    // inside a UTF-8 sequence, so a record is only ever decoded whole. A later
+    // refactor to per-chunk string decoding would put U+FFFD in the label here
+    // while every other test in this file stayed green.
+    const chunk = 256 * 1024;
+    // "𝄞" is four bytes. Pad so the record's own bytes place one across the
+    // boundary, then close the record and put the prompt in the next one.
+    const head = JSON.stringify({ type: "user", message: { content: "x" } });
+    const padTo = chunk - head.length - 40;
+    const straddling = `${"a".repeat(padTo)}𝄞${"b".repeat(64)}`;
+    writeClaudeSession("c-utf8", [
+      { type: "user", message: { content: `<system-reminder>${straddling}</system-reminder>` } },
+      { type: "user", message: { content: `after ${straddling.slice(-70)}` } },
+    ]);
+    const label = await labelOf(session({ sessionId: "c-utf8" }));
+    expect(label).toContain("𝄞");
+    expect(label).not.toContain("�");
+  });
+
+  it("skips a record too large to decode without stalling, and reads on past it", async () => {
+    // A record above MAX_RECORD_BYTES costs ~2 ms per MB to decode, parse and
+    // collapse in one uninterruptible go. It is skipped undecoded; the scan
+    // continues, so the next record's prompt is still the label.
+    const dir = join(sandbox, ".claude", "projects", encodeClaudeCwd(PROJECT));
+    mkdirSync(dir, { recursive: true });
+    const filler = "word ".repeat(Math.round(5 * 1024 * 1024 / 5));
+    writeFileSync(join(dir, "c-huge.jsonl"),
+      [JSON.stringify({ type: "user", message: { content: filler } }),
+       JSON.stringify({ type: "user", message: { content: "the prompt after the giant record" } })].join("\n") + "\n");
+    expect(await labelOf(session({ sessionId: "c-huge" }))).toBe("the prompt after the giant record");
+  });
+
+  it("keeps a record just under the cap", async () => {
+    const dir = join(sandbox, ".claude", "projects", encodeClaudeCwd(PROJECT));
+    mkdirSync(dir, { recursive: true });
+    const text = "word ".repeat(Math.round(3 * 1024 * 1024 / 5));
+    writeFileSync(join(dir, "c-big.jsonl"),
+      JSON.stringify({ type: "user", message: { content: text } }) + "\n");
+    expect((await labelOf(session({ sessionId: "c-big" })))?.length).toBe(text.trim().length);
   });
 });
 

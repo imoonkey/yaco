@@ -448,6 +448,64 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   return scan;
 }
 
+/** Statement and database methods that execute SQL over an unbounded row set.
+ *  `get` is absent: a single-row read is the only shape rule 5 has judged. */
+const SQLITE_UNBOUNDED = new Set(["all", "run", "exec", "iterate"]);
+
+export interface SqliteUse {
+  /** Every SQL string the module prepares, in source order. A `prepare` whose
+   *  argument is not a literal reports `null` — an audit that cannot read the
+   *  query cannot bound it. */
+  prepared: (string | null)[];
+  /** Calls to a SQL-executing method other than `get`. */
+  unbounded: Finding[];
+}
+
+/** What one module does with `node:sqlite`, for rule 5's judged admissions.
+ *
+ *  Names rather than types, and deliberately so: `db.prepare(sql)` and
+ *  `statement.all()` are the same call however the statement got its name, so
+ *  matching the method name catches the shapes a chained-expression check misses
+ *  — `const s = db.prepare(q); s.all()`, an alias, `s["all"]()`. The cost is
+ *  that an unrelated `.run()` in an admitted module also fails, which is the
+ *  fail-closed direction: an admitted module is small and hand-read. */
+export function scanSqliteUse(absPath: string, root: string = SRC_ROOT): SqliteUse {
+  const { file } = parse(absPath);
+  const path = relative(dirname(root), absPath);
+  const use: SqliteUse = { prepared: [], unbounded: [] };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)) return;
+    if (ts.isCallExpression(node)) {
+      const name = calleeName(node.expression);
+      if (name === "prepare") {
+        const arg = node.arguments[0] && unwrap(node.arguments[0]);
+        use.prepared.push(
+          arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))
+            ? arg.text.replace(/\s+/g, " ").trim()
+            : null,
+        );
+      } else if (
+        name !== null && SQLITE_UNBOUNDED.has(name) &&
+        // `Promise.all` is the one collision worth naming: `Promise` is a
+        // global, so nothing can hide a statement behind it.
+        !isNamespacedCall(node.expression, "Promise")
+      ) {
+        use.unbounded.push({
+          path,
+          line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+          rule: 5,
+          detail: `${name}()`,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(file, visit);
+
+  return use;
+}
+
 /** Rule 3's polling loop, in the two shapes that are decidable from syntax: a
  *  loop with no termination condition, and a loop that sleeps.
  *

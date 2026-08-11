@@ -31,7 +31,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -44,6 +44,7 @@ import {
   exportedNames,
   packageExports,
   scanFile,
+  scanSqliteUse,
   type ClosureFile,
 } from "../helpers/export-closure.ts";
 
@@ -368,14 +369,28 @@ const RULE_5_DEBT: string[] = [];
  *  Keyed by exact site rather than by adding `DatabaseSync` to the walker's
  *  bounded-name list, because the name is a database handle and not an
  *  operation: `BOUNDED_SYNC` would admit `.all()` over a whole table, anywhere,
- *  invisibly. Each value names the measurement and the shape that makes it
- *  bounded, and the bench it is reproducible from is asserted to exist below —
- *  an admission whose evidence has been deleted is not an admission. */
-const RULE_5_SQLITE: Record<string, string> = {
-  "src/lib/core/agent/providers/summary-read.ts import DatabaseSync":
-    "point lookup on the `threads` primary key (SEARCH ... USING INDEX " +
-    "sqlite_autoindex_threads_1 (id=?)); 1.45 ms p50 / 1.83 ms max including " +
-    "open and close on an 11.6 MB, 2 296-thread database",
+ *  invisibly. What is admitted is not the import — it is `prepares`, the exact
+ *  queries measured, checked against the module's AST, with every unbounded
+ *  execution method in that module rejected. Changing the SQL, adding a second
+ *  query, or reaching a statement through a variable to call `.all()` on it all
+ *  fail. */
+interface SqliteAdmission {
+  /** The measurement, and the command that reproduces it. */
+  bound: string;
+  /** Every SQL string the admitted module may prepare, whitespace-normalized. */
+  prepares: string[];
+}
+
+const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
+  "src/lib/core/agent/providers/summary-read.ts import DatabaseSync": {
+    bound:
+      "point lookup on the `threads` primary key (SEARCH threads USING INDEX " +
+      "sqlite_autoindex_threads_1 (id=?)) on an 11.1 MB, 2 297-row database: " +
+      "0.3 ms p50 and max over 40 warm samples, open and close included, and " +
+      "1.4-1.8 ms on a first touch. Reproduce with " +
+      "`node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
+    prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
+  },
 };
 
 /** The evidence every entry of `RULE_5_SQLITE` is reproducible from. */
@@ -501,7 +516,7 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
     expect(found).toEqual([...RULE_5_DEBT, ...Object.keys(RULE_5_SQLITE)].sort());
   });
 
-  it("keeps every judged admission evidenced and single-row", () => {
+  it("admits exactly the queries that were measured, and no unbounded one", () => {
     const sites = Object.entries(RULE_5_SQLITE);
     if (sites.length === 0) return;
 
@@ -509,19 +524,16 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
     // re-run is a waiver wearing its clothes.
     expect(existsSync(resolve(CLI_ROOT, RULE_5_SQLITE_BENCH)), RULE_5_SQLITE_BENCH).toBe(true);
 
-    for (const [site, bound] of sites) {
-      expect(bound, site).toMatch(/\d/);
-      // What the measurement bounds is a *point query*. `.all()` and `.exec()`
-      // on the same handle are a different operation with a different cost, and
-      // adding one would inherit this admission silently — the file census
-      // cannot see it, because the module is already in the closure.
+    for (const [site, admission] of sites) {
+      expect(admission.bound, site).toMatch(/\d/);
+      // What was measured is a point query. A second query, an edited one, or an
+      // unbounded execution anywhere in the module is a different cost that the
+      // file census cannot see — the module is already in the closure for the
+      // query that *was* judged.
       const file = site.slice(0, site.indexOf(" "));
-      const source = readFileSync(resolve(CLI_ROOT, file), "utf-8");
-      const methods = [...source.matchAll(/\.prepare\([\s\S]*?\)\s*\n?\s*\.(\w+)\(/g)]
-        .map((m) => m[1]);
-      expect(methods, `${file}: prepared statements must return one row`).toEqual(
-        methods.map(() => "get"),
-      );
+      const use = scanSqliteUse(resolve(CLI_ROOT, file));
+      expect(use.prepared, `${file}: prepared SQL`).toEqual(admission.prepares);
+      expect(use.unbounded.map((f) => `${f.path}:${f.line} ${f.detail}`), file).toEqual([]);
     }
   });
 });

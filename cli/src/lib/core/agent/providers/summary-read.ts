@@ -24,7 +24,7 @@ import { DatabaseSync } from "node:sqlite";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { PENDING_SESSION_ID } from "../model.ts";
-import { NEWLINE, resolveClaudeLogPath, resolveCodexLogPath } from "./output.ts";
+import { NEWLINE, resolveClaudeLogPath, resolveCodexLogPaths } from "./output.ts";
 import { extractUserText, firstMeaningfulMessage } from "./prompt-label.ts";
 import { codexDbPath } from "./provider-home.ts";
 
@@ -56,6 +56,24 @@ export interface SessionSummary {
  *  Between chunks the loop yields, so even a label buried deep in a log is paid
  *  for in bounded instalments. -> See: `test/bench/summary-stall.ts`. */
 const SCAN_CHUNK_BYTES = 256 * 1024;
+
+/** The largest record this reader will decode.
+ *
+ *  Chunking bounds how long the *scan* blocks the thread, but not one record:
+ *  a JSONL record is decoded, `JSON.parse`d and collapsed in one uninterruptible
+ *  go, and that cost is linear in its length — ~2 ms per MB, so a 36 MB record
+ *  is ~73 ms, three times the whole subprocess route this replaces.
+ *
+ *  A record above this cap is skipped without being decoded, and the scan
+ *  continues past it. That is a real behaviour change and it is bounded by
+ *  evidence: across the 300 largest logs in the local corpus (1.15 GB) the
+ *  largest record of any kind is 4.15 MB and the largest *user* record — the
+ *  only kind that can be a label — is 0.85 MB. At this cap the worst single
+ *  record costs 7.4 ms, inside the in-process route's own p95 rather than
+ *  merely inside the subprocess bound.
+ *
+ *  -> See: `test/bench/summary-stall.ts --long-record`. */
+const MAX_RECORD_BYTES = 4 * 1024 * 1024;
 
 /** How many sessions are summarized at once. Same width as the task store's
  *  chunked reader, and for the same reason: wide enough that the reads overlap,
@@ -114,11 +132,16 @@ function codexTexts(line: string): string[] {
  *  This is rule 5's one judged synchronous admission: `node:sqlite` has no
  *  asynchronous interface, and this query is admitted because it is a point
  *  lookup on the `threads` primary key — `SEARCH threads USING INDEX
- *  sqlite_autoindex_threads_1 (id=?)` — which measures 1.45 ms at the p50 and
- *  1.83 ms at the maximum on an 11.6 MB, 2 296-thread database, open and close
- *  included. It is not droppable: on that same database `first_user_message` is
- *  empty for most recent threads and `title` is the last-resort label, so a
- *  reader without it answers differently. -> See: `test/bench/summary-stall.ts`. */
+ *  sqlite_autoindex_threads_1 (id=?)` — which measures 0.3 ms warm and 1.4-1.8 ms
+ *  on a first touch, open and close included, on an 11.1 MB, 2 297-row database.
+ *  It is not droppable: on that same database `first_user_message` is empty for
+ *  most recent threads and `title` is the last-resort label, so a reader without
+ *  it answers differently.
+ *
+ *  The audit pins this SQL string itself and rejects every unbounded statement
+ *  method in this module, so a second or edited query is a failing diff.
+ *  -> See: `test/bench/summary-stall.ts --sqlite-probe`,
+ *  `RULE_5_SQLITE` in `test/unit/export-audit.test.ts`. */
 function codexThreadRow(sessionId: string): { title: string | null; first: string | null } | null {
   if (!existsSync(codexDbPath())) return null;
   try {
@@ -138,28 +161,70 @@ function codexThreadRow(sessionId: string): { title: string | null; first: strin
 
 /** Codex auto-renames the thread `title` to the YACO handle on start, so the
  *  real signal is `first_user_message`; the rollout log is the fallback, and
- *  `title` only when it is not a handle echo. */
+ *  `title` only when it is not a handle echo.
+ *
+ *  Every rollout naming the session is tried, newest first, until one produces a
+ *  label. Taking only the newest would lose a real prompt whenever a session has
+ *  been resumed into a fresh rollout that opens with nothing but a filtered
+ *  context block. */
 async function codexLabel(target: SummaryTarget): Promise<string | null> {
   const row = codexThreadRow(target.sessionId);
   const first = firstMeaningfulMessage([row?.first ?? ""], target.handle);
   if (first) return first;
 
-  const path = await resolveCodexLogPath(target);
-  const rollout = path ? await firstLabelInLog(path, codexTexts, target.handle) : null;
-  if (rollout) return rollout;
+  for await (const path of resolveCodexLogPaths(target)) {
+    const rollout = await firstLabelInLog(path, codexTexts, target.handle);
+    if (rollout) return rollout;
+  }
 
   return firstMeaningfulMessage([row?.title ?? ""], target.handle);
 }
 
 // -- The bounded scan --
 
+/** A record being accumulated across chunk boundaries.
+ *
+ *  Once `bytes` passes the cap the buffers are dropped and never taken again:
+ *  an oversized record is skipped whole, so it costs neither the decode nor the
+ *  memory to hold it. */
+class PendingRecord {
+  #parts: Buffer[] = [];
+  #bytes = 0;
+
+  /** Buffer a fragment. */
+  push(part: Buffer): void {
+    this.#bytes += part.length;
+    if (this.#bytes > MAX_RECORD_BYTES) this.#parts.length = 0;
+    else this.#parts.push(Buffer.from(part));
+  }
+
+  get empty(): boolean {
+    return this.#bytes === 0;
+  }
+
+  /** Complete the record with its final fragment and reset. Returns the decoded
+   *  line, or null when the record is over the cap. */
+  take(tail: Buffer): string | null {
+    const bytes = this.#bytes + tail.length;
+    const parts = this.#parts;
+    this.#parts = [];
+    this.#bytes = 0;
+    if (bytes > MAX_RECORD_BYTES) return null;
+    return parts.length === 0
+      ? tail.toString("utf-8")
+      : Buffer.concat([...parts, tail]).toString("utf-8");
+  }
+}
+
 /** Scan a JSONL log from the head and return the first meaningful label in it.
  *
- *  Framing is on newline bytes and only complete lines are decoded: a newline
+ *  Framing is on newline bytes and only complete records are decoded: a newline
  *  byte never occurs inside a UTF-8 multibyte sequence, so this reads exactly
- *  the strings a whole-file decode would produce. A line spanning chunks is
- *  accumulated rather than re-concatenated on every step, so a pathologically
- *  long record costs its own length, not its length squared. */
+ *  the strings a whole-file decode would produce, including when a code point
+ *  straddles a read boundary. A record spanning chunks is accumulated rather
+ *  than re-concatenated on every step, so its cost is its own length and not
+ *  its length squared — and a record over `MAX_RECORD_BYTES` is skipped
+ *  undecoded rather than paid for. */
 async function firstLabelInLog(
   path: string,
   textsOf: TextsOfLine,
@@ -174,7 +239,7 @@ async function firstLabelInLog(
   try {
     const { size } = await file.stat();
     const buffer = Buffer.allocUnsafe(SCAN_CHUNK_BYTES);
-    const partial: Buffer[] = [];
+    const pending = new PendingRecord();
     let offset = 0;
 
     while (offset < size) {
@@ -187,21 +252,21 @@ async function firstLabelInLog(
       const chunk = buffer.subarray(0, bytesRead);
       let start = 0;
       for (let nl = chunk.indexOf(NEWLINE); nl !== -1; nl = chunk.indexOf(NEWLINE, start)) {
-        const line = partial.length === 0
-          ? chunk.toString("utf-8", start, nl)
-          : joinPartial(partial, chunk.subarray(start, nl));
+        const line = pending.take(chunk.subarray(start, nl));
         start = nl + 1;
+        if (line === null) continue;
         const label = firstMeaningfulMessage(textsOf(line), handle);
         if (label) return label;
       }
-      if (start < bytesRead) partial.push(Buffer.from(chunk.subarray(start)));
+      if (start < bytesRead) pending.push(chunk.subarray(start));
       if (offset < size) await new Promise<void>((resolve) => setImmediate(resolve));
     }
 
-    // A trailing line with no newline after it still counts, exactly as
+    // A trailing record with no newline after it still counts, exactly as
     // splitting the whole file on "\n" would have counted it.
-    if (partial.length === 0) return null;
-    return firstMeaningfulMessage(textsOf(joinPartial(partial, EMPTY)), handle);
+    if (pending.empty) return null;
+    const line = pending.take(EMPTY);
+    return line === null ? null : firstMeaningfulMessage(textsOf(line), handle);
   } catch {
     return null;
   } finally {
@@ -210,13 +275,6 @@ async function firstLabelInLog(
 }
 
 const EMPTY = Buffer.alloc(0);
-
-/** Concatenate the buffered head of a line with its tail, and empty the buffer. */
-function joinPartial(partial: Buffer[], tail: Buffer): string {
-  const line = Buffer.concat([...partial, tail]).toString("utf-8");
-  partial.length = 0;
-  return line;
-}
 
 // -- The composed read --
 

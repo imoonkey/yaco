@@ -29,11 +29,18 @@ export interface FixtureScale {
   /** Rows in the `threads` table overall, so the point query has a real index
    *  to search rather than a handful of rows. */
   codexThreads: number;
+  /** Bytes in the single opening user record of every Claude log, when set —
+   *  the `--long-record` shape the record cap is measured against. */
+  longRecordBytes?: number;
 }
 
 export const SCALES: Record<string, FixtureScale> = {
   "1": { claudeSessions: 6, codexSessions: 4, codexThreads: 2296 },
   "10": { claudeSessions: 60, codexSessions: 40, codexThreads: 22960 },
+  // `--long-record`: six sessions whose logs each open with one 36 MB user
+  // record — bigger than the largest record of any kind in the local corpus
+  // (4.15 MB), and 42x the largest user record (0.85 MB).
+  "long-record": { claudeSessions: 6, codexSessions: 0, codexThreads: 2296, longRecordBytes: 36 * 1024 * 1024 },
 };
 
 /** Log sizes in bytes, cycled over the live sessions: the real distribution's
@@ -79,6 +86,20 @@ function claudeLog(bytes: number, label: string, next: () => number): string {
     size += line.length + 1;
   }
   return lines.join("\n") + "\n";
+}
+
+/** A Claude JSONL that opens with one enormous *user* record carrying nothing
+ *  but a system-reminder — the shape the record cap exists for.
+ *
+ *  The reader must skip past it and return the prompt in the next record, and
+ *  must do so without decoding it: a record of this size costs ~2 ms per MB to
+ *  decode, parse and collapse in one uninterruptible go. */
+export function longRecordLog(recordBytes: number, label: string): string {
+  const filler = "word ".repeat(Math.round(recordBytes / 5));
+  return [
+    JSON.stringify({ type: "user", message: { content: `<system-reminder>${filler}</system-reminder>` } }),
+    JSON.stringify({ type: "user", message: { content: label } }),
+  ].join("\n") + "\n";
 }
 
 /** A Codex rollout of about `bytes`, whose first user block is the prompt. */
@@ -158,7 +179,9 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
   mkdirSync(claudeDir, { recursive: true });
   for (let i = 0; i < scale.claudeSessions; i++) {
     const id = fixtureId(1, i);
-    const content = claudeLog(LOG_SIZES[i % LOG_SIZES.length]!, `claude prompt ${i}`, next);
+    const content = scale.longRecordBytes
+      ? longRecordLog(scale.longRecordBytes, `claude prompt ${i}`)
+      : claudeLog(LOG_SIZES[i % LOG_SIZES.length]!, `claude prompt ${i}`, next);
     writeFileSync(join(claudeDir, `${id}.jsonl`), content);
     bytes += content.length;
     sessions.push(state(`bench-claude-${i}`, "claude", id));

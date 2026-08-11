@@ -300,33 +300,37 @@ function codexSessionsRoot(): string {
   return join(userHome(), ".codex", "sessions");
 }
 
-/** Walk ~/.codex/sessions/YYYY/MM/DD newest-first for the rollout file whose
- *  name embeds this session id. */
-async function codexLogPath(sessionId: string): Promise<string | null> {
+/** Walk ~/.codex/sessions/YYYY/MM/DD newest-first, yielding every rollout file
+ *  whose name embeds this session id.
+ *
+ *  Lazy on purpose. A caller that wants "the session's rollout" takes the first
+ *  and the walk stops there, paying what a `return`-on-first-hit search paid.
+ *  A caller that has to *judge* each candidate — the summary read, which keeps
+ *  looking when a rollout yields no label — resumes the same walk instead of
+ *  reimplementing it. Files within a day are sorted, so the order is defined
+ *  when a day holds more than one. */
+async function* codexLogPaths(sessionId: string): AsyncGenerator<string> {
   const root = codexSessionsRoot();
-  if (!existsSync(root)) return null;
+  if (!existsSync(root)) return;
+  const descending = async (dir: string, pattern: RegExp): Promise<string[]> =>
+    (await readdir(dir)).filter((s) => pattern.test(s)).sort().reverse();
   try {
-    const years = (await readdir(root)).filter((s) => /^\d{4}$/.test(s)).sort().reverse();
-    for (const year of years) {
+    for (const year of await descending(root, /^\d{4}$/)) {
       const yearDir = join(root, year);
-      const months = (await readdir(yearDir)).filter((s) => /^\d{2}$/.test(s)).sort().reverse();
-      for (const month of months) {
+      for (const month of await descending(yearDir, /^\d{2}$/)) {
         const monthDir = join(yearDir, month);
-        const days = (await readdir(monthDir)).filter((s) => /^\d{2}$/.test(s)).sort().reverse();
-        for (const day of days) {
+        for (const day of await descending(monthDir, /^\d{2}$/)) {
           const dayDir = join(monthDir, day);
-          // Sorted like the year/month/day walk above, so "the first file naming
-          // this session" is a defined choice when a day holds more than one.
           const files = (await readdir(dayDir)).sort();
-          const hit = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
-          if (hit) return join(dayDir, hit);
+          for (const file of files) {
+            if (file.includes(sessionId) && file.endsWith(".jsonl")) yield join(dayDir, file);
+          }
         }
       }
     }
   } catch {
-    /* fall through */
+    /* an unreadable directory ends the walk, as it always has */
   }
-  return null;
 }
 
 function classifyCodex(line: string): AgentOutputEvent | null {
@@ -351,14 +355,14 @@ export function codexOutput(): ProviderOutput {
   return {
     async resolveCursor(session) {
       if (!hasResolvedId(session)) return null;
-      const path = await codexLogPath(session.sessionId);
+      const path = await resolveCodexLogPath(session);
       return path ? cursorForPath("codex", session.sessionId, path) : null;
     },
     async logExists(session) {
       // A rollout file is only created once the first prompt is sent; a pending
       // (awaiting-first-prompt) session genuinely has none yet.
       if (!session.sessionId || session.sessionId === PENDING_SESSION_ID) return false;
-      return (await codexLogPath(session.sessionId)) !== null;
+      return (await resolveCodexLogPath(session)) !== null;
     },
     classifyLine: classifyCodex,
   };
@@ -378,7 +382,18 @@ export function resolveClaudeLogPath(session: LogTarget): string | null {
 export async function resolveCodexLogPath(
   session: Pick<SessionState, "sessionId">,
 ): Promise<string | null> {
-  return hasResolvedId(session) ? codexLogPath(session.sessionId) : null;
+  for await (const path of resolveCodexLogPaths(session)) return path;
+  return null;
+}
+
+/** Every Codex rollout naming this session, newest first, for a caller that has
+ *  to judge each one rather than take the newest. Yields nothing until the id
+ *  resolves. */
+export async function* resolveCodexLogPaths(
+  session: Pick<SessionState, "sessionId">,
+): AsyncGenerator<string> {
+  if (!hasResolvedId(session)) return;
+  yield* codexLogPaths(session.sessionId);
 }
 
 function parseCodexTurnLine(line: string): TranscriptTurnState | null {
