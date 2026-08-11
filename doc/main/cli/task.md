@@ -30,7 +30,7 @@ locking, payload parsing, and the `--json` envelope.
 | `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
 | `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
-| `index.ts` | Re-exports the **read** surface: all of `model.ts`, `validation.ts` and `graph.ts`, plus everything in `store.ts` except the two writers | The published `@yaco/cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
+| `index.ts` | Re-exports a selected **read** surface, not whole modules: all of `graph.ts`; `model.ts` minus `AGENT_HANDLE_RE`; `validation.ts` minus `isObject`/`Json`; `store.ts` minus `saveTasks`/`saveTaskStore`. `test/unit/export-audit.test.ts` pins the exact list | The published `@yaco/cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
 
 ## CLI surface
 
