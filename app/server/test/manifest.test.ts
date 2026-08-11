@@ -144,9 +144,21 @@ describe('the manifest decides what the bundle externalises', () => {
         const argument = code.slice(match.index + match[0].length)
         if (!LITERAL_ARGUMENT.test(argument)) offenders.push(`${path}: non-literal import()`)
       }
-      if (/(?<![.\w$])require\(/.test(code)) offenders.push(`${path}: require()`)
       if (/\bcreateRequire\b/.test(code)) offenders.push(`${path}: createRequire`)
+      if (/["']node:module["']/.test(code)) offenders.push(`${path}: node:module`)
     }
     expect(offenders).toEqual([])
+  })
+
+  it('references the CommonJS loader nowhere in the bundle', () => {
+    // `require` is a *binding*, so recognising a call spelling misses
+    // `handOff(require)` — and a scope-aware check written here would be a
+    // second implementation of an analysis esbuild has already done: it rewrites
+    // every reference to that binding, however spelled or passed around, into
+    // its `__require` helper. So the emitted output is the place to ask. The
+    // helper also appears when a CommonJS module is inlined, which the test
+    // above already refuses; either way its presence means something entered
+    // the bundle by a route the manifest never named.
+    expect(graph.outputFiles[0]!.text).not.toContain('__require')
   })
 })
