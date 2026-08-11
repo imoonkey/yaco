@@ -1,7 +1,7 @@
 /** Transitive production import closure of the package exports, built with the
  *  TypeScript compiler rather than a regular-expression scan.
  *
- *  A regex audit is defeated by the two things this file exists to catch: a
+ *  A regex audit misses the two things this file exists to catch: a
  *  barrel that re-exports a forbidden module (`export { x } from "./tmux.ts"`
  *  is an edge, not an import statement) and a type-only import (which is *not*
  *  an edge and must not be counted). Both are one AST node kind away from each
@@ -398,7 +398,7 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
     scan.envReads.push({ path, line: at(node), name });
   };
 
-  // An alias is the cheapest way to defeat a name-matching scan, so the
+  // An alias is the cheapest way past a name-matching scan, so the
   // forbidden primitives are caught where they enter the module.
   for (const stmt of file.statements) {
     if (!ts.isImportDeclaration(stmt)) continue;
@@ -683,7 +683,8 @@ const globalNameOf = (node: ts.Node): string | null =>
  *  reference is rejected instead of chased. */
 function isLooseGlobalReference(node: ts.Node): boolean {
   // Every spelling `isGlobal` accepts, not just the bare identifier —
-  // `const runtime = globalThis.process` is the same escape by a longer route.
+  // `const runtime = globalThis.process` reaches the same members by a longer
+  // route.
   if (!ts.isExpression(node) || !globalNameOf(node)) return false;
 
   // The wrappers `unwrap` strips downward have to be climbed upward too, or

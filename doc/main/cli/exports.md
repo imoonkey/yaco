@@ -197,9 +197,10 @@ So the admission carries two pins. `prepares` is the human-legible half — the
 SQL a reader can hold against the measured bound. **`emitted` is the one that
 means it: the JavaScript the module compiles to, checked in.** The audit asserts
 the file still compiles to that, so any edit that changes the emitted program
-fails — the cases above and the ones nobody has thought of alike, because none of them is something the check
-has to recognize. Failing means re-judge and re-measure, which is what should
-happen when the code carrying a measured stall bound changes.
+fails — the cases above and the ones nobody has thought of alike, because none
+of them is something the check has to recognize. Failing means re-judge and
+re-measure, which is what should happen when the code carrying a measured stall
+bound changes.
 
 It is the **build** config's emit — `tsc -p tsconfig.build.json`, the compilation
 that produces `dist/**.js` — because that is the JavaScript an installed consumer
