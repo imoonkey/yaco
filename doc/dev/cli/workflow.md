@@ -122,8 +122,10 @@ the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
 reads that — from an **import declaration**, not from prose that mentions a
 runner — runs both cohorts, and **fails closed** four ways: a file naming
 neither runner or both, a suite selecting no files, a bun-cohort file whose
-**source declares no test**, and one whose **JUnit report** says none ran
-(`bun test` exits 0 in both cases; `vitest run` rejects them itself).
+**source declares no test**, and one whose **JUnit report** says none executed —
+no report at all, or every case parked behind `.skip`/`.todo`, which bun counts
+in `tests`. (`bun test` exits 0 in all of those; `vitest run` rejects them
+itself.)
 
 The source check is the authoritative one, and it is deliberately not derived
 from the run: everything a run produces — console, exit status, and the report

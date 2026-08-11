@@ -74,7 +74,10 @@ function declaresTest(source) {
   if (!braces) return false;
   return braces[1].split(",").some((spec) => {
     const [imported, local = imported] = spec.trim().split(/\s+as\s+/).map((s) => s.trim());
-    return DECLARERS.has(imported) && new RegExp(`\\b${local}(?:\\.\\w+)*\\s*\\(`).test(source);
+    // Delimited by "not an identifier character" rather than `\b`, because `$`
+    // and `_` are legal in an identifier and `\b` does not treat them that way.
+    const name = local.replace(/[$]/g, "\\$&");
+    return DECLARERS.has(imported) && new RegExp(`(?<![\\w$])${name}(?![\\w$])(?:\\.\\w+)*\\s*\\(`).test(source);
   });
 }
 
@@ -93,10 +96,11 @@ function declaresTest(source) {
  *  drift; this runner detects drift.)
  *
  *  The **report** check is the one that catches a file whose declared tests
- *  don't run — an early `process.exit(0)`, a guard that registers nothing. With
- *  zero tests bun writes no report at all, which is the signal. The report is
- *  used rather than the console summary because console output is shared with
- *  the tests, which can print a summary-shaped line of their own.
+ *  don't execute: an early `process.exit(0)` or a guard that registers nothing
+ *  (bun then writes no report at all), and every case parked behind `.skip` or
+ *  `.todo` (bun counts those in `tests`, so the check subtracts `skipped`). The
+ *  report is used rather than the console summary because console output is
+ *  shared with the tests, which can print a summary-shaped line of their own.
  *
  *  The path is spelled absolutely because a *bare* path is a name filter to
  *  `bun test`, and an `.integration.ts` file matches no filter at all. */
@@ -113,13 +117,17 @@ export function runBunFile(file) {
   try {
     if (spawnSync("bun", args, { cwd: CLI_ROOT, stdio: "inherit" }).status !== 0) return false;
 
-    const tests = existsSync(report) && /<testsuites\b[^>]*\btests="(\d+)"/.exec(readFileSync(report, "utf-8"));
-    if (!tests) {
+    const summary = existsSync(report) && /<testsuites\b([^>]*)>/.exec(readFileSync(report, "utf-8"));
+    if (!summary) {
       console.error(`bun cohort: ${file} exited 0 and wrote no test report — refusing to call that a pass`);
       return false;
     }
-    if (Number(tests[1]) === 0) {
-      console.error(`bun cohort: ${file} ran 0 tests`);
+    // `tests` counts skipped and todo cases, so it alone would accept a file
+    // that parked every case. NaN from a missing attribute fails this too.
+    const count = (name) => Number(new RegExp(`\\b${name}="(\\d+)"`).exec(summary[1])?.[1]);
+    const executed = count("tests") - count("skipped");
+    if (!(executed > 0)) {
+      console.error(`bun cohort: ${file} executed no test (${summary[0]})`);
       return false;
     }
     return true;

@@ -1,10 +1,11 @@
-/** The dual runner's partition rule, which decides whether a test file runs at all.
+/** The dual runner's two rules, which together decide whether a test file runs at all.
  *
- *  Every case here is a way a file has been, or could be, assigned to a cohort
- *  by prose rather than by an import — which reads as covered while the file
- *  runs nothing. The other half of that hazard, a cohort reporting success
- *  without running what it was handed, is checked against `bun test`'s run
- *  summary in `cohorts.mjs` itself.
+ *  `cohort partition` covers the ways a file could be assigned to a cohort by
+ *  prose rather than by an import — which reads as covered while the file runs
+ *  nothing. `bun cohort verdict` covers the other half: a run reported as a
+ *  pass that executed no test. Both halves of that verdict are pinned here,
+ *  because they draw on different evidence — the file's own source, read before
+ *  bun is spawned, and bun's JUnit report afterwards.
  *
  *  Dies with `test/cohorts.mjs` in `cli-sqlite-hop`.
  */
@@ -105,6 +106,31 @@ describe("bun cohort verdict", () => {
     );
     try {
       expect(runBunFile(path)).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("refuses a file whose every case is parked", () => {
+    // `skip` and `todo` are counted by bun's `tests` attribute, so the report
+    // says 1 for a file that executed nothing.
+    for (const parked of ["skip", "todo"]) {
+      const { path, cleanup } = fixture(`import { test } from "bun:test";\ntest.${parked}("x", () => {});\n`);
+      try {
+        expect(runBunFile(path), parked).toBe(false);
+      } finally {
+        cleanup();
+      }
+    }
+  });
+
+  it("accepts an aliased declarer", () => {
+    // `$` and `_` are identifier characters that `\b` does not treat as such.
+    const { path, cleanup } = fixture(
+      `import { test as $test, expect } from "bun:test";\n$test("x", () => expect(1).toBe(1));\n`,
+    );
+    try {
+      expect(runBunFile(path)).toBe(true);
     } finally {
       cleanup();
     }
