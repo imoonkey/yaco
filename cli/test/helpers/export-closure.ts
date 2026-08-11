@@ -217,11 +217,10 @@ export function closureOf(entrySource: string, root: string = SRC_ROOT): Closure
   };
 }
 
-/** The names one export entry actually publishes, resolved by the compiler so
- *  a re-export chain is followed to its origin. Pinning these is what keeps a
- *  mutation from re-entering a barrel unnoticed; the file census cannot, since
- *  the module is already in the closure for its read half. */
-export function exportedNames(entrySource: string): string[] {
+function moduleExports(entrySource: string): {
+  checker: ts.TypeChecker;
+  symbols: ts.Symbol[];
+} {
   const entry = resolve(CLI_ROOT, entrySource);
   const program = ts.createProgram([entry], compilerOptions);
   const checker = program.getTypeChecker();
@@ -229,10 +228,58 @@ export function exportedNames(entrySource: string): string[] {
   if (!source) throw new Error(`export entry not in program: ${entrySource}`);
   const symbol = checker.getSymbolAtLocation(source);
   if (!symbol) throw new Error(`export entry has no module symbol: ${entrySource}`);
-  return checker
-    .getExportsOfModule(symbol)
+  return { checker, symbols: checker.getExportsOfModule(symbol) };
+}
+
+const origin = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
+  symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+
+/** The names one export entry publishes, each resolved through its re-export
+ *  chain to the declaration it actually names.
+ *
+ *  Pinning these is what keeps a mutation from re-entering a barrel unnoticed;
+ *  the file census cannot, since the module is already in the closure for its
+ *  read half. The published name alone is not enough either — `export {
+ *  saveTasks as loadTasks }` keeps both the name and the census intact — so an
+ *  entry whose origin differs is reported as `public=origin`. The origin's
+ *  *file* needs no pinning: the census already fixes which files a closure may
+ *  contain, so an origin name inside that set is the function it says it is. */
+export function exportedNames(entrySource: string): string[] {
+  const { checker, symbols } = moduleExports(entrySource);
+  return symbols
+    .map((s) => {
+      const name = s.getName();
+      const from = origin(checker, s).getName();
+      return from === name ? name : `${name}=${from}`;
+    })
+    .sort();
+}
+
+/** Every exported symbol that declares a class extending `Error` — rule 6's
+ *  one static tripwire. A second error type is how an in-process caller learns
+ *  a second failure vocabulary; `CliError` is the only admitted one. */
+export function exportedErrorClasses(entrySource: string): string[] {
+  const { checker, symbols } = moduleExports(entrySource);
+  return symbols
+    .filter((s) =>
+      origin(checker, s)
+        .getDeclarations()
+        ?.some((d) => ts.isClassDeclaration(d) && extendsError(d)),
+    )
     .map((s) => s.getName())
     .sort();
+}
+
+function extendsError(node: ts.ClassDeclaration): boolean {
+  return (
+    node.heritageClauses?.some(
+      (clause) =>
+        clause.token === ts.SyntaxKind.ExtendsKeyword &&
+        clause.types.some(
+          (t) => ts.isIdentifier(t.expression) && t.expression.text.endsWith("Error"),
+        ),
+    ) ?? false
+  );
 }
 
 export interface Finding {
@@ -276,10 +323,28 @@ const SYNC_CALLS = new Set([
   "sleepSync",
 ]);
 
-/** Rule 5's grep-checkable half — synchronous directory enumeration, which is
- *  input-sized by definition. `readFileSync` is deliberately absent: rule 5
- *  admits single bounded reads of a known file. */
-const SYNC_ENUMERATION = new Set(["readdirSync", "globSync", "cpSync"]);
+/** Rule 5's grep-checkable half, inverted so it fails closed: *every* `…Sync`
+ *  name is input-sized until this list says otherwise. Naming the forbidden
+ *  ones instead would have missed `opendirSync` — and whatever `node:fs` adds
+ *  next. Rule 5 admits single bounded operations on a known path, which is
+ *  exactly what these are. */
+const BOUNDED_SYNC = new Set([
+  "readFileSync",
+  "writeFileSync",
+  "existsSync",
+  "statSync",
+  "lstatSync",
+  "realpathSync",
+  "mkdirSync",
+  "renameSync",
+  "unlinkSync",
+  "readlinkSync",
+  "symlinkSync",
+  "chmodSync",
+]);
+
+const isUnboundedSync = (name: string): boolean =>
+  name.endsWith("Sync") && !BOUNDED_SYNC.has(name) && !SYNC_CALLS.has(name);
 
 /** Rule 2 — members whose use means the module owns the process. */
 const PROCESS_OWNERSHIP: Record<string, number> = {
@@ -322,7 +387,7 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
     for (const element of bindings.elements) {
       const original = (element.propertyName ?? element.name).text;
       if (SYNC_CALLS.has(original)) violate(element, 3, `import ${original}`);
-      if (SYNC_ENUMERATION.has(original)) violate(element, 5, `import ${original}`);
+      else if (isUnboundedSync(original)) violate(element, 5, `import ${original}`);
     }
   }
 
@@ -335,19 +400,22 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
         const rule = PROCESS_OWNERSHIP[member];
         if (rule) violate(node, rule, `process.${member}`);
       }
-    } else if (isDestructuredProcess(node)) {
-      // `const { stdout } = process` hands the banned member a local name.
-      violate(node, 2, "process destructured");
+    } else if (isLooseProcessReference(node)) {
+      // `const runtime = process` (or handing it to a call) puts every banned
+      // member one alias away, so the reference itself is the breach.
+      violate(node, 2, "process referenced outside a member access");
     } else if (
       ts.isPropertyAccessExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "console"
     ) {
       violate(node, 2, `console.${node.name.text}`);
+    } else if (isPollingLoop(node)) {
+      violate(node, 3, "polling loop");
     } else if (ts.isCallExpression(node)) {
       const name = calleeName(node.expression);
       if (name && SYNC_CALLS.has(name)) violate(node, 3, `${name}()`);
-      if (name && SYNC_ENUMERATION.has(name)) violate(node, 5, `${name}()`);
+      else if (name && isUnboundedSync(name)) violate(node, 5, `${name}()`);
       if (name === "wait" && isNamespacedCall(node.expression, "Atomics")) {
         violate(node, 3, "Atomics.wait()");
       }
@@ -357,6 +425,44 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   ts.forEachChild(file, visit);
 
   return scan;
+}
+
+/** Rule 3's polling loop, in the two shapes that are decidable from syntax: a
+ *  loop with no termination condition, and a loop that sleeps.
+ *
+ *  Deliberately not "any loop containing `await`" — rule 5 asks composed reads
+ *  to walk a file set with bounded concurrency, which is a loop of awaits and
+ *  is not a poll. */
+function isPollingLoop(node: ts.Node): boolean {
+  if (ts.isWhileStatement(node)) {
+    return node.expression.kind === ts.SyntaxKind.TrueKeyword || sleepsInside(node.statement);
+  }
+  if (ts.isForStatement(node)) {
+    return !node.condition || sleepsInside(node.statement);
+  }
+  if (ts.isDoStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+    return sleepsInside(node.statement);
+  }
+  return false;
+}
+
+const SLEEPS = new Set(["setTimeout", "setInterval", "sleep", "sleepSync", "delay"]);
+
+function sleepsInside(body: ts.Node): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node)) {
+      const name = calleeName(node.expression);
+      if (name && SLEEPS.has(name)) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(body);
+  return found;
 }
 
 /** The member name this node reads off `process`: a string for a literal one,
@@ -393,13 +499,34 @@ function isProcess(expr: ts.Expression): boolean {
 const isGlobalThis = (expr: ts.Expression): boolean =>
   ts.isIdentifier(expr) && expr.text === "globalThis";
 
-function isDestructuredProcess(node: ts.Node): boolean {
-  return (
-    ts.isVariableDeclaration(node) &&
-    !!node.initializer &&
-    isProcess(node.initializer) &&
-    ts.isObjectBindingPattern(node.name)
-  );
+/** `process` used as a value rather than as the target of a member access —
+ *  assigned to a binding, destructured, spread, or passed to a call. Every one
+ *  of those hands the banned members a name this scan cannot follow, so the
+ *  reference is rejected instead of chased. */
+function isLooseProcessReference(node: ts.Node): boolean {
+  if (!ts.isIdentifier(node) || node.text !== "process") return false;
+  const parent = node.parent;
+
+  // Positions where the identifier names something rather than reading the
+  // global: a member name, an object key, a declared binding, a specifier.
+  const isName =
+    ((ts.isPropertyAccessExpression(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isVariableDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isPropertySignature(parent)) &&
+      parent.name === node) ||
+    ts.isImportSpecifier(parent) ||
+    ts.isExportSpecifier(parent);
+  if (isName) return false;
+
+  // A real read. The only admitted shape is the one the member scan above
+  // already judges: `process` as the object of a member access.
+  const accessed =
+    (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
+    parent.expression === node;
+  return !accessed;
 }
 
 /** Every environment variable name read through one `process.env` node.

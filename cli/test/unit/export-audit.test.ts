@@ -6,18 +6,28 @@
  *  Nothing is grandfathered: an entry that already ships must still pass.
  *
  *  The rule numbers are the design's Export eligibility rules
- *  (`plan/all/cli-node-sdk/final/design.md`). Rules 1-3 are structural and are
- *  enforced in full. Rule 5 has a grep-checkable half (synchronous directory
- *  enumeration) which is enforced with one tracked debt, named below. Rules 4
- *  and 6 — caller deadlines, one error vocabulary — are behavioural, and the
- *  design assigns them to each admitted read's own interface and concurrency
- *  tests rather than to this static audit.
+ *  (`plan/all/cli-node-sdk/final/design.md`):
+ *
+ *    1-3  structural — enforced in full.
+ *    4    caller deadlines and cleanup for external work — behavioural, and
+ *         vacuous today: no eligible closure contains a subprocess, a network
+ *         request, a lock or a retry, which the census and the mutation ban
+ *         are what keep true.
+ *    5    enforced for everything decidable from syntax — any unbounded `…Sync`
+ *         operation — with one tracked debt, named below.
+ *    6    enforced as its one static tripwire: no export publishes an error
+ *         type other than `CliError`.
+ *
+ *  What is left to each admitted read's own interface and concurrency tests is
+ *  the part no syntax can settle: that a deadline is honoured, that a walk is
+ *  actually bounded, that a failure carries the right code.
  *
  *  The last describe block audits the auditor: a gate nobody has watched fail
  *  is not known to work, so every shape that could defeat it — a re-export, a
- *  type-only import, a lazy `import()`, a computed key, `globalThis`, an
- *  aliased import, a string-keyed member — is planted against the identical
- *  walker and its verdict asserted.
+ *  type-only import, a lazy `import()`, a computed key, `globalThis`, an alias
+ *  of `process` or of a synchronous primitive, a string-keyed member, a
+ *  polling loop — is planted against the identical walker and its verdict
+ *  asserted.
  */
 
 import { describe, it, expect } from "vitest";
@@ -30,6 +40,7 @@ import {
   CLI_ROOT,
   closureOf,
   emittedPathFor,
+  exportedErrorClasses,
   exportedNames,
   packageExports,
   scanFile,
@@ -66,7 +77,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
     // one implementation of the on-disk shape rather than two.
     names: [
       "DEFAULT_PROJECT_PATHS", "ParsedTomlSections", "Project", "ProjectRecord",
-      "TomlParseError", "YacoProjectPaths", "addProject", "agentWrapperPath",
+      "YacoProjectPaths", "addProject", "agentWrapperPath",
       "channelScopeDir", "channelsDir", "ensureYacoHome", "getYacoHome",
       "originsDir", "parseScopedToml", "projectEventsFile", "projectsFile",
       "projectsRegistryPath", "readProjects", "readYacoProjectPaths",
@@ -149,11 +160,17 @@ const EXPECTED: Record<string, ExpectedExport> = {
  *  `loadTaskStore` walks the task tree with a synchronous recursive `readdir`
  *  (`store.ts#walkTaskDir`), and `app/server` already calls it in process. The
  *  design's Phase-2 cutover 1 — task GET against an `fs/promises` chunked
- *  reader — is what retires it; that is the next task, not this one. Until
- *  then this is the single admitted site: a second one fails the audit, and
- *  when the cutover lands the entry must be deleted, which the debt's own
- *  anti-vacuity check below forces. */
-const RULE_5_DEBT = ["src/lib/core/task/store.ts"];
+ *  reader — is what retires it; that is the next task, not this one.
+ *
+ *  The debt is pinned as the exact finding multiset, not as a file: waiving the
+ *  file would hide every further synchronous traversal added to it, which is
+ *  the difference between a tracked debt and a hole. A second traversal fails,
+ *  and when the cutover lands this list must be emptied — the "still owes"
+ *  check below is what forces that. */
+const RULE_5_DEBT = [
+  "src/lib/core/task/store.ts import readdirSync",
+  "src/lib/core/task/store.ts readdirSync()",
+];
 
 /** The subsystems the design excludes by name. Each entry names real files, and
  *  their existence is asserted: a rename that empties one of these lists would
@@ -237,40 +254,54 @@ describe("rule 1 — ambient environment surface is a closed allowlist", () => {
 });
 
 describe("rules 1-3 and 5 — no ambient request state, no process ownership, nothing synchronous", () => {
-  const offendersOutsideDebt = (): string[] => {
-    const out: string[] = [];
+  /** Every finding across every closure, deduplicated by identity rather than
+   *  by file: one module reached from two exports is one defect. */
+  const allViolations = (): { key: string; report: string; rule: number }[] => {
+    const byKey = new Map<string, { key: string; report: string; rule: number }>();
     for (const [subpath, closure] of closures) {
       for (const file of closure.files) {
         for (const v of scanOf(file).violations) {
-          if (v.rule === 5 && RULE_5_DEBT.includes(v.path)) continue;
-          out.push(
-            `${subpath}: ${v.path}:${v.line} rule ${v.rule}: ${v.detail}\n  via ${describeChain(file)}`,
-          );
+          const key = `${v.path}:${v.line} ${v.detail}`;
+          if (byKey.has(key)) continue;
+          byKey.set(key, {
+            key: `${v.path} ${v.detail}`,
+            rule: v.rule,
+            report: `${subpath}: ${v.path}:${v.line} rule ${v.rule}: ${v.detail}\n  via ${describeChain(file)}`,
+          });
         }
       }
     }
-    return out;
+    return [...byKey.values()];
   };
 
   it("has no violation in any exported closure", () => {
-    const offenders = offendersOutsideDebt();
+    const offenders = allViolations()
+      .filter((v) => !(v.rule === 5 && RULE_5_DEBT.includes(v.key)))
+      .map((v) => v.report);
     expect(offenders, offenders.join("\n")).toEqual([]);
   });
 
   it("still owes exactly the tracked rule-5 debt", () => {
     // When the task-read cutover lands its asynchronous reader, this fails and
-    // the debt entry is deleted — the audit will not let it linger unnoticed.
-    const owing = [
-      ...new Set(
-        [...closures.values()]
-          .flatMap((c) => c.files)
-          .flatMap((f) => scanOf(f).violations)
-          .filter((v) => v.rule === 5)
-          .map((v) => v.path),
-      ),
-    ].sort();
+    // the debt list is emptied — the audit will not let it linger unnoticed.
+    const owing = allViolations()
+      .filter((v) => v.rule === 5)
+      .map((v) => v.key)
+      .sort();
     expect(owing).toEqual(RULE_5_DEBT);
   });
+});
+
+describe("rule 6 — one error vocabulary", () => {
+  for (const entry of packageExports()) {
+    it(`publishes no second error type from ${entry.subpath}`, () => {
+      // An in-process caller that has to learn a second error class is how a
+      // second failure vocabulary spreads into the app.
+      expect(exportedErrorClasses(entry.source)).toEqual(
+        entry.subpath === "./core/errors" ? ["CliError"] : [],
+      );
+    });
+  }
 });
 
 describe("closure census", () => {
@@ -442,24 +473,67 @@ describe("the audit itself", () => {
     }
   });
 
-  it("is not evaded by string-keyed members or by destructuring process", () => {
+  it("is not evaded by string-keyed members, destructuring, or aliasing process", () => {
     const { root } = plant({
       "index.ts":
         `export const a = () => process["exit"](1);\n` +
         `const { stdout } = process;\n` +
         `export const b = () => stdout.write("x");\n` +
+        `const runtime = process;\n` +
+        `export const c = () => runtime.exit(1);\n` +
         `const which = "std" + "err";\n` +
-        `export const c = () => process[which];\n`,
+        `export const d = () => process[which];\n`,
     });
     try {
       expect(detailsOf(root)).toEqual([
         "2:process.exit",
-        "2:process destructured",
+        "2:process referenced outside a member access",
+        "2:process referenced outside a member access",
         "2:process[<computed member>]",
       ]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
+  });
+
+  it("flags a polling loop but not a bounded loop of awaits", () => {
+    const { root } = plant({
+      "index.ts":
+        `export const poll = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (true) { if (await probe()) return; }\n` +
+        `};\n` +
+        `export const backoff = async (probe: () => Promise<boolean>) => {\n` +
+        `  for (let i = 0; i < 5; i++) {\n` +
+        `    if (await probe()) return;\n` +
+        `    await new Promise((r) => setTimeout(r, 50));\n` +
+        `  }\n` +
+        `};\n` +
+        // Rule 5's chunked reader is a loop of awaits and is not a poll.
+        `export const chunked = async (chunks: string[][], read: (f: string) => Promise<string>) => {\n` +
+        `  const out: string[] = [];\n` +
+        `  for (const chunk of chunks) out.push(...(await Promise.all(chunk.map(read))));\n` +
+        `  return out;\n` +
+        `};\n`,
+    });
+    try {
+      expect(detailsOf(root)).toEqual(["3:polling loop", "3:polling loop"]);
+    } finally {
+      rmSync(dirname(root), { recursive: true, force: true });
+    }
+  });
+
+  it("sees a writer republished under a reader's name", () => {
+    // Name and file census both stay intact; only the origin changes.
+    expect(exportedNames("test/fixtures/alias-export.ts")).toEqual([
+      "ConfigError",
+      "loadTasks=saveTasks",
+    ]);
+  });
+
+  it("sees an error type other than CliError", () => {
+    expect(exportedErrorClasses("test/fixtures/alias-export.ts")).toEqual([
+      "ConfigError",
+    ]);
   });
 
   it("is not evaded by aliasing or string-keying a synchronous primitive", () => {

@@ -7,10 +7,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  parseScopedToml,
-  TomlParseError,
-} from "../../../../src/lib/core/paths/toml.ts";
+import { parseScopedToml } from "../../../../src/lib/core/paths/toml.ts";
+import { CliError, ErrCode } from "../../../../src/lib/core/errors.ts";
 
 describe("parseScopedToml", () => {
   it("returns an empty record for empty input", () => {
@@ -69,13 +67,13 @@ active = "p/active"`;
 
   it("rejects unquoted values (numbers, bools, bare words)", () => {
     expect(() => parseScopedToml(`[paths]\ntasks = 42`)).toThrow(
-      TomlParseError,
+      CliError,
     );
     expect(() => parseScopedToml(`[paths]\ntasks = true`)).toThrow(
-      TomlParseError,
+      CliError,
     );
     expect(() => parseScopedToml(`[paths]\ntasks = bare`)).toThrow(
-      TomlParseError,
+      CliError,
     );
   });
 
@@ -84,12 +82,12 @@ active = "p/active"`;
   });
 
   it("rejects malformed section headers", () => {
-    expect(() => parseScopedToml(`[paths\ntasks = "x"`)).toThrow(TomlParseError);
+    expect(() => parseScopedToml(`[paths\ntasks = "x"`)).toThrow(CliError);
   });
 
   it("rejects junk lines that are neither section nor key=value", () => {
     expect(() => parseScopedToml(`[paths]\nthis is not toml`)).toThrow(
-      TomlParseError,
+      CliError,
     );
   });
 
@@ -99,8 +97,9 @@ active = "p/active"`;
       parseScopedToml(src);
       expect("should have thrown").toBe("");
     } catch (e) {
-      expect(e).toBeInstanceOf(TomlParseError);
-      expect((e as TomlParseError).line).toBe(3);
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as CliError).details).toEqual({ line: 3 });
       expect((e as Error).message).toMatch(/duplicate key "tasks"/);
     }
   });
@@ -110,8 +109,9 @@ active = "p/active"`;
       parseScopedToml(`[paths]\ntasks = "ok"\nbroken line here`);
       expect("should have thrown").toBe("");
     } catch (e) {
-      expect(e).toBeInstanceOf(TomlParseError);
-      expect((e as TomlParseError).line).toBe(3);
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as CliError).details).toEqual({ line: 3 });
       expect((e as Error).message).toContain("yaco.toml:3");
     }
   });
