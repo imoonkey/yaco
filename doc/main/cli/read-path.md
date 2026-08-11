@@ -87,8 +87,12 @@ findings belong with the rule itself:
 - **A measuring instrument needs a control**, and the control has to be the
   *previous reader*. Both stall harnesses carry one — `summary-stall.ts` its
   `whole-file` route, `history-stall.ts` a checked-in copy of the reader it
-  replaced — and each separates from its bounded successor by 4–27×. Without
+  replaced — and each separates from its bounded successor by 5–11×. Without
   that separation, no figure either harness printed would have meant anything.
+  **But a control is not free to run beside the thing it validates**: it grows
+  the parent heap that every forked route then inherits, which moves the
+  subprocess baseline and not the in-process one. Separation and bound come from
+  different runs.
 - **Bounding a scan and chunking it are different instruments for different
   problems, and only measurement tells them apart.** The history cutover does
   both, and its first control removed only the cap: that route *starved less*
@@ -111,7 +115,7 @@ bound rather than a harness, and says so below.
 | 2 | session-list labels → `readSessionSummaries` | **122 → 30 ms** p50 real provider home · **138 → 36 ms** synthetic 10× | **27.1 → 13.4 ms** · **34.3 → 14.1 ms** |
 | 3 | `agent start` provider validation → `providerCatalog()` | **≥72.7 ms → <0.01 ms** (a CLI-only lower bound; see below) | no I/O and no environment read, so nothing to starve — and no failure mode |
 | 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 6.4×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
-| 5 | history tab → `readProjectHistory` | **215 → 116 ms** p50 real provider home · **165 → 91 ms** synthetic 1× · **354 → 240 ms** synthetic 10× | **32.3 → 13.0 ms** · **38.5 → 14.9 ms** · **111.4 → 21.6 ms** |
+| 5 | history tab → `readProjectHistory` | **206 → 119 ms** p50 real provider home · **154 → 83 ms** synthetic 1× · **285 → 260 ms** synthetic 10× | **26.8 → 12.4 ms** · **29.7 → 13.7 ms** · **29.8 → 18.4 ms** |
 
 Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
 over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** at
@@ -213,15 +217,25 @@ harness measures it against the one it replaced:
 
 | Route (real provider home: 11.1 MB `state_5.sqlite`, 2 301 Codex threads, 81 Claude logs) | p95 starvation | wall p50 |
 |---|---:|---:|
-| a child that prints an empty envelope — the spawn alone | 33.2 ms | 72 ms |
-| subprocess — the retired route | 32.3 ms | 215 ms |
-| **the shipped reader called in process** | **13.0 ms** | **116 ms** |
-| the retired reader called in process — the control | 81.5 ms | 126 ms |
+| a child that prints an empty envelope — the spawn alone | 27.9 ms | 71 ms |
+| subprocess — the retired route | 26.8 ms | 206 ms |
+| **the shipped reader called in process** | **12.4 ms** | **119 ms** |
+
+**Which run a figure comes from is part of the figure**, and getting that wrong
+was worth ~80 ms here. A forked route inherits the parent process's native
+high-water mark and an in-process route pays no fork at all, so running the
+heavy controls beside the spawns inflates the *subprocess* side of
+`in-process <= subprocess` and barely moves the other — on the 10× fixture,
+`subprocess` p95 measured 91.7 ms with the controls interleaved and 29.8 ms
+without, while `in-process` moved 31.7 → 18.4 ms. So the bound is taken from
+`--routes spawn-noop,subprocess,in-process`, and the harness prints
+`NOT THE GATE` on any run that included a control.
 
 The control is `cli/test/bench/history-retired-control.ts`, the previous module
-checked in verbatim. It is **over** the bound on all three fixtures (81.5 ·
-51.3 · 584.7 ms) while the shipped reader is within on all three — that
-separation is what makes the row above mean anything.
+checked in verbatim, and its job is separation rather than a bound: run beside
+the shipped reader it is **over** the bound on all three fixtures (64.5 · 66.7 ·
+345.1 ms) where the shipped reader is within (11.4 · 13.9 · 31.7 ms). That
+separation is what makes the table above mean anything.
 
 Two decisions the benchmark could not answer:
 

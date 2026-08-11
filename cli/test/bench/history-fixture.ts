@@ -34,25 +34,30 @@ export interface FixtureScale {
    *
    *  Its own dimension because the reader splits and scans the **whole** file
    *  regardless of the window, so it is an input the cap does not bound. Getting
-   *  this wrong is not hypothetical: the fixture used to write
-   *  `min(codexThreadsForProject, 200)` records, which is 200 at *both* scales —
-   *  a tenth of the reference home at 1x and a hundredth of what 10x claims to
-   *  be, on the exact topology meant to prove the read scales. */
+   *  this wrong is not hypothetical, and it has now been wrong twice: first the
+   *  fixture wrote `min(codexThreadsForProject, 200)` records, which is 200 at
+   *  *both* scales; then it wrote the right number of records at 55% of the
+   *  measured bytes, because a `named-N` line is a third the length of a real
+   *  one. The count and `codexNameBytes` are both pinned for that reason. */
   codexNameRecords: number;
+  /** Bytes of `~/.codex/session_index.jsonl`. The reader decodes and splits all
+   *  of them, so the byte load is the cost and the record count only shapes it;
+   *  records are padded to hit this total. */
+  codexNameBytes: number;
 }
 
 /** Measured on the reference machine on 2026-08-11: 2,275 Codex threads
  *  (587 for the busiest cwd) in an 11.6 MB `state_5.sqlite`, 81 Claude JSONL
- *  files in the busiest project directory, 1,785 origin records, and a 266 KB
- *  `session_index.jsonl` of 2,013 records. */
+ *  files in the busiest project directory, 1,785 origin records, and a
+ *  `session_index.jsonl` of 2,013 records in 266,393 bytes. */
 export const SCALES: Record<string, FixtureScale> = {
   "1": {
     codexThreads: 2275, codexThreadsForProject: 587, claudeSessions: 81,
-    originFiles: 1785, codexNameRecords: 2013,
+    originFiles: 1785, codexNameRecords: 2013, codexNameBytes: 266_393,
   },
   "10": {
     codexThreads: 22750, codexThreadsForProject: 5870, claudeSessions: 810,
-    originFiles: 17850, codexNameRecords: 20130,
+    originFiles: 17850, codexNameRecords: 20130, codexNameBytes: 2_663_930,
   },
 };
 
@@ -180,6 +185,36 @@ const CODEX_INDEXES = [
   "CREATE INDEX idx_threads_archived_cwd_recency_at_ms ON threads(archived, cwd, recency_at_ms DESC, id DESC)",
 ];
 
+/** `session_index.jsonl` at the scale's measured record count *and* byte size. */
+function buildNameIndex(scale: FixtureScale): string {
+  const lines: string[] = [];
+  for (let i = 0; i < scale.codexNameRecords; i++) {
+    // Ids repeat every ninth record, so ~11% of the file is a rename of a name
+    // already seen — the shape `loadCodexThreadNames` resolves last-entry-wins.
+    const n = i % 9 === 8 ? Math.max(0, i - 8) : i;
+    lines.push(JSON.stringify({ id: fixtureId(n % scale.codexThreads), thread_name: `named-${i}` }));
+  }
+  // Exactly what the return below writes: the join plus the trailing newline.
+  const bare = lines.join("\n").length + 1;
+  // Spread the shortfall across the names rather than appending filler records:
+  // the record count is itself pinned, and padding a name is what a longer real
+  // thread name is.
+  const shortfall = Math.max(0, scale.codexNameBytes - bare);
+  const padPerLine = Math.floor(shortfall / scale.codexNameRecords);
+  // The division's remainder goes on the first line, so the file lands on the
+  // measured size exactly rather than 1.4% under it. A fixture that is nearly
+  // the right size is how the last two versions of this one went wrong.
+  const remainder = shortfall - padPerLine * scale.codexNameRecords;
+  if (padPerLine + remainder > 0) {
+    for (let i = 0; i < lines.length; i++) {
+      const entry = JSON.parse(lines[i]!);
+      const pad = padPerLine + (i === 0 ? remainder : 0);
+      lines[i] = JSON.stringify({ ...entry, thread_name: entry.thread_name + "-".repeat(pad) });
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
 export interface Fixture {
   /** Value for `HOME` — the provider homes hang off it. */
   home: string;
@@ -250,11 +285,14 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
     db.close();
   }
   // Every record is scanned whatever the window is, so this scales with the
-  // fixture rather than with the window. Ids repeat once the record count passes
-  // the thread count, which is what the real file does too — a rename appends,
-  // and the reader is last-entry-wins.
-  const nameIndex = Array.from({ length: scale.codexNameRecords }, (_, i) =>
-    JSON.stringify({ id: fixtureId(i % scale.codexThreads), thread_name: `named-${i}` })).join("\n") + "\n";
+  // fixture rather than with the window, in both dimensions: `codexNameRecords`
+  // decides how many lines the split produces, `codexNameBytes` how much text is
+  // decoded to get them, and the thread name is padded to reconcile the two.
+  //
+  // Every ninth record repeats an earlier id, so the reader's last-entry-wins
+  // rule is exercised rather than merely described — a real file accumulates a
+  // record per rename, and the fixture would otherwise be all-unique.
+  const nameIndex = buildNameIndex(scale);
   writeFileSync(join(home, ".codex", "session_index.jsonl"), nameIndex);
 
   // -- Claude: one JSONL per session plus the optional sessions index --

@@ -288,10 +288,10 @@ p95 starvation of an already-queued timer against route wall time:
 
 | Route | p95 starvation | wall p50 |
 |---|---:|---:|
-| a child that prints an empty envelope — the spawn alone | 33.2 ms | 72 ms |
-| subprocess — the retired route | 32.3 ms | 215 ms |
-| the reader as it stood — **refused** | 81.5 ms | 126 ms |
-| the reader that ships | **13.0 ms** | 116 ms |
+| a child that prints an empty envelope — the spawn alone | 27.9 ms | 71 ms |
+| subprocess — the retired route | 26.8 ms | 206 ms |
+| the reader as it stood — **refused** | 64.5 ms | 122 ms |
+| the reader that ships | **12.4 ms** | 119 ms |
 
 Four things follow, and they are what a future rule-5 candidate should copy:
 
@@ -303,9 +303,11 @@ Four things follow, and they are what a future rule-5 candidate should copy:
   essentially all of the subprocess route's starvation, and still costs 15.9 ms
   with the app's `ssh-add` discovery removed — `fork` with a loaded heap. "Keep
   the subprocess" is not automatically the safe side of a starvation comparison.
-  Read that decomposition off `--routes spawn-noop,subprocess,in-process`: this
-  harness's own in-process routes grow the heap that its spawns are then measured
-  against, and on the 10x fixture that is the difference between 33.2 and 99.3 ms.
+  Read it — and the bound itself — off `--routes spawn-noop,subprocess,in-process`:
+  this harness's in-process routes grow the heap that every forked route then
+  inherits, which moves the subprocess side of the comparison and not the
+  in-process side. On the 10x fixture `subprocess` p95 is 91.7 ms with the
+  controls interleaved and 29.8 ms without.
 - **What failed the bound was the unbounded fan-out, not being in process.** The
   refused reader read every row a provider holds before applying the window. The
   one that ships caps each provider at the window and yields between chunks.

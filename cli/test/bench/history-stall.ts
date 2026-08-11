@@ -50,13 +50,22 @@
  *
  *  The second is this harness's own routes, and it does not go away: the
  *  in-process routes allocate, `retired` most of all, and they are interleaved
- *  with the spawns by design. It is worth what it costs — on the 10x fixture,
- *  `spawn-noop` p95 measured 99.3 ms in a full run and 33.2 ms in
- *  `--routes spawn-noop,subprocess,in-process`, same fixture, same machine. So:
- *  read the acceptance comparison off a full run, where every route pays the
- *  same inflated baseline and the comparison is what is being asked; read a
- *  spawn cost off a narrowed one. `--routes` is how, and quoting a spawn figure
- *  from a full run is the mistake it exists to prevent.
+ *  with the spawns by design.
+ *
+ *  **That bias is not symmetric, so the acceptance figure must come from a
+ *  narrowed run.** A forked route inherits the parent's native high-water mark;
+ *  a route called in process does not pay a fork at all. So growing the parent's
+ *  heap raises the right-hand side of `in-process <= subprocess` and barely
+ *  touches the left — on the 10x fixture, full run against
+ *  `--routes spawn-noop,subprocess,in-process` on the same fixture and machine:
+ *  `spawn-noop` 100.9 → 33.2 ms, `subprocess` 111.4 → 31.2 ms, `in-process`
+ *  21.6 → 19.8 ms. Reading the bound off the full run would have credited the
+ *  cutover with ~80 ms of headroom the controls manufactured.
+ *
+ *  So: **the gate is a narrowed run**, and a full run is a qualitative route
+ *  table — it is what shows the control separating, which is a different
+ *  question from whether the shipped route clears the bound. The verdict line
+ *  says which kind of run printed it.
  *
  *  Usage:
  *    node cli/test/bench/history-stall.ts [--scale 1|10] [--iterations N]
@@ -78,7 +87,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildFixture, FIXTURE_PROJECT, SCALES, type FixtureScale } from "./history-fixture.ts";
+import { buildFixture, FIXTURE_PROJECT, SCALES, type Fixture, type FixtureScale } from "./history-fixture.ts";
 import {
   DEFAULT_HISTORY_LIMIT,
   finalizeHistory,
@@ -86,8 +95,8 @@ import {
   readProjectHistory,
 } from "../../src/lib/core/agent/providers/history.ts";
 import {
-  claudeList as retiredClaudeList,
-  codexList as retiredCodexList,
+  claudeHistory as retiredClaudeHistory,
+  codexHistory as retiredCodexHistory,
   retiredFinalizeHistory,
 } from "./history-retired-control.ts";
 import { isOk } from "../../src/lib/core/result.ts";
@@ -288,9 +297,10 @@ function inProcessRoute(projectPath: string): Route {
 function retiredRoute(projectPath: string): Route {
   return async () => {
     const started = now();
+    // Through the factories, because that is how the retired route called them.
     const perProvider = await Promise.all([
-      retiredClaudeList(projectPath),
-      retiredCodexList(projectPath),
+      retiredClaudeHistory().list(projectPath),
+      retiredCodexHistory().list(projectPath),
     ]);
     const window = retiredFinalizeHistory(perProvider.flat(), []);
     return { rows: window.returned, wallMs: now() - started };
@@ -497,14 +507,14 @@ function fmt(s: Stats): string {
  *  child leaves this process as clean as a server that simply found the files
  *  already there. The child reports the paths rather than this process
  *  recomputing them, so the two halves cannot disagree about where they are. */
-function buildFixtureInChild(scale: string, root: string): { home: string; yacoHome: string } {
+function buildFixtureInChild(scale: string, root: string): Pick<Fixture, "home" | "yacoHome" | "bytes"> {
   const child = spawnSync(
     process.execPath,
     [SELF, "--build-only", "--scale", scale, "--root", root],
     { encoding: "utf-8", stdio: ["ignore", "pipe", "inherit"] },
   );
   if (child.status !== 0) throw new Error(`fixture build child exited ${child.status}`);
-  return JSON.parse(child.stdout.trim()) as { home: string; yacoHome: string };
+  return JSON.parse(child.stdout.trim()) as Pick<Fixture, "home" | "yacoHome" | "bytes">;
 }
 
 async function main(): Promise<void> {
@@ -514,7 +524,11 @@ async function main(): Promise<void> {
     const scale = SCALES[options.scale];
     if (!scale) throw new Error(`--build-only needs a known --scale (got ${options.scale})`);
     const built = buildFixture(options.root, scale);
-    process.stdout.write(JSON.stringify({ home: built.home, yacoHome: built.yacoHome }));
+    // The byte summary crosses the seam with the paths: a fixture dimension
+    // computed and then dropped is a dimension nobody checks.
+    process.stdout.write(JSON.stringify({
+      home: built.home, yacoHome: built.yacoHome, bytes: built.bytes,
+    }));
     return;
   }
 
@@ -532,6 +546,7 @@ async function main(): Promise<void> {
     let home: string;
     let yacoHome: string;
     let scale: FixtureScale | null = null;
+    let bytes: Fixture["bytes"] | null = null;
 
     if (options.home) {
       home = options.home;
@@ -547,6 +562,7 @@ async function main(): Promise<void> {
         : buildFixtureInChild(options.scale, options.root);
       home = built.home;
       yacoHome = built.yacoHome;
+      bytes = built.bytes;
     }
 
     if (options.sqliteProbe) {
@@ -641,7 +657,8 @@ async function main(): Promise<void> {
       .map((s) => s.ms));
 
     console.log(`
-fixture      ${options.home ? `real home ${options.home}` : `synthetic scale ${options.scale} — ${JSON.stringify(scale)}`}
+fixture      ${options.home ? `real home ${options.home}` : `synthetic scale ${options.scale} — ${JSON.stringify(scale)}`}${
+      bytes ? `\nbytes        ${JSON.stringify(bytes)}` : ""}
 project      ${options.project}
 load         ${options.concurrency} concurrent background HTTP requests (idle floor p95 ${
       idleFloor.p95.toFixed(1)} ms over n=${idleFloor.n})
@@ -660,8 +677,27 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
     for (const r of results) console.log(`  ${r.name.padEnd(17)} ${fmt(r.wall)}   rows=${r.rows}`);
 
     const sub = results.find((r) => r.name === "subprocess");
+    const writeJson = (extra: Record<string, unknown>): void => {
+      if (!options.json) return;
+      writeFileSync(options.json, JSON.stringify({
+        fixture: options.home ? { real: options.home } : { scale: options.scale, ...scale, bytes },
+        project: options.project,
+        concurrency: options.concurrency,
+        iterations: options.iterations,
+        envDiscovery: !options.bareSpawn,
+        buildInline: options.buildInline,
+        routes: results,
+        ...extra,
+      }, null, 2) + "\n");
+    };
+
+    // Written whatever ran: a narrowed run is a measurement too, and losing its
+    // artifact is how a figure ends up quoted from memory.
     if (!sub) {
       console.log("\n(no subprocess route in this run — no bound to compare against)");
+      // `null`, not `false`: nothing was compared, and a boolean would read as
+      // a failed comparison.
+      writeJson({ shippedWithin: null, within: [] });
       return;
     }
     // Only the shipped route can pass or fail the acceptance. The controls are
@@ -672,7 +708,12 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
     const inProcess = results.filter((r) =>
       r.name === "in-process" || r.name === "retired" || r.name === "uncapped");
     const shipped = results.find((r) => r.name === "in-process");
-    const shippedWithin = shipped !== undefined && shipped.timer.p95 <= sub.timer.p95;
+    const shippedWithin = shipped === undefined ? null : shipped.timer.p95 <= sub.timer.p95;
+    // A forked route inherits the parent's heap and an in-process one does not,
+    // so a heavy control interleaved with the spawns inflates the subprocess
+    // side of the comparison and only that side. Naming it on the verdict line
+    // is what stops the wrong run being quoted as the gate.
+    const contaminated = results.some((r) => r.name === "retired" || r.name === "uncapped");
     const within = inProcess.filter((c) => c.timer.p95 <= sub.timer.p95);
     console.log(`
 bound        in-process p95 timer starvation <= subprocess p95 (design: Concurrency and event-loop safety)
@@ -683,16 +724,21 @@ bound        in-process p95 timer starvation <= subprocess p95 (design: Concurre
         c.wall.p50.toFixed(0).padStart(5)} ms  ->  ${c.timer.p95 <= sub.timer.p95 ? "within bound" : "over bound"}`);
     }
     console.log(`verdict      ${
-      shipped === undefined
+      shippedWithin === null
         ? "NOT RUN — the shipped in-process route was not among --routes"
         : shippedWithin
         ? "PASS — the shipped in-process route is within the bound"
         : "FAIL — the shipped in-process route is OVER the bound"}`);
     if (within.length > 0) console.log(`             (also within: ${within.map((c) => c.name).join(", ")})`);
+    if (contaminated) {
+      console.log(`             NOT THE GATE — an in-process control ran beside the spawns and inflated
+             the subprocess side alone. Re-run the bound with
+             --routes spawn-noop,subprocess,in-process`);
+    }
 
     if (options.json) {
       writeFileSync(options.json, JSON.stringify({
-        fixture: options.home ? { real: options.home } : { scale: options.scale, ...scale },
+        fixture: options.home ? { real: options.home } : { scale: options.scale, ...scale, bytes },
         project: options.project,
         concurrency: options.concurrency,
         iterations: options.iterations,

@@ -13,11 +13,23 @@
  *  fan-out runs as one `Promise.all` with no yield inside it, and the window's
  *  origin records are read with `readFileSync`, one per row.
  *
- *  Two mechanical edits were needed to keep it compiling beside its successor,
- *  and neither changes what it does: the origin lookup is inlined here (the
- *  module it used to import from is now a chunked asynchronous reader), and its
- *  imports are repointed at `src/`. Anything else that drifts from the commit
- *  above makes this control a fiction.
+ *  Three mechanical edits were needed to keep it compiling beside its successor,
+ *  and none changes what it does: the origin lookup and its `isSpawnedBy`
+ *  predicate are inlined here (the module they used to live in is now a chunked
+ *  asynchronous reader), `ProviderHistory` is declared locally (the shared read
+ *  retired that capability from `TuiProvider`), and the imports are repointed at
+ *  `src/`. Anything else that drifts from the commit above makes this control a
+ *  fiction — review caught two such drifts on the first version of this file,
+ *  a loosened `spawnedBy` check and a bypassed factory seam.
+ *
+ *  Check it rather than trust it:
+ *
+ *      git show 725c46f3:cli/src/lib/core/agent/providers/history.ts \
+ *        | diff - cli/test/bench/history-retired-control.ts
+ *
+ *  It is not a committed test, because a test bound to a commit sha stops
+ *  meaning anything the moment the branch is squashed or rebased — the same
+ *  lesson the rollback matrix in `doc/main/cli/read-path.md` records.
  *
  *  Nothing imports it but the benchmark, and it is in no export closure. */
 
@@ -32,12 +44,25 @@ import { extractUserText, firstMeaningfulMessage } from "../../src/lib/core/agen
 import { codexDbPath, userHome } from "../../src/lib/core/agent/providers/provider-home.ts";
 import type { HistorySession, HistoryWindow } from "../../src/lib/core/agent/providers/types.ts";
 
+/** `ProviderHistory` as it stood at 725c46f3, before the shared read retired the
+ *  capability from `TuiProvider`. */
+interface RetiredProviderHistory {
+  list(projectPath: string, liveSessions?: readonly SessionState[]): Promise<HistorySession[]>;
+}
+
 /** Default history row limit after filtering the merged provider rows. */
 export const DEFAULT_HISTORY_LIMIT = 200;
 /** Bytes read from the head of each Claude JSONL (first user message + start). */
 const HEAD_BYTES = 16384;
 /** Bytes read from the tail of each Claude JSONL (last custom-title + mtime). */
 const TAIL_BYTES = 65536;
+
+/** The retired `origin.ts#isSpawnedBy`. Copied rather than loosened to a string
+ *  check: the old reader dropped a record whose `spawnedBy` was not one of these
+ *  three, and a control that keeps it is answering a different question. */
+function isSpawnedBy(value: unknown): value is OriginRecord["spawnedBy"] {
+  return value === "user:web" || value === "user:terminal" || value === "agent";
+}
 
 /** The retired `origin.ts#readOriginForSessionId`: `existsSync` plus
  *  `readFileSync`, once per window row. */
@@ -46,7 +71,7 @@ function readOriginForSessionId(sessionId: string): OriginRecord | null {
   if (!path || !existsSync(path)) return null;
   try {
     const data = JSON.parse(readFileSync(path, "utf-8")) as Partial<OriginRecord>;
-    if (data.sessionId !== sessionId || typeof data.spawnedBy !== "string") return null;
+    if (data.sessionId !== sessionId || !isSpawnedBy(data.spawnedBy)) return null;
     return {
       sessionId,
       spawnedBy: data.spawnedBy,
@@ -291,7 +316,14 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
   return rows.filter((r): r is HistorySession => r !== null);
 }
 
-export { claudeList };
+/** The `ProviderHistory` factories the retired module exported. Kept because
+ *  the timed route called `claudeHistory().list(path)`, and a control that skips
+ *  two wrapper calls and two object constructions per invocation is not the
+ *  route it claims to reproduce — however little that is worth in milliseconds,
+ *  "verbatim" has to survive being checked. */
+export function claudeHistory(): RetiredProviderHistory {
+  return { list: (projectPath) => claudeList(projectPath) };
+}
 
 // -- Codex provider history --
 
@@ -369,7 +401,9 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
   })));
 }
 
-export { codexList };
+export function codexHistory(): RetiredProviderHistory {
+  return { list: (projectPath) => codexList(projectPath) };
+}
 
 // -- Generic merge + live tagging --
 
