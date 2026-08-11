@@ -73,7 +73,10 @@ if (cohorts.vitest.length) {
   const args = ["vitest", "run", ...(sequential ? ["--no-file-parallelism"] : []), ...cohorts.vitest];
   results.push(["vitest", run("vitest cohort", "npx", args)]);
 }
-for (const batch of cohorts.bun.length === 0 ? [] : sequential ? cohorts.bun.map((f) => [f]) : [cohorts.bun]) {
+// `./` matters: a bare path is a name *filter* to `bun test`, and an
+// `.integration.ts` file matches no filter at all.
+const bunPaths = cohorts.bun.map((file) => `./${file}`);
+for (const batch of bunPaths.length === 0 ? [] : sequential ? bunPaths.map((f) => [f]) : [bunPaths]) {
   results.push(["bun", run("bun cohort", "bun", ["test", ...batch])]);
 }
 

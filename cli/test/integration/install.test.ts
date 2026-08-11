@@ -7,7 +7,7 @@
  *  Hermetic: HOME, YACO_HOME, YACO_BIN_DIR all point at sandbox paths.
  *  PATH is shimmed for tmux/git/claude/codex.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -21,7 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 const INSTALL_SH = join(REPO_ROOT, "tools", "install.sh");
 
 let sandbox: string;

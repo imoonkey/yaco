@@ -5,7 +5,7 @@
  *  and the lock-contention + cross-host stale-lock contracts.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -19,20 +19,15 @@ import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { lockPathFor } from "../../../src/lib/core/task/index.ts";
+import { BUN_BIN, CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../../src/main.ts");
 
 function runYaco(repo: string, args: string[], stdin?: string, env: Record<string, string> = {}): {
   stdout: string;
   stderr: string;
   status: number;
 } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    cwd: repo,
-    env: { ...process.env, NO_COLOR: "1", ...env },
-    input: stdin,
-  });
+  const r = runCli(args, { cwd: repo, env: { ...process.env, NO_COLOR: "1", ...env }, input: stdin });
   return {
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",
@@ -550,10 +545,10 @@ describe("lock contention", () => {
     const spawnSet = (id: string, title: string) =>
       new Promise<{ stdout: string; stderr: string; status: number }>((resolve) => {
         const child = spawn(
-          "bun",
+          BUN_BIN,
           [
             "run",
-            BIN,
+            CLI_ENTRY,
             "task",
             "set",
             id,
