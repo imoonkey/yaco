@@ -47,13 +47,32 @@ const devGzip = (): PluginOption => ({
 
 // Precompressed .br/.gz siblings for the server's `pickEncoding` negotiation.
 // A plugin, not a post-build npm step, so `vite build --watch` compresses too.
-const buildCompress = (): PluginOption => ({
-  name: 'compress-dist',
-  apply: 'build',
-  closeBundle: compressDist,
-})
+// It follows the resolved outDir rather than naming one: e2e overrides it with
+// `--outDir dist-e2e`, and a hardcoded directory compresses the build nobody is
+// serving while the one being served ships uncompressed.
+const buildCompress = (): PluginOption => {
+  let outDir = ''
+  return {
+    name: 'compress-dist',
+    apply: 'build',
+    configResolved: (config) => { outDir = config.build.outDir },
+    closeBundle: () => compressDist(outDir),
+  }
+}
 
 export default defineConfig({
+  // The built UI ships inside `@yaco/app` and the server resolves it from that
+  // package's root (`app/server/src/package-root.ts`), so vite writes it there
+  // directly. Building into `app/ui/dist` and copying at pack time would leave
+  // `build:watch` — a long-running service — writing to a directory nothing
+  // serves, since a `&&`-chained copy never runs while a watcher is alive.
+  build: {
+    outDir: '../server/ui',
+    // Vite refuses to empty an outDir outside the project root unless told to,
+    // and a stale asset from a previous build is one the SPA's hashed imports
+    // no longer reference — dead weight in every tarball after it.
+    emptyOutDir: true,
+  },
   plugins: [
     react(),
     tailwindcss(),
