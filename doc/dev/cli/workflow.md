@@ -190,17 +190,28 @@ tmux and a real provider.
 ### Re-running the read-path measurements
 
 Every before/after figure in [read-path.md](../../main/cli/read-path.md) comes
-from one of these. The starvation harnesses queue a timer, keep re-queuing it
-for as long as a route runs, and report the worst gap per invocation — so they
-measure what an unrelated already-queued request waits, not the route's own wall
-time. `--home` reads a real provider home; it is read-only, and needs
-`--project` plus a `YACO_HOME` holding that home's session state files.
+from one of these, except the provider-catalog bound, whose one-off procedure is
+below. The starvation harnesses queue a timer, keep re-queuing it for as long as
+a route runs, and report the worst gap per invocation — so they measure what an
+unrelated already-queued request waits, not the route's own wall time. `--home`
+reads a real provider home; it is read-only, and needs `--project` plus a
+`YACO_HOME` holding that home's session state files.
 
 ```bash
 node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
 node cli/test/bench/history-stall.ts [--scale 1|10] [--chunks 1,2,4,8,16]
 node cli/test/bench/message-read-bench.mjs        # needs `npm run build` — it spawns bin/yaco.mjs
+```
+
+The provider catalog has no committed harness, because what its cutover had to
+prove was that the read does no I/O, which the export audit asserts statically.
+Its bound was taken by hand, from `cli/`, and is a CLI-only lower bound on the
+retired route — the app also paid a synchronous `ssh-add` probe per spawn:
+
+```js
+// median of 21 `execFile(process.execPath, ["bin/yaco.mjs","agent","providers","--json"])`
+// after one warm-up, against 21 in-process providerCatalog() calls.
 ```
 
 Two of the gates are committed tests rather than benches, and run in

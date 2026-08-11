@@ -101,7 +101,7 @@ has the commands that reproduce them.
 |---:|---|---|---|
 | 1 | `GET /api/tasks/:project` → `readTaskList` | **181.6 → 28.5 ms** median, 485 tasks, two live servers | **17.95 → 4.97 ms** (dir, 480) · **28.07 → 10.93 ms** (dir, 4 800) · **21.97 → 8.43 ms** (one file, 480) · **29.15 → 31.63 ms** (one file, 4 800 — parity, see below) |
 | 2 | session-list labels → `readSessionSummaries` | **122 → 30 ms** p50 real provider home · **138 → 36 ms** synthetic 10× | **27.1 → 13.4 ms** · **34.3 → 14.1 ms** |
-| 3 | `agent start` provider validation → `providerCatalog()` | **72.7 → 0.0003 ms** median (see below) | no I/O and no environment read, so nothing to starve — and no failure mode |
+| 3 | `agent start` provider validation → `providerCatalog()` | **≥72.7 ms → <0.01 ms** (a CLI-only lower bound; see below) | no I/O and no environment read, so nothing to starve — and no failure mode |
 | 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 6.4×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
 
 Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
@@ -111,17 +111,24 @@ generated fixtures when `plan/tasks` is not in the checkout — which it is not 
 a worktree, since `plan/` is a separate repository — and says which source it
 used.
 
-**Cutover 3's row is the one figure this milestone did not record at the time.**
-The task's artifacts prove the spawn is *gone* — a stubbed `yaco` binary serves a
-whole session list and never sees an `agent providers` call — but no route
-median was captured, because the payload is three string fields fixed at build
-time and the interesting property was the absence of I/O rather than a speedup.
-The numbers above were therefore measured for this document, on this machine, on
-2026-08-11: 21 samples of `node cli/bin/yaco.mjs agent providers --json` after a
-warm-up (median 72.7 ms, min 54.5 ms) against 21 in-process `providerCatalog()`
-calls (median 0.0003 ms). The real "before" was worse than 72.7 ms, because the
-app also paid `buildChildProcessEnv()`'s synchronous `ssh-add` probe on every
-spawn.
+**Cutover 3's row is the one figure this milestone did not record at the time,
+and it is a bound rather than a route measurement.** The task's artifacts prove
+the spawn is *gone* — a stubbed `yaco` binary serves a whole session list and
+never sees an `agent providers` call — but no route median was captured, because
+the payload is three string fields fixed at build time and the property worth
+proving was the absence of I/O, not a speedup.
+
+So the row is measured for this document rather than quoted, and it is honest
+about being a **lower bound on the before, and a ceiling on the after**:
+21 samples of `node cli/bin/yaco.mjs agent providers --json` after a warm-up
+gave a median of 72.7 ms (min 54.5 ms; an independent reproduction, 73.3 ms),
+and that times the child alone — the app's retired path also paid
+`buildChildProcessEnv()`'s synchronous `ssh-add` probe on every spawn, so the
+real before was larger. The in-process call measures in the single-digit
+microseconds, which is below what a wall clock resolves reliably: repeated runs
+land anywhere from 0.0003 to 0.003 ms, so `<0.01 ms` is the claim the
+measurement supports. The reproduction is in
+[the dev workflow](../../dev/cli/workflow.md#re-running-the-read-path-measurements).
 
 Parity evidence beside the timings: 45 frozen pre-cutover envelopes for the task
 read; **611/611** identical labels on a real provider home for the summary read;
