@@ -27,14 +27,15 @@
  *  `import(name)` and a `createRequire`, are the last test here; between them
  *  the graph is closed.
  */
-import { build } from 'esbuild'
+import { build, transform } from 'esbuild'
 import { describe, expect, it } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { builtinModules } from 'node:module'
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
 import { bundleOptions } from '../scripts/build.mjs'
 
 const SERVER_DIR = join(import.meta.dirname, '..')
+const REPO_ROOT = join(SERVER_DIR, '../..')
 const MANIFEST = JSON.parse(readFileSync(join(SERVER_DIR, 'package.json'), 'utf-8'))
 
 /** The one package the bundle inlines on purpose: an unpublished workspace with
@@ -69,13 +70,38 @@ const declared = new Set([
   ...Object.keys(MANIFEST.optionalDependencies as Record<string, string>),
 ])
 
-/** The production sources as `[path relative to src/, text]`. Tests are excluded:
- *  they are entitled to devDependencies, and none of them is in the bundle. */
-function sourceFiles(): Array<[string, string]> {
-  return readdirSync(join(SERVER_DIR, 'src'), { recursive: true, encoding: 'utf-8' })
-    .filter((relative) => relative.endsWith('.ts') && !relative.includes('__tests__'))
-    .map((relative) => [relative, readFileSync(join(SERVER_DIR, 'src', relative), 'utf-8')])
+const LOADERS: Record<string, 'ts' | 'js'> = {
+  '.ts': 'ts', '.mts': 'ts', '.cts': 'ts', '.js': 'js', '.mjs': 'js', '.cjs': 'js',
 }
+
+/** Every file the bundle inlined, re-emitted by esbuild's own parser with
+ *  comments and layout gone.
+ *
+ *  The escapes below are syntax, and syntax cannot be matched against source
+ *  *spelling*: `import /* c *​/ (name)` is the same expression as
+ *  `import(name)` and a pattern written against the second misses the first.
+ *  Minifying through the same parser the build uses normalises every such
+ *  variant to one form before anything looks at it. Reading the set from the
+ *  metafile rather than from a directory is what extends the check to the
+ *  inlined `packages/codex-transcribe` closure, which is equally in the bundle
+ *  and was equally unscanned. */
+const normalizedInputs = new Map<string, string | null>(
+  await Promise.all(
+    inputs.map(async (path): Promise<[string, string | null]> => {
+      const loader = LOADERS[extname(path)]
+      if (!loader) return [path, null]
+      try {
+        // Metafile paths are relative to `absWorkingDir`, the monorepo root. One
+        // that resolves outside it is an input from another checkout — which the
+        // test above rejects, and which this one must not crash on first.
+        const source = readFileSync(join(REPO_ROOT, path), 'utf-8')
+        return [path, (await transform(source, { loader, minify: true })).code]
+      } catch {
+        return [path, null]
+      }
+    }),
+  ),
+)
 
 describe('the manifest decides what the bundle externalises', () => {
   it('declares every package the bundle leaves external', () => {
@@ -96,16 +122,22 @@ describe('the manifest decides what the bundle externalises', () => {
   it('loads nothing by a route the resolver cannot follow', () => {
     // Two escapes survive everything above: `import(name)` stays in the bundle
     // unresolved, with no warning and no graph entry, and fails on a consumer's
-    // machine the first time that code path runs; `createRequire` reaches a
-    // package with no import statement at all. Both must be spelled as literal
-    // imports so the graph above is the whole graph.
+    // machine the first time that code path runs; `require` — directly or
+    // through `createRequire` — reaches a package the metafile check above
+    // cannot attribute. Everything in the bundle must load by literal import,
+    // so that the graph above is the whole graph.
     const offenders: string[] = []
-    for (const [file, source] of sourceFiles()) {
-      const dynamic = [...source.matchAll(/\bimport\s*\(/g)]
-        .filter(({ index }) => !/^import\s*\(\s*['"]/.test(source.slice(index!)))
-      if (dynamic.length > 0) offenders.push(`src/${file}: non-literal import()`)
-      if (/\bcreateRequire\b/.test(source)) offenders.push(`src/${file}: createRequire`)
-      if (/(?<![.\w])require\s*\(/.test(source)) offenders.push(`src/${file}: require()`)
+    for (const [path, code] of normalizedInputs) {
+      if (code === null) {
+        offenders.push(`${path}: inlined but not parseable, so not checked`)
+        continue
+      }
+      for (const match of code.matchAll(/\bimport\(/g)) {
+        const next = code[match.index + match[0].length]
+        if (next !== '"' && next !== "'") offenders.push(`${path}: non-literal import()`)
+      }
+      if (/(?<![.\w$])require\(/.test(code)) offenders.push(`${path}: require()`)
+      if (/\bcreateRequire\b/.test(code)) offenders.push(`${path}: createRequire`)
     }
     expect(offenders).toEqual([])
   })
