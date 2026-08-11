@@ -12,3 +12,6 @@ export class ConfigError extends Error {}
 /** The heritage clause never spells `Error`; the type still derives from it. */
 const Base = Error;
 export class ConfigFault extends Base {}
+
+/** A class expression publishes an error constructor from a variable. */
+export const ConfigFailure = class extends Error {};

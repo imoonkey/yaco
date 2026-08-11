@@ -615,6 +615,9 @@ describe("the audit itself", () => {
         `export const pollDo = async (probe: () => Promise<boolean>) => {\n` +
         `  do { if (await probe()) return; } while (true);\n` +
         `};\n` +
+        `export const pollNeg = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (-1) { if (await probe()) return; }\n` +
+        `};\n` +
         `export const backoff = async (probe: () => Promise<boolean>) => {\n` +
         `  for (let i = 0; i < 5; i++) {\n` +
         `    if (await probe()) return;\n` +
@@ -629,12 +632,7 @@ describe("the audit itself", () => {
         `};\n`,
     });
     try {
-      expect(detailsOf(root)).toEqual([
-        "3:polling loop",
-        "3:polling loop",
-        "3:polling loop",
-        "3:polling loop",
-      ]);
+      expect(detailsOf(root)).toEqual(Array(5).fill("3:polling loop"));
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
@@ -644,15 +642,20 @@ describe("the audit itself", () => {
     // Name and file census both stay intact; only the origin changes.
     expect(exportedNames("test/fixtures/alias-export.ts")).toEqual({
       "src/lib/core/task/store.ts": ["loadTasks=saveTasks"],
-      "test/fixtures/alias-export.ts": ["ConfigError", "ConfigFault"],
+      "test/fixtures/alias-export.ts": [
+        "ConfigError",
+        "ConfigFailure",
+        "ConfigFault",
+      ],
     });
   });
 
   it("sees an error type other than CliError", () => {
-    // ConfigFault's heritage clause never spells `Error`; the type system says
-    // it derives from it anyway.
+    // ConfigFault's heritage clause never spells `Error` and ConfigFailure is
+    // not a class declaration at all; both publish an error constructor.
     expect(exportedErrorClasses("test/fixtures/alias-export.ts")).toEqual([
       "ConfigError",
+      "ConfigFailure",
       "ConfigFault",
     ]);
   });

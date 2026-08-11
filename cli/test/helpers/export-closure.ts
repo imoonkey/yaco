@@ -276,8 +276,14 @@ export function exportedErrorClasses(entrySource: string): string[] {
   return symbols
     .filter((s) => {
       const from = origin(checker, s);
-      if (!from.getDeclarations()?.some(ts.isClassDeclaration)) return false;
-      return derivesFromError(checker.getDeclaredTypeOfSymbol(from));
+      const declaration = from.valueDeclaration ?? from.getDeclarations()?.[0];
+      if (!declaration) return false;
+      // Constructors, not class declarations: `export const Fault = class
+      // extends Error {}` publishes an error constructor from a variable.
+      return checker
+        .getTypeOfSymbolAtLocation(from, declaration)
+        .getConstructSignatures()
+        .some((signature) => derivesFromError(signature.getReturnType()));
     })
     .map((s) => s.getName())
     .sort();
@@ -455,25 +461,36 @@ function isPollingLoop(node: ts.Node): boolean {
   return false;
 }
 
-/** A loop condition that never ends the loop — `true`, `1`, `"go"`, `!0`. */
-function alwaysTrue(expr: ts.Expression): boolean {
-  if (expr.kind === ts.SyntaxKind.TrueKeyword) return true;
-  if (ts.isNumericLiteral(expr)) return Number(expr.text) !== 0;
-  if (ts.isStringLiteral(expr)) return expr.text.length > 0;
-  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
-    return isFalsyLiteral(expr.operand);
-  }
-  if (ts.isParenthesizedExpression(expr)) return alwaysTrue(expr.expression);
-  return false;
-}
+/** A loop condition that never ends the loop — `true`, `1`, `-1`, `"go"`, `!0`. */
+const alwaysTrue = (expr: ts.Expression): boolean => Boolean(constantValue(expr) ?? false);
 
-function isFalsyLiteral(expr: ts.Expression): boolean {
-  return (
-    expr.kind === ts.SyntaxKind.FalseKeyword ||
-    expr.kind === ts.SyntaxKind.NullKeyword ||
-    (ts.isNumericLiteral(expr) && Number(expr.text) === 0) ||
-    (ts.isStringLiteral(expr) && expr.text.length === 0)
-  );
+/** The value of a condition built only from literals and unary operators, or
+ *  `undefined` when it depends on anything at runtime. Small on purpose: its
+ *  job is to deny the rewrites of `while (true)`, not to be an interpreter. */
+function constantValue(expr: ts.Expression): string | number | boolean | null | undefined {
+  if (ts.isParenthesizedExpression(expr)) return constantValue(expr.expression);
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (expr.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isNumericLiteral(expr)) return Number(expr.text);
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return expr.text;
+  if (ts.isPrefixUnaryExpression(expr)) {
+    const operand = constantValue(expr.operand);
+    if (operand === undefined) return undefined;
+    switch (expr.operator) {
+      case ts.SyntaxKind.ExclamationToken:
+        return !operand;
+      case ts.SyntaxKind.MinusToken:
+        return -Number(operand);
+      case ts.SyntaxKind.PlusToken:
+        return Number(operand);
+      case ts.SyntaxKind.TildeToken:
+        return ~Number(operand);
+      default:
+        return undefined;
+    }
+  }
+  return undefined;
 }
 
 const SLEEPS = new Set(["setTimeout", "setInterval", "sleep", "sleepSync", "delay"]);
