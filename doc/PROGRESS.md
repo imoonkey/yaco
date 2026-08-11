@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-11: the history read is measured against rule 5, and the first instrument was wrong
+
+**What changed:**
+- `cli/test/bench/history-stall.ts` measures what the design's *Concurrency and event-loop safety* section asks about a candidate in-process read: how long an **already-queued** piece of work waits because of it. A timer chain re-queues itself for as long as a route runs and the invocation contributes its worst delay — one value per invocation, equal count per route — under four concurrent background HTTP requests. `history-fixture.ts` builds 1× and 10× provider homes from a real heavy one's shape; `--home` points the same harness at the real one.
+- Six routes, so the answer is attributable rather than inferred: the CLI subprocess as `app/server` runs it, the shipped reader called in process, `history-bounded-prototype.ts` swept at chunk sizes 1–16, the same bounded reader spawned (`bounded-child/N`, via `bounded-entry.ts`), and a child that only prints an empty envelope (`spawn-noop`).
+- `doc/main/cli/exports.md` gains *The one query rule 5 has judged*; `doc/main/app/backend/libs.md` records why `getHistory` still spawns.
+- **No production code changed.** No export was added.
+
+**Why:**
+- Rule 5 admits a `node:sqlite` query only against a measured stall bound, and the history read is the first query put to it. The answer was not about the database: the `threads` query costs 4–9 ms on a real 11.6 MB `state_5.sqlite`. What fails the bound is the reader around it — an unbounded `Promise.all` over every row a provider holds before the window is applied, ~22 MB of parsing a request, p95 79 ms of starvation on a real home and 443 ms at ten times the size, against the subprocess route's 42 ms.
+- Bounding it clears the bound at every chunk size tried (12–18 ms) while running 3–12× faster, so the path is **admitted — in that form only**. Lifting the shipped reader as it stands would have been the one export in the barrel that starves the server worse than the subprocess it replaced.
+- The subprocess route is not a free baseline, which is the finding the verdict turns on. `spawn-noop` accounts for 37.6 of its 42.3 ms, and still costs 15.9 ms with the app's `ssh-add` discovery removed: `fork` with a loaded heap.
+
+**Known debt:** the cutover is not implemented. It needs `core/agent/index.ts`, `core/agent/origin.ts` (whose origin lookup is `existsSync` + `readFileSync` per row, up to 200 a request), the export-audit pins and `commands/agent/history.ts` — none owned by this task, and `summary-read-cutover` is being held back to keep those files clear. The design records `history-read-land` and two conditions the benchmark does not answer: bounding a provider scan interacts with `--since` (which filters after the merge, so the cap must be the window past the cutoff), and the prototype drops the `sessions-index.json` enrichment, the Claude first-user-message summary, the Codex thread-name index, sidechain filtering and live tagging.
+
+**The measurement was wrong first, in one direction.** Both early instruments bucketed a continuous stream of background requests, and both favoured the subprocess route by enough to invert the answer. Labelling a request by the route running when it *started* files the subprocess route's synchronous pre-spawn stall under the previous bucket — an already-queued request is by construction one that started earlier. Attributing by interval overlap fixes the label but not the estimand: a route that blocks once and then waits 300 ms accumulates thousands of cheap samples that push its stall below p95, while one that blocks in short repeated bursts gets no dilution. Both reported the bounded reader 3–4× *over* a subprocess p95 of 1.6 ms; the corrected instrument has it 3× under. Two smaller traps sit beside them: a *single* probe at the seam is wrong the other way, since an async reader with synchronous bursts lets it fire after the first burst; and the last timer in flight must be drained after the route resolves, or the burst a route ends on goes unmeasured — for the shipped reader that is `finalizeHistory`, which sorts and then reads up to 200 origin files synchronously. Cross-provider review found the first flaw; the rest fell out of chasing it.
+
+**Key files:** `cli/test/bench/{history-stall,history-fixture,history-bounded-prototype,bounded-entry}.ts`, `doc/main/cli/exports.md`, `doc/main/app/backend/libs.md`
+**Verification:** `bash scripts/verify.sh` all steps pass; `cd cli && npx tsc --noEmit -p .` clean; CLI unit 1262/1262; `app/server` history/route tests 11/11; History tab exercised end to end against an isolated server (200 rows, 404/400 failure paths, route median 279 ms).
+**Commit:** `7f9941b1..a3f9ccfe`
+**Next:** `history-read-land` — a bounded, parity-complete shared history read, exported and adopted, after `summary-read-cutover` clears `core/agent`.
+**Blockers:** None.
+
 ## 2026-08-11: export eligibility is a test, not a review judgment
 
 **What changed:**
