@@ -102,9 +102,12 @@ if ! pack >/dev/null 2>"$probe_log"; then
   pack
 fi
 
-tarball="$(ls -1 "$stage"/*.tgz | head -1)"
+# `find`, not a glob: under `set -o pipefail` an unmatched `ls "$stage"/*.tgz`
+# fails the assignment and `set -e` exits before the check below can say
+# anything useful. find prints nothing and succeeds, so the check is reachable.
+tarball="$(find "$stage" -maxdepth 1 -name '*.tgz' | head -1)"
 if [ -z "$tarball" ]; then
-  echo "install: npm pack produced no tarball" >&2
+  echo "install: npm pack reported success but produced no tarball" >&2
   exit 1
 fi
 
@@ -117,8 +120,13 @@ npm install --global --prefix "$PREFIX" "$tarball"
 # command resolver in lib/core/agent/lifecycle reads YACO_BIN_DIR to write the
 # canonical `<BIN_DIR>/yaco agent hook-event <Event>` form into provider
 # configs. Without these envs, an install.sh invoked from /tmp would install
-# /tmp into projects.json and write hook commands pointing at the package's own
-# launcher deep inside <prefix>/lib rather than at the executable on PATH.
+# /tmp into projects.json, and the hook command would name whatever `yaco` was
+# already on PATH — a previous install — rather than the one just put in place.
+# `exec` replaces this process, so the EXIT trap will not fire — clear the stage
+# by hand or every install leaks a temp directory holding a tarball.
+rm -rf "$stage"
+trap - EXIT
+
 exec env \
   YACO_REPO_ROOT="$REPO_ROOT" \
   YACO_BIN_DIR="$BIN_DIR" \
