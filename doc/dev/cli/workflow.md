@@ -200,7 +200,7 @@ time. `--home` reads a real provider home; it is read-only, and needs
 node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
 node cli/test/bench/history-stall.ts [--scale 1|10] [--chunks 1,2,4,8,16]
-node --experimental-strip-types cli/test/bench/message-read-bench.mjs
+node cli/test/bench/message-read-bench.mjs        # needs `npm run build` — it spawns bin/yaco.mjs
 ```
 
 Two of the gates are committed tests rather than benches, and run in

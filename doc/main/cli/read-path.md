@@ -75,8 +75,10 @@ findings belong with the rule itself:
 
 ## What moved, and what it measured
 
-Absolute milliseconds drift with machine load; the deltas are the evidence. Each
-row cites the artifact holding the run.
+Absolute milliseconds drift with machine load; the deltas are the evidence. The
+artifacts holding each run are named below the table, and
+[the dev workflow](../../dev/cli/workflow.md#re-running-the-read-path-measurements)
+has the commands that reproduce them.
 
 | # | Path | Route wall (before → after) | p95 starvation of a queued request (before → after) |
 |---:|---|---|---|
@@ -85,9 +87,12 @@ row cites the artifact holding the run.
 | 3 | `agent start` provider validation → `providerCatalog()` | one spawn per start → none | a frozen array: no I/O, no environment read, no failure mode |
 | 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 7×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
 
-Read alone, with HTTP framing out of it, cutover 1 over a copy of this
-repository's actual graph measured **153.9 → 10.7 ms** at 485 tasks and
-**427.3 → 72.1 ms** at 4 850.
+Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
+over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** at
+485 tasks and **427.3 → 72.1 ms** at 4 850. The committed harness falls back to
+generated fixtures when `plan/tasks` is not in the checkout — which it is not in
+a worktree, since `plan/` is a separate repository — and says which source it
+used.
 
 Parity evidence beside the timings: 45 frozen pre-cutover envelopes for the task
 read; **611/611** identical labels on a real provider home for the summary read;
@@ -116,7 +121,10 @@ accepted with its reason.
 - **One 38 MB message log costs 14–23 ms against the subprocess route's ~6 ms.**
   Traced, not waved at: one 1.36 MB record through the provider parser is 2 ms of
   indivisible work, and allocating the 40 MB read buffer accounts for up to
-  8.9 ms. Subdividing a record means changing the provider parser.
+  8.9 ms. Subdividing a record means changing the provider parser. The gap is
+  what reproduces, not the millisecond: re-running the bench on a loaded machine
+  measured 31 ms against 8 ms while the wall time stayed 7× better on the same
+  fixture.
 - **The summary read skips a record over 4 MiB undecoded**, and searches the
   whole Codex `YYYY/MM/DD` rollout tree rather than eight days. Two independent
   changes in opposite directions — neither is "strictly more labels", and the
@@ -159,9 +167,10 @@ was not about the database.
 - The `threads` query costs **4–9 ms**. What fails the bound is the unbounded
   per-provider fan-out around it — every row a provider holds is read before the
   window is applied, ~22 MB of parsing per request.
-- A bounded, chunked reader clears the bound at **every** swept chunk size (1–16):
-  p95 worst starvation **12.4–14.4 ms**, against **42.3–119.8 ms** for the
-  subprocess route across the same fixtures.
+- A bounded, chunked reader clears the bound at **every** swept chunk size
+  (1–16), 12–18 ms across the sweep. At chunk 8 its p95 worst starvation is
+  **12.4–14.4 ms** across the three fixtures, against **42.3–119.8 ms** for the
+  subprocess route on the same three — and it runs 3–12× faster.
 
 So the path is admitted — **in that bounded form only**, and nothing was
 exported. Landing it needs four files that task did not own (`core/agent`'s

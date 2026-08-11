@@ -71,8 +71,9 @@ to exist**, so a rename cannot quietly empty the list. No closure reaches
 `src/commands/**` or `src/main.ts` at all.
 
 The last block of the test audits the auditor: the identical walker runs over
-throwaway fixture trees planting each evasion above, and its verdict is
-asserted. A gate nobody has watched fail is not known to work.
+throwaway fixture trees built to contain each shape above, and its verdict on
+each one is asserted. A gate whose failure has never been observed is not known
+to work.
 
 ## What this cost the barrels
 
