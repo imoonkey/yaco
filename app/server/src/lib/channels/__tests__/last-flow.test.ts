@@ -7,8 +7,8 @@
  *  reader; this is the seam those two meet at, which is where the message-read
  *  cutover landed. */
 
-import { describe, it, expect, vi } from 'vitest'
-import { mkdtemp, mkdir, writeFile } from 'fs/promises'
+import { afterAll, describe, it, expect, vi } from 'vitest'
+import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -18,14 +18,15 @@ vi.mock('os', async (orig) => {
   return { ...actual, homedir: () => homeDir.value, tmpdir: actual.tmpdir }
 })
 
-homeDir.value = await mkdtemp(join(tmpdir(), 'qa-last-'))
+homeDir.value = await mkdtemp(join(tmpdir(), 'channel-last-flow-'))
+const originalEnv = { HOME: process.env.HOME, YACO_HOME: process.env.YACO_HOME }
 process.env.HOME = homeDir.value
 process.env.YACO_HOME = join(homeDir.value, '.yaco')
 const yacoHome = join(homeDir.value, '.yaco')
 const agentDir = join(yacoHome, 'sessions')
 await mkdir(agentDir, { recursive: true })
 
-const projectsRoot = await mkdtemp(join(tmpdir(), 'qa-last-projects-'))
+const projectsRoot = await mkdtemp(join(tmpdir(), 'channel-last-flow-projects-'))
 const projectPath = join(projectsRoot, 'alpha')
 await mkdir(projectPath, { recursive: true })
 await writeFile(join(yacoHome, 'projects.json'), JSON.stringify([{ id: 'alpha', path: projectPath }]))
@@ -73,6 +74,13 @@ vi.mock('../pty-tap', async (orig) => {
 })
 
 const { dispatch, _resetRouterState } = await import('../../wechat/router')
+
+afterAll(async () => {
+  process.env.HOME = originalEnv.HOME
+  process.env.YACO_HOME = originalEnv.YACO_HOME
+  await rm(homeDir.value, { recursive: true, force: true })
+  await rm(projectsRoot, { recursive: true, force: true })
+})
 
 const say = async (conv: string, name: string, args: string[] = []): Promise<string> => {
   const r = await dispatch({ conversationId: conv }, { name, args })

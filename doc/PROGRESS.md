@@ -15,7 +15,7 @@
 - Two guards on the handle (the app's `validateSessionName`, then the CLI's stricter `validateName`) because the retired route ran both and each owns a different shipped reply body.
 
 **Key files:** `cli/src/lib/core/agent/providers/{message-read,follow,output}.ts`, `cli/src/commands/agent/messages.ts`, `cli/package.json`, `cli/test/{agent-messages-parity.test.ts,bench/message-read-bench.mjs,unit/export-audit.test.ts}`, `app/server/src/lib/channels/{agent-messages.ts,router.ts}`, `app/server/src/lib/agent.ts`
-**Verification:** `bash scripts/verify.sh` green (CLI 1280 tests incl. the export audit and the pack smoke; server 836). `cli/test/agent-messages-parity.test.ts` runs the retired `1+n` algorithm against the real built CLI and deep-equals rows and failure bodies. Route medians recorded in `plan/all/cli-node-sdk/qa-message-read-cutover.md`. Cross-provider Codex review over four rounds.
+**Verification:** `bash scripts/verify.sh` green (CLI 1280 tests incl. the export audit and the pack smoke; server 841 across 50 files). `cli/test/agent-messages-parity.test.ts` runs the retired `1+n` algorithm against the real built CLI and deep-equals rows and failure bodies. Route medians recorded in `plan/all/cli-node-sdk/qa-message-read-cutover.md`. Cross-provider Codex review over five rounds.
 **Commit:** 97ade32a..HEAD
 **Next:** the remaining Phase-2 cutovers (history, task, summary reads).
 **Blockers:** None
