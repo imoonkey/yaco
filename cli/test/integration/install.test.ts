@@ -233,6 +233,35 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
       expect(repaired.stderr).not.toContain("Could not resolve");
     }
   }, 180_000);
+
+  it("reports the build failure that asked for the install, not the install's own", () => {
+    // The probe cannot say *why* the bundle failed, so a source error selects
+    // the install branch too. On a machine that cannot reach a registry the
+    // install then fails, and its error is a red herring — the cause has to
+    // survive.
+    const clone = fullClone();
+    expect(bootstrap(clone).status).toBe(0);
+    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", { flag: "a" });
+    rmSync(join(clone, "cli", "node_modules"), { recursive: true, force: true });
+
+    const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only", "--skip-doctor"], {
+      env: {
+        ...withShimmedEnv(),
+        YACO_REPO_ROOT: clone,
+        // No reachable registry and no warm cache, so the remedial install
+        // cannot quietly succeed.
+        BUN_CONFIG_REGISTRY: "http://127.0.0.1:9/",
+        BUN_INSTALL_CACHE_DIR: join(sandbox, "empty-bun-cache"),
+      },
+      encoding: "utf-8",
+      timeout: 90_000,
+    });
+
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("could not install the cli dependencies");
+    expect(r.stderr).toContain("Expected");
+    expect(r.stderr).toContain("cli/src/main.ts");
+  }, 120_000);
 });
 
 // One-shot afterAll guard against any stray sandbox.

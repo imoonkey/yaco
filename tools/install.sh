@@ -33,12 +33,13 @@ echo "  repo root: $REPO_ROOT"
 echo "  bin dir:   $BIN_DIR"
 
 # The CLI has runtime dependencies and the build resolves them from
-# node_modules, so a clone that has never been installed cannot build. Neither
-# clone shape can install them in place: run inside cli/ and Bun discovers the
-# monorepo workspace root, then tries to migrate the npm lockfile and dies under
-# --frozen-lockfile; the published subset has no root to discover at all. An
-# isolated copy of the CLI's own manifest is the one thing that behaves
-# identically in both, so install there and copy the result in.
+# node_modules, so a clone that has never been installed cannot build. One
+# mechanism has to serve both clone shapes, and installing in place is not it:
+# inside a full clone's cli/, Bun walks up to the monorepo workspace root, tries
+# to migrate the npm lockfile, and dies under --frozen-lockfile. Installing from
+# an isolated copy of the CLI's own manifest has no root to walk up to, so it
+# behaves the same in a full clone and in the published subset (which could also
+# install in place, but would then need a second code path).
 #
 # Readiness is decided by the bundler, not by inspecting node_modules: the probe
 # and the compile below share an entry point and a target, so the probe performs
@@ -46,21 +47,33 @@ echo "  bin dir:   $BIN_DIR"
 # only signal that cannot mistake a partially installed or damaged package — or
 # a missing transitive dependency — for a usable one. Every cheaper check tried
 # here (a directory existing, then a dependency's own manifest existing) did
-# exactly that. A non-dependency build error trips it too; the install that
-# follows is harmless and the compile then reports the real failure.
-if ! (cd "$REPO_ROOT" && bun build --target="$BUILD_TARGET" "$BUILD_ENTRY") >/dev/null 2>&1; then
+# exactly that.
+#
+# What the probe cannot do is say *why* the bundle failed, so a source error
+# selects this branch too. Its diagnostic is therefore kept: if the remedial
+# install then fails — an offline machine is enough — the install's own error
+# would otherwise be the only thing reported, and it is a red herring.
+probe_log="$(mktemp)"
+trap 'rm -f "$probe_log"' EXIT
+if ! (cd "$REPO_ROOT" && bun build --target="$BUILD_TARGET" "$BUILD_ENTRY") >/dev/null 2>"$probe_log"; then
   echo "  installing cli dependencies ..."
   stage="$(mktemp -d)"
-  trap 'rm -rf "$stage"' EXIT
+  trap 'rm -f "$probe_log"; rm -rf "$stage"' EXIT
   cp "$REPO_ROOT/cli/package.json" "$REPO_ROOT/cli/bun.lock" "$stage/"
-  (cd "$stage" && bun install --production --frozen-lockfile)
+  if ! (cd "$stage" && bun install --production --frozen-lockfile); then
+    echo "install: could not install the cli dependencies." >&2
+    echo "install: the build failure that asked for them was:" >&2
+    cat "$probe_log" >&2
+    exit 1
+  fi
   # Copy rather than replace: node_modules may already hold something this
   # bootstrap did not put there and has no business deleting.
   mkdir -p "$REPO_ROOT/cli/node_modules"
   cp -R "$stage/node_modules/." "$REPO_ROOT/cli/node_modules/"
   rm -rf "$stage"
-  trap - EXIT
 fi
+rm -f "$probe_log"
+trap - EXIT
 
 echo "  building $BIN_DIR/yaco ..."
 

@@ -89,14 +89,15 @@ the Codex trust gate has to enumerate inline `[hooks]` tables in
 
 Two clone shapes have to bootstrap: a full `git clone` of this repo, and the
 published subset (`tools`, `cli`, `agent-config` — the public tree ships no
-`plan/`). Neither can install in place. Run `bun install` inside `cli/` in a full
-clone and Bun discovers the monorepo workspace through the root manifest, tries
-to migrate `package-lock.json`, and exits non-zero under `--frozen-lockfile`; the
-subset has no root to discover at all. So `tools/install.sh` installs from an
-**isolated copy of `cli/package.json` + `cli/bun.lock`** in a temp directory —
-the one shape that behaves identically with or without a monorepo root above
-it — and copies the result into `cli/node_modules`. It copies rather than
-replaces: the bootstrap does not delete what it did not put there.
+`plan/`). One mechanism serves both, and installing in place is not it: inside a
+full clone's `cli/`, Bun walks up to the monorepo workspace through the root
+manifest, tries to migrate `package-lock.json`, and exits non-zero under
+`--frozen-lockfile`. So `tools/install.sh` installs from an **isolated copy of
+`cli/package.json` + `cli/bun.lock`** in a temp directory — no root above it to
+walk up to, so it behaves the same in both shapes — and copies the result into
+`cli/node_modules`. (The subset could install in place; doing so would just mean
+a second code path.) It copies rather than replaces: the bootstrap does not
+delete what it did not put there.
 
 **Readiness is decided by the bundler**, not by inspecting `node_modules`:
 `bun build --target=bun cli/src/main.ts` is the same resolution the compile
@@ -105,6 +106,11 @@ mistake a partial or damaged package — or a missing transitive dependency — 
 a usable one. Both cheaper checks tried first (a `node_modules` directory
 existing; each dependency's own manifest existing) did exactly that. A healthy
 checkout therefore installs nothing, at the cost of one ~40 ms bundle.
+
+The probe cannot say *why* the bundle failed, so a source error selects the
+install branch too. Its diagnostic is kept and printed if the install then fails
+— on a machine that cannot reach a registry the install's own error is a red
+herring, and the cause has to survive.
 
 That makes `cli/bun.lock` load-bearing — a dependency added to
 `cli/package.json` and not to it breaks the README's first-run command for
