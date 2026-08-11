@@ -9,15 +9,16 @@
  *  Listing the constructs a module may not contain cannot be made complete.
  *  Review found four successive versions of the check incomplete, the last
  *  because `(() => {}).constructor("… .all()")` reaches `Function` without
- *  naming it and runs a query the parser never sees, since it lives in a string.
+ *  naming it, and the JavaScript inside that string — which is what runs the
+ *  unbounded query — is not in the AST at all.
  *
  *  So the audit pins **the JavaScript this module compiles to** — what Node
- *  actually runs — and asserts the file still compiles to it. Any edit at all
- *  fails, and failing means "re-judge and re-measure", which is what should
- *  happen when the code carrying a measured stall bound changes. A syntax-tree
- *  summary was tried first and had its own gap: `const` and `using` live in a
- *  declaration list's flags rather than in a child token, so the two summarized
- *  identically while emitting different programs.
+ *  actually runs — and asserts the file still compiles to it. Any edit that
+ *  changes that JavaScript fails, and failing means "re-judge and re-measure",
+ *  which is what should happen when the code carrying a measured stall bound
+ *  changes. A syntax-tree summary was tried first and had its own gap: `const`
+ *  and `using` live in a declaration list's flags rather than in a child token,
+ *  so the two summarized identically while emitting different programs.
  *
  *  That is only livable for a module that does one thing, which is exactly why
  *  the query does not simply sit in `summary-read.ts`. This file's existence

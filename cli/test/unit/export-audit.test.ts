@@ -22,12 +22,12 @@
  *  the part no syntax can settle: that a deadline is honoured, that a walk is
  *  actually bounded, that a failure carries the right code.
  *
- *  The last describe block audits the auditor: a gate nobody has watched fail
- *  is not known to work, so every shape that could defeat it — a re-export, a
- *  type-only import, a lazy `import()`, a computed key, `globalThis`, an alias
- *  of `process` or of a synchronous primitive, a string-keyed member, a
- *  polling loop — is planted against the identical walker and its verdict
- *  asserted.
+ *  The last describe block audits the auditor: a gate that has only ever been
+ *  seen to pass is not known to work, so every shape it could miss — a
+ *  re-export, a type-only import, a lazy `import()`, a computed key,
+ *  `globalThis`, an alias of `process` or of a synchronous primitive, a
+ *  string-keyed member, a polling loop — is run against the identical walker
+ *  and its verdict asserted.
  */
 
 import { describe, it, expect } from "vitest";
@@ -656,8 +656,8 @@ describe("the audit itself", () => {
   const detailsOf = (root: string, file = "index.ts"): string[] =>
     scanFile(join(root, file), root).violations.map((v) => `${v.rule}:${v.detail}`);
 
-  it("sees a fourth environment name planted behind a re-export", () => {
-    // The regex-defeating shape: the barrel has no `import`, only `export from`.
+  it("sees a fourth environment name behind a re-export", () => {
+    // The shape a regex misses: the barrel has no `import`, only `export from`.
     const { root, entry } = plant({
       "index.ts": `export { root } from "./hidden.ts";\n`,
       "hidden.ts": `export const root = process.env["YACO_SECRET_ROOT"] ?? "";\n`,
@@ -746,7 +746,7 @@ describe("the audit itself", () => {
     }
   });
 
-  it("is not evaded by reaching process through globalThis", () => {
+  it("sees process reached through globalThis", () => {
     const { root } = plant({
       "index.ts":
         `export const a = globalThis.process.env["YACO_SNEAK_ROOT"];\n` +
@@ -807,7 +807,7 @@ describe("the audit itself", () => {
     }
   });
 
-  it("is not evaded by string-keyed members, destructuring, or aliasing process", () => {
+  it("sees string-keyed members, destructuring, and aliases of process", () => {
     const { root } = plant({
       "index.ts":
         `export const a = () => process["exit"](1);\n` +
@@ -904,7 +904,7 @@ describe("the audit itself", () => {
     ]);
   });
 
-  it("is not evaded by aliasing or string-keying a synchronous primitive", () => {
+  it("sees an aliased or string-keyed synchronous primitive", () => {
     const { root } = plant({
       "index.ts":
         `import { spawnSync as run } from "node:child_process";\n` +
@@ -960,8 +960,9 @@ describe("the audit itself", () => {
       ["a string-keyed member", inject(`db.prepare("${UNBOUNDED}")["all"]();`)],
       ["destructuring", inject(`const { all } = db.prepare("${UNBOUNDED}"); all.call(db);`)],
       ["reflection", inject(`Reflect.get(db, "exec").call(db, "${UNBOUNDED}");`)],
-      // The escape that defeated every denylist: `Function` reached without
-      // naming it, running a query the parser never sees because it is a string.
+      // The case no list of names could cover: `Function` reached without
+      // naming it, and the JavaScript that runs the unbounded query is inside a
+      // string, so it is not in the AST at all.
       ["the Function constructor", inject(
         `const run = (() => {}).constructor("return arguments[0].prepare('${UNBOUNDED}').all()"); run(db);`,
       )],
