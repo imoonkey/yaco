@@ -361,6 +361,17 @@ bun-era mock can silently stop exercising the path it used to. When a mocked
 module's functions call each other, mock the *entry* the code under test
 actually reaches (`test/lifecycle-guards.test.ts` has a worked example).
 
+**Mocking a builtin is how an ordering test stops being about the machine.**
+`test/unit/core/project/move.test.ts` and `test/unit/package-root.test.ts` mock
+`node:fs` so `readdirSync` answers in *descending* name order. Staging a fixture
+"deliberately out of order" cannot do that job: a directory read reflects
+creation order only on filesystems that keep it, and the tmpfs under `/tmp`
+answers in name order however the directory was built — so the assertions would
+have held with every production `.sort()` deleted. Forcing the worst order at
+the read makes them statements about the reader. The mock applies to the whole
+file, which is deliberate: the rest of those files then also runs against the
+worst order.
+
 `test/unit/module-mock-scope.test.ts` fails the suite if any test file calls
 `mock.module(`. The registry it guarded is gone with the runner; the guard stays
 because the call is still writable, and it names the real problem where an

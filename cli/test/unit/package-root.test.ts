@@ -17,14 +17,27 @@
  *  wrapper resolves without a checkout to fall back on, the hook command names
  *  the artifact, and the version is the manifest's rather than `0.0.0`.
  */
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { PACKAGE_ROOT, packagedAssetPath, yacoExecutable } from "../../src/package-root.ts";
+import { listSkillNames, PACKAGE_ROOT, packagedAssetPath, yacoExecutable } from "../../src/package-root.ts";
 import { readAgentWrapperScript } from "../../src/lib/core/agent/lifecycle.ts";
 import { runCli } from "../helpers/cli-process.ts";
+
+/** Hand every reader in this file's module graph its directory entries in
+ *  descending name order, whatever the filesystem would have answered. */
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  const nameOf = (entry: unknown): string =>
+    typeof entry === "string" ? entry : String((entry as { name: unknown }).name);
+  const readdirSync = ((...args: unknown[]) => {
+    const entries = (fs.readdirSync as (...a: unknown[]) => unknown[])(...args);
+    return [...entries].sort((a, b) => (nameOf(a) < nameOf(b) ? 1 : nameOf(a) > nameOf(b) ? -1 : 0));
+  }) as typeof fs.readdirSync;
+  return { ...fs, readdirSync, default: { ...fs, readdirSync } };
+});
 
 const MANIFEST_VERSION = JSON.parse(
   readFileSync(packagedAssetPath("package.json"), "utf-8"),
@@ -136,6 +149,39 @@ describe("package assets from source", () => {
       }
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/** The manifest listing both readers of the skills directory share.
+ *
+ *  The directory is built in descending order, but that alone cannot carry the
+ *  assertion: a read only reflects creation order on filesystems that keep it,
+ *  and the tmpfs this runs under answers in name order however the directory
+ *  was built — so `listSkillNames` would look sorted with its `.sort()` gone.
+ *  `mockDescendingReaddir` closes that: whatever the read would have answered,
+ *  the listing is handed its entries in descending name order. */
+describe("skill-name manifest listing", () => {
+  const ASCENDING = ["align", "borrow", "design", "qa", "verify"];
+
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "yaco-skills-manifest-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("lists skill names ascending however the directory read answers", () => {
+    for (const skill of [...ASCENDING].reverse()) {
+      mkdirSync(join(dir, skill, "references"), { recursive: true });
+    }
+    expect(listSkillNames(dir)).toEqual(ASCENDING);
+  });
+
+  it("counts only the child directories", () => {
+    mkdirSync(join(dir, "verify"));
+    writeFileSync(join(dir, "README.md"), "not a skill\n");
+    expect(listSkillNames(dir)).toEqual(["verify"]);
+  });
+
+  it("throws on a manifest that cannot be read, for the caller to report", () => {
+    expect(() => listSkillNames(join(dir, "absent"))).toThrow();
   });
 });
 

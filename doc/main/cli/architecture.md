@@ -207,15 +207,32 @@ construction until this was made explicit.
 | History rows sort by recency, then ascending `sessionId`; an unparseable `updatedAt` ranks after every real timestamp | `providers/history.ts#finalizeHistory` |
 | Every `threads` query orders by its timestamp **and** `id` — `created_at` is second-precision, so concurrent threads tie routinely and SQLite leaves tied rows to the query plan | `providers/history.ts`, `session-id.ts` |
 | Equal-delay rollout selection resolves to the smallest rollout path, not to whichever the directory read reached first | `session-id.ts#scanCodexRollouts` |
+| The packaged skill names are listed once, ascending, for both readers of the manifest — `install` plants a link per name, `doctor` reports the names that have none and shows only the first three | `package-root.ts#listSkillNames` |
+| Every `project move` plan array is ordered: session and `~/.claude/projects` rows by name, a claude item's `.jsonl` list by name (which also decides *which* file the item's `cwd` is read from), rollout rows by ascending path, and `threads` buckets by `oldCwd` with ascending `ids` | `core/project/move.ts`, `providers/project-move.ts` |
 
 Comparison is by code unit — plain `.sort()`, never `localeCompare` — so the order
 is a property of the names alone, not of the runtime or the machine's locale.
-Two consequences worth stating: the `--limit` window boundary in
-`agent history` admits the same row on every call, and `agent list` rows are a
-stable diffable sequence rather than a set that happens to have an order.
+Three consequences worth stating: the `--limit` window boundary in
+`agent history` admits the same row on every call, `agent list` rows are a
+stable diffable sequence rather than a set that happens to have an order, and a
+`project move` plan — the thing `--json` serializes and the dry-run report
+prints — is the same document on every run against the same state.
+
+**A tree is sorted at the end, not at each read.** No traversal order is path
+order: a directory and a file can share a prefix (`rollout-a/` beside
+`rollout-a.jsonl`), and the directory sorts first as an *entry name* while its
+children sort after the file as *paths*. `providers/project-move.ts#rolloutFiles`
+therefore collects the walk and sorts once, which also leaves the walk iterative
+and indifferent to how deep the tree turns out to be.
 
 Enforced end to end by the golden matrix -> See:
 [doc/dev/cli/workflow.md#golden-matrix](../../dev/cli/workflow.md#golden-matrix).
+The per-reader tests cannot rest on how a fixture was staged: a directory read
+reflects creation order only on filesystems that keep it, and a tmpfs answers in
+name order however the directory was built. `test/unit/core/project/move.test.ts`
+and `test/unit/package-root.test.ts` therefore mock `readdirSync` to hand their
+readers **descending** entries, so the assertion is about the reader rather than
+about the machine.
 
 -> See: [src/lib/core/agent/session-id.ts](../../../cli/src/lib/core/agent/session-id.ts)
 

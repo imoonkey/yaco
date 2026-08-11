@@ -109,10 +109,14 @@ function providerHome(inputs: ProjectMoveInputs, id: string, dir: string): strin
 
 // --- shared fs helpers -----------------------------------------------------
 
+/** Directory entries, ascending. Sorted at the read because everything built
+ *  from it is output: the plan rows a move reports, and — for a Claude project
+ *  directory — *which* `.jsonl` file the item's `cwd` literal is read from. By
+ *  code unit, so it is a property of the names alone. */
 function safeReaddir(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
-    return readdirSync(dir);
+    return readdirSync(dir).sort();
   } catch {
     return [];
   }
@@ -211,7 +215,18 @@ function maxJsonlTimestamp(raw: string): Date | null {
   return best === null ? null : new Date(best);
 }
 
-function walkRolloutFiles(root: string, visit: (file: string) => void): void {
+/** Every `rollout-*.jsonl` under `root`, ascending by full path — the order the
+ *  codex section of a move plan reports them in.
+ *
+ *  The order comes from sorting the collected paths. Ordering the reads cannot
+ *  produce it — no traversal order is path order: a directory and a file can
+ *  share a prefix (`rollout-a/` next to `rollout-a.jsonl`), and the directory
+ *  sorts first as an *entry name* while its children sort after the file as
+ *  *paths*. Sorting the result is what makes the contract the one word
+ *  "ascending", and it leaves the walk itself free to stay iterative, which owes
+ *  nothing to how deep the tree turns out to be. */
+function rolloutFiles(root: string): string[] {
+  const files: string[] = [];
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
@@ -224,10 +239,11 @@ function walkRolloutFiles(root: string, visit: (file: string) => void): void {
         continue;
       }
       if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
-        visit(abs);
+        files.push(abs);
       }
     }
   }
+  return files.sort();
 }
 
 // --- Claude adapter --------------------------------------------------------
@@ -344,13 +360,13 @@ function planCodexSessions(inputs: ProjectMoveInputs): CodexSessionPlanItem[] {
   const root = join(providerHome(inputs, "codex", ".codex"), "sessions");
   if (!existsSync(root)) return [];
   const items: CodexSessionPlanItem[] = [];
-  walkRolloutFiles(root, (file) => {
+  for (const file of rolloutFiles(root)) {
     const cwd = readFirstCwd(file);
-    if (cwd === null) return;
+    if (cwd === null) continue;
     const next = translatePath(cwd, inputs.oldPath, inputs.newPath, inputs.mode);
-    if (next === null || next === cwd) return;
+    if (next === null || next === cwd) continue;
     items.push({ file, oldCwd: cwd, newCwd: next });
-  });
+  }
   return items;
 }
 
@@ -410,10 +426,12 @@ function planCodexThreads(inputs: ProjectMoveInputs): CodexThreadsPlanItem[] {
       buckets.set(key, bucket);
     };
 
-    // cwd column — the one the web app filters on.
+    // cwd column — the one the web app filters on. `ORDER BY id`, because an
+    // unordered SELECT leaves the row order to the query plan and these rows
+    // become the plan's `ids` — reported by `project move --json`.
     const cwdRows = inputs.mode === "exact"
-      ? db.prepare("SELECT id, cwd FROM threads WHERE cwd = ?").all(oldNorm) as Array<{ id: string; cwd: string }>
-      : db.prepare("SELECT id, cwd FROM threads WHERE cwd = ? OR cwd LIKE ?")
+      ? db.prepare("SELECT id, cwd FROM threads WHERE cwd = ? ORDER BY id ASC").all(oldNorm) as Array<{ id: string; cwd: string }>
+      : db.prepare("SELECT id, cwd FROM threads WHERE cwd = ? OR cwd LIKE ? ORDER BY id ASC")
           .all(oldNorm, `${oldNorm}/%`) as Array<{ id: string; cwd: string }>;
     for (const row of cwdRows) {
       const next = translatePath(row.cwd, inputs.oldPath, inputs.newPath, inputs.mode);
@@ -425,8 +443,8 @@ function planCodexThreads(inputs: ProjectMoveInputs): CodexThreadsPlanItem[] {
     // populated. Column may be absent on older state files, so probe first.
     if (hasColumn(db, "threads", "agent_path")) {
       const apRows = inputs.mode === "exact"
-        ? db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ?").all(oldNorm) as Array<{ id: string; agent_path: string | null }>
-        : db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ? OR agent_path LIKE ?")
+        ? db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ? ORDER BY id ASC").all(oldNorm) as Array<{ id: string; agent_path: string | null }>
+        : db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ? OR agent_path LIKE ? ORDER BY id ASC")
             .all(oldNorm, `${oldNorm}/%`) as Array<{ id: string; agent_path: string | null }>;
       for (const row of apRows) {
         if (typeof row.agent_path !== "string") continue;
@@ -440,11 +458,15 @@ function planCodexThreads(inputs: ProjectMoveInputs): CodexThreadsPlanItem[] {
 
     const items: CodexThreadsPlanItem[] = [];
     for (const bucket of buckets.values()) {
-      // Dedupe ids — a row can match via both cwd and agent_path.
-      const ids = [...new Set(bucket.ids)];
+      // Dedupe ids — a row can match via both cwd and agent_path. Sorted
+      // because the two queries contribute their hits one after the other, so
+      // each half is ascending but the concatenation is not.
+      const ids = [...new Set(bucket.ids)].sort();
       items.push({ dbPath, ids, oldCwd: bucket.oldCwd, newCwd: bucket.newCwd });
     }
-    return items;
+    // `oldCwd` identifies a bucket — `newCwd` is a function of it — so ordering
+    // by it is total, and the reported subtrees read in path order.
+    return items.sort((a, b) => (a.oldCwd < b.oldCwd ? -1 : a.oldCwd > b.oldCwd ? 1 : 0));
   } finally {
     try { db.close(); } catch { /* best-effort */ }
   }

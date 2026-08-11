@@ -397,7 +397,11 @@ Contract (`ProviderProjectMove`):
 - `plan(inputs) → ProviderMovePlan | null` — side-effect-free; returns `null`
   when the provider has no hits. `ProviderMovePlan.payload` is provider-specific
   but **serializable**: the mover persists it in dry-run JSON and passes it back
-  to the same adapter for `apply`/`renderText` without reading it.
+  to the same adapter for `apply`/`renderText` without reading it. Every array in
+  a plan — the mover's own rows and each payload's — is **ordered by the data**,
+  because `--json` serializes the plan verbatim and the dry-run report prints it
+  row by row. -> See:
+  [architecture.md#read-ordering](architecture.md#read-ordering).
 - `apply(plan) → counts` — performs the mutations and returns the real applied
   counts (e.g. codex threads = rows actually updated).
 - `renderText(plan) → lines` — the provider's dry-run/apply detail section.

@@ -56,6 +56,12 @@ It is **package-scoped**, so it never skips — a package that cannot show its o
 skills is broken, and "nothing to check here" would hide the one failure a
 partial install produces.
 
+The failure names three missing links and counts the rest, and *which* three is
+a choice, not an accident of the directory read: the manifest listing is
+`package-root.ts#listSkillNames` — the same ascending enumeration `yaco install`
+plants links from — so the three are the alphabetically first.
+-> See: [architecture.md#read-ordering](architecture.md#read-ordering).
+
 `registry` is the mirror image. It stopped asserting a `yaco` entry because
 nothing reads one: `skills-link` was the last consumer and now resolves the
 manifest from the package. What is left is "the file parses", and an absent file

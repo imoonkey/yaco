@@ -25,7 +25,6 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -50,7 +49,7 @@ import {
   writeProjects,
   type Project,
 } from "../lib/core/paths/index.ts";
-import { PACKAGED_SKILLS_DIR } from "../package-root.ts";
+import { listSkillNames, PACKAGED_SKILLS_DIR } from "../package-root.ts";
 import { readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
@@ -408,14 +407,6 @@ function isYacoSkillsDir(path: string): boolean {
   if (path === PACKAGED_SKILLS_DIR) return true;
   if (!path.endsWith(sep + SKILLS_DIR_SHAPE)) return false;
   return isYacoCheckout(path.slice(0, -(SKILLS_DIR_SHAPE.length + 1)));
-}
-
-/** Skill names = the child directories of agent-config/global/skills. */
-function listSkillNames(skillsDir: string): string[] {
-  return readdirSync(skillsDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort();
 }
 
 /** A readlink() result may be relative — resolve it against the link's own
