@@ -148,11 +148,21 @@ const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseR
     expect(record(before, "skills-link").detail).toContain("no 'yaco' registry entry");
     expect(record(after, "skills-link").detail).toContain("missing");
     // `providers` reports the same condition — this sandbox has no agent CLI on
-    // its $PATH — without failing on it, and still names what is missing.
-    expect(record(before, "providers")).toMatchObject({ status: "fail" });
-    expect(record(after, "providers")).toMatchObject({ status: "skip" });
-    expect(record(after, "providers").detail).toContain("claude, codex");
-    expect(record(after, "providers").detail).toContain("install one before starting agents");
+    // its $PATH — without failing on it, and still names what is missing. Both
+    // records whole: this record is exempted from the comparison above, so a
+    // substring match is the only thing a later recapture would have to satisfy
+    // to change the rest of the detail unnoticed.
+    expect(record(before, "providers")).toEqual({
+      name: "providers",
+      status: "fail",
+      detail: "no provider executable on $PATH (claude, codex)",
+    });
+    expect(record(after, "providers")).toEqual({
+      name: "providers",
+      status: "skip",
+      detail:
+        "no provider executable on $PATH (claude, codex) — install one before starting agents",
+    });
     const summary = (c: CaseResult) => (JSON.parse(c.stdout) as { data: { summary: unknown } }).data.summary;
     expect(summary(before)).toEqual({ pass: 2, fail: 9 });
     expect(summary(after)).toEqual({ pass: 3, fail: 7 });
