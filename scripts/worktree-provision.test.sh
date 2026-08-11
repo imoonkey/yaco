@@ -431,8 +431,30 @@ wt="$(mk_wt "$repo")"
 out="$(provision "$wt")"
 rc=$?
 assert_eq "a workspace name carrying a record delimiter is refused" 1 "$rc"
-assert_contains "and says it carries one" "carriage return or newline" "$out"
+assert_contains "and says it carries one" "control character" "$out"
 assert_eq "no tree was written outside the worktree" "keep" "$(ls "$repo/victim")"
+assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
+
+# --------------------------------------------------------------------------
+# 15. The same class, one byte the shell drops rather than splits on: command
+#     substitution strips NUL. `safe/..<NUL>/../../victim` stays inside
+#     node_modules while the NUL is a path segment character, and escapes the
+#     moment the shell removes it. Containment therefore has to be checked on a
+#     value the transport carries intact, not only on the value Node held.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/escape-nul/package.json" '{"name":"safe/..\u0000/../../victim","version":"1.0.0"}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm escape-nul
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a workspace name carrying a NUL is refused" 1 "$rc"
+assert_contains "and says it carries a control character" "control character" "$out"
+# Nothing pre-exists at the escaped destination: with the NUL stripped, the
+# workspace link lands one level above the worktree and creates it.
+assert_eq "no link was created outside the worktree" "absent" \
+  "$(if [ -e "$repo/victim" ] || [ -L "$repo/victim" ]; then echo present; else echo absent; fi)"
 assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
 
 echo

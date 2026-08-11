@@ -90,14 +90,18 @@ workspaces="$(node -e '
           const sub = Object.keys(exp).find((k) => k.startsWith("./"));
           if (sub) spec += sub.slice(1);
         }
-        // The shell re-parses these records on tabs and newlines. A value
-        // carrying one would arrive there as a different name and directory than
-        // the two checks above just approved, so it is refused rather than
-        // rewritten — the values that reach a write are exactly the validated ones.
+        // These records cross into the shell, which does not carry every byte
+        // through: command substitution drops NUL, and `read` splits on the tab
+        // and the newline. A value holding one of those arrives at a write as a
+        // different name and directory than the two checks above just approved —
+        // `safe/..\0/../../victim` resolves inside node_modules with the NUL and
+        // outside it once the NUL is gone. Control characters are refused rather
+        // than escaped, so there is one representation and the values that reach
+        // a write are exactly the validated ones.
         const record = [pkg.name, dir, spec];
-        const delimited = record.find((v) => /[\t\r\n]/.test(v));
-        if (delimited !== undefined)
-          throw new Error(`workspace value ${JSON.stringify(delimited)} contains a tab, carriage return or newline`);
+        const opaque = record.find((v) => /[\u0000-\u001f\u007f]/.test(v));
+        if (opaque !== undefined)
+          throw new Error(`workspace value ${JSON.stringify(opaque)} contains a control character`);
         out.push(record.join("\t"));
       }
     process.stdout.write(out.join("\n"));
