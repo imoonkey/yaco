@@ -197,6 +197,11 @@ unrelated already-queued request waits, not the route's own wall time. `--home`
 reads a real provider home; it is read-only, and needs `--project` plus a
 `YACO_HOME` holding that home's session state files.
 
+Both `history-stall.ts` lines take `--scale 10` for the ten-times tree, or
+`--home ~ --project /abs/repo` instead of `--scale` to read a real provider home;
+the three fixtures in `read-path.md`'s cutover 5 are exactly those three forms of
+the first command.
+
 `history-stall.ts` builds its fixture in a child process, so no spawn baseline
 carries the heap of writing it. Its own routes still grow one, and the `retired`
 control most of all — **and that bias runs one way**: a forked route inherits the
@@ -216,10 +221,9 @@ so a figure quoted from the wrong one is visible in its own output.
 node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
 # the gate: the narrowed run every figure in read-path.md's cutover 5 comes from
-node cli/test/bench/history-stall.ts --routes spawn-noop,subprocess,in-process \
-  [--scale 1|10] [--home ~ --project /abs/repo]
+node cli/test/bench/history-stall.ts --routes spawn-noop,subprocess,in-process --scale 1
 # the control-separation table — qualitative; prints NOT THE GATE
-node cli/test/bench/history-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
+node cli/test/bench/history-stall.ts --scale 1
 node cli/test/bench/history-stall.ts --sqlite-probe --home ~   # the windowed query's own cost + plan
 node cli/test/bench/message-read-bench.mjs        # needs `npm run build` — it spawns bin/yaco.mjs
 ```

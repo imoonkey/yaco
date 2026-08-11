@@ -11,24 +11,28 @@
  *  `git show 725c46f3:…`: a check bound to a commit sha stops meaning anything
  *  the moment the branch is squashed or rebased, which is the same staleness
  *  `doc/main/cli/read-path.md`'s rollback matrix records. The header of the
- *  control carries that diff command for a human; these two tests are what fail
+ *  control carries that diff command for a human; these tests are what fail
  *  closed.
  *
- *  What they are *not* is a claim that the control is byte-identical to the
+ *  The factory drift takes two assertions and neither is enough alone, which is
+ *  the interesting part: proving the factories *work* would not have caught it,
+ *  because they did. What holds is that the control publishes no provider scan
+ *  to call instead, **and** that the timed route is written to go through them.
+ *  The second is a source-shape check because the route is benchmark code with
+ *  no seam to inject through — giving it one would change the thing being timed.
+ *
+ *  What none of this is is a claim that the control is byte-identical to the
  *  retired module. Nothing here would catch a changed parser. The file's header
- *  names the three mechanical edits it is allowed to carry, and the diff command
- *  is how that claim is checked. */
+ *  names the four mechanical edits it is allowed to carry, and the diff command
+ *  there is how that claim is checked. */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  claudeHistory,
-  codexHistory,
-  retiredFinalizeHistory,
-} from "../../bench/history-retired-control.ts";
+import * as control from "../../bench/history-retired-control.ts";
+import { claudeHistory, codexHistory, retiredFinalizeHistory } from "../../bench/history-retired-control.ts";
 import { originPathForSessionId } from "../../../src/lib/core/agent/origin-read.ts";
 import type { HistorySession } from "../../../src/lib/core/agent/providers/types.ts";
 
@@ -83,15 +87,40 @@ describe("the retired control still behaves like the reader it stands in for", (
     });
   });
 
-  it("reads through the provider factories the retired route called", () => {
-    // The drift this catches exported the list functions directly, dropping two
+  it("offers the timed route no way to skip the provider factories", () => {
+    // The drift this catches called the list functions directly, dropping two
     // wrapper calls and two object constructions per invocation from the timed
     // route — small, and not the shape being reproduced.
-    for (const factory of [claudeHistory, codexHistory]) {
+    //
+    // Asserting that the factories *work* would not have caught it: they did.
+    // What has to hold is that the module publishes nothing else to call, so
+    // reintroducing the bypass means widening this surface, which fails here
+    // before the benchmark can use it.
+    expect(Object.keys(control).sort()).toEqual([
+      // A constant, and the two factories, and the merge. No provider scan.
+      "DEFAULT_HISTORY_LIMIT",
+      "claudeHistory",
+      "codexHistory",
+      "retiredFinalizeHistory",
+    ]);
+    for (const factory of [control.claudeHistory, control.codexHistory]) {
       const provider = factory();
       expect(typeof provider.list).toBe("function");
       expect(provider).not.toBe(factory());
     }
+  });
+
+  it("is invoked through those factories by the timed route", () => {
+    // The surface check above is the structural half; this is the other. The
+    // route is benchmark code with no seam to inject through — giving it one
+    // would change the thing being timed — so the call shape is read from the
+    // source, which is what the drift changed.
+    const harness = readFileSync(
+      new URL("../../bench/history-stall.ts", import.meta.url),
+      "utf-8",
+    );
+    expect(harness).toContain("retiredClaudeHistory().list(projectPath)");
+    expect(harness).toContain("retiredCodexHistory().list(projectPath)");
   });
 
   it("returns an empty list from each provider when no provider home exists", async () => {

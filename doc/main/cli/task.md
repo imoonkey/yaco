@@ -80,7 +80,7 @@ process is how two writers end up disagreeing about who owns the file. That is
 also what keeps the cutover independently reversible — restore the `runYacoTask`
 list call in `app/server/src/routes/tasks.ts` and nothing else moves.
 -> See: [read-path.md](read-path.md) for the same statement about the other
-three cutovers, and the rule all four had to satisfy.
+four cutovers, and the rule all five had to satisfy.
 
 ## CLI surface
 
