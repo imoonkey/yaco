@@ -1,12 +1,13 @@
-#!/usr/bin/env bun
-
 /** yaco — unified CLI dispatcher.
  *
- *  This file is the bin entry. It owns argv intake, help text, and routing
+ *  This file is the bundle entry. It owns argv intake, help text, and routing
  *  to one of the eight top-level areas. Each area module is responsible for
- *  parsing its own subcommands and producing a Result. Runtime
- *  implementations land in follow-up tasks (yc-core-paths, yc-agent-port,
- *  etc.); this scaffold only wires the dispatch surface.
+ *  parsing its own subcommands and producing a Result.
+ *
+ *  It does not decide whether it is being run: `bin/yaco.mjs` is the executable
+ *  and calls {@link main}. Importing this module — which the export audit and a
+ *  handful of tests do — must never execute a command, so there is no
+ *  self-invocation branch here.
  */
 
 import { parseArgs } from "./lib/core/args.ts";
@@ -247,8 +248,4 @@ async function main(): Promise<void> {
   process.exitCode = renderExitCode(result, json);
 }
 
-if (import.meta.main) {
-  void main();
-}
-
-export { AREAS, helpText, dispatch, textEnvelope, renderExitCode };
+export { AREAS, helpText, dispatch, main, textEnvelope, renderExitCode };

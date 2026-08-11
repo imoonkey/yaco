@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "node --max-old-space-size=1536 --import tsx src/index.ts",
+    "dev": "tsx watch --conditions=development src/index.ts",
+    "start": "node --max-old-space-size=1536 --conditions=development --import tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

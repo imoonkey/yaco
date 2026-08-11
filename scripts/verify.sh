@@ -24,7 +24,18 @@ run_step() {
 }
 
 run_step "keepalive test" .          bash tools/claude-usage-keepalive.test.sh
-run_step "cli test"       cli        bun run test
+# The CLI's three gates are separate steps on purpose. `npm run test` passes on
+# code that does not type-check (Vitest strips types, it does not check them) and
+# on code that does not build, so a single test step reported green for both
+# classes of breakage. Typecheck first — it is the fastest and the most specific.
+run_step "cli typecheck"  cli        npm run typecheck
+run_step "cli build"      cli        npm run build
+run_step "cli test"       cli        npm run test
+# The pack smoke is the only step that leaves the checkout: it packs the
+# tarball, installs it into a clean prefix, and uses it from a directory with no
+# yaco above it. Nothing above it can see a broken `files` allowlist or an
+# exports target that resolves only because `src/` happens to be next door.
+run_step "cli pack smoke" cli        npm run test:pack
 run_step "codex transcribe typecheck" . npm run typecheck --workspace @yaco/codex-transcribe
 run_step "codex transcribe test"      . npm test --workspace @yaco/codex-transcribe
 run_step "server test"    app/server npm test

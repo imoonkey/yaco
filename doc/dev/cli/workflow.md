@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-08-10 (node:sqlite hop — one runner)
+> Last updated: 2026-08-11 (dual-artifact npm package)
 
 ## Prerequisites
 
@@ -11,14 +11,18 @@
 ## Running
 
 ```bash
-# From source
-node src/main.ts <area> <command> [args]
-node src/main.ts agent start claude
-node src/main.ts agent list --all --json
+# From the checkout — the same launcher the tarball installs, over `dist/`
+npm run build            # once, and after any src/ edit
+node bin/yaco.mjs <area> <command> [args]
+node bin/yaco.mjs agent list --all --json
 
 # If installed via the monorepo install script
 yaco <area> <command> [args]
 ```
+
+`src/main.ts` is not runnable on its own: it exports `main` and never calls it,
+so importing the dispatcher — which the tests and the export audit do — can
+never run a command. `bin/yaco.mjs` owns invocation.
 
 Top-level provider shortcuts collapse to `yaco agent start <provider>`:
 
@@ -48,14 +52,50 @@ The root `scripts/verify.sh` runs it automatically.
 
 ## Building
 
-There is no working build on this plateau. It was `bun build --compile`, and
-`cli-sqlite-hop` made the compiled binary unable to start (see "One runner, two
-projects"). `cli-dual-artifact-package` replaces it with `bin/yaco.mjs` over an
-esbuild bundle; until then, run from source with `node src/main.ts`.
+`npm run build` produces **two** artifacts from one source tree, and the
+duplication is deliberate:
+
+| Script | Output | Why it exists |
+|---|---|---|
+| `build:bundle` | `dist/yaco.mjs` (esbuild, ESM, `node24`) | the command artifact. A `tsc` module graph costs +65–85 ms per command — see [Startup budget](#startup-budget) |
+| `build:lib` | `dist/**.js` + `dist/**.d.ts` (`tsconfig.build.json`) | the exports map. TypeScript source under `node_modules` fails plain Node with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so an installed consumer can only import emitted JS |
+
+`rootDir: src` → `outDir: dist` is load-bearing, not cosmetic: it puts
+`src/package-root.ts` at `dist/package-root.js`, one level below the package
+root in both layouts, which is what makes
+`fileURLToPath(new URL("../", import.meta.url))` correct from source, from the
+emit, and from esbuild's inlined copy. Rooting the emit anywhere else silently
+retargets every packaged asset.
+
+`prepack` runs `clean && build`, so `npm pack` cannot ship a stale `dist/`.
+
+The suite spawns `bin/yaco.mjs`, so a Vitest `globalSetup`
+(`test/build-bundle.setup.ts`) rebuilds the bundle before anything runs —
+including a focused `npx vitest run <file>`, which is exactly where a
+`npm test`-only hook would have left you testing yesterday's code.
 
 Provider hooks and normal `yaco ...` commands use the installed binary
-(`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source run never updates live
-Claude/Codex hook behavior in any case.
+(`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source build never updates live
+Claude/Codex hook behavior.
+
+### Startup budget
+
+Alternating samples, 30 fresh processes per variant, this machine, Node 24.15.0
+(2026-08-11). The Bun column is a real binary built from `375baaf4`, the commit
+the design's measurements were taken at — not a recalled number.
+
+| Command | Bun binary | esbuild bundle | `tsc` module graph |
+|---|---:|---:|---:|
+| `--help` | 62.9 ms | 69.6 ms (+6.7) | 128.1 ms (+65.2) |
+| `task list --workset all --json` (469 tasks) | 84.6 ms | 108.3 ms (+23.7) | 169.7 ms (+85.1) |
+
+Mutating hook path, isolated `YACO_HOME` and session store, p95:
+`UserPromptSubmit` 86.1 ms → 110.6 ms (**+24.5 ms**, gate: < 50 ms);
+`Stop` 211.0 ms → 232.3 ms (+21.3 ms, measured separately because of its
+deliberate 120 ms debounce).
+
+This is the whole case for shipping two artifacts: the bundle pays about
++7–24 ms against Bun, and the module graph pays +65–85 ms.
 
 ## Installing / Updating
 
@@ -63,19 +103,14 @@ Claude/Codex hook behavior in any case.
 tools/install.sh --cli-only
 ```
 
-> **Broken on this plateau.** The script ends by running the binary it just
-> built, and that binary is `bun build --compile`, which cannot load
-> `node:sqlite`. `cli-dual-artifact-package` owns the fix. The description below
-> is otherwise current.
-
-`tools/install.sh` is a thin bootstrap: it installs the CLI's runtime
-dependencies when a trial bundle cannot resolve them — from an isolated copy of
-`cli/package.json` + `cli/bun.lock`, so it works in a full clone and in the
-published subset alike (see
-[install.md](../../main/cli/install.md#bootstrap-dependencies)) — builds
-`bun build cli/src/main.ts --compile --outfile $BIN_DIR/yaco`,
-codesigns on macOS if `codesign` is available, then `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR
-"$BIN_DIR/yaco" install "$@"`. The canonical installer is `yaco install`
+`tools/install.sh` is a thin bootstrap: it checks the Node floor, packs
+`@yaco/cli`, installs that tarball with
+`npm install --global --prefix <dirname $BIN_DIR>`, and installs the CLI
+workspace's dependencies first when the clone has none (see
+[install.md](../../main/cli/install.md#bootstrap-dependencies)), then
+`exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR "$BIN_DIR/yaco" install
+"$@"`. `$YACO_BIN_DIR` must end in `/bin`; npm --global installs into
+`<prefix>/bin` and the script refuses to guess. The canonical installer is `yaco install`
 itself (`cli/src/commands/install.ts`) — it merges yaco hooks into
 `~/.claude/settings.json` + `~/.codex/hooks.json` (canonical command
 `<BIN>/yaco agent hook-event <Event>`), writes `${YACO_HOME}/agent-wrapper.sh`,
@@ -117,9 +152,14 @@ The agent runtime skill source of truth is
 ## Testing
 
 ```bash
+npm run typecheck         # tsc --noEmit; Vitest strips types, it does not check them
 npm run test              # unit tests, no tmux required
+npm run test:pack         # pack + install the tarball into a clean prefix, use it
 npm run test:integration  # reinstalls CLI, then tmux-backed integration tests
 ```
+
+All four are steps in `scripts/verify.sh` except `test:integration`, which needs
+tmux and a real provider.
 
 ### One runner, two projects
 
@@ -140,17 +180,16 @@ npx vitest run --sequence.shuffle --sequence.seed=<n>   # smoke out order coupli
 ```
 
 `test/helpers/cli-process.ts` owns how a test starts the CLI: `runCli(args,
-opts)` spawns `process.execPath` on `src/main.ts`, which Node 24 type-strips on
-the way in. Never spell the runtime at a call site — `runCli` is absolute
-because the golden sandbox hands its child an empty `PATH`.
+opts)` spawns `process.execPath` on `bin/yaco.mjs` — the launcher an
+`npm install -g` puts on the user's PATH, guard and bundle included, so a
+subprocess assertion is an assertion about the shipped thing. Never spell the
+runtime at a call site: `runCli` uses `process.execPath` because the golden
+sandbox hands its child an empty `PATH`.
 
 **Bun no longer runs this CLI at all.** `src/lib/core/agent/session-id.ts` and
 `providers/{history,project-move}.ts` import `node:sqlite`, which Bun 1.3
-cannot resolve, so `bun build --compile` still produces a binary and that binary
-exits before `main`. `tools/install.sh` builds exactly that binary, so it is
-broken until `cli-dual-artifact-package` ships the Node artifact; one integration
-case (`install.test.ts`'s clean-`$BIN_DIR` bootstrap) is skipped on that
-ticket's name.
+cannot resolve. The one place Bun still appears is the startup table above,
+where a binary rebuilt from `375baaf4` supplies the parity baseline.
 
 The `node:sqlite` mapping, for reading the three files: `Database` →
 `DatabaseSync`, `{readonly}` → `{readOnly}`, `db.query(sql)` → `db.prepare(sql)`,
@@ -167,7 +206,16 @@ Test split:
   (`task-cli.integration.ts`), and the worktree lifecycle suite
   (`worktree.integration.ts` — tmpdir git repo + fake `gh` on PATH, no network).
   Real-agent cases must not overlap in tmux, so the integration project is run
-  as its own Vitest invocation rather than alongside the unit files.
+  as its own Vitest invocation rather than alongside the unit files, and with
+  `fileParallelism: false`: `install.test.ts` runs `tools/install.sh`, whose
+  `prepack` deletes and rebuilds `dist/` under every other file's feet.
+- `npm run test:pack` (`test/integration/pack.test.ts`): the only test that
+  leaves the checkout. It packs, installs into a clean prefix, and from a
+  directory with no yaco above it runs the command, imports every exports-map
+  entry under plain Node with **no conditions set**, resolves the wrapper and
+  manifest from the package root, fires the hook command it installed, and
+  asserts the install wrote nothing under `HOME` but npm's own cache. Nothing
+  else in the suite can see a broken `files` allowlist.
 
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 

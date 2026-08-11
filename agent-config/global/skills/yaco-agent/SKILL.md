@@ -231,8 +231,8 @@ yaco agent kill "$HANDLE" --json
 
 ## Notes
 
-- For tests, prefer `bun run test` for pure unit coverage and
-  `bun run test:integration` when tmux-backed checks are needed.
+- For tests, prefer `npm run test` for pure unit coverage and
+  `npm run test:integration` when tmux-backed checks are needed.
 - Provider shortcuts (the one-word `yaco <provider> ...` form) are for
   interactive human typing only and MUST NOT appear in skill automation. Skills
   always use the canonical `yaco agent start <provider> ...` form.

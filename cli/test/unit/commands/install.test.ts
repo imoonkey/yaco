@@ -106,6 +106,35 @@ describe("runInstall — basic shape", () => {
     expect(r.actions.length).toBeGreaterThan(0);
   });
 
+  it("does not let a defaulted bin dir outrank the yaco actually being run", () => {
+    // `--bin-dir` and $YACO_BIN_DIR are the caller saying where yaco lives.
+    // The default, `~/.local/bin`, is a guess — and treating a guess as an
+    // override is how `npm i -g @yaco/cli` into an nvm prefix, followed by
+    // `yaco install`, wrote every hook command back to a stale binary a much
+    // older bootstrap had left in ~/.local/bin.
+    delete process.env["YACO_BIN_DIR"];
+    const stale = join(process.env["HOME"]!, ".local", "bin");
+    mkdirSync(stale, { recursive: true });
+    makeShim(join(stale, "yaco"));
+    // The one on PATH is the one being run (the shim bin, prepended above).
+    const onPath = join(sandbox, "shim-bin", "yaco");
+
+    runInstall(baseOpts({ binDir: undefined }));
+
+    const settings = JSON.parse(
+      readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
+    );
+    const commands: string[] = Object.values(settings.hooks ?? {})
+      .flatMap((groups) => groups as { hooks?: { command?: string }[] }[])
+      .flatMap((group) => group.hooks ?? [])
+      .map((hook) => hook.command ?? "");
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(command.split(" ")[0]).toBe(onPath);
+    }
+    expect(commands.join("\n")).not.toContain(join(stale, "yaco"));
+  });
+
   it("writes ${YACO_HOME}/agent-wrapper.sh and makes it executable", () => {
     runInstall(baseOpts());
     const path = join(process.env["YACO_HOME"]!, "agent-wrapper.sh");

@@ -27,15 +27,23 @@ jobs:
           node-version: "24"
           cache: npm
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.13"
-
       - run: npm ci
+
+      - name: cli typecheck
+        working-directory: cli
+        run: npm run typecheck
+
+      - name: cli build
+        working-directory: cli
+        run: npm run build
 
       - name: cli tests
         working-directory: cli
-        run: bun run test
+        run: npm run test
+
+      - name: cli pack smoke
+        working-directory: cli
+        run: npm run test:pack
 
       - name: app/server tests
         working-directory: app/server

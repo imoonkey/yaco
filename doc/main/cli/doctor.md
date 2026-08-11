@@ -30,7 +30,7 @@ yaco doctor [--repo <path>] [--json]
 | # | Name | What it asserts | Detail on pass | Detail on fail |
 |---|------|-----------------|----------------|----------------|
 | 1 | `binary` | `which yaco` resolves AND the binary is executable | resolved path | `yaco not on $PATH` / `not executable` |
-| 2 | `version` | Reports the `cli/package.json` version. **Never fails** — any read/parse error falls back to `0.0.0` and still passes | `0.1.0` | — |
+| 2 | `version` | Reports the version from `<package-root>/package.json`. **Never fails** — any read/parse error falls back to `0.0.0` and still passes. Every artifact now reports the real value: the manifest is a package asset, so the bundle and an installed tarball resolve it exactly as a source run does. `0.0.0` in the field means a damaged install, not a compiled one | `0.1.0` | — |
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
 | 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill shipped by the registered yaco checkout resolves (manifest = `agent-config/global/skills/` listing, resolved via the registry's `yaco` entry) | `<dir> (<N> skills from <manifest>)` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / unresolvable registry or manifest |

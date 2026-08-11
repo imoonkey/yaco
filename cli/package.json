@@ -1,9 +1,7 @@
 {
   "name": "@yaco/cli",
   "version": "0.1.0",
-  "module": "src/main.ts",
   "type": "module",
-  "private": true,
   "description": "YACO command-line interface — the yaco dispatcher for agent sessions, task graphs, worktrees, and project paths.",
   "license": "MIT",
   "repository": {
@@ -11,31 +9,69 @@
     "url": "git+https://github.com/imoonkey/yaco.git",
     "directory": "cli"
   },
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "bin": {
-    "yaco": "./src/main.ts"
+    "yaco": "./bin/yaco.mjs"
   },
   "exports": {
-    "./core/paths": "./src/lib/core/paths/index.ts",
-    "./core/result": "./src/lib/core/result.ts",
-    "./core/errors": "./src/lib/core/errors.ts",
-    "./core/task": "./src/lib/core/task/index.ts",
-    "./core/agent": "./src/lib/core/agent/index.ts",
-    "./core/worktree": "./src/lib/core/worktree/index.ts"
+    "./core/paths": {
+      "development": "./src/lib/core/paths/index.ts",
+      "types": "./dist/lib/core/paths/index.d.ts",
+      "default": "./dist/lib/core/paths/index.js"
+    },
+    "./core/result": {
+      "development": "./src/lib/core/result.ts",
+      "types": "./dist/lib/core/result.d.ts",
+      "default": "./dist/lib/core/result.js"
+    },
+    "./core/errors": {
+      "development": "./src/lib/core/errors.ts",
+      "types": "./dist/lib/core/errors.d.ts",
+      "default": "./dist/lib/core/errors.js"
+    },
+    "./core/task": {
+      "development": "./src/lib/core/task/index.ts",
+      "types": "./dist/lib/core/task/index.d.ts",
+      "default": "./dist/lib/core/task/index.js"
+    },
+    "./core/agent": {
+      "development": "./src/lib/core/agent/index.ts",
+      "types": "./dist/lib/core/agent/index.d.ts",
+      "default": "./dist/lib/core/agent/index.js"
+    },
+    "./core/worktree": {
+      "development": "./src/lib/core/worktree/index.ts",
+      "types": "./dist/lib/core/worktree/index.d.ts",
+      "default": "./dist/lib/core/worktree/index.js"
+    }
   },
+  "files": [
+    "bin",
+    "dist",
+    "scripts/agent-wrapper.sh",
+    "LICENSE"
+  ],
   "scripts": {
-    "start": "node src/main.ts",
+    "clean": "rm -rf dist",
+    "build": "npm run build:bundle && npm run build:lib",
+    "build:bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/yaco.mjs",
+    "build:lib": "tsc -p tsconfig.build.json",
+    "prepack": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit -p .",
     "test": "npm run test:unit",
     "test:unit": "vitest run --project unit",
     "reinstall": "../tools/install.sh --cli-only",
     "test:integration": "npm run reinstall && vitest run --project integration",
+    "test:pack": "vitest run --project integration test/integration/pack.test.ts",
     "test:all": "npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.8"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   },
   "dependencies": {
     "smol-toml": "^1.7.1"

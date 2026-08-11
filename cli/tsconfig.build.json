@@ -1,0 +1,31 @@
+{
+  // The module emit: plain JS plus declarations for everything the exports map
+  // names. TypeScript source under node_modules fails plain Node with
+  // ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING, so an installed consumer can
+  // only import emitted JS.
+  //
+  // `src` is emitted whole rather than from a list of export entry points: the
+  // exports map is not the only thing that has to land at a known offset
+  // (`src/package-root.ts` -> `dist/package-root.js` is what keeps asset
+  // resolution correct), and an include-everything rule cannot forget an entry
+  // the way a hand-kept list can. The extra emitted command modules are inert.
+  //
+  // `rootDir: src` with `outDir: dist` is load-bearing, not cosmetic: it is what
+  // keeps every emitted file exactly one level below the package root, which is
+  // the invariant `src/package-root.ts` is written against.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    // All 388 relative imports carry an explicit `.ts` and none resolves
+    // through a directory index, so rewriting the extension is the whole job:
+    // the result is a specifier plain Node ESM resolves unaided.
+    "rewriteRelativeImportExtensions": true,
+    // `module: preserve` (the base) does not emit; `esnext` keeps the same
+    // import/export syntax the source already uses and emits it verbatim.
+    "module": "esnext"
+  },
+  "include": ["src/**/*.ts"]
+}

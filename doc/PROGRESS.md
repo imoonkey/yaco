@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-11: the CLI ships as an npm package — two artifacts, one source tree
+
+**What changed:**
+- `cli/bin/yaco.mjs` is the `bin` entry: a Node `>=24.15.0` guard, then a dynamic import of `dist/yaco.mjs` and `await main()`. The comparator lives in `bin/node-floor.mjs` so it can be tested — the launcher runs the CLI the moment it is imported.
+- `npm run build` emits both artifacts. `build:bundle` is esbuild → `dist/yaco.mjs` (365 KB, the command); `build:lib` is `tsc -p tsconfig.build.json` with `rootDir: src` → `dist/**.js` + `.d.ts` (the exports map). `prepack` runs a clean build.
+- `cli/package.json` gains `engines.node`, a `files` allowlist, and an exports map with `development` (→ `src/**.ts`, for `app/server` under tsx) / `types` / `default` conditions. `@types/bun` → `@types/node`, `typescript` peer → dev, `bun.lock` and `private` deleted. `src/main.ts` loses its dead bun shebang and its `import.meta.main`, and exports `main`.
+- `tools/install.sh` packs `@yaco/cli` and `npm install --global --prefix`es the tarball. It bootstraps the CLI workspace's dependencies only when the clone has none, and requires `$YACO_BIN_DIR` to end in `/bin`.
+- `package-root.ts#yacoExecutable()` replaces two divergent chains (`lifecycle.ts`, `tmux.ts`) with one: `$YACO_PATH` → an *explicitly supplied* `$YACO_BIN_DIR/yaco` → a PATH walk that skips `node_modules/.bin` shims → `<package-root>/bin/yaco.mjs`. The two rungs that are gone are the ones that were broken — a `process.execPath` sniff that only fired for a Bun binary, and a literal `"yaco"` that failed at every hook fire. The wrapper's four-rung checkout walk is gone; `readAgentWrapperScript()` reads the packaged asset or raises `INTERNAL`.
+- `scripts/verify.sh` and CI drop Bun and gain four named CLI steps: typecheck, build, test, pack smoke. New `cli/test/integration/pack.test.ts` is that smoke.
+
+**Why:**
+- The repo had not been installable since `cli-sqlite-hop`: `tools/install.sh` built a `bun build --compile` binary that exits before `main` on `node:sqlite`. Restoring installability was this change's definition of done.
+- Two artifacts because neither serves both jobs. Measured on this machine against a Bun binary rebuilt from `375baaf4`, 30 alternating samples: `--help` 62.9 → 69.6 ms bundle / 128.1 ms module graph; `task list` (469 tasks) 84.6 → 108.3 / 169.7 ms. Mutating hook p95 `UserPromptSubmit` 86.1 → 110.6 ms (+24.5, gate < 50). And TypeScript source under `node_modules` fails plain Node with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so the exports map needs emitted JS regardless.
+- The resolver chains existed because a Bun-compiled binary served its modules from a virtual filesystem and the package could not name its own files. A real package root supplies a floor rung that always exists, so the literal `"yaco"` — which wrote a hook command that failed silently at every fire — has something to be replaced by. QA caught the over-deletion, and cross-provider review caught the two ways the restored rung was still wrong: `which yaco` answers with npm's workspace shim under any npm script (so a checkout still hijacked global hooks), and exporting the *defaulted* `$YACO_BIN_DIR` from `runInstall` let a guess outrank the executable the user had actually just run. Both now have tests.
+- The dependency repair deletes nothing. `npm ci --workspace` prunes every workspace it was not asked about, and three attempts at deciding *when* that is safe (directory exists; a marker inside `node_modules`; npm's hidden lock) each either could not survive the operation they described or failed open when missing — the last one reproducibly authorized deleting a real second-workspace tree. So the install resolves in an isolated stage built from the manifests and the lockfile, and the result is copied in rather than swapped for what is there.
+- `typescript` was a `peerDependency`, which npm auto-installs — every `npm i -g @yaco/cli` was pulling 23 MB of compiler the CLI never runs.
+- Distribution cost worth knowing: the installed executable is `#!/usr/bin/env node`, so `node` must be on `$PATH` wherever a hook fires. The single-file Bun binary did not need that. It is the ordinary npm global-bin contract.
+
+**Key files:** `cli/bin/{yaco,node-floor}.mjs`, `cli/tsconfig.build.json`, `cli/package.json`, `cli/src/package-root.ts`, `cli/src/lib/core/agent/{lifecycle,tmux}.ts`, `cli/src/main.ts`, `tools/install.sh`, `scripts/verify.sh`, `.github/workflows/ci.yml`, `cli/test/integration/{install,pack}.test.ts`, `cli/test/unit/{package-root,node-floor}.test.ts`, `app/server/{package.json,tsconfig.json}`
+**Verification:** `scripts/verify.sh` all steps passed (cli 1204 unit + 10 pack, server 825, codex-transcribe 75); `cli` integration `install.test.ts` 10/10 with the parked clean-`$BIN_DIR` case unskipped; a `git archive HEAD` clone bootstraps and installs end to end in ~10 s into an isolated `HOME`/`YACO_HOME`/prefix; the typecheck step was proven to fail on a planted type error the test step passes. Cross-provider review (Codex) and QA in `plan/all/cli-node-sdk/`.
+**Next:** `read-export-gate` — audit every export against the six eligibility rules before the Phase 2 read cutovers.
+**Blockers:** None
+
 ## 2026-08-10: the CLI leaves Bun — `bun:sqlite` → `node:sqlite` in one commit
 
 **What changed:**

@@ -1,27 +1,25 @@
-/** The one expression that locates this package's own directory.
+/** How this installation names its own files to code that runs later.
  *
- *  Assets that ship inside the package — `scripts/agent-wrapper.sh`,
- *  `package.json` — have to be found relative to the code, not to a checkout
- *  or to the working directory, or an installed copy cannot read them. The
- *  hazard is that the relative distance from *a source file* to the package
+ *  Three things have to be found relative to the package rather than to a
+ *  checkout or a working directory, or an installed copy cannot work:
+ *  `scripts/agent-wrapper.sh`, `package.json`, and the `yaco` executable
+ *  itself — yaco writes its own invocation into provider hook configs and into
+ *  queued tmux commands, and both fire later in a stripped environment.
+ *
+ *  The hazard is that the relative distance from *a source file* to the package
  *  root is not the distance from *the built artifact* to it: a bundler rewrites
  *  neither `import.meta.url` nor the `../..` next to it, so every
  *  source-relative asset path silently retargets when the code is bundled.
  *
  *  Concentrating the expression here removes that class of bug by construction.
- *  This module sits one level below the package root, and every build layout
- *  the distribution design admits keeps it there — `src/package-root.ts` when
- *  run from source, `dist/package-root.js` from the module emit, and the
- *  inlined copy in `dist/yaco.mjs` from the bundle. So `../` is the package
- *  root in all three, and callers name assets instead of counting directories.
- *
- *  A single-file compiled artifact is the exception it cannot cover: its
- *  modules live in a virtual filesystem with no real path, so the root
- *  resolves to something that exists nowhere. Callers that must keep working
- *  there (the agent wrapper) check the path before reading it.
+ *  This module sits one level below the package root, and every build layout the
+ *  distribution ships keeps it there — `src/package-root.ts` when run from
+ *  source, `dist/package-root.js` from the module emit, and the inlined copy in
+ *  `dist/yaco.mjs` from the bundle. So `../` is the package root in all three,
+ *  and callers name assets instead of counting directories.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { delimiter, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PACKAGE_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -31,25 +29,87 @@ export function packagedAssetPath(...segments: string[]): string {
   return join(PACKAGE_ROOT, ...segments);
 }
 
-/** True when this package's own files have no real path — the process is a
- *  single-file compiled artifact serving its modules from a virtual
- *  filesystem. The package root is the exact thing that is missing, so testing
- *  it is both the cheapest signal and the one that cannot disagree with the
- *  asset lookups above. */
-export function isSingleFileArtifact(): boolean {
-  return !existsSync(PACKAGE_ROOT);
+/** A `yaco` on PATH that is a real installation — memoized against the PATH it
+ *  was found under.
+ *
+ *  Not `which yaco`, because `which` answers with the first hit and the first
+ *  hit is routinely the wrong one: npm creates a `yaco` shim in every
+ *  workspace's `node_modules/.bin` (this package declares a `bin`) and prepends
+ *  those directories to PATH for the duration of an npm script. Under
+ *  `npm run <anything>` in a yaco checkout, `which yaco` therefore names that
+ *  checkout — and a hook command written from it dies when the worktree is
+ *  deleted, which is precisely the failure this rung exists to prevent. A
+ *  `node_modules/.bin` entry is a build-tree artifact, never an installation
+ *  someone chose, so the walk skips those directories and keeps looking.
+ *
+ *  Relative PATH entries are skipped too: they cannot yield the absolute
+ *  invocation a later-firing hook needs.
+ *
+ *  Memoized because the trust gate resolves once per hook entry and an install
+ *  writes twenty; keyed on PATH because the suite rebuilds a shimmed PATH per
+ *  case inside one process, and a cache that outlived that would answer with
+ *  the previous sandbox's binary. Self-invalidating beats a reset hook nobody
+ *  remembers to call. */
+const WORKSPACE_SHIM_DIR = join("node_modules", ".bin");
+const { X_OK } = constants;
+
+let _pathYaco: { path: string | undefined; found: string | null } | null = null;
+function yacoOnPath(): string | null {
+  const path = process.env["PATH"];
+  const cached = _pathYaco;
+  if (cached && cached.path === path) return cached.found;
+  let found: string | null = null;
+  for (const dir of (path ?? "").split(delimiter)) {
+    if (dir.length === 0 || !isAbsolute(dir)) continue;
+    if (dir.endsWith(sep + WORKSPACE_SHIM_DIR)) continue;
+    const candidate = join(dir, "yaco");
+    try {
+      accessSync(candidate, X_OK);
+      if (!statSync(candidate).isFile()) continue;
+    } catch { continue; }
+    found = candidate;
+    break;
+  }
+  _pathYaco = { path, found };
+  return found;
 }
 
-/** This process's own absolute path when it *is* the yaco executable, else null.
+/** The absolute `yaco` invocation to hand to something that will run it later —
+ *  a provider hook entry, a tmux environment, a detached respawn.
  *
- *  yaco writes its own invocation into provider hook configs and into queued
- *  tmux commands, and both fire later in a stripped environment, so the
- *  invocation has to be absolute or it silently stops working. A single-file
- *  artifact is the one case where the running process is itself that
- *  invocation. Under a runtime that was handed yaco's entry point instead
- *  (`bun run src/main.ts`, `node dist/yaco.mjs`) this is null: `process.execPath`
- *  would name the runtime, which is not a yaco invocation, and the caller has to
- *  supply the entry point as well. */
-export function selfExecutablePath(): string | null {
-  return isSingleFileArtifact() ? process.execPath : null;
+ *  Absolute because every one of those fires in an environment whose PATH yaco
+ *  does not control. Four answers, in order of how deliberately the machine
+ *  said "this is my yaco":
+ *
+ *    1. `$YACO_PATH`, honored verbatim — the override the app and the
+ *       crash-contract tests point at a specific binary or shim;
+ *    2. `$YACO_BIN_DIR/yaco`, which `tools/install.sh` sets to the prefix it
+ *       installed into, so a fresh install writes hook commands naming the
+ *       executable it just put there rather than an older one. `yaco install`
+ *       only exports it when the caller actually supplied one: its *default*
+ *       (`~/.local/bin`) is a guess, and a guess must not outrank a real
+ *       installation found below;
+ *    3. an executable `yaco` on PATH, skipping workspace shims — see
+ *       {@link yacoOnPath}. This rung is what keeps a command run *from a
+ *       checkout* from repointing global hooks at that checkout, which then
+ *       break when the worktree is deleted;
+ *    4. this package's own launcher.
+ *
+ *  Rung 4 is the floor and it always exists, which is the point of resolving
+ *  from the package root: it replaces a literal `"yaco"` last resort that wrote
+ *  a command failing at hook-fire time, and a `process.execPath` rung that only
+ *  ever fired for a Bun-compiled binary whose files lived in a virtual
+ *  filesystem. It is reached by an install whose prefix is not on PATH — where
+ *  naming ourselves is both correct and the only true answer. */
+export function yacoExecutable(): string {
+  const explicit = process.env["YACO_PATH"];
+  if (explicit && explicit.length > 0) return explicit;
+
+  const binDir = process.env["YACO_BIN_DIR"];
+  if (binDir && binDir.length > 0) {
+    const candidate = resolve(binDir, "yaco");
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return yacoOnPath() ?? packagedAssetPath("bin", "yaco.mjs");
 }

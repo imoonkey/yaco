@@ -45,10 +45,7 @@ import {
   writeProjects,
   type Project,
 } from "../lib/core/paths/index.ts";
-import {
-  readAgentWrapperScript,
-  _resetHookBinaryCacheForTests,
-} from "../lib/core/agent/lifecycle.ts";
+import { readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
@@ -234,9 +231,9 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
 }
 
 /** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale. */
-function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolean): void {
+function installAgentWrapper(actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
-  const content = readAgentWrapperScript(repoRoot);
+  const content = readAgentWrapperScript();
   if (existsSync(path)) {
     const current = readFileSync(path, "utf-8");
     if (current === content) return;
@@ -523,18 +520,21 @@ export function runInstall(opts: InstallOptions): InstallReport {
   const yacoHome = getYacoHome();
   const actions: string[] = [];
 
-  // Export the resolved BIN_DIR so lifecycle's hookBinary() resolves to
-  // <binDir>/yaco — the canonical form per the install/distribution design.
-  // Without this, hook commands written into ~/.claude/settings.json would
-  // point at whatever YACO_BIN_DIR happened to be in the calling shell (or
-  // an argv[0]-derived path that may not exist post-install).
-  process.env["YACO_BIN_DIR"] = binDir;
-  // Invalidate any earlier hookBinary cache so the merge writes the canonical
-  // path even if a sibling code path has already resolved it.
-  _resetHookBinaryCacheForTests();
+  // Export the bin dir so `yacoExecutable()` writes `<binDir>/yaco` into
+  // provider hooks — but ONLY when the caller actually named one, via --bin-dir
+  // or $YACO_BIN_DIR. `tools/install.sh` always does, so the bootstrap still
+  // names the prefix it just installed into.
+  //
+  // The default (`~/.local/bin`) is a guess, and exporting a guess here made it
+  // outrank a real installation: `npm i -g @yaco/cli` into an nvm prefix,
+  // followed by `yaco install`, wrote every hook command back to a stale
+  // `~/.local/bin/yaco` left over from an older bootstrap. Left unset, the
+  // resolver falls through to the executable actually on PATH — the one the
+  // user just ran.
+  if (opts.binDir || process.env["YACO_BIN_DIR"]) process.env["YACO_BIN_DIR"] = binDir;
 
   // Always: wrapper script + global links + legacy bin cleanup.
-  installAgentWrapper(repoRoot, actions, opts.dryRun);
+  installAgentWrapper(actions, opts.dryRun);
 
   if (!opts.skipHooks) {
     // Merge yaco-owned hook entries into each provider config. We call the
