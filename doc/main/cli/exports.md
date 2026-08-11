@@ -145,7 +145,9 @@ Three things follow, and they are what a future rule-5 candidate should copy:
 - **`spawn()` is not free either.** A child that reads nothing accounts for 37.6
   of the subprocess route's 42.3 ms, and still costs 15.9 ms with the app's
   `ssh-add` discovery removed — `fork` with a loaded heap. "Keep the subprocess"
-  is not automatically the safe side of a starvation comparison.
+  is not automatically the safe side of a starvation comparison. (Read that
+  decomposition off the real home or `--scale 1`, not `--scale 10`: the harness
+  builds the 550 MB fixture in the process it then measures.)
 - **What fails the bound is the unbounded fan-out, not being in process.** The
   shipped reader reads every row a provider holds before the window is applied.
   `history-bounded-prototype.ts` caps each provider at the window and yields

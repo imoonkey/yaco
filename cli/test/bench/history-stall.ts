@@ -36,6 +36,14 @@
  *  This is a warm-cache steady-server measurement: every route is warmed once
  *  before any sample counts. It is not a cold-start bound.
  *
+ *  One caveat on `--scale 10`: the fixture is built by this process, and at that
+ *  size that is ~550 MB and 40,000 files written before the first sample. The
+ *  parent's heap and native high-water mark carry into every spawn measured
+ *  afterwards, so the 10x `spawn-noop` figure is not a clean read of what a
+ *  server process pays to spawn — it says the benchmark process paid it. Use
+ *  `--home` or `--scale 1` to attribute spawn cost, or build the fixture with
+ *  `--keep` in one run and measure it in a fresh one.
+ *
  *  Usage:
  *    node cli/test/bench/history-stall.ts [--scale 1|10] [--iterations N]
  *         [--concurrency N] [--root DIR] [--home DIR] [--project PATH]
