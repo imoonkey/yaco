@@ -10,12 +10,11 @@
  *  reads it from disk and writes it to `${YACO_HOME}/agent-wrapper.sh` on
  *  install. No embedded shell strings.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync, statSync } from "fs";
-import { join, resolve } from "path";
-import { execSync } from "child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync } from "fs";
+import { join } from "path";
 import { homedir } from "os";
 import { parse as parseToml } from "smol-toml";
-import { packagedAssetPath, selfExecutablePath } from "../../../package-root.ts";
+import { packagedAssetPath, yacoExecutable } from "../../../package-root.ts";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
 import { getProvider } from "./providers/index.ts";
 import { CliError, ErrCode } from "../errors.ts";
@@ -30,161 +29,49 @@ function userHome(): string {
 // Marker comment to identify yaco-managed hook entries.
 const HOOK_MARKER = "yaco-agent-hook";
 
-/** Resolve the hook entry command. Canonical form per the install/distribution
- *  design: `<absolute-yaco-binary> agent hook-event <Event>` — points at the
- *  installed executable, NOT repo-local source, which breaks the moment yaco is
- *  installed without a checkout. Always returns an absolute invocation so the
- *  hook works even if PATH at hook-fire time is stripped (tmux server env,
- *  etc.).
+/** The hook entry command: `<absolute-yaco> agent hook-event <Event>`.
  *
- *  Resolution order:
- *    1. $YACO_BIN_DIR/yaco — set by tools/install.sh during bootstrap
- *    2. process.execPath when this process IS the yaco executable, so doctor
- *       and install produce identical hook commands (see {@link isSelfExecutable}).
- *    3. `which yaco` — fall back to PATH lookup at install time.
- *    4. literal "yaco" — last resort; the hook will fail at fire time but
- *       install still completes so the user can diagnose. */
-let _cachedHookBinary: string | null = null;
-function hookBinary(): string {
-  if (_cachedHookBinary !== null) return _cachedHookBinary;
-  _cachedHookBinary = resolveYacoBinary();
-  return _cachedHookBinary;
-}
-
-function resolveYacoBinary(): string {
-  const envBin = process.env["YACO_BIN_DIR"];
-  if (envBin && envBin.length > 0) {
-    const candidate = resolve(envBin, "yaco");
-    if (existsSync(candidate)) return candidate;
-  }
-  const self = selfExecutablePath();
-  if (self) return self;
-  // PATH lookup at install time. Pass env explicitly so tests that override
-  // PATH still find the right binary.
-  try {
-    const r = execSync("which yaco", { encoding: "utf-8" }).trim();
-    if (r.length > 0) return r;
-  } catch { /* fall through */ }
-  return "yaco";
-}
-
-// Hook command points at the canonical TS entry. Provider hook runners spawn
-// this with the event name as the argv.
+ *  Absolute because a hook fires under whatever PATH the provider happens to
+ *  have (a tmux server environment, typically stripped). {@link yacoExecutable}
+ *  owns which yaco that is; it is not cached here, because `runInstall` sets
+ *  `$YACO_BIN_DIR` mid-process precisely so the merge writes the prefix it just
+ *  installed into, and a cache is how that gets missed. */
 function hookCommand(event: string): string {
-  return `${hookBinary()} agent hook-event ${event}`;
+  return `${yacoExecutable()} agent hook-event ${event}`;
 }
 
-/** Test helper: reset the hook binary resolution cache. The lifecycle module
- *  caches the resolved yaco path on first use; tests that change PATH or
- *  $YACO_BIN_DIR mid-process need to invalidate it. */
-export function _resetHookBinaryCacheForTests(): void {
-  _cachedHookBinary = null;
-}
-
-/** Locate the on-disk agent-wrapper.sh shipped with the cli package.
+/** The on-disk agent-wrapper.sh shipped inside this package.
  *
- *  Real whenever the package's own files are real — a source run, and every
- *  emitted/bundled layout, because {@link packagedAssetPath} is invariant
- *  across them. A single-file compiled artifact is the exception: its package
- *  root is a virtual filesystem, so this names a path that exists nowhere. The
- *  caller existsSync()es before reading and recovers via
- *  {@link findExistingWrapperPath}. */
+ *  There is no fallback chain any more. There used to be one — explicit
+ *  `repoRoot`, then `$YACO_REPO_ROOT`, then `git rev-parse --show-toplevel`,
+ *  then cwd — because a Bun-compiled binary served its modules from a virtual
+ *  filesystem, so the packaged path named something that existed nowhere and
+ *  only a nearby checkout could supply the wrapper. Every layout the package
+ *  now ships in has a real package root, so the chain's every rung was a way to
+ *  read a *different* checkout's wrapper than the one being run. */
 function packagedAgentWrapperPath(): string {
   return packagedAssetPath("scripts", "agent-wrapper.sh");
 }
 
-/** Walk a fallback chain to find the on-disk agent-wrapper.sh. The packaged
- *  path wins when it exists (i.e. under `bun run`); otherwise the chain falls
- *  back to a yaco checkout located via the explicit `repoRoot` arg, then
- *  `$YACO_REPO_ROOT`, then `git rev-parse --show-toplevel` from cwd. Returns
- *  null when nothing matches — the caller surfaces a CliError.
- *
- *  Exported as `_findExistingWrapperPathForTests` so the fallback chain can be
- *  exercised under `bun run` (where the packaged path always wins and the
- *  branch would otherwise be dead code in tests). */
-function findExistingWrapperPath(packaged: string, repoRoot?: string): string | null {
-  if (existsSync(packaged)) return packaged;
-  const candidates: string[] = [];
-  if (repoRoot && repoRoot.length > 0) {
-    candidates.push(join(repoRoot, "cli", "scripts", "agent-wrapper.sh"));
-  }
-  const envRoot = process.env["YACO_REPO_ROOT"];
-  if (envRoot && envRoot.length > 0) {
-    candidates.push(join(envRoot, "cli", "scripts", "agent-wrapper.sh"));
-  }
-  try {
-    const gitTop = execSync("git rev-parse --show-toplevel", {
-      encoding: "utf-8",
-      cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (gitTop.length > 0) {
-      candidates.push(join(gitTop, "cli", "scripts", "agent-wrapper.sh"));
-    }
-  } catch { /* not in a git repo, or no git — try cwd directly */ }
-  candidates.push(join(process.cwd(), "cli", "scripts", "agent-wrapper.sh"));
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return null;
-}
-
-export const _findExistingWrapperPathForTests = findExistingWrapperPath;
-
-/** Resolve an on-disk agent-wrapper.sh path; throws INTERNAL when neither the
- *  bundled location nor any fallback exists. Optional `repoRoot` is the
- *  highest-priority fallback (used by install where the caller already knows
- *  the repo). */
-function resolveAgentWrapperPath(repoRoot?: string): string {
-  const found = findExistingWrapperPath(packagedAgentWrapperPath(), repoRoot);
-  if (found === null) {
+/** Read the agent-wrapper.sh body shipped with this package; INTERNAL when the
+ *  install is missing it. A missing packaged asset is a broken install, not a
+ *  case to recover from silently. */
+export function readAgentWrapperScript(): string {
+  const path = packagedAgentWrapperPath();
+  if (!existsSync(path)) {
     throw new CliError(
       ErrCode.INTERNAL,
-      "cannot locate agent-wrapper.sh — set YACO_REPO_ROOT to a yaco checkout or reinstall",
+      `cannot locate ${path} — the @yaco/cli install is incomplete; reinstall it`,
     );
   }
-  return found;
+  return readFileSync(path, "utf-8");
 }
 
-/** Read the on-disk agent-wrapper.sh body. Under `bun run` this resolves to
- *  the packaged path; under a bun-compiled binary it falls back to a yaco
- *  checkout via `repoRoot` / `$YACO_REPO_ROOT` / `process.cwd()`. */
-export function readAgentWrapperScript(repoRoot?: string): string {
-  return readFileSync(resolveAgentWrapperPath(repoRoot), "utf-8");
-}
-
-/** Ensure the runtime wrapper exists under ${YACO_HOME}. Runtime starts should
- *  not require the source checkout: after `yaco install`, the managed wrapper is
- *  already the deployable artifact. When the source script is discoverable we
- *  refresh it; otherwise we trust the installed copy and only fail if it is
- *  missing or not a file. */
-function ensureAgentWrapperScriptFrom(packaged: string, repoRoot?: string): void {
-  const managedPath = agentWrapperPath();
-  const sourcePath = findExistingWrapperPath(packaged, repoRoot);
-  if (sourcePath !== null) {
-    ensureManagedScript(managedPath, readFileSync(sourcePath, "utf-8"));
-    return;
-  }
-
-  if (!existsSync(managedPath)) {
-    throw new CliError(
-      ErrCode.INTERNAL,
-      `${managedPath} missing and cannot locate agent-wrapper.sh source — run \`yaco install\` from a yaco checkout or set YACO_REPO_ROOT`,
-    );
-  }
-
-  const stat = statSync(managedPath);
-  if (!stat.isFile()) {
-    throw new CliError(ErrCode.INTERNAL, `${managedPath} is not a file`);
-  }
-  if ((stat.mode & 0o111) === 0) chmodSync(managedPath, 0o755);
-}
-
+/** Ensure the runtime wrapper exists under ${YACO_HOME}, refreshed from the
+ *  packaged copy. */
 function ensureAgentWrapperScript(): void {
-  ensureAgentWrapperScriptFrom(packagedAgentWrapperPath());
+  ensureManagedScript(agentWrapperPath(), readAgentWrapperScript());
 }
-
-export const _ensureAgentWrapperScriptFromForTests = ensureAgentWrapperScriptFrom;
 
 function makeHookEntry(event: string, async_: boolean, timeout?: number): Record<string, unknown> {
   const entry: Record<string, unknown> = {
@@ -316,7 +203,7 @@ function hasYacoHook(hookGroups: unknown[]): boolean {
  *  whole command, so nothing extra can ride along. */
 function isCanonicalYacoHookCommand(command: unknown): boolean {
   if (typeof command !== "string") return false;
-  const prefix = `${hookBinary()} agent hook-event `;
+  const prefix = `${yacoExecutable()} agent hook-event `;
   if (!command.startsWith(prefix)) return false;
   return /^[A-Za-z]+$/.test(command.slice(prefix.length));
 }

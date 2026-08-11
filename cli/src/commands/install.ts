@@ -45,10 +45,7 @@ import {
   writeProjects,
   type Project,
 } from "../lib/core/paths/index.ts";
-import {
-  readAgentWrapperScript,
-  _resetHookBinaryCacheForTests,
-} from "../lib/core/agent/lifecycle.ts";
+import { readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
@@ -234,9 +231,9 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
 }
 
 /** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale. */
-function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolean): void {
+function installAgentWrapper(actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
-  const content = readAgentWrapperScript(repoRoot);
+  const content = readAgentWrapperScript();
   if (existsSync(path)) {
     const current = readFileSync(path, "utf-8");
     if (current === content) return;
@@ -526,15 +523,12 @@ export function runInstall(opts: InstallOptions): InstallReport {
   // Export the resolved BIN_DIR so lifecycle's hookBinary() resolves to
   // <binDir>/yaco — the canonical form per the install/distribution design.
   // Without this, hook commands written into ~/.claude/settings.json would
-  // point at whatever YACO_BIN_DIR happened to be in the calling shell (or
-  // an argv[0]-derived path that may not exist post-install).
+  // point at whatever YACO_BIN_DIR happened to be in the calling shell, or at
+  // this package's own launcher rather than the prefix being installed into.
   process.env["YACO_BIN_DIR"] = binDir;
-  // Invalidate any earlier hookBinary cache so the merge writes the canonical
-  // path even if a sibling code path has already resolved it.
-  _resetHookBinaryCacheForTests();
 
   // Always: wrapper script + global links + legacy bin cleanup.
-  installAgentWrapper(repoRoot, actions, opts.dryRun);
+  installAgentWrapper(actions, opts.dryRun);
 
   if (!opts.skipHooks) {
     // Merge yaco-owned hook entries into each provider config. We call the

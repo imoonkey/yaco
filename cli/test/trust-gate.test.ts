@@ -21,7 +21,6 @@ import { tmpdir } from "os";
 import {
   codexHooksAllYacoOwned,
   hookCommand,
-  _resetHookBinaryCacheForTests,
 } from "../src/lib/core/agent/lifecycle.ts";
 import { handleStartupInterstitial } from "../src/commands/agent/start.ts";
 import { getProvider } from "../src/lib/core/agent/providers/index.ts";
@@ -67,7 +66,6 @@ beforeEach(() => {
   mkdirSync(projectDir, { recursive: true });
   process.env["HOME"] = home;
   process.env["YACO_AGENT_SESSIONS_DIR"] = join(sandbox, "sessions");
-  _resetHookBinaryCacheForTests();
 });
 
 afterEach(() => {
@@ -77,7 +75,6 @@ afterEach(() => {
   if (ORIG.SESSIONS === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
   else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIG.SESSIONS;
   rmSync(sandbox, { recursive: true, force: true });
-  _resetHookBinaryCacheForTests();
 });
 
 // ===========================================================================

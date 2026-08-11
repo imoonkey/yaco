@@ -1,11 +1,10 @@
 import { execFileSync, execSync, spawn } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync } from "fs";
 import { listProviders } from "./providers/index.ts";
 import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
 import { sleepSync } from "../sleep.ts";
-import { selfExecutablePath } from "../../../package-root.ts";
+import { yacoExecutable } from "../../../package-root.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
 const INPUT_EMPTY_POLL_MS = 500;
@@ -74,32 +73,6 @@ function execTmux(args: string[], input?: string): void {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function selfInvocation(): { command: string; args: string[] } {
-  const explicit = process.env["YACO_PATH"];
-  if (explicit) return { command: explicit, args: [] };
-
-  const envBin = process.env["YACO_BIN_DIR"];
-  if (envBin && envBin.length > 0) {
-    const candidate = resolve(envBin, "yaco");
-    if (existsSync(candidate)) return { command: candidate, args: [] };
-  }
-
-  const self = selfExecutablePath();
-  if (self) return { command: self, args: [] };
-
-  const script = process.argv[1];
-  if (script?.endsWith("src/main.ts") || script?.endsWith("/main.ts")) {
-    return { command: process.execPath, args: [script] };
-  }
-
-  try {
-    const pathYaco = execSync("which yaco", { encoding: "utf-8" }).trim();
-    if (pathYaco) return { command: pathYaco, args: [] };
-  } catch { /* fall through */ }
-
-  return { command: "yaco", args: [] };
 }
 
 export function isTmuxAvailable(): boolean {
@@ -201,7 +174,7 @@ export function createSession(handle: string, command: string, cwd?: string): vo
   // crash path can run `yaco agent mark-crashed` without depending on the dying
   // shell's PATH. Delivered via tmux -e (not a command prefix): a leading
   // `VAR=val` token would be exec'd by tmux as a program and the pane would die.
-  const yacoBin = [selfInvocation().command, ...selfInvocation().args].join(" ");
+  const yacoBin = yacoExecutable();
   const yacoBinArg = yacoBin.length > 0 ? `-e "YACO_BIN=${yacoBin}" ` : "";
   // -x/-y is the initial detached size; window-size=latest sizes the window
   // to whatever client most recently became active — so the device you're
@@ -447,18 +420,10 @@ export function waitForInputEmptyThenSend(
 }
 
 function queueInputEmptySend(handle: string, providerId: string, text: string): InputGatedSendResult {
-  const invocation = selfInvocation();
   try {
     const child = spawn(
-      invocation.command,
-      [
-        ...invocation.args,
-        "agent",
-        "_send-when-input-empty",
-        handle,
-        providerId,
-        text,
-      ],
+      yacoExecutable(),
+      ["agent", "_send-when-input-empty", handle, providerId, text],
       {
         detached: true,
         stdio: "ignore",
