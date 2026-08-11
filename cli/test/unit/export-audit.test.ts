@@ -573,6 +573,40 @@ describe("the audit itself", () => {
     }
   });
 
+  it("reads an allowlisted environment name through an erased wrapper", () => {
+    const { root } = plant({
+      "index.ts":
+        `export const a = process.env["HOME" as const];\n` +
+        `export const b = process.env[("YACO_HOME")];\n`,
+    });
+    try {
+      const scan = scanFile(join(root, "index.ts"), root);
+      expect(scan.envReads.map((r) => r.name)).toEqual(["HOME", "YACO_HOME"]);
+      expect(scan.violations).toEqual([]);
+    } finally {
+      rmSync(dirname(root), { recursive: true, force: true });
+    }
+  });
+
+  it("treats console the same way as process", () => {
+    const { root } = plant({
+      "index.ts":
+        `export const a = () => (console as typeof console).log("x");\n` +
+        `export const b = () => console["error"]("x");\n` +
+        `const out = console;\n` +
+        `export const c = () => out.warn("x");\n`,
+    });
+    try {
+      expect(detailsOf(root)).toEqual([
+        "2:console.log",
+        "2:console.error",
+        "2:console referenced outside a member access",
+      ]);
+    } finally {
+      rmSync(dirname(root), { recursive: true, force: true });
+    }
+  });
+
   it("is not evaded by string-keyed members, destructuring, or aliasing process", () => {
     const { root } = plant({
       "index.ts":

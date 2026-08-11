@@ -407,7 +407,8 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   }
 
   const visit = (node: ts.Node): void => {
-    const member = memberOnProcess(node);
+    const member = memberOn(node, isProcess);
+    const consoleMember = memberOn(node, isConsole);
     if (member !== undefined) {
       if (member === null) violate(node, 2, "process[<computed member>]");
       else if (member === "env") collectEnvNames(node, envRead);
@@ -415,16 +416,12 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
         const rule = PROCESS_OWNERSHIP[member];
         if (rule) violate(node, rule, `process.${member}`);
       }
-    } else if (isLooseProcessReference(node)) {
+    } else if (consoleMember !== undefined) {
+      violate(node, 2, `console.${consoleMember ?? "<computed member>"}`);
+    } else if (isLooseGlobalReference(node)) {
       // `const runtime = process` (or handing it to a call) puts every banned
       // member one alias away, so the reference itself is the breach.
-      violate(node, 2, "process referenced outside a member access");
-    } else if (
-      ts.isPropertyAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "console"
-    ) {
-      violate(node, 2, `console.${node.name.text}`);
+      violate(node, 2, `${globalNameOf(node)} referenced outside a member access`);
     } else if (isPollingLoop(node)) {
       violate(node, 3, "polling loop");
     } else if (ts.isCallExpression(node)) {
@@ -526,16 +523,19 @@ function unwrap(expr: ts.Expression): ts.Expression {
     : expr;
 }
 
-/** The member name this node reads off `process`: a string for a literal one,
- *  `null` for a computed one, `undefined` when the node is not a process
- *  member access at all. Property and element access are both handled — the
+/** The member name this node reads off a global: a string for a literal one,
+ *  `null` for a computed one, `undefined` when the node is not a member access
+ *  on that global at all. Property and element access are both handled — the
  *  latter is what makes `process["exit"]` no cheaper than `process.exit`. */
-function memberOnProcess(node: ts.Node): string | null | undefined {
+function memberOn(
+  node: ts.Node,
+  isTarget: (expr: ts.Expression) => boolean,
+): string | null | undefined {
   if (ts.isPropertyAccessExpression(node)) {
-    return isProcess(node.expression) ? node.name.text : undefined;
+    return isTarget(node.expression) ? node.name.text : undefined;
   }
   if (ts.isElementAccessExpression(node)) {
-    if (!isProcess(node.expression)) return undefined;
+    if (!isTarget(node.expression)) return undefined;
     const key = unwrap(node.argumentExpression);
     return ts.isStringLiteral(key) ? key.text : null;
   }
@@ -543,17 +543,20 @@ function memberOnProcess(node: ts.Node): string | null | undefined {
 }
 
 /** `process`, bare or reached through `globalThis`. */
-function isProcess(node: ts.Expression): boolean {
+const isProcess = (node: ts.Expression): boolean => isGlobal(node, "process");
+const isConsole = (node: ts.Expression): boolean => isGlobal(node, "console");
+
+/** One of the two globals this scan governs, bare or reached through
+ *  `globalThis`, under any erasable wrapper. */
+function isGlobal(node: ts.Expression, name: string): boolean {
   const expr = unwrap(node);
-  if (ts.isIdentifier(expr)) return expr.text === "process";
+  if (ts.isIdentifier(expr)) return expr.text === name;
   if (ts.isPropertyAccessExpression(expr)) {
-    return expr.name.text === "process" && isGlobalThis(expr.expression);
+    return expr.name.text === name && isGlobalThis(expr.expression);
   }
   if (ts.isElementAccessExpression(expr)) {
     const key = unwrap(expr.argumentExpression);
-    return (
-      ts.isStringLiteral(key) && key.text === "process" && isGlobalThis(expr.expression)
-    );
+    return ts.isStringLiteral(key) && key.text === name && isGlobalThis(expr.expression);
   }
   return false;
 }
@@ -563,18 +566,32 @@ const isGlobalThis = (node: ts.Expression): boolean => {
   return ts.isIdentifier(expr) && expr.text === "globalThis";
 };
 
-/** `process` used as a value rather than as the target of a member access —
+const globalNameOf = (node: ts.Node): string | null =>
+  ts.isExpression(node) && isProcess(node)
+    ? "process"
+    : ts.isExpression(node) && isConsole(node)
+      ? "console"
+      : null;
+
+/** A governed global used as a value rather than as the target of a member
+ *  access —
  *  assigned to a binding, destructured, spread, or passed to a call. Every one
  *  of those hands the banned members a name this scan cannot follow, so the
  *  reference is rejected instead of chased. */
-function isLooseProcessReference(node: ts.Node): boolean {
-  // Every spelling `isProcess` accepts, not just the bare identifier —
+function isLooseGlobalReference(node: ts.Node): boolean {
+  // Every spelling `isGlobal` accepts, not just the bare identifier —
   // `const runtime = globalThis.process` is the same escape by a longer route.
-  if (!ts.isExpression(node) || !isProcess(node)) return false;
-  const parent = node.parent;
+  if (!ts.isExpression(node) || !globalNameOf(node)) return false;
+
+  // The wrappers `unwrap` strips downward have to be climbed upward too, or
+  // `(console as typeof console).log()` reports the inner nodes as loose
+  // references on top of the member access the outer node already judged.
+  const outer = outermostErasable(node);
+  const parent = outer.parent;
 
   // Positions where the identifier names something rather than reading the
-  // global: a member name, an object key, a declared binding, a specifier.
+  // global: a member name, an object key, a declared binding, a specifier, or
+  // a type position such as the `typeof console` inside an assertion.
   const isName =
     ((ts.isPropertyAccessExpression(parent) ||
       ts.isPropertyAssignment(parent) ||
@@ -582,17 +599,34 @@ function isLooseProcessReference(node: ts.Node): boolean {
       ts.isVariableDeclaration(parent) ||
       ts.isParameter(parent) ||
       ts.isPropertySignature(parent)) &&
-      parent.name === node) ||
+      parent.name === outer) ||
     ts.isImportSpecifier(parent) ||
-    ts.isExportSpecifier(parent);
+    ts.isExportSpecifier(parent) ||
+    ts.isTypeQueryNode(parent) ||
+    ts.isTypeReferenceNode(parent);
   if (isName) return false;
 
   // A real read. The only admitted shape is the one the member scan above
-  // already judges: `process` as the object of a member access.
+  // already judges: the global as the object of a member access.
   const accessed =
     (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
-    parent.expression === node;
+    parent.expression === outer;
   return !accessed;
+}
+
+/** Climb out of the erasable wrappers `unwrap` strips, so a node is judged in
+ *  the position its emitted form actually occupies. */
+function outermostErasable(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    current.parent &&
+    ts.isExpression(current.parent) &&
+    unwrap(current.parent as ts.Expression) === unwrap(current as ts.Expression) &&
+    current.parent !== current
+  ) {
+    current = current.parent;
+  }
+  return current;
 }
 
 /** Every environment variable name read through one `process.env` node.
@@ -611,7 +645,7 @@ function collectEnvNames(
     return;
   }
   if (ts.isElementAccessExpression(parent) && parent.expression === node) {
-    const key = parent.argumentExpression;
+    const key = unwrap(parent.argumentExpression);
     emit(parent, ts.isStringLiteral(key) ? key.text : null);
     return;
   }
