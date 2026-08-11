@@ -1,164 +1,346 @@
-# Doctor Subcommand
+# Architecture
 
-> Last updated: 2026-08-08 (oss-doc-cleanup + oss-doctor-fresh-clone)
+> Last updated: 2026-08-10 (cli-order-determinism)
 
-`yaco doctor` runs the eleven required health checks against the current
-yaco install + repo. Each check returns
-`{name, status: 'pass'|'fail'|'skip', detail}`; the summary is `{pass, fail}`
-only — a `skip` lands in neither bucket, so it never trips the exit code.
-`skip` means "nothing to check here": a legitimate zero state, not a
-degraded one.
+## Overview
 
-The pure runner lives in `cli/src/commands/doctor.ts#runAllChecks(repoRoot?)`;
-the CLI handler (`handleDoctor`) wraps it with argv parsing and emits
-directly to stdout / exits directly (bypassing the dispatcher render path)
-because of the always-Ok envelope contract.
+The agent runtime orchestrates coding agents (Claude Code, Codex) via tmux,
+exposed through the `yaco agent ...` subcommand surface. Session metadata
+lives in `${YACO_HOME:-~/.yaco}/sessions/<handle>.json`, resolved via
+`src/lib/core/agent/session-state.ts#sessionsRoot()` (honors
+`YACO_AGENT_SESSIONS_DIR` env override, otherwise falls back to
+`src/lib/core/paths/yaco-home.ts#sessionsDir()`). Status is tracked via
+provider hooks first, then stale-state and capture-pane fallbacks.
 
-## CLI surface
+## Components
 
 ```
-yaco doctor [--repo <path>] [--json]
+src/
+  main.ts                              # dispatcher (areas, --json envelope, render); top-level provider shortcut
+  package-root.ts                      # the one package-relative expression: shipped assets + "am I the executable"
+  commands/
+    paths.ts                           # yaco paths
+    agent/
+      index.ts                         # yaco agent area handler + parseStartArgs (-- passthrough split)
+      start.ts                         # start an agent session (returns SessionState)
+      send.ts                          # send a message (or stdin) to a running session
+      capture.ts                       # capture terminal output (with idle wait)
+      rename.ts                        # rename a session handle (input-gated provider title sync)
+      kill.ts                          # kill one session or all current-project sessions
+      status.ts                        # list sessions and their idle/busy state (supports --json)
+      whoami.ts                        # resolve current process to its YACO session handle
+      hook-event.ts                    # CLI handler for `yaco agent hook-event <EventName>`
+      hooks/install.ts                 # yaco agent hooks install
+    project/
+      index.ts                         # yaco project area handler (list/add/remove/move dispatch; move-only flag scoping)
+      list.ts                          # yaco project list — {projects, projectsFile} envelope
+      add.ts                           # yaco project add <name> <abs-path> — validated registry insert
+      remove.ts                        # yaco project remove <name> — by-name delete, NOT_FOUND when missing
+      move.ts                          # yaco project move — cwd-metadata rekey after an on-disk path move
+  lib/core/agent/
+    model.ts                           # SessionState, RuntimeSessionState, HookEvent, PENDING_SESSION_ID, name helpers, ANSI strip
+    projection.ts                      # pure state→AgentSessionRow projection (project/projectPath resolve, lineage passthrough)
+    index.ts                           # @yaco/cli/core/agent barrel — exports projection only (reconcile stays CLI-only)
+    providers/                         # typed TuiProvider registry (index, types, claude, codex; idle/hooks/history/output/project-move capabilities)
+    providers.ts                       # legacy shim over providers/ for not-yet-migrated call sites (Provider, getProvider, isIdle)
+    session-state.ts                   # state file CRUD; YACO_AGENT_SESSIONS_DIR / sessionsDir() resolver
+    session-id.ts                      # Claude PID scan; Codex rollout (primary) + DB (fallback)
+    whoami.ts                          # current-agent identity resolver (tmux pane, session env, ancestor pid)
+    lifecycle.ts                       # ensureHooks (wrapper install + provider config merge); buildWrappedCommand
+    hook-event.ts                      # applyHookEvent + runHookEventForHandle + STOP_DEBOUNCE_MS
+    tmux.ts                            # tmux operations (sessions, panes, PIDs, OSC responder, theme detection)
+    words.ts                           # adjective/noun lists for default handles
+scripts/
+  agent-wrapper.sh                     # sole shell artifact — installed verbatim to ${YACO_HOME}/agent-wrapper.sh
 ```
 
-| Flag | Effect |
-|------|--------|
-| `--repo <path>` | Scope the `task-graph` check to a specific repo (precedence: flag → `$YACO_REPO_ROOT` → `process.cwd()`) |
-| `--json` | Emit `{ok:true, data:{checks, summary}}` envelope on stdout (always Ok — see below) |
+The `multmux` standalone entry (old `src/index.ts`) was retired — `yaco agent`
+is now the canonical surface. Top-level provider shortcuts
+(`yaco claude/codex [args...]`) delegate to `yaco agent start <provider>`;
+mid-layer `yaco agent claude ...` is rejected with USAGE (canonical is
+`yaco agent start <provider>`).
 
-## Required checks (stable contract)
+## Core Abstractions
 
-| # | Name | What it asserts | Detail on pass | Detail on fail |
-|---|------|-----------------|----------------|----------------|
-| 1 | `binary` | `which yaco` resolves AND the binary is executable | resolved path | `yaco not on $PATH` / `not executable` |
-| 2 | `version` | Reports the version from `<package-root>/package.json`. **Never fails** — any read/parse error falls back to `0.0.0` and still passes. Every artifact now reports the real value: the manifest is a package asset, so the bundle and an installed tarball resolve it exactly as a source run does. `0.0.0` in the field means a damaged install, not a compiled one | `0.1.0` | — |
-| 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
-| 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
-| 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill shipped by the registered yaco checkout resolves (manifest = `agent-config/global/skills/` listing, resolved via the registry's `yaco` entry) | `<dir> (<N> skills from <manifest>)` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / unresolvable registry or manifest |
-| 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()`, which passes when the raw config text contains `agent hook-event` — the `yaco-agent-hook` marker alone does not satisfy it; only the lifecycle merge still recognizes marker-owned groups, to migrate them) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
-| 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
-| 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
-| 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
-| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
-| 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
+### Session Lifecycle
 
-`skills-link` mirrors the installer's additive-merge tolerance: a user override
-of any shape at a shipped name passes; only a missing/dangling entry, a legacy
-whole-dir symlink container, or an unresolvable manifest fails. `yaco install`
-plants skill links and nothing else, so there is no global-instruction-file
-link to assert.
+1. `start` creates a tmux session named:
+   - handle = tmux session name directly (default `<provider>-<adj>-<adj>-<noun>-<6hex>`, or explicit `--name`)
+2. Provider CLI launches immediately inside the detached tmux session (`claude`, `codex`)
+3. Managed sessions apply tmux runtime options (`status off`, `focus-events on`, `allow-passthrough on`) and append RGB terminal features
+4. `waitForReady()` is **hook-first**: it polls the state file and returns immediately when status reaches `idle` or `processing` (whichever the hook writes first). The pane is only inspected as a fallback — to auto-accept the trust dialog, to handle Codex's "Hooks need review" re-trust prompt when the hook command changes, and to detect a stable idle prompt for hook-less or hook-broken sessions. Startup interstitials are one-shot per start, and adapters can suppress a matched dialog when a later provider prompt appears after it in the captured pane, preventing stale scrollback from sending review/trust keys into a live composer. On success, `start()` syncs the latest state file: only `starting→idle` transitions are applied; a hook-written `processing` is never downgraded. PID and sessionId are persisted (`resolved` > `pending` > `empty`) so status does not depend on hook timing. If the session dies during bootstrap, `start()` throws instead of returning phantom state.
+5. For Codex starts, the agent runtime syncs the provider title by enqueueing `/rename <handle>` after bootstrap readiness. Readiness still handles trust/hooks-review prompts and may be `processing`; title sync is best-effort and does not wait for settle. Slash commands are still sent only when the rendered input prompt is empty; busy composer states queue a detached helper that waits for the prompt to clear before submitting. Both fresh starts and resume+name follow the same `/rename` path.
+6. `yaco agent wait` (and the `start --wait` / `send --wait` wrappers) follows the provider JSONL log to the final-answer line to know when the agent is done
+7. `kill` uses three-state liveness (`checkSessionAlive`): kills live sessions, cleans up dead state, and refuses on uncertainty (preserves state file). `kill --all` skips uncertain sessions.
 
-`gh` is intentionally NOT a required check. The doctor surface is exactly the
-eleven names above so consumers can rely on the contract. `claude-md-link` was
-removed (install never claims `~/.claude/CLAUDE.md`); the removal was a
-deliberate change to the published contract.
+**Resume (`--resume <id>` or `resume <id>`):** Resumes an existing agent conversation. Both flag form (`--resume <id>`) and positional subcommand form (`resume <id>` as the leading arg) are recognized and canonicalized per provider: Claude gets `--resume <id>` (flag), Codex gets `resume <id>` (subcommand). The `sessionId` is written to the state file immediately (no polling needed).
 
-## `task-graph` skip — the unplanned repo
+**Dead-handle reclaim:** Before name resolution, `start()` checks if the requested handle has a stale state file for a dead session (`checkSessionAlive === false`). If so, it deletes the stale file, preventing the user from getting `worker-2` when `worker` is actually available.
 
-The check reads the task store at the path `yaco.toml [paths]` resolves —
-`plan/tasks` unless the repo overrides `plan` or `tasks`; the detail always
-names the resolved path. A repo that has no store there has not been planned
-yet; that is the zero state of every fresh clone, not breakage:
+**Send optimistic hint:** `send()` writes `status=processing` to the state file before `sendKeys`, so `agent list` / `status` don't show a stale pre-send idle buffer. The hook remains authority and will overwrite. On sendKeys failure, the hint is reverted only if the session is still alive and the state file hasn't been replaced.
+
+**Input delivery:** `sendKeys()` loads message text into a tmux buffer, pastes it with bracketed paste (`paste-buffer -p`), then immediately sends a real `Enter` key. Text newlines stay part of the message; submission is always the final `Enter`. This avoids Codex slash-command autocomplete consuming partial input before the submit key arrives.
+
+**Internal slash commands:** provider-title sync (`/rename <handle>`) uses
+`sendKeysWhenInputEmpty()`, which first inspects the last provider prompt line
+from `capturePane`. If the input line is empty the slash command is sent
+immediately; Codex placeholders are detected from their dim ANSI style so the
+logic does not depend on prompt wording. If user text is present, YACO queues a
+detached `_send-when-input-empty` helper so the caller can return while the
+command waits for a safe prompt.
+
+### Status Detection
+
+Three-layer approach, in priority order. All read paths (`status` text/JSON, `agent list`) use the shared `reconcile(handle)` function in `commands/agent/status.ts` as the single source of truth:
+
+1. **Hook-based (primary)**: Claude Code (12 events) and Codex (8 events) fire lifecycle hooks (SessionStart, UserPromptSubmit, Stop/StopFailure, PreToolUse/PostToolUse/PostToolUseFailure, PermissionRequest, Notification, PreCompact/PostCompact, SessionEnd — provider availability varies, see [providers.md](providers.md#hook-availability)). Provider configs point at `<absolute-yaco-executable> agent hook-event <EventName>`. The handler reads the event JSON from stdin and runs `runHookEventForHandle` (TypeScript), which derives the handle from the live tmux session name (`tmux display-message -p '#{session_name}'`), applies `applyHookEvent` to compute the next state, and writes via the same atomic temp-file-rename writer. **Note:** Codex lacks `SessionEnd` and `StopFailure` hooks — see exit-trap wrapper below. **Context reset safety:** `SessionEnd` sets status to `idle` (not delete), because Claude fires `SessionEnd` → `SessionStart` on context window resets while the process is still alive. Actual file deletion happens only via the wrapper EXIT trap.
+
+   **Stop debounce.** `Stop`/`StopFailure` events go through a 120 ms re-check window: read state, sleep, re-read; if the file mutated during the pause, a fresher event (typically the next turn's `UserPromptSubmit`) already won and the Stop is dropped. Otherwise, the transition to `idle` is applied. This protects against a late Stop for turn N overwriting the processing state of turn N+1.
+
+2. **Screen-scrape fallback**: Regex pattern matching on the live tail of terminal output (`isIdle`, `BUSY_PATTERNS` in `providers/idle.ts`). Used when hooks aren't installed (third-party providers, broken hook script) or to auto-accept trust/review startup dialogs. Interstitial matching is guarded against historical scrollback: a provider prompt that appears after the matched dialog text means the dialog has already cleared. The busy-pattern check uses a tighter ~12-line window so transient MCP-boot messages (`esc to interrupt`) that scroll into history do not mask a settled idle prompt. Each adapter's `detection` declares `idlePatterns` (prompt regexes) and `busyPatterns` (working indicators), aggregated by `providers/idle.ts`. The Claude prompt regex `/^❯\s/m` accepts both U+0020 and U+00A0 (NBSP) after `❯`.
+
+3. **Staleness fallback**: If the state file says `processing` but its mtime is > 30 minutes old, distrust it and fall through to capture-based detection.
+
+4. **Orphan GC**: `status` (list mode) reconciles state files against live tmux sessions using `checkSessionAlive()`, which returns three-state results: `true` (alive), `false` (confirmed dead), `null` (uncertain — timeout, signal, tmux server busy). GC only deletes on confirmed death (`false`); uncertain results are skipped to prevent false deletion when tmux is under load (e.g., 40+ sessions). Handles post-reboot cleanup.
+
+-> See: [src/lib/core/agent/session-state.ts](../../../cli/src/lib/core/agent/session-state.ts), [src/lib/core/agent/hook-event.ts](../../../cli/src/lib/core/agent/hook-event.ts), [src/lib/core/agent/lifecycle.ts](../../../cli/src/lib/core/agent/lifecycle.ts), [src/lib/core/agent/tmux.ts](../../../cli/src/lib/core/agent/tmux.ts)
+
+### State Machine
 
 ```
-SKIP  task-graph  <repo>/plan/tasks absent — no task graph yet (`yaco task set` creates one)
+States: starting, idle, processing, blocked, crashed
+File existence = active session; file deletion = session ended. `crashed` is a
+dead-but-retained tombstone (kept until an explicit kill). Every transition
+stamps `statusEnteredAt` (status-edge generation key). See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
+
+Transitions:
+  [yaco agent start]   → starting
+  [waitForReady: hook says idle/processing] → adopt hook status (primary path)
+  [waitForReady: screen idle, hook silent]  → idle (fallback)
+  SessionStart         → idle        (guard: skip if already processing)
+  UserPromptSubmit     → processing  (from starting or idle)
+  PreToolUse / PostToolUse / PreCompact / PostCompact → processing
+  Notification (idle_prompt | permission_prompt) → idle
+  PermissionRequest    → idle        (waiting for user approval)
+  [yaco agent send]    → processing  (optimistic hint; hook overwrites)
+  Stop / StopFailure   → idle        (after 120ms debounce; dropped if state mutated during the pause)
+  SessionEnd           → idle        (context reset safe — process may still be alive)
+  [wrapper EXIT trap, exit 0 / matching kill sentinel]  → [file deleted]
+  [wrapper EXIT trap, non-zero agent exit]              → crashed (+exitCode; mark-crashed / fallback)
+  [tmux session confirmed dead]  → [GC deletes file]  (three-state: only on false, not null; never a crashed tombstone)
+  [yaco agent kill]    → [file deleted]  (clears any status, incl. crashed)
+  [bootstrap death]    → [file deleted + Error thrown]  (start never returns phantom state)
+
+Context window reset sequence:
+  SessionEnd → idle → SessionStart → idle (new sessionId) → seamless
 ```
 
-Because skips count in neither summary bucket, `summary.fail` stays 0, the
-exit code stays 0, and `yaco install` — which bails when `summary.fail > 0` —
-completes on a fresh clone.
+-> See: [lifecycle.md](lifecycle.md) for visual state diagrams and sequence flows.
 
-**Absent is a zero state; unreadable is breakage.** The skip is only for a path
-that is genuinely not there (`ENOENT`). A store that *is* there but cannot be
-read fails, and says why:
+### Exit-Trap Wrapper
 
-| Store state | Status |
-|---|---|
-| no component of the path exists | `skip` |
-| the repo root itself does not exist (a wrong `--repo`) | `fail` — bad input, not a zero state |
-| a live symlinked plan root that has no tasks tree yet | `skip` |
-| symlink dangling at a moved/extracted store — **at any depth**, `plan` or `plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
-| walled off by permissions | `fail` — the errno (`EACCES: …`) |
-| loads but does not validate | `fail` — `<N> integrity problem(s)` |
-| loads and validates (an empty store counts) | `pass` |
+All agent commands run inside `${YACO_HOME:-~/.yaco}/agent-wrapper.sh` (path
+from `src/lib/core/paths/yaco-home.ts#agentWrapperPath()`), which sets a bash
+`EXIT` trap. On process exit (normal, error, or signal), the trap deletes
+the state file directly.
 
-The dangling-symlink case is not hypothetical: pointing the plan root at a task
-store kept outside the public tree is exactly how a repo separates its plan, and
-laundering that broken link into a skip would hide it. The probe therefore climbs
-to the nearest component that exists on disk rather than testing the leaf alone —
-`plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
-does, and the extracted *root* is the likelier shape.
+- **Sole shell artifact.** The wrapper body is shipped as a real file at `cli/scripts/agent-wrapper.sh` and installed to `${YACO_HOME}/agent-wrapper.sh`. Shell is the only stack where the EXIT trap reliably fires when the tmux pane dies abruptly, so this stays out of TypeScript by design (Shell Boundary). At runtime, `ensureHooks` refreshes the managed wrapper from the packaged copy — `<package-root>/scripts/agent-wrapper.sh`, resolved by `package-root.ts` and never by a checkout, cwd, or `$YACO_REPO_ROOT`. A missing packaged copy is a broken install and raises `INTERNAL`.
+- **Session name re-read at exit** — the EXIT trap calls `tmux display-message -p '#{session_name}'` to get the current name (which reflects any renames that occurred during the session's lifetime). Falls back to the startup-cached name when the tmux session is already gone (e.g., `tmux kill-session`).
+- **Rename breadcrumb** — `renameState()` writes `.renamed-<oldHandle>` in the sessions dir pointing to the new name. Write-before-delete: new state file is written before old is removed, preventing a race where GC deletes the old file between tmux rename and state rename (leaving no file). Callers pass pre-read state to avoid a re-read race with GC. Chain-safe: A→B→C updates A's breadcrumb to point to C. Cleanup: EXIT trap removes breadcrumb on exit; `deleteState()` removes breadcrumbs to/from the deleted handle; `status` GC sweeps orphans whose target file is gone.
+- **Handle-reuse guard** — the wrapper receives the session's `createdAt` and only deletes the state file if the on-disk file still belongs to the same launch. This prevents an older exiting process from deleting a newer session that quickly reused the same default handle.
+- **Exit-code branch (fail-closed crash contract)** — the trap captures `ec=$?` first. exit 0 (or a generation-matching `.killing` sentinel → intentional kill) deletes the state file; a non-zero agent exit instead tombstones it as `crashed`+`exitCode` via `"$YACO_BIN" agent mark-crashed` (absolute path exported at start), with an inline `crash_fallback` shell rewrite when the binary can't run. -> See: [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
+- **Primary cleanup mechanism** — the only code path that deletes (or crash-tombstones) state files on session end.
+- **Essential for Codex** (which lacks `SessionEnd` hook) and Claude crash scenarios.
+- **Complements the TS hook-event handler** — hooks handle status transitions (`idle`/`processing`/`blocked`); wrapper owns end-of-life file lifecycle (delete vs. crash tombstone).
+- **Login + interactive bash for the agent** — after the trap is installed, the wrapper runs the agent via `bash -lic 'exec "$@"' _ "$@"` so claude/codex inherit the same env as if launched from a hand-opened terminal: sources `/etc/profile`, `~/.profile`, `~/.bashrc`; picks up `SSH_AUTH_SOCK` (via keychain), full PATH (cargo/nvm/cuda/etc.), and other interactive-shell exports. Without this the workflow → agent → tmux → `/bin/sh -c` chain skipped every shell init and the agent had a stripped-down env. The wrapper also `unset`s `npm_(config|lifecycle|package)_*` first because tmux server caches its initial env — vars leaked when the parent was launched via `npm run` (e.g. `npm_config_prefix`) make nvm refuse to initialize.
 
-The `providers` and `agent-hook-config` checks keep their fixed names but build
-their detail by iterating the provider registry (`listProviders()` from
-`lib/core/agent/providers`): `providers` probes each adapter's `executable`,
-`agent-hook-config` probes each hook-bearing adapter's `hasInstalledHook()`. No
-per-provider check names are introduced — adding a provider widens the detail
-string, not the check list.
+-> See: [src/lib/core/agent/lifecycle.ts](../../../cli/src/lib/core/agent/lifecycle.ts), [scripts/agent-wrapper.sh](../../../cli/scripts/agent-wrapper.sh), [src/commands/agent/start.ts](../../../cli/src/commands/agent/start.ts)
 
-## --json envelope contract (HIGH 3 from review pass 1)
+### Hook Installation
 
-doctor is a **STATUS command**: the `--json` envelope is ALWAYS
-`{ok:true, data:{checks, summary}}` on stdout, even when checks fail. The
-exit code (0 vs 1) carries the pass/fail signal.
+`yaco agent hooks install` (handler in `src/commands/agent/hooks/install.ts`)
+calls `ensureHooks` for both providers. `ensureHooks` ensures
+`${YACO_HOME}/agent-wrapper.sh` exists and is executable, refreshing it from
+`cli/scripts/agent-wrapper.sh` when source is available, then merges
+yaco-owned entries into the provider configs. This keeps `agent start`
+working from non-YACO project directories after `tools/install.sh` has written
+the managed wrapper.
 
-| Outcome | Stdout | Stderr | Exit |
-|---------|--------|--------|------|
-| All pass | `{"ok":true,"data":{"checks":[...],"summary":{"pass":11,"fail":0}}}` | empty | `0` |
-| Any skip | `{"ok":true,"data":{"checks":[...],"summary":{"pass":10,"fail":0}}}` | empty | `0` |
-| Any fail | `{"ok":true,"data":{"checks":[...],"summary":{"pass":N,"fail":M}}}` | empty | `1` |
+The canonical entry point for hook merging is now `yaco install` (writes the
+same configs plus the rest of the install state). `yaco agent hooks install`
+remains as the focused command for re-installing hooks only.
 
-Why always-Ok: callers parse `data.checks` unconditionally without having to
-disambiguate two envelope shapes. The exit code is the pass/fail signal.
+- **Idempotent overwrite.** For each hook event the installer computes the target group, finds any pre-existing yaco-owned entry (identified by the `yaco-agent-hook` marker OR a hook command containing `agent hook-event <Event>`), and replaces it in place when the content differs. Unrelated user entries are preserved verbatim, in their original position.
+- **Matcher discipline.** Tool-scoped events (`PreToolUse`, `PostToolUse`, `Notification`, `PreCompact`, `PostCompact`, `PermissionRequest`, `PostToolUseFailure`) read `matcher` as a tool-name filter and get `"*"`. Every other event gets **no** `matcher` at all — for `SessionStart` it filters the start *source* (`startup|resume|clear|compact`), so a label there compiles to a regex matching nothing and silently disables the hook, and an absent matcher means "match all". Ownership is therefore decided by the command (`isYacoOwnedGroup`), with the legacy `matcher === "yaco-agent-hook"` case retained only to recognize and overwrite groups written by installs that made exactly that mistake.
+- **Hook command — canonical form.** `<absolute-yaco> agent hook-event <Event>`, resolved by `package-root.ts#yacoExecutable()`: `$YACO_PATH` → an explicitly supplied `$YACO_BIN_DIR/yaco` → an executable `yaco` on `$PATH` that is not a `node_modules/.bin` shim → `<package-root>/bin/yaco.mjs`. The last rung always exists, which is why there is no literal `"yaco"` below it — that one wrote a command failing silently at every fire. The PATH rung is what stops a command run from a checkout repointing global hooks at that checkout; skipping npm's workspace shims is what stops the PATH rung from doing the same thing. Absolute paths ensure the hook works when the tmux server / provider runs with a stripped PATH; `node` itself must still be on it, which is the npm global-bin contract. A runtime plus a source path is never emitted: the checkout is not guaranteed to be reachable at hook-fire time.
+- **The `main.ts` hook branch is a contract, not a code split.** `argv[0:2] === ['agent','hook-event']` gets stdin-read, state-write, catch-all suppression, and exit 0. It defers no module graph — the dispatcher statically imports `commands/agent/index.ts`, which statically imports the handler — and the measured ideal split recovered only ~13 ms, so no split is justified.
+- **One ownership vocabulary.** `isYacoHookCommand` (and `providers/hooks.ts#hasInstalledHook`) match a command containing `agent hook-event`; the `yaco-agent-hook` marker is still recognized so marker-owned groups from older installs are migrated in place.
 
-To honor this contract the handler reaches `process.exit()` directly
-(bypassing the dispatcher's render path, which would map any non-zero exit to
-an error envelope). Same convention as `yaco align wait`.
+### Session ID Resolution
 
-## Text mode
+`sessionId` identifies the agent's own conversation — usable with `claude --resume <uuid>` / `codex resume <uuid>`. Resolved from local files, not hooks alone:
 
-Text mode prints `PASS` / `FAIL` / `SKIP` + a padded name + the detail, one
-line per check, then a `<pass> pass, <fail> fail` footer. Exit code matches
-`--json` mode (0 when summary.fail = 0, else 1).
+| Provider | Source | Method |
+|----------|--------|--------|
+| Claude | `~/.claude/sessions/<pid>.json` | Direct PID filename match, then fallback scan |
+| Codex | `~/.codex/sessions/` rollout files (primary), `~/.codex/state_5.sqlite` threads table (fallback) | Rollout birthtime ms-match → DB `SELECT id FROM threads WHERE cwd = ? AND created_at > ? AND created_at < ? ORDER BY created_at ASC, id ASC LIMIT 1` |
 
-## `--repo` wire-through (HIGH 2 from review pass 1)
+**Claude resolution:** PID-based. The state file `pid` field stores the agent CLI PID (not the tmux pane PID). `getAgentPid()` in `tmux.ts` searches the live descendant tree under `#{pane_pid}` and prefers the expected provider command (`claude` / `codex`) instead of assuming a fixed 1-2 level shape. `status --json` repairs stale PIDs on read.
 
-`yaco install --repo X` resolves repoRoot to X and threads it through to
-`runDoctor`, which calls `runAllChecks(X)`. `yaco doctor --repo X` does the
-same directly. This guarantees the `task-graph` check is scoped to the repo
-that install just mutated — not whatever `cwd` happens to be when the doctor
-subprocess runs.
+**Codex resolution:** Two-tier, no PID. Codex decoupled thread identity from OS processes — the `threads` table has no PID column. Primary: rollout file scan (`~/.codex/sessions/YYYY/MM/DD/`) matches by birthtime (ms precision, ±1s skew / 60s delay window). Fallback: SQLite `threads` table query by CWD + bounded time window (`[sessionStart - 1s, sessionStart + 60s]`, `ASC` to pick earliest match). Rollout scan is preferred because ms-precision birthtimes reliably distinguish concurrent same-CWD sessions; the DB's epoch-second `created_at` cannot. Both selections are total: equal-delay rollouts resolve to the smallest rollout path, equal-`created_at` threads to the smallest `id`. -> See: [Read Ordering](#read-ordering).
 
-## `task-graph` in-process
+**Timing:** Claude session files exist at CLI boot. Unnamed empty Codex starts can legitimately stay `"pending:awaiting-first-prompt"` until a real prompt creates a thread. Named empty Codex starts may resolve earlier because `/rename` itself submits input, but that timing is not guaranteed. Resume sessions skip polling entirely — the sessionId is known upfront from the `--resume` flag.
 
-The `task-graph` check used to spawn `yaco task validate --json` as a child
-bun process; now it runs `validateGraph(loadTaskStore(tasksPath).tasks)` directly
-(both are pure helpers in `lib/core/task`). Eliminates one bun startup per
-doctor run and avoids the test-mode argv plumbing nightmare.
+**Race avoidance:** `session-state.ts` writes state atomically via temp-file + rename. `start()` syncs the latest state file after readiness instead of trusting hook order, and `status --json` repairs PID/sessionId drift on read without persisting undocumented fields. The wrapper EXIT trap compares `createdAt` before deleting so older exits cannot wipe a newer recycled handle. Codex rollout scan only accepts files created within [sessionStart - 1s, sessionStart + 60s], preventing stale thread reuse. Codex DB fallback uses the same bounded window with `ASC` ordering to pick the earliest match — concurrent same-CWD sessions each claim their own thread as long as they start >1s apart.
 
-It is graph integrity only, so it is **not** equivalent to `yaco task validate`:
-that command additionally fails on a cross-host stale lock
-(`error.details.staleLocks` — see [task.md](task.md#locking)). A doctor-green
-task store can still have a lock `yaco task validate` would reject.
+### Read Ordering
 
-## Tests
+Every read path that enumerates a directory or resolves a tie returns a **total,
+name-derived order**. A raw directory read has none: Bun and Node return different
+stable orders for the same directory, so `agent list` row order was undefined by
+construction until this was made explicit.
 
-- `cli/test/unit/commands/doctor.test.ts` — `runAllChecks` direct calls and
-  subprocess coverage. Asserts the 11-name stable order; the `{name, status,
-  detail}` per-check shape; the `{pass, fail}`-only summary; the all-pass
-  case after a fresh install; per-check failure modes (yaco-home missing,
-  registry missing, skills link missing, agent-wrapper missing, no hook
-  entries, no providers on PATH); every row of the store-state table above
-  (absent → `skip` with the name list unchanged; malformed, invalid, dangling
-  at the leaf, dangling at the plan root, permission-walled, missing `--repo`
-  → `fail`; live symlinked plan root with no tasks tree → `skip`); the `--json`
-  envelope contract on failure (`{ok:true, data:{...}}` stdout + exit 1 + empty
-  stderr); and the `--repo` wire-through against a sandbox repo.
-- `cli/test/unit/commands/install.test.ts` — the fresh-clone flow: `yaco
-  install --repo <clone>` against a checkout with no `plan/` exits 0 with a
-  `task-graph` skip, in-process and as a subprocess.
-- `cli/test/integration/install.test.ts` — the same flow through the real
-  entry point: `git archive HEAD tools cli agent-config` into a sandbox (no
-  `plan/`), then that export's `tools/install.sh --cli-only` with the closing
-  doctor **enabled**, asserting exit 0 and the skip line. The older bootstrap
-  case runs `--skip-doctor` against this checkout, which has a `plan/`, so it
-  cannot cover this.
+| Rule | Where |
+|------|-------|
+| Session handles are enumerated ascending — the order behind `agent list`, `agent summaries`, and every `listByPath` caller | `session-state.ts#listStateHandles` |
+| Claude project logs and Codex rollout day directories are read sorted, so "the first file naming this session" is a defined choice | `providers/history.ts`, `providers/output.ts`, `session-id.ts` |
+| History rows sort by recency, then ascending `sessionId`; an unparseable `updatedAt` ranks after every real timestamp | `providers/history.ts#finalizeHistory` |
+| Every `threads` query orders by its timestamp **and** `id` — `created_at` is second-precision, so concurrent threads tie routinely and SQLite leaves tied rows to the query plan | `providers/history.ts`, `session-id.ts` |
+| Equal-delay rollout selection resolves to the smallest rollout path, not to whichever the directory read reached first | `session-id.ts#scanCodexRollouts` |
+
+Comparison is by code unit — plain `.sort()`, never `localeCompare` — so the order
+is a property of the names alone, not of the runtime or the machine's locale.
+Two consequences worth stating: the `--limit` window boundary in
+`agent history` admits the same row on every call, and `agent list` rows are a
+stable diffable sequence rather than a set that happens to have an order.
+
+Enforced end to end by the golden matrix -> See:
+[doc/dev/cli/workflow.md#golden-matrix](../../dev/cli/workflow.md#golden-matrix).
+
+-> See: [src/lib/core/agent/session-id.ts](../../../cli/src/lib/core/agent/session-id.ts)
+
+### Current-Agent Identity (`whoami`)
+
+`yaco agent whoami` resolves the current process back to its YACO-managed
+session handle. Text mode prints only the handle; `--json` returns the full
+runtime state plus `source` (`tmux-pane`, `session-id`, or `ancestor-pid`).
+
+Resolution is intentionally ordered from strongest to weakest signal:
+
+1. **tmux pane identity** — if `TMUX_PANE` is present, ask tmux for that
+   pane's `#{session_name}` and accept it only when a matching YACO state file
+   exists. This is the normal local path for both Claude and Codex because the
+   YACO handle is the tmux session name.
+2. **provider session-id env** — match known tool-subprocess variables against
+   state `sessionId`: `CODEX_THREAD_ID` for Codex and
+   `CLAUDE_CODE_SESSION_ID` for Claude Code Bash/PowerShell tools and hooks.
+   YACO does not use remote-only Claude session variables for local identity.
+3. **ancestor PID** — walk the OS parent chain from the current `whoami`
+   process and choose the nearest ancestor whose PID matches a YACO state
+   `pid`. This handles wrapper/tool nesting without assuming a fixed number of
+   process levels; when multiple managed agents appear in the ancestry, the
+   closest one wins.
+
+If no signal maps to a live managed state file, the command returns
+`NOT_FOUND` instead of guessing.
+
+-> See: [src/lib/core/agent/whoami.ts](../../../cli/src/lib/core/agent/whoami.ts), [src/commands/agent/whoami.ts](../../../cli/src/commands/agent/whoami.ts)
+
+### JSON Output (`--json`) and Dual-Mode Capture
+
+`yaco agent start --json` and `yaco agent status <handle> --json` output full
+`SessionState` as JSON inside the envelope. Fields: `handle`, `provider`,
+`sessionPath`, `pid`, `sessionId`, `status`, `createdAt`, and optional lineage
+`spawnedBy` / `parentSession` (see [state-contract.md](state-contract.md#session-lineage-spawnedby--parentsession)). `yaco agent list --json` returns an array of `AgentSessionRow` — the same fields keyed as `name`, plus the resolved `project`/`projectPath` (see [state-contract.md](state-contract.md#2-runtime-contract--cli-json)).
+
+`yaco agent capture` is dual-mode:
+- **text mode** (no `--json`) — the renderer recognizes the handler's `{ text: "..." }` shape and writes the captured pane buffer to stdout verbatim. No JSON wrap, no surrounding text — bytes round-trip.
+- **`--json` mode** — same handler return wraps as `{ ok:true, data:{ text:"..." } }` per the dispatcher envelope.
+
+After rendering an envelope, the dispatcher sets `process.exitCode` and returns
+instead of calling `process.exit()`. This is load-bearing for large JSON
+responses such as `yaco agent history --json`: stdout/stderr must drain fully
+before the process exits, otherwise pipe readers can receive truncated JSON.
+
+`yaco agent output-follow` is a third mode: a persistent NDJSON **stdout stream**
+(not the single envelope), for provider reply streaming. -> See:
+[providers.md](providers.md#provider-output--reply-streaming).
+
+-> See: [src/commands/agent/start.ts](../../../cli/src/commands/agent/start.ts), [src/commands/agent/status.ts](../../../cli/src/commands/agent/status.ts), [src/commands/agent/capture.ts](../../../cli/src/commands/agent/capture.ts), [src/main.ts](../../../cli/src/main.ts) (`render` accepts `{help}` and `{text}` shapes).
+
+### CLI ↔ App Boundary
+
+The CLI owns all provider-native storage; `app/server` consumes structured CLI
+surfaces instead of resolving or parsing `~/.claude`, `~/.codex`, or a future
+provider home. This keeps each provider's private file/DB/log layout under
+`cli/` so adding a provider is one CLI adapter, not edits across the server.
+
+CLI surfaces consumed by `app/server` (all `--json` except the NDJSON stream):
+
+| Surface | Shape | Server consumer |
+|---|---|---|
+| `yaco agent providers --json` | provider catalog `{id,label,executable}` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
+| `yaco agent history --path <p> [--since <iso>] [--limit <n>] --json` | windowed `HistoryWindow` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Strict parser: unknown flag / bad value / stray positional → `USAGE`. `--since` is ISO-8601 only and filters (after provider merge, before the `--limit` slice, default 200); `truncated` = the limit dropped rows | History tab |
+| `yaco agent summaries --path <p> --json` | per-live-session `{handle,sessionId,provider,label}` | session-list labels (app-side cache; misses only) |
+| `yaco agent usage [provider] [--fresh] --json` | per-provider `{provider, plan?, windows[], checkedAt, error?}`; each window is `{window, scope?, percent, resetsAt?}` where `window` is the provider's own identity (Codex a duration — `"5h"`, `"7d"` — Claude a group — `"session"`, `"weekly"`) and `scope` names a model-scoped limit. A failed provider comes back as an entry with `error` and no windows; exit is non-zero only when no provider reported a window. Cached 120s per provider, bound to the credential file's mtime | app `/api/usage` proxy + desktop quota rail |
+| `yaco agent output-cursor <h> --json` | opaque `{token,offset,sourceMtimeMs}` | pre-send reply cursor |
+| `yaco agent output-follow <h> --cursor <t> --offset <b> --json` | persistent NDJSON `event`/`end` stream | channel reply streaming (one subprocess per turn) |
+
+The app still reads **YACO-owned** state files directly (`${YACO_HOME}/sessions`,
+`projects.json`) for fast session lists and file-watch signals — those are
+YACO-owned snapshots, not provider storage. `AgentSession.provider` is a bare
+`string` trusted from the YACO state file, validated against the catalog only on
+start (`shell` bypasses the catalog).
+
+**Capture vs. output-follow.** `capture` snapshots the rendered tmux pane
+(provider-agnostic, point-in-time, lossy) for raw terminal fallback and idle
+screen-scraping. `output-follow` reads provider-persisted logs and emits
+turn-scoped reply events (`interim`/`question`/`final`); it is the primary
+channel reply path when a provider declares `output`, with `capture` the
+fallback when it does not. The CLI owns log location, byte reads, buffering,
+offset advancement, and line classification; the app owns stream **timeout** and
+the AskUserQuestion Escape side effect — the CLI never emits a `timeout` event.
+
+**Browser presentation lives in app/ui, not the CLI.** `app/ui` owns a
+provider-keyed presentation config (`app/ui/src/lib/providerUi.ts`,
+`ProviderUiConfig`): icon, xterm contrast floor, OSC report suppression, and the
+`canStart` startable-controls flag. It is a UI-local **superset** of the CLI
+catalog — it also carries `shell` and a generic terminal fallback, neither a CLI
+agent provider.
+
+**OSC runtime vs. browser presentation split.** Terminal behavior is owned by
+runtime: if it must happen with **no browser attached**, it is CLI provider-
+runtime config (`TuiProvider.terminal` — launch env, detached-tmux OSC 10/11
+color *responder*); if it only matters while **xterm renders to a human**, it is
+app/ui config (`ProviderUiConfig.terminal` — xterm OSC *suppression*, contrast
+floor). The same provider can require opposite actions in the two domains, so a
+single shared OSC flag would be wrong.
+
+-> See: [providers.md](providers.md#provider-adapter-model), [src/commands/agent/index.ts](../../../cli/src/commands/agent/index.ts), [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts)
+
+### Provider Isolation
+
+- `env -u CLAUDECODE` prevents nested Claude conflicts
+- `env COLORTERM=truecolor` nudges Codex toward truecolor rendering inside tmux
+- Codex's provider adapter declares `terminal.respondToColorQuery`, so `start` attaches a `tmux pipe-pane` responder right after `tmux new-session` (gated by that flag, no fixed launch delay). The responder watches the real OSC 10/11 query bytes and sends the matching replies back with `tmux send-keys -H`; this preserves the composer background in detached sessions without blind timed injection or visible `^[]10;rgb...` echo. With no launch delay it attaches best-effort and may miss a query Codex emits before pipe-pane is live.
+- `--dangerously-skip-permissions` (Claude) / `--yolo` (Codex) for autonomous operation
+- Codex "Hooks need review" trust prompt — when the installed hook command's hash changes (e.g. after upgrading yaco's binary path), Codex re-prompts on session start. `start.ts#waitForReady` recognizes both screens (`Hooks need review` numbered menu, `Press t to trust all` overlay) and accepts trust automatically so unattended starts proceed. The auto-answer only fires once per startup interstitial and is skipped if the captured pane shows a later Codex prompt after the matched dialog text.
+
+### tmux Exact-Match Safety
+
+All tmux `-t` targets use the `=` prefix for exact name lookup, preventing cross-session operations (without `=`, tmux treats `-t "foo"` as a prefix match that can resolve to `foo-2` or `foo-bar`). Two helpers in `src/lib/core/agent/tmux.ts` handle the tmux target-type distinction:
+
+- **`sessionTarget(handle)`** = `"=${handle}"` — for commands that accept `target-session` (`has-session`, `kill-session`, `rename-session`, `list-panes`)
+- **`paneTarget(handle)`** = `"=${handle}:"` — for commands that accept `target-pane` (`set-option`, `set`, `send-keys`, `capture-pane`). The trailing colon is required because tmux parses bare `"=name"` differently in pane-target context (it fails to resolve the session).
+
+The shell wrapper (`agent-wrapper.sh`) only uses `has-session` and `display-message` with `"=$sn"` which are session-target commands. Enforced by source-scan tests in `test/tmux.test.ts` and `test/agent-wrapper.test.ts`.
+
+-> See: [src/lib/core/agent/tmux.ts](../../../cli/src/lib/core/agent/tmux.ts)
+
+### cgroup Escape (Linux + systemd hosts)
+
+When the runtime is invoked from a process inside a nested systemd `.service` cgroup (e.g. spawned by a `workflow-server.service`), naïvely calling `tmux new-session` puts the spawned tmux server in the same cgroup. `systemctl restart` of the parent service then SIGTERMs the entire cgroup — including every agent session.
+
+`cgroupEscapePrefix()` in `src/lib/core/agent/tmux.ts` detects this case (Linux + `systemd-run` available + leaf cgroup ends in `.service` and isn't `user@<uid>.service`) and prefixes `tmux new-session` with `systemd-run --user --scope --quiet --collect`. tmux ends up in a transient `.scope` outside the parent's control-group; the parent restart leaves it alone. Subsequent tmux clients connect to the same already-escaped server, so the wrap only needs to win once per tmux server lifetime.
+
+Detection result is cached per process. macOS and non-systemd Linux return `""` and behave exactly as before — no wrapping, no overhead. launchd doesn't have cgroup-style group-kill semantics, so macOS doesn't need this.
