@@ -111,8 +111,21 @@ export interface ReadEventsOptions {
   limit?: number
 }
 
+const SNIPPET_MAX = 120
+
+/** Render a malformed line for the log: control bytes neutralized so a corrupt
+ *  line can't emit an escape sequence into the operator's terminal (the observed
+ *  corruption was a terminal OSC reply prepended to an event), and truncated so
+ *  one bad line can't dump a file's worth of text into the log. */
+function snippet(line: string): string {
+  const printable = line.replace(/[\u0000-\u001f\u007f]/g, '\ufffd')
+  return printable.length > SNIPPET_MAX ? `${printable.slice(0, SNIPPET_MAX)}…` : printable
+}
+
 /** Read events.jsonl for a project. Returns [] when the file does not exist.
- *  Malformed lines are skipped with a warning so a single bad write can't poison the stream. */
+ *  Malformed lines are skipped with a warning so a single bad write can't poison the stream.
+ *  The warning is one bounded line naming the offending line number — readEvents runs on
+ *  every attention pass, so a corrupt line must not cost a stack trace per read. */
 export async function readEvents(projectId: string, options: ReadEventsOptions = {}): Promise<YacoEvent[]> {
   const file = projectEventsFile(projectId)
   if (!existsSync(file)) return []
@@ -127,13 +140,15 @@ export async function readEvents(projectId: string, options: ReadEventsOptions =
 
   const kindFilter = options.kinds && options.kinds.length > 0 ? new Set(options.kinds) : null
   const out: YacoEvent[] = []
-  for (const line of raw.split('\n')) {
+  const lines = raw.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
     if (!line) continue
     let parsed: unknown
     try {
       parsed = JSON.parse(line)
-    } catch (err) {
-      console.warn(`[eventsLog] skipping malformed line in ${file}:`, err)
+    } catch {
+      console.warn(`[eventsLog] skipping malformed line ${i + 1} in ${file}: ${snippet(line)}`)
       continue
     }
     if (!parsed || typeof parsed !== 'object') continue

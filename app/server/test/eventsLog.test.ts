@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
@@ -164,16 +164,92 @@ describe('eventsLog.readEvents', () => {
   })
 
   it('skips malformed lines without throwing', async () => {
-    const file = projectEventsFile('workflow')
-    await mkdir(join(fixtureRoot, 'projects', 'workflow'), { recursive: true })
-    await writeFile(file, [
+    await plant([
       JSON.stringify({ id: 'a', ts: '2026-05-27T00:00:00.000Z', kind: 'dispatched', projectId: 'workflow' }),
       '{ not valid json',
       JSON.stringify({ id: 'c', ts: '2026-05-27T00:00:01.000Z', kind: 'verified', projectId: 'workflow' }),
       '',
-    ].join('\n'), 'utf-8')
+    ])
     const out = await readEvents('workflow')
     expect(out.map(e => e.id)).toEqual(['a', 'c'])
+  })
+})
+
+/** Write `lines` verbatim as the `workflow` project's events.jsonl. Used to plant
+ *  content `appendEvent` would never produce — a malformed line. */
+async function plant(lines: string[]): Promise<string> {
+  const file = projectEventsFile('workflow')
+  await mkdir(join(fixtureRoot, 'projects', 'workflow'), { recursive: true })
+  await writeFile(file, lines.join('\n'), 'utf-8')
+  return file
+}
+
+const GOOD = (id: string) =>
+  JSON.stringify({ id, ts: '2026-05-27T00:00:00.000Z', kind: 'dispatched', projectId: 'workflow' })
+
+describe('eventsLog.readEvents — malformed-line warning', () => {
+  let warn: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warn.mockRestore()
+  })
+
+  it('reports one single-line warning naming the file and the 1-based line number', async () => {
+    const file = await plant([GOOD('a'), '{ not valid json', GOOD('c'), ''])
+
+    await readEvents('workflow')
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    const [msg, ...extra] = warn.mock.calls[0]!
+    expect(extra).toEqual([]) // no Error argument — an Error prints its stack
+    expect(msg).toContain(file)
+    expect(msg).toContain('line 2')
+    expect(msg).not.toContain('\n') // one console line, not a multi-line stack
+    expect(msg).not.toMatch(/SyntaxError|\bat \S+:\d+/)
+  })
+
+  it('warns once per malformed line, each carrying its own line number', async () => {
+    await plant([GOOD('a'), 'nope', GOOD('c'), '}{', ''])
+
+    await readEvents('workflow')
+
+    expect(warn.mock.calls.map(c => c[0])).toEqual([
+      expect.stringContaining('line 2'),
+      expect.stringContaining('line 4'),
+    ])
+  })
+
+  it('bounds the snippet so one corrupt line cannot dump a file into the log', async () => {
+    const file = await plant([`{"payload":"${'A'.repeat(5000)}`, GOOD('c'), ''])
+
+    await readEvents('workflow')
+
+    const msg = warn.mock.calls[0]![0] as string
+    expect(msg.length).toBeLessThan(file.length + 200)
+    expect(msg).toContain('…') // truncation is visible, not silent
+    expect(msg).toContain('AAA') // the head of the line is still shown
+  })
+
+  it('neutralizes control bytes so a corrupt line cannot emit an escape sequence', async () => {
+    // The observed corruption: a terminal OSC background-color reply prepended to an event.
+    await plant([`\u001b]11;rgb:0000/0000/0000\u0007${GOOD('a')}`, GOOD('c'), ''])
+
+    const out = await readEvents('workflow')
+
+    expect(out.map(e => e.id)).toEqual(['c'])
+    expect(warn.mock.calls[0]!.join(' ')).not.toMatch(/[\u0000-\u001f\u007f]/)
+  })
+
+  it('stays silent when every line parses', async () => {
+    await plant([GOOD('a'), GOOD('c'), ''])
+
+    await readEvents('workflow')
+
+    expect(warn).not.toHaveBeenCalled()
   })
 })
 
