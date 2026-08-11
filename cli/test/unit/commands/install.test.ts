@@ -5,11 +5,10 @@
  *
  *  The one subprocess test here (`fresh clone exits 0`) is a subprocess because
  *  the assertion is about the real exit code, not to escape a module mock:
- *  lifecycle-guards.test.ts's mocks are scoped to that file (see
- *  test/helpers/module-mock.ts), so the real lifecycle.ts runs here.
+ *  `vi.mock` is file-scoped, so lifecycle-guards.test.ts's mocks cannot reach
+ *  here and the real lifecycle.ts runs.
  */
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   chmodSync,
   existsSync,
@@ -24,11 +23,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { runInstall, type InstallReport } from "../../../src/commands/install.ts";
+import { runCli } from "../../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../../src/main.ts");
 
 const ORIG = {
   HOME: process.env["HOME"],
@@ -702,10 +701,9 @@ describe("yaco install — fresh clone exits 0 (release blocker)", () => {
     const freshClone = join(sandbox, "fresh-clone");
     mkdirSync(join(freshClone, "agent-config", "global", "skills"), { recursive: true });
     expect(existsSync(join(freshClone, "plan"))).toBe(false);
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "install", "--cli-only", "--repo", freshClone, "--json"],
-      { encoding: "utf-8", env: { ...process.env } },
+    const r = runCli(
+      ["install", "--cli-only", "--repo", freshClone, "--json"],
+      { env: { ...process.env } },
     );
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

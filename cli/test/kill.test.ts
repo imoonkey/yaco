@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   writeState,
   readState,
@@ -6,20 +6,21 @@ import {
   listByPath,
   type SessionState,
 } from "../src/lib/core/agent/session-state.ts";
-import { mockSrcModule } from "./helpers/module-mock.ts";
 import { kill } from "../src/commands/agent/kill.ts";
 
 // ---------------------------------------------------------------------------
 // Mock state
 // ---------------------------------------------------------------------------
 
-let aliveResult: boolean | null = true;
-let killCalled = false;
+// `vi.mock` is hoisted above every import, so the state its factory closes
+// over has to be hoisted with it.
+const tmux = vi.hoisted(() => ({ aliveResult: true as boolean | null, killCalled: false }));
 
-mockSrcModule("lib/core/agent/tmux.ts", () => ({
-  checkSessionAlive: () => aliveResult,
-  killSession: () => { killCalled = true; },
-  hasSession: () => aliveResult === true,
+vi.mock("../src/lib/core/agent/tmux.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/core/agent/tmux.ts")>()),
+  checkSessionAlive: () => tmux.aliveResult,
+  killSession: () => { tmux.killCalled = true; },
+  hasSession: () => tmux.aliveResult === true,
 }));
 
 const testPrefix = `test-kill-${process.pid}-${Date.now()}`;
@@ -46,8 +47,8 @@ function testSessionHandles(): string[] {
 
 describe("kill", () => {
   beforeEach(() => {
-    aliveResult = true;
-    killCalled = false;
+    tmux.aliveResult = true;
+    tmux.killCalled = false;
   });
 
   afterEach(() => {
@@ -59,38 +60,38 @@ describe("kill", () => {
   it("kills live tmux session and deletes state", () => {
     const handle = `${testPrefix}-live`;
     writeState(makeState(handle));
-    aliveResult = true;
+    tmux.aliveResult = true;
 
     kill(handle);
 
-    expect(killCalled).toBe(true);
+    expect(tmux.killCalled).toBe(true);
     expect(readState(handle)).toBeNull();
   });
 
   it("deletes state only when tmux session is already dead", () => {
     const handle = `${testPrefix}-dead`;
     writeState(makeState(handle));
-    aliveResult = false;
+    tmux.aliveResult = false;
 
     kill(handle);
 
-    expect(killCalled).toBe(false);
+    expect(tmux.killCalled).toBe(false);
     expect(readState(handle)).toBeNull();
   });
 
   it("throws on tmux uncertainty and preserves state", () => {
     const handle = `${testPrefix}-uncertain`;
     writeState(makeState(handle));
-    aliveResult = null;
+    tmux.aliveResult = null;
 
     expect(() => kill(handle)).toThrow("Cannot determine tmux status");
-    expect(killCalled).toBe(false);
+    expect(tmux.killCalled).toBe(false);
     expect(readState(handle)).not.toBeNull();
   });
 
   it("throws when no state file and tmux confirms dead", () => {
     const handle = `${testPrefix}-dead`;
-    aliveResult = false;
+    tmux.aliveResult = false;
 
     expect(() => kill(handle)).toThrow(`Session "${handle}" not found`);
   });
@@ -105,7 +106,7 @@ describe("kill", () => {
     writeState(makeState(handleA));
     writeState(makeState(handleB));
 
-    aliveResult = null;
+    tmux.aliveResult = null;
     const origCwd = process.cwd;
     process.cwd = () => TEST_SESSION_PATH;
     try {
@@ -121,7 +122,7 @@ describe("kill", () => {
   it("kill --all deletes state for dead sessions without killing", () => {
     const handle = `${testPrefix}-a`;
     writeState(makeState(handle));
-    aliveResult = false;
+    tmux.aliveResult = false;
 
     const origCwd = process.cwd;
     process.cwd = () => TEST_SESSION_PATH;
@@ -131,7 +132,7 @@ describe("kill", () => {
       process.cwd = origCwd;
     }
 
-    expect(killCalled).toBe(false);
+    expect(tmux.killCalled).toBe(false);
     expect(readState(handle)).toBeNull();
   });
 });
