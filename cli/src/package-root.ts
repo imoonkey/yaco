@@ -19,7 +19,7 @@
  *  `dist/yaco.mjs` from the bundle. So `../` is the package root in all three,
  *  and callers name assets instead of counting directories.
  */
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,24 @@ export function packagedAssetPath(...segments: string[]): string {
  *  `scripts/sync-agent-config.mjs` at build time, because npm cannot pack a path
  *  outside the package directory. */
 export const PACKAGED_SKILLS_DIR = packagedAssetPath("agent-config", "global", "skills");
+
+/** The skill names in a manifest directory — its child directories, ascending.
+ *
+ *  One enumeration for both readers of the manifest, because they have to agree:
+ *  install plants a link per name, doctor reports the names that have none. The
+ *  order is part of that agreement — doctor's failure detail names only the
+ *  first three missing skills, and a raw directory read makes *which* three an
+ *  artifact of the filesystem. Sorted by code unit, never `localeCompare`, so
+ *  the answer is a property of the names alone.
+ *
+ *  Throws like the read it wraps: a manifest that cannot be listed is a broken
+ *  installation, and each caller says so in its own words. */
+export function listSkillNames(skillsDir: string): string[] {
+  return readdirSync(skillsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
 
 /** A `yaco` on PATH that is a real installation — memoized against the PATH it
  *  was found under.

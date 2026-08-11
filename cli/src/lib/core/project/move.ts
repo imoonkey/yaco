@@ -131,10 +131,14 @@ export function moveCountRows(counts: MoveCounts): MoveCountRow[] {
   return rows;
 }
 
+/** Directory entries, ascending. Sorted at the read because the plan rows built
+ *  from it are the command's output: `project move --json` and the dry-run
+ *  report list them in this order, and a raw directory read leaves that order
+ *  undefined. By code unit, so it is a property of the names alone. */
 function safeReaddir(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
-    return readdirSync(dir);
+    return readdirSync(dir).sort();
   } catch {
     return [];
   }

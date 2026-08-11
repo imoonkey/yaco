@@ -3,13 +3,20 @@
  *  All six storage backends are exercised against tmpdir-staged fixtures
  *  with `$HOME` and `$YACO_HOME` redirected — no test ever touches the
  *  operator's real `~/.claude`, `~/.codex`, or `~/.yaco` state.
+ *
+ *  Every directory read in this file answers in descending name order — see
+ *  `mockDescendingReaddir` below, and the ordering describe at the end for what
+ *  that is for. It is the worst order the planners could be handed, so the rest
+ *  of the file also runs against it: an assertion here that quietly depended on
+ *  a directory read's order would fail rather than pass on this machine and
+ *  fail on another.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   applyPlan,
@@ -22,6 +29,19 @@ import type {
   CodexSessionPlanItem,
   CodexThreadsPlanItem,
 } from "../../../../src/lib/core/agent/providers/project-move.ts";
+
+/** Hand every reader in this file's module graph its directory entries in
+ *  descending name order, whatever the filesystem would have answered. */
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  const nameOf = (entry: unknown): string =>
+    typeof entry === "string" ? entry : String((entry as { name: unknown }).name);
+  const readdirSync = ((...args: unknown[]) => {
+    const entries = (fs.readdirSync as (...a: unknown[]) => unknown[])(...args);
+    return [...entries].sort((a, b) => (nameOf(a) < nameOf(b) ? 1 : nameOf(a) > nameOf(b) ? -1 : 0));
+  }) as typeof fs.readdirSync;
+  return { ...fs, readdirSync, default: { ...fs, readdirSync } };
+});
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const ORIGINAL_AGENT_DIR = process.env["YACO_AGENT_SESSIONS_DIR"];
@@ -728,5 +748,166 @@ describe("claude jsonl mtime preservation", () => {
     const afterMtimeMs = statSync(newFile).mtimeMs;
     // Should match the internal "7 days ago" timestamp, not the file mtime.
     expect(Math.abs(afterMtimeMs - sevenDaysAgo.getTime())).toBeLessThan(1000);
+  });
+});
+
+/** Plan rows are ordered by the names on disk, not by the directory read.
+ *
+ *  These arrays are the command's output: `project move --json` serializes the
+ *  plan verbatim and the dry-run report prints it row by row.
+ *
+ *  The fixtures are staged in descending order, but staging alone cannot carry
+ *  the assertion: a directory read only reflects creation order on filesystems
+ *  that keep it, and the tmpfs these tests run under answers in name order
+ *  however the directory was built — every assertion below would then hold with
+ *  the production sorts removed. `mockDescendingReaddir` closes that: whatever
+ *  a directory read would have answered, the readers under test receive it in
+ *  descending name order, on every machine, and still have to plan ascending.
+ *
+ *  The two `threads` cases need no such help — an unordered SELECT answers in
+ *  insertion order, which the fixture owns. */
+describe("planMove — plan row ordering", () => {
+  const HANDLES = ["alpha", "beta", "kappa", "mid", "zeta"];
+
+  it("orders yaco session rows by handle", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    for (const handle of [...HANDLES].reverse()) stageYacoSession(fix, handle, fix.oldPath);
+
+    const plan = planMove({ oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact" });
+    expect(plan.sessions.map((s) => s.handle)).toEqual(HANDLES);
+  });
+
+  const SUBTREES = ["alpha", "beta", "gamma"];
+
+  it("orders claude project items by encoded directory", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    for (const sub of [...SUBTREES].reverse()) {
+      stageClaudeProject(fix, join(fix.oldPath, sub), [`${sub}-0000-0000-0000-000000000001`]);
+    }
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(claudeItems(plan).map((i) => i.oldDir)).toEqual(
+      SUBTREES.map((sub) => join(fix.claudeHome, "projects", encodeClaudePath(join(fix.oldPath, sub)))),
+    );
+  });
+
+  const SESSION_IDS = [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222",
+    "33333333-3333-4333-8333-333333333333",
+  ];
+
+  it("orders a claude item's jsonl files", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageClaudeProject(fix, fix.oldPath, [...SESSION_IDS].reverse());
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(claudeItems(plan)[0]!.files).toEqual(SESSION_IDS.map((id) => `${id}.jsonl`));
+  });
+
+  it("reads an item's cwd from the first file by name", () => {
+    // Where the order decides more than a row position. The encoding is lossy —
+    // `<root>/src/alpha` and `<root>/src_alpha` produce the same directory name
+    // — so one directory can hold files carrying different cwd literals, and
+    // the item is planned from whichever file is read first. The decoy is named
+    // last, so a reader that took the read's first entry would plan nothing at
+    // all: the decoy's cwd is not the path being moved.
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const decoyCwd = join(fix.root, "src_alpha");
+    expect(encodeClaudePath(decoyCwd)).toBe(encodeClaudePath(fix.oldPath));
+
+    const dir = join(fix.claudeHome, "projects", encodeClaudePath(fix.oldPath));
+    mkdirSync(dir, { recursive: true });
+    const line = (cwd: string, id: string): string =>
+      JSON.stringify({ type: "user", cwd, sessionId: id, timestamp: "2026-06-04T00:00:00.000Z" }) + "\n";
+    writeFileSync(join(dir, "zzzzzzzz-0000-0000-0000-000000000002.jsonl"), line(decoyCwd, "z"));
+    writeFileSync(join(dir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl"), line(fix.oldPath, "a"));
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(claudeItems(plan)).toHaveLength(1);
+    expect(claudeItems(plan)[0]!.oldCwd).toBe(fix.oldPath);
+  });
+
+  /** Rollout ids paired with the day directory they live under, ascending by
+   *  full path. The days are interleaved so a walk that emitted whole days out
+   *  of order shows up too, not only one that misorders a single day. */
+  const ROLLOUTS: Array<[string, string]> = [
+    ["03", "aaaaaaaa-0000-0000-0000-000000000001"],
+    ["03", "cccccccc-0000-0000-0000-000000000003"],
+    ["05", "bbbbbbbb-0000-0000-0000-000000000002"],
+    ["05", "dddddddd-0000-0000-0000-000000000004"],
+  ];
+
+  it("orders codex rollout rows by path across day directories", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const path = ([day, id]: [string, string]): string =>
+      join(fix.codexHome, "sessions", "2026", "06", day, `rollout-2026-06-${day}T00-00-00-${id}.jsonl`);
+    for (const rollout of [...ROLLOUTS].reverse()) {
+      const file = path(rollout);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(
+        file,
+        JSON.stringify({
+          timestamp: "2026-06-04T00:00:00.000Z",
+          type: "session_meta",
+          payload: { id: rollout[1], cwd: fix.oldPath, originator: "codex_exec", cli_version: "0.0.0" },
+        }) + "\n",
+      );
+    }
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(codexSessionItems(plan).map((i) => i.file)).toEqual(ROLLOUTS.map(path));
+  });
+
+  const THREAD_IDS = ["t-alpha", "t-beta", "t-gamma"];
+
+  it("orders thread ids ascending though the rows were inserted descending", () => {
+    // SQLite leaves the row order of an unordered SELECT to the query plan, and
+    // a table scan follows insertion order — so a descending insert is what a
+    // missing ORDER BY answers with.
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageCodexState5(fix, [...THREAD_IDS].reverse().map((id) => ({ id, cwd: fix.oldPath })));
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(codexThreadItems(plan)).toHaveLength(1);
+    expect(codexThreadItems(plan)[0]!.ids).toEqual(THREAD_IDS);
+  });
+
+  it("orders thread buckets by ascending cwd in prefix mode", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageCodexState5(fix, [...SUBTREES].reverse().map((sub, i) => ({
+      id: `t-${i}`,
+      cwd: join(fix.oldPath, sub),
+    })));
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(codexThreadItems(plan).map((t) => t.oldCwd)).toEqual(
+      SUBTREES.map((sub) => join(fix.oldPath, sub)),
+    );
   });
 });

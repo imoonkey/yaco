@@ -25,7 +25,6 @@
 import {
   existsSync,
   lstatSync,
-  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -35,7 +34,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { PACKAGED_SKILLS_DIR, packagedAssetPath } from "../package-root.ts";
+import { listSkillNames, PACKAGED_SKILLS_DIR, packagedAssetPath } from "../package-root.ts";
 import { ok, type Result } from "../lib/core/result.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { emit } from "../lib/core/json.ts";
@@ -219,11 +218,12 @@ function checkSkillsLink(): CheckResult {
     );
   }
   if (!st.isDirectory()) return fail(name, `${claudeSkills}: not a directory`);
+  // The same enumeration `yaco install` plants links from, so the two readers
+  // of the manifest cannot drift — including in order, which decides *which*
+  // three of the missing links the detail below names.
   let skills: string[];
   try {
-    skills = readdirSync(skillsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    skills = listSkillNames(skillsDir);
   } catch (e) {
     return fail(name, `cannot read ${skillsDir}: ${(e as Error).message}`);
   }

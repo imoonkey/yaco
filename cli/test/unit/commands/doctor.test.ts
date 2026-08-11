@@ -10,7 +10,6 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -18,7 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
+import { listSkillNames, PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
 import { runAllChecks, REQUIRED_CHECKS } from "../../../src/commands/doctor.ts";
 import { runInstall } from "../../../src/commands/install.ts";
 import { runCli } from "../../helpers/cli-process.ts";
@@ -34,10 +33,7 @@ const ORIG = {
 
 /** One of the skills this package ships. The manifest is a package asset, so
  *  the fixtures have to be the real listing — there is no other one to stage. */
-const SHIPPED_SKILL: string = readdirSync(PACKAGED_SKILLS_DIR, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => e.name)
-  .sort()[0]!;
+const SHIPPED_SKILL: string = listSkillNames(PACKAGED_SKILLS_DIR)[0]!;
 
 let sandbox: string;
 let repoRoot: string;
@@ -333,6 +329,30 @@ describe("runAllChecks — individual failure modes", () => {
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
     expect(skills?.detail).toContain(SHIPPED_SKILL);
+  });
+
+  it("skills-link names the alphabetically-first three missing links, then the count", async () => {
+    // More missing than the detail shows, so *which* three it names is a
+    // choice — and it is the manifest listing that makes it. The links are
+    // removed in a scrambled order, and the five names are spread across the
+    // manifest, so neither removal order nor adjacency can produce this answer
+    // by accident. That the listing itself is ascending however the directory
+    // was built is pinned in `test/unit/package-root.test.ts`; the manifest is
+    // a package asset, so it is not a directory a test can rebuild.
+    await installPrereqs();
+    const shipped = listSkillNames(PACKAGED_SKILLS_DIR);
+    expect(shipped.length).toBeGreaterThanOrEqual(18);
+    const missing = [1, 5, 9, 13, 17].map((i) => shipped[i]!);
+    for (const i of [3, 0, 4, 2, 1]) {
+      rmSync(join(process.env["HOME"]!, ".claude", "skills", missing[i]!), { force: true });
+    }
+
+    const r = await runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("fail");
+    expect(skills?.detail).toContain(
+      `5 skill link(s) missing (${missing.slice(0, 3).join(", ")}, +2 more)`,
+    );
   });
 
   it("skills-link passes with a user-override real dir at a shipped name", async () => {
