@@ -215,26 +215,34 @@ function maxJsonlTimestamp(raw: string): Date | null {
   return best === null ? null : new Date(best);
 }
 
-/** Visit every `rollout-*.jsonl` under `root` in ascending path order.
+/** Every `rollout-*.jsonl` under `root`, ascending by full path — the order the
+ *  codex section of a move plan reports them in.
  *
- *  Descends in place rather than through a stack: a LIFO walk over sorted reads
- *  is defined but not sorted — it emits a directory's files before its
- *  subdirectories and those in reverse — and these paths are the rows of the
- *  codex section of a move plan. The tree is `sessions/YYYY/MM/DD`, so the
- *  recursion is three levels deep. */
-function walkRolloutFiles(root: string, visit: (file: string) => void): void {
-  for (const entry of safeReaddir(root)) {
-    const abs = join(root, entry);
-    let stats: ReturnType<typeof statSync>;
-    try { stats = statSync(abs); } catch { continue; }
-    if (stats.isDirectory()) {
-      walkRolloutFiles(abs, visit);
-      continue;
-    }
-    if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
-      visit(abs);
+ *  Sorted once at the end rather than at each read, because no traversal order
+ *  is path order: a directory and a file can share a prefix (`rollout-a/` next
+ *  to `rollout-a.jsonl`), and the directory sorts first as an entry name while
+ *  its children sort *after* the file as paths. Sorting the result is what makes
+ *  the contract the one word "ascending" — and it leaves the walk itself free to
+ *  stay iterative, which owes nothing to how deep the tree turns out to be. */
+function rolloutFiles(root: string): string[] {
+  const files: string[] = [];
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    for (const entry of safeReaddir(dir)) {
+      const abs = join(dir, entry);
+      let stats: ReturnType<typeof statSync>;
+      try { stats = statSync(abs); } catch { continue; }
+      if (stats.isDirectory()) {
+        stack.push(abs);
+        continue;
+      }
+      if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
+        files.push(abs);
+      }
     }
   }
+  return files.sort();
 }
 
 // --- Claude adapter --------------------------------------------------------
@@ -351,13 +359,13 @@ function planCodexSessions(inputs: ProjectMoveInputs): CodexSessionPlanItem[] {
   const root = join(providerHome(inputs, "codex", ".codex"), "sessions");
   if (!existsSync(root)) return [];
   const items: CodexSessionPlanItem[] = [];
-  walkRolloutFiles(root, (file) => {
+  for (const file of rolloutFiles(root)) {
     const cwd = readFirstCwd(file);
-    if (cwd === null) return;
+    if (cwd === null) continue;
     const next = translatePath(cwd, inputs.oldPath, inputs.newPath, inputs.mode);
-    if (next === null || next === cwd) return;
+    if (next === null || next === cwd) continue;
     items.push({ file, oldCwd: cwd, newCwd: next });
-  });
+  }
   return items;
 }
 

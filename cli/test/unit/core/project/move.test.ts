@@ -821,6 +821,13 @@ describe("planMove — plan row ordering", () => {
     // the item is planned from whichever file is read first. The decoy is named
     // last, so a reader that took the read's first entry would plan nothing at
     // all: the decoy's cwd is not the path being moved.
+    //
+    // What this pins is the *choice*, not that a mixed directory is handled: the
+    // item still carries every file in the directory, so applying it relocates
+    // the decoy's log along with the rest and leaves its `cwd` untouched. That
+    // is the behaviour on both sides of this commit — sorting decides which cwd
+    // wins, it does not split a directory by cwd. Naming it is a task of its own
+    // (see the review artifact's carried finding).
     const fix = tmpFixture();
     process.env["YACO_HOME"] = fix.yacoHome;
     const decoyCwd = join(fix.root, "src_alpha");
@@ -874,6 +881,32 @@ describe("planMove — plan row ordering", () => {
       providerHomeOverrides: homes(fix),
     });
     expect(codexSessionItems(plan).map((i) => i.file)).toEqual(ROLLOUTS.map(path));
+  });
+
+  it("orders a rollout row before the directory that shares its name prefix", () => {
+    // The shape no traversal order gets right on its own: `rollout-a` sorts
+    // before `rollout-a.jsonl` as an entry name, so a walk that emitted as it
+    // descended would put the directory's children first — while as *paths*,
+    // `…/rollout-a.jsonl` precedes `…/rollout-a/rollout-z.jsonl` ("." < "/").
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const day = join(fix.codexHome, "sessions", "2026", "06", "04");
+    const sibling = join(day, "rollout-a.jsonl");
+    const nested = join(day, "rollout-a", "rollout-z.jsonl");
+    const meta = JSON.stringify({
+      timestamp: "2026-06-04T00:00:00.000Z",
+      type: "session_meta",
+      payload: { id: "x", cwd: fix.oldPath, originator: "codex_exec", cli_version: "0.0.0" },
+    }) + "\n";
+    mkdirSync(dirname(nested), { recursive: true });
+    writeFileSync(nested, meta);
+    writeFileSync(sibling, meta);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(codexSessionItems(plan).map((i) => i.file)).toEqual([sibling, nested]);
   });
 
   const THREAD_IDS = ["t-alpha", "t-beta", "t-gamma"];

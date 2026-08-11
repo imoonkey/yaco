@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-11: the doctor skill list and every `project move` plan row are ordered
+
+**What changed:**
+- `yaco doctor`'s `skills-link` failure names three of the missing links and counts the rest, and it chose those three from a raw directory read. The duplication was the defect, not the missing `.sort()`: `yaco install` already owned a sorted enumeration of the same manifest and the check carried an unsorted inline copy of it. The listing now lives once, as `package-root.ts#listSkillNames`, next to the `PACKAGED_SKILLS_DIR` it lists — doctor cannot import it from `install.ts`, because `install.ts` imports doctor.
+- `yaco project move` builds its plan from four unordered sources and the plan **is** the output: `--json` serializes it verbatim, the dry-run report prints it row by row. Session state files and `~/.claude/projects` entries are read sorted; a claude item's `.jsonl` list is sorted, which is more than a row order (the item's `cwd` is read from the first file, so on a lossy-encoding collision that choice decides whether the move happens at all); rollout rows are collected and sorted by full path; both `threads` selects order by `id`, the ids in a bucket are sorted, and buckets are ordered by `oldCwd`.
+- **The rollout walk is sorted at the end, not at each read** — a review finding. No traversal order is path order: a directory and a file can share a prefix (`rollout-a/` beside `rollout-a.jsonl`) and the directory sorts first as an entry name while its children sort after the file as paths. Collecting the walk and sorting once makes the one-word contract true and leaves the walk iterative, owing nothing to how deep the tree turns out to be.
+- **The tests are the interesting half.** Staging a fixture "deliberately non-alphabetical" proves nothing here: a directory read reflects creation order only on filesystems that keep it, and the tmpfs under `/tmp` answers in name order however the directory was built — every new assertion held with all the production sorts deleted. Both test files now mock `node:fs` so `readdirSync` answers **descending**, whatever the filesystem would have said. With the sorts removed, all eight ordering assertions fail and the other 20 tests in `move.test.ts` still pass, so the mock is not distorting the file it runs in.
+
+**Why:**
+- Found by the `cli-order-determinism` reviewer and deliberately left out of that task's scope. Same defect class, same fix shape, one commit later.
+
+**Carried out, not fixed here** (reported by the review, reproduced): a Claude project directory can hold logs for *different* literal cwds, because the encoding is lossy — `<root>/src/alpha` and `<root>/src_alpha` encode identically. The plan reads one cwd and moves the whole directory, so the foreign log travels along and keeps its own `cwd`. Sorting makes *which* cwd wins deterministic; it does not split a directory by cwd. Fixing it means reading every file's cwd literal in every candidate directory, which is a cost decision (a real `~/.claude/projects` is hundreds of MB), so it is a task, not a rider on this one.
+
+**Key files:** `cli/src/package-root.ts`, `cli/src/commands/{doctor,install}.ts`, `cli/src/lib/core/project/move.ts`, `cli/src/lib/core/agent/providers/project-move.ts`, `cli/test/unit/{package-root,commands/doctor,core/project/move}.test.ts`, `doc/main/cli/{architecture,doctor,providers}.md`, `doc/dev/cli/workflow.md`
+**Verification:** `scripts/verify.sh` all steps (1378 CLI unit tests, pack smoke, `app/server`, root build); mutation check — every ordering assertion fails with its sort removed; QA on the shipped artifact in an isolated `HOME`/`YACO_HOME` (16 checks: doctor twice over, the missing-link detail, the move plan in both output modes, the apply, the threads buckets); one cross-provider Codex review round (1 High carried, 1 Low fixed).
+**Commit:** `16545a56..HEAD`
+**Next:** the multi-cwd claude directory above.
+**Blockers:** None.
+
 ## 2026-08-11: the history read moves in process — the fifth and last Phase-2 cutover
 
 **What changed:**
