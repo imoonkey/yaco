@@ -52,7 +52,11 @@ beforeEach(() => {
   process.env["YACO_HOME"] = join(sandbox, "yaco");
   process.env["YACO_BIN_DIR"] = join(sandbox, "bin");
   mkdirSync(process.env["YACO_BIN_DIR"]!, { recursive: true });
+  // A stand-in yaco checkout: install registers a repo that carries this
+  // package's manifest, and several checks below read what it wrote.
   repoRoot = join(sandbox, "repo");
+  mkdirSync(join(repoRoot, "cli"), { recursive: true });
+  writeFileSync(join(repoRoot, "cli", "package.json"), JSON.stringify({ name: "@yaco/cli" }));
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   // Minimal valid tasks graph for the task-graph check.
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });

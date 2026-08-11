@@ -13,10 +13,13 @@
  *  the original capture was not: it verifies the recorded artifacts, it does not
  *  re-run the pre-ordering code.
  *
- *  A case whose observable was later changed on purpose is no longer comparable
- *  at all, and pretending otherwise would mean loosening the comparison for
- *  every case to excuse two. {@link INTENTIONAL_DELTAS} names those two instead,
- *  so the exemption is as narrow and as legible as the change that earned it. */
+ *  A case whose observable was later changed on purpose stays in the comparison;
+ *  what {@link INTENTIONAL_DELTAS} exempts is the individual *fields* that
+ *  changed, and nothing else. Dropping the whole case would be the easy version
+ *  and it waives too much — every unrelated field of that case would stop being
+ *  compared, and an unintended change captured in the same recapture would sail
+ *  through both this file and the recapture test. `durable` is not exemptible at
+ *  all: no intentional output change may quietly move `$YACO_HOME` state. */
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -58,23 +61,38 @@ function orderFreeStdout(stdout: string): string {
   }
 }
 
-/** Cases whose output changed deliberately after `matrix.original.json` was
- *  captured, mapped to the change that did it. Everything not named here is
- *  still held to order-only. */
-const INTENTIONAL_DELTAS: Record<string, string> = {
-  "doctor-json":
-    "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
-    "`skills-link` resolves the manifest from the package rather than through it",
-  "install-dry-run-json":
-    "`install` no longer needs a checkout, so a root that is not one plans the " +
-    "install (exit 0) instead of refusing it (ENV)",
+/** Fields a case is allowed to have changed for a reason other than ordering,
+ *  and the change that earned it. `durable` is deliberately not in the union. */
+type ExemptField = "stdout" | "stderr" | "exitCode";
+const INTENTIONAL_DELTAS: Record<string, { fields: readonly ExemptField[]; why: string }> = {
+  "doctor-json": {
+    fields: ["stdout"],
+    why:
+      "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
+      "`skills-link` resolves the manifest from the package rather than through it",
+  },
+  "install-dry-run-json": {
+    fields: ["stdout", "stderr", "exitCode"],
+    why:
+      "`install` no longer needs a checkout, so a root that is not one plans the " +
+      "install (exit 0) instead of refusing it (ENV, exit 3, message on stderr)",
+  },
 };
 
-/** Case pairs still comparable between the two matrices. */
 function pairs(): [CaseResult, CaseResult][] {
-  return original.cases
-    .map((before, i): [CaseResult, CaseResult] => [before, current.cases[i]!])
-    .filter(([before]) => !(before.id in INTENTIONAL_DELTAS));
+  return original.cases.map((before, i): [CaseResult, CaseResult] => [before, current.cases[i]!]);
+}
+
+/** A case reduced to what the two matrices must still agree on: every observable
+ *  the case was not granted, with stdout stripped of order when it reads a
+ *  directory. */
+function comparable(c: CaseResult, orderFree: boolean): Record<string, unknown> {
+  const exempt = new Set<string>(INTENTIONAL_DELTAS[c.id]?.fields ?? []);
+  const out: Record<string, unknown> = { durable: c.durable };
+  if (!exempt.has("exitCode")) out["exitCode"] = c.exitCode;
+  if (!exempt.has("stderr")) out["stderr"] = c.stderr;
+  if (!exempt.has("stdout")) out["stdout"] = orderFree ? orderFreeStdout(c.stdout) : c.stdout;
+  return out;
 }
 
 describe("ordering delta: original Bun baseline → post-ordering baseline", () => {
@@ -86,17 +104,16 @@ describe("ordering delta: original Bun baseline → post-ordering baseline", () 
   it("leaves every case that does not read a directory byte-identical", () => {
     for (const [before, after] of pairs()) {
       if (CASES.find((c) => c.id === before.id)!.orderSensitive) continue;
-      expect({ [before.id]: after }).toEqual({ [before.id]: before });
+      expect({ [before.id]: comparable(after, false) }).toEqual({
+        [before.id]: comparable(before, false),
+      });
     }
   });
 
   it("changes nothing but order in the cases that do", () => {
     for (const [before, after] of pairs()) {
-      expect({ [before.id]: after.exitCode }).toEqual({ [before.id]: before.exitCode });
-      expect({ [before.id]: after.stderr }).toEqual({ [before.id]: before.stderr });
-      expect({ [before.id]: after.durable }).toEqual({ [before.id]: before.durable });
-      expect({ [before.id]: orderFreeStdout(after.stdout) }).toEqual({
-        [before.id]: orderFreeStdout(before.stdout),
+      expect({ [before.id]: comparable(after, true) }).toEqual({
+        [before.id]: comparable(before, true),
       });
     }
   });
@@ -104,11 +121,29 @@ describe("ordering delta: original Bun baseline → post-ordering baseline", () 
   it("exempts nothing it did not name", () => {
     const ids = new Set(current.cases.map((c) => c.id));
     for (const id of Object.keys(INTENTIONAL_DELTAS)) expect(ids.has(id)).toBe(true);
-    expect(pairs()).toHaveLength(original.cases.length - Object.keys(INTENTIONAL_DELTAS).length);
+    // Every case still reaches the comparison, and every one of them still has
+    // its durable state compared — the exemptions take fields, never cases.
+    expect(pairs()).toHaveLength(original.cases.length);
+    for (const [before] of pairs()) expect(comparable(before, false)["durable"]).toBeDefined();
+  });
+
+  it("holds each exempted case to the exact change that was claimed", () => {
+    // The named field must actually have moved. An exemption for a field that
+    // did not change is a waiver nobody needs, left behind to cover the next one.
+    for (const [before, after] of pairs()) {
+      const delta = INTENTIONAL_DELTAS[before.id];
+      if (!delta) continue;
+      for (const field of delta.fields) {
+        expect({ [`${before.id}.${field}`]: after[field] }).not.toEqual({
+          [`${before.id}.${field}`]: before[field],
+        });
+      }
+    }
   });
 
   it("actually reordered output — the delta is not vacuous", () => {
     const reordered = pairs()
+      .filter(([before]) => !(before.id in INTENTIONAL_DELTAS))
       .filter(([before, after]) => before.stdout !== after.stdout)
       .map(([before]) => before.id);
     // Five out-of-order session fixtures and three project logs reach several

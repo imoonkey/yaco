@@ -28,6 +28,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -232,7 +233,25 @@ function checkSkillsLink(): CheckResult {
     const more = missing.length > 3 ? `, +${missing.length - 3} more` : "";
     return fail(name, `${missing.length} skill link(s) missing (${shown}${more}) — re-run \`yaco install\``);
   }
-  return pass(name, `${claudeSkills} (${skills.length} skills from ${skillsDir})`);
+  // Every name resolves, which is the pass condition — but not every one need
+  // resolve to *our* copy: install keeps a same-name real directory, and
+  // retargets a link the user pointed elsewhere only under --force. Saying how
+  // many are theirs is the difference between "22 skills" and a report that
+  // reads as a clean install while some of it is somebody else's.
+  const overrides = skills.filter((s) => !resolvesInside(join(claudeSkills, s), join(skillsDir, s)));
+  const note = overrides.length > 0 ? `; ${overrides.length} user override(s)` : "";
+  return pass(name, `${claudeSkills} (${skills.length} skills from ${skillsDir}${note})`);
+}
+
+/** Whether `entry` is this package's copy of `target` rather than something the
+ *  user put at that name. Compared by realpath, so a symlinked home or an alias
+ *  of the same file is not mistaken for an override. */
+function resolvesInside(entry: string, target: string): boolean {
+  try {
+    return realpathSync(entry) === realpathSync(target);
+  } catch {
+    return false;
+  }
 }
 
 /** `agent-hook-config` (stable check name): pass when at least one provider has

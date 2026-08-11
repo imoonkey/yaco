@@ -138,14 +138,17 @@ describe("npm pack contains only intended files", () => {
     // Without them the package is a CLI and none of the behaviour it drives —
     // and `npm pack` drops a symlinked directory silently, so this is the only
     // assertion that can tell a real copy from one.
-    const shipped = new Set(
-      tarballEntries
-        .filter((p) => p.startsWith("agent-config/global/skills/"))
-        .map((p) => p.split("/")[3]!),
-    );
-    expect(shipped.size).toBe(
-      readdirSync(join(CLI_DIR, "agent-config", "global", "skills"), { withFileTypes: true })
-        .filter((e) => e.isDirectory()).length,
+    const shipped = tarballEntries
+      .filter((p) => p.startsWith("agent-config/global/skills/"))
+      .map((p) => p.split("/")[3]!);
+    // Compared against the repo's tree, not the mirror inside the package: the
+    // mirror is what the tarball was made from, so comparing them would only
+    // ask whether tar dropped something, never whether the mirror is complete.
+    expect([...new Set(shipped)].sort()).toEqual(
+      readdirSync(join(REPO_ROOT, "agent-config", "global", "skills"), { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+        .sort(),
     );
     expect(tarballEntries).toContain("agent-config/global/skills/implement/SKILL.md");
     expect(tarballEntries).toContain("package.json");

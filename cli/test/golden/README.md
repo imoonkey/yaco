@@ -26,10 +26,11 @@ A matrix is only comparable to another with the same `casesDigest`. Changing
 comparison rather than updating it.
 
 Recapture `matrix.json` whenever a captured observable changes on purpose, and
-name the case in `ordering-delta.test.ts`'s `INTENTIONAL_DELTAS` with the reason —
-that file compares the two matrices, and a case that changed for a reason other
-than ordering is no longer comparable. Exempting it by name keeps the comparison
-strict everywhere else.
+declare it in `ordering-delta.test.ts`'s `INTENTIONAL_DELTAS` — the **exact
+fields** that changed, plus the reason. That file compares the two matrices, and
+it exempts fields, never whole cases: `durable` is never exemptible, every other
+field of the case is still compared, and an exemption for a field that did not
+actually move is itself a failure.
 
 `install-dry-run-json` plans one action per shipped skill, so **adding or removing
 a skill under `agent-config/global/skills/` requires a recapture** — an honest

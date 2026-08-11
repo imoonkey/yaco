@@ -35,7 +35,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { CliError, ErrCode } from "../lib/core/errors.ts";
@@ -277,15 +277,22 @@ function realpathOr(p: string): string {
   }
 }
 
-/** Whether `repoRoot` is the yaco source repo, which is a different question
- *  from whether it is a project.
+/** Whether `repoRoot` is the yaco source repo — the only repo with a "yaco"
+ *  registry entry to upsert (see {@link upsertRegistry}).
  *
- *  The marker is the skills source the package ships a mirror of: a checkout has
- *  it, and a directory an `npm i -g` user happened to be standing in does not.
- *  Only the source repo has a "yaco" registry entry to upsert — see
- *  {@link upsertRegistry}. */
+ *  This asks for repository *identity*, not a directory layout: the marker is
+ *  the manifest of the package this command was installed from. A layout marker
+ *  would answer yes for any repo that happens to carry an `agent-config/` tree —
+ *  someone's dotfiles, another agent-configuration project — and register it
+ *  under a reserved name it does not own. */
+const CLI_PACKAGE_NAME = "@yaco/cli";
 function isYacoCheckout(repoRoot: string): boolean {
-  return isDirectory(join(repoRoot, "agent-config", "global", "skills"));
+  try {
+    const manifest = readFileSync(join(repoRoot, "cli", "package.json"), "utf-8");
+    return (JSON.parse(manifest) as { name?: unknown }).name === CLI_PACKAGE_NAME;
+  } catch {
+    return false;
+  }
 }
 
 /** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json.
@@ -373,11 +380,28 @@ function installGlobalLinks(force: boolean, actions: string[], dryRun: boolean):
     );
   }
   const claudeSkills = join(home, ".claude", "skills");
-  ensureSkillsContainer(claudeSkills, skillsDir, force, actions, dryRun);
+  ensureSkillsContainer(claudeSkills, force, actions, dryRun);
   for (const name of listSkillNames(skillsDir)) {
     plantSkillLink(name, join(claudeSkills, name), join(skillsDir, name), force, actions, dryRun);
   }
   upsertSymlink(join(home, ".agents", "skills"), claudeSkills, force, actions, dryRun);
+}
+
+/** Whether a path is a yaco skills directory — the packaged one, or the
+ *  `agent-config/global/skills` of a checkout an older install linked to.
+ *
+ *  Every link this installer ever planted names one, so this is how an upgrade
+ *  tells its own past output apart from a link the user chose. Without it, the
+ *  move to a packaged manifest would land as 22 links reported "user-managed"
+ *  and left pointing into a clone the user is free to delete — a silent no-op
+ *  upgrade that only fails much later, when the clone goes.
+ *
+ *  Matching on the path's shape rather than on one expected checkout is what
+ *  makes it hold when the links were planted from a different clone, a worktree,
+ *  or a path this run has no way to know. */
+const SKILLS_DIR_SHAPE = join("agent-config", "global", "skills");
+function isYacoSkillsDir(path: string): boolean {
+  return path === SKILLS_DIR_SHAPE || path.endsWith(sep + SKILLS_DIR_SHAPE);
 }
 
 /** Skill names = the child directories of agent-config/global/skills. */
@@ -396,14 +420,14 @@ function resolveLinkTarget(linkPath: string, current: string): string {
 
 /** Make ~/.claude/skills a real directory to merge into.
  *
- *  A pre-existing whole-directory symlink to OUR skillsDir is the pre-v0.1
- *  layout — migrate it in place (unlink, mkdir; per-skill links follow). A
- *  symlink anywhere else keeps the same protection upsertSymlink gave the old
- *  layout: refuse without --force, so an install run from a transient checkout
- *  can't silently capture the user's global skills. */
+ *  A pre-existing whole-directory symlink to a yaco skills directory is the
+ *  pre-v0.1 layout — migrate it in place (unlink, mkdir; per-skill links
+ *  follow), whether it names the packaged manifest or the checkout an older
+ *  install pointed it at. A symlink anywhere else keeps the same protection
+ *  upsertSymlink gave the old layout: refuse without --force, so an install run
+ *  from a transient checkout can't silently capture the user's global skills. */
 function ensureSkillsContainer(
   path: string,
-  skillsDir: string,
   force: boolean,
   actions: string[],
   dryRun: boolean,
@@ -422,8 +446,7 @@ function ensureSkillsContainer(
   }
   if (st.isSymbolicLink()) {
     const current = readlinkSync(path);
-    const ours = realpathOr(resolveLinkTarget(path, current)) === realpathOr(skillsDir);
-    if (!ours && !force) {
+    if (!isYacoSkillsDir(resolveLinkTarget(path, current)) && !force) {
       throw new CliError(
         ErrCode.CONFLICT,
         `${path} already points at ${current}; refusing to retarget to a per-skill directory (re-run with --force, or --skip-links to leave it alone)`,
@@ -449,7 +472,11 @@ function ensureSkillsContainer(
 
 /** Plant one per-skill symlink, additively: never clobber a user's real
  *  file/dir of the same name; retarget a foreign live symlink only with
- *  --force; always replace a dangling one (it serves nobody). */
+ *  --force; always replace a dangling one (it serves nobody).
+ *
+ *  A live link into some *other* yaco skills directory is not foreign — it is
+ *  this installer's own earlier output, from when the manifest was a checkout —
+ *  so it is migrated without --force. See {@link isYacoSkillsDir}. */
 function plantSkillLink(
   name: string,
   linkPath: string,
@@ -471,9 +498,10 @@ function plantSkillLink(
     return;
   }
   const current = readlinkSync(linkPath);
-  if (realpathOr(resolveLinkTarget(linkPath, current)) === realpathOr(target)) return;
+  const resolved = resolveLinkTarget(linkPath, current);
+  if (realpathOr(resolved) === realpathOr(target)) return;
   const dangling = !existsSync(linkPath);
-  if (!dangling && !force) {
+  if (!dangling && !isYacoSkillsDir(dirname(resolved)) && !force) {
     actions.push(`skip ${name}: links to ${current} (user-managed; --force to retarget)`);
     return;
   }
