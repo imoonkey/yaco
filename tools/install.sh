@@ -138,9 +138,13 @@ install_cli_dependencies() {
   # Copy, never replace: node_modules may already hold something this bootstrap
   # did not put there. The `.bin` entries and the workspace self-links npm writes
   # are relative, so they resolve correctly against the real tree once moved.
-  rm -f "$deps/node_modules/.package-lock.json"
   mkdir -p "$REPO_ROOT/node_modules"
   cp -R "$deps/node_modules/." "$REPO_ROOT/node_modules/"
+  # Neither record describes the merged tree — the staged one omits whatever was
+  # already in the destination, and the destination's predates the copy — so
+  # both go. An absent hidden lock makes the next npm operation verify the tree
+  # instead of trusting metadata written for a different one.
+  rm -f "$deps/node_modules/.package-lock.json" "$REPO_ROOT/node_modules/.package-lock.json"
 }
 
 probe_log="$stage/pack.log"

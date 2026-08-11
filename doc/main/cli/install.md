@@ -141,9 +141,10 @@ Bun-era bootstrap used, which had the identical problem.
 Two consequences worth knowing. The root `scripts` are stripped from the staged
 manifest because the repo's own `postinstall` reaches into `app/scripts/`, which
 a dependency stage has no reason to carry; each *dependency's* install scripts
-still run, which is what makes the copied tree usable. And npm's hidden lock is
-not copied across: the merged tree is not the one either record describes, so
-leaving it absent makes a later `npm install` verify rather than trust.
+still run, which is what makes the copied tree usable. And **both** hidden locks are removed — the staged one, which omits whatever was
+already in the destination, and the destination's, which predates the copy.
+Neither describes the merged tree, and leaving either would hand a later npm
+operation metadata written for a different one. Absent, it verifies instead.
 
 `cli/test/integration/install.test.ts` bootstraps a real `git archive` clone for
 each of these paths, and `cli/test/integration/pack.test.ts` takes the tarball

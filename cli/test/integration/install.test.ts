@@ -366,6 +366,10 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     // Everything that was there before is still there.
     expect(existsSync(join(foreign, "marker"))).toBe(true);
     expect(existsSync(secondWorkspaceLink)).toBe(true);
+    // ...except the record, which described the tree before the merge and now
+    // describes nothing that exists. Leaving it would hand a later npm
+    // operation metadata for the wrong tree — here, a corrupt one.
+    expect(existsSync(join(clone, "node_modules", ".package-lock.json"))).toBe(false);
   }, 300_000);
 
   it("bootstraps from a checkout path containing a URL-significant character", () => {
