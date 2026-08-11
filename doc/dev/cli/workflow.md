@@ -187,6 +187,29 @@ npm run test:integration  # reinstalls CLI, then tmux-backed integration tests
 All four are steps in `scripts/verify.sh` except `test:integration`, which needs
 tmux and a real provider.
 
+### Re-running the read-path measurements
+
+Every before/after figure in [read-path.md](../../main/cli/read-path.md) comes
+from one of these. The starvation harnesses queue a timer, keep re-queuing it
+for as long as a route runs, and report the worst gap per invocation — so they
+measure what an unrelated already-queued request waits, not the route's own wall
+time. `--home` reads a real provider home; it is read-only, and needs
+`--project` plus a `YACO_HOME` holding that home's session state files.
+
+```bash
+node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
+node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
+node cli/test/bench/history-stall.ts [--scale 1|10] [--chunks 1,2,4,8,16]
+node --experimental-strip-types cli/test/bench/message-read-bench.mjs
+```
+
+Two of the gates are committed tests rather than benches, and run in
+`scripts/verify.sh`: `app/server/src/routes/__tests__/tasks-read-starvation.test.ts`
+(the complete route comparison, which is why it lives in `app/server` — the old
+route's synchronous `ssh-add` discovery is imported, not reconstructed) and
+`cli/test/integration/task/read-starvation.integration.ts`. Both are skipped
+with a stated reason when `cli/dist` is unbuilt.
+
 ### One runner, two projects
 
 Everything runs under Vitest. `cli-sqlite-hop` moved the last six files —

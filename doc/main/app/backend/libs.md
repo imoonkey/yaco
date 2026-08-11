@@ -116,6 +116,8 @@ Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.jso
 
 **Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryAgentStatus()`, `fetchHistory()`, `inspectSessionMessages()`, `sendToSession()`, `captureSession()`, `startAgentSession()`, `closeAgentSession()`, `renameAgentSession()`, `AgentSession`, `AgentSessionState`, `CliHistorySession`, `isPathDescendantOrEqual()`
 
+**Four reads are no longer in this contract** — the task graph, session-list labels, the provider catalog and the channel `/last` message read call `@yaco/cli` exports in this process. Everything below still spawns. -> See: [../../cli/read-path.md](../../cli/read-path.md)
+
 **CLI spawn contract.** Every call passes `--json` and is funneled through `runYacoAgentJson(args, timeout, what)` which `spawn`s `YACO_PATH` with `['agent', ...]` argv (no shell — argv-safe), parses the `{ok,data}/{ok,error}` envelope, and throws `yaco <X> failed [CODE]: message` when the CLI reports a failure (the stderr envelope is preserved into the thrown Error). The only direct `spawn` (no envelope unwrap) is `startAgentSession`, which runs the CLI detached and watches the state-file directory for the new handle — it can't wait for the envelope because the CLI keeps running in the background.
 
 - `readSessionsFromStateFiles(project)` reads the global sessions dir and filters by `sessionPath` descendant-matching the registered project path
@@ -142,7 +144,7 @@ Returns session history for the History tab via the CLI, in the UI-facing shape.
 
 - `getHistory(projectPath, liveSessions)` — calls `fetchHistory(projectPath)` (`agent.ts` → `yaco agent history --path <p> --json`), then maps each CLI row to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`) and tags `liveSessionName` by matching CLI `sessionId` against the live `AgentSession[]` (skipping `pending:awaiting-first-prompt`). Sorting and the default 200-row `--limit` are CLI-owned.
 - Provider-home reads (`~/.claude` JSONL, `~/.codex` SQLite/`session_index.jsonl`) now live in the CLI provider adapters; app/server never opens them. -> See: `doc/main/cli/providers.md`.
-- The spawn is measured, not assumed. Pulling the read in process was benchmarked under concurrent load: the CLI reader as it stands starves an already-queued timer to p95 79 ms against this route's 42 ms, but a bounded, chunked form of it comes in at 13 ms and 3× faster, so the path is admitted for a later cutover — in that form only. -> See: [../../cli/exports.md](../../cli/exports.md#the-one-query-rule-5-has-judged).
+- The spawn is measured, not assumed. Pulling the read in process was benchmarked under concurrent load: the CLI reader as it stands starves an already-queued timer to p95 79 ms against this route's 42 ms, but a bounded, chunked form of it comes in at 13 ms and 3× faster, so the path is admitted for a later cutover — in that form only, and `history-read-land` is the successor task. -> See: [../../cli/read-path.md](../../cli/read-path.md#the-history-read-measured-admitted-and-still-a-subprocess), [../../cli/exports.md](../../cli/exports.md#the-queries-rule-5-has-judged).
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, tokens, gitBranch, liveSessionName }` — `tokens` is the last turn's total token count (a cheap session-size signal read from the log tail; `null` when no usage record is reachable). `provider` is `string` (no longer a `'claude' | 'codex'` union).
 
 ### notify.ts (~40 lines)

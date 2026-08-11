@@ -17,12 +17,17 @@ app, the `yaco` CLI/runtime, and global agent configuration.
 
 - `app/server` invokes installed `yaco ... --json` commands for agent, task,
   and worktree operations, then maps the CLI envelope into HTTP responses.
-  Reads are migrating in process one route at a time, each keeping the
-  subprocess as its rollback path; task GET went first. Mutations do not move —
-  the lock, the repository gate and the write are one authority.
-  -> See: [cli/task.md](cli/task.md#reading)
-- `cli/package.json` exports shared TypeScript primitives for app/server:
-  `@yaco/cli/core/paths`, `@yaco/cli/core/task`, `@yaco/cli/core/agent`,
+  **Four reads no longer spawn** — the task GET, the session-list labels, the
+  provider catalog before a start, and the channel `/last` message read call the
+  CLI's own function in process. Everything else does, including the history
+  tab, which was measured and deliberately left a subprocess. Mutations and
+  lifecycle do not move — the lock, the repository gate and the write are one
+  authority, and tmux is another.
+  -> See: [cli/read-path.md](cli/read-path.md)
+- `cli/package.json` exports shared TypeScript primitives for app/server, and
+  `app/server` imports all eight subpaths in process: `@yaco/cli/core/paths`,
+  `@yaco/cli/core/task`, `@yaco/cli/core/agent`,
+  `@yaco/cli/core/agent/messages`, `@yaco/cli/core/agent/summaries`,
   `@yaco/cli/core/worktree`, `@yaco/cli/core/result`, and
   `@yaco/cli/core/errors`. What an entry may publish is a contract, not a
   preference — these run inside the app's event loop — and a checked-in audit
