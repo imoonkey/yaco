@@ -18,7 +18,7 @@
 
 **Verification:** `scripts/verify.sh` green end to end — and this is the first run in this worktree that validated *this branch's* CLI. `scripts/worktree-provision.test.sh`: 73 assertions, hermetic, and every guard it covers shown red against a variant of the script with that guard removed. End-to-end proof in a worktree made by `yaco worktree create` (which ran main's still-old script, so it arrived broken): a branch-local `cli/src` export was `undefined` to the branch's own `app/server` test, then correct after re-provisioning; full `app/server` unit suite 54 files / 873 tests green there. Main's `node_modules` fingerprinted unchanged across every provisioning run and the worktree cleanup.
 
-**Key files:** `scripts/{worktree-provision.sh,worktree-provision.test.sh,verify.sh}`, `app/server/test/workspace-resolution.test.ts`, `doc/dev/README.md`, `agent-config/global/skills/yaco-worktree/SKILL.md`
+**Key files:** `scripts/{worktree-provision.sh,worktree-provision.test.sh,verify.sh}`, `app/server/test/workspace-resolution.test.ts`, `doc/dev/README.md`, `doc/dev/app/workflow.md`, `doc/main/cli/worktree.md`, `agent-config/global/skills/yaco-worktree/SKILL.md`
 **Next:** the hermetic provisioning test is not in `.github/workflows/ci.yml`, which runs component commands rather than `verify.sh`.
 **Blockers:** None.
 

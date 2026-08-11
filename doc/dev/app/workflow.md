@@ -297,6 +297,13 @@ cd app/ui && npx playwright test tests/e2e/foo.spec.ts   # Single spec
 cd app/ui && npm run lint                                # ESLint
 ```
 
+**In a worktree, build the CLI before `npm test`.** A few server tests spawn a plain
+`node --import tsx` child, which resolves `@yaco/cli/*` to `cli/dist/` rather than the
+source — unbuilt, that is `ERR_MODULE_NOT_FOUND`. `scripts/verify.sh` orders `cli build`
+ahead of `server test`; a bare `npm test` here does not.
+-> See: [dev/README.md](../README.md#worktrees-share-the-dependencies-never-the-workspace-links)
+for why a worktree resolves `@yaco/*` to its own checkout at all.
+
 E2E env knobs: `E2E_WORKERS=N` tunes parallelism (default 6; lower on a busy box);
 `E2E_SKIP_BUILD=1` reuses the existing `dist-e2e` instead of rebuilding (fast
 iteration); `E2E_REUSE=1` runs against the **live dev server** (`5173/3001`, real
