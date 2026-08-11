@@ -131,9 +131,12 @@ subprocess runs.
 ## `task-graph` in-process
 
 The `task-graph` check used to spawn `yaco task validate --json` as a child
-bun process; now it runs `validateGraph(loadTaskStore(tasksPath).tasks)` directly
-(both are pure helpers in `lib/core/task`). Eliminates one bun startup per
-doctor run and avoids the test-mode argv plumbing nightmare.
+bun process; now it runs `validateGraph((await loadTaskStore(tasksPath)).tasks)`
+directly (both are pure helpers in `lib/core/task`). Eliminates one bun startup
+per doctor run and avoids the test-mode argv plumbing nightmare. The `await` is
+why `runAllChecks` and `runInstall` are asynchronous: the store walk is
+`fs/promises` for the sake of the app that also calls it.
+-> See: [task.md](task.md#reading)
 
 It is graph integrity only, so it is **not** equivalent to `yaco task validate`:
 that command additionally fails on a cross-host stale lock

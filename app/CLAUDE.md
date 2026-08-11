@@ -16,7 +16,7 @@ React/Vite frontend.
 - `server/` — Hono API, SSE, WebSocket terminal, filesystem/tmux/yaco integration.
 - `ui/` — React 19 + Vite workspace UI.
 - Runtime state resolves through `${YACO_HOME:-~/.yaco}` and shared path helpers from `@yaco/cli/core/paths`.
-- Session management shells out to installed `yaco agent ... --json`; task mutations shell out to `yaco task ... --json`.
+- Session management shells out to installed `yaco agent ... --json`; task mutations shell out to `yaco task ... --json`. Task **reads** are in process via `@yaco/cli/core/task#readTaskList` — the GET spawns nothing. -> See: [../doc/main/cli/task.md](../doc/main/cli/task.md#reading)
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-08-11 (read-export-gate: the barrel narrows to reads; prior oss-doc-cleanup)
+> Last updated: 2026-08-11 (task-read-cutover: the loads go asynchronous and `app/server` reads in process; prior read-export-gate, oss-doc-cleanup)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`. It
 defaults to `plan/tasks` and is overridden by `yaco.toml [paths]`: `tasks` is
@@ -11,8 +11,8 @@ prints the resolved absolute path. If the path is a directory, every descendant
 treated as a single-file task store.
 
 The pure library lives under `cli/src/lib/core/task/`. The **read half** —
-model, graph analysis, store loads — is published over the workspace exports map
-as `@yaco/cli/core/task`; the writers, the lock, `archive.ts` and `link.ts` are
+model, graph analysis, the composed `readTaskList`, and the (asynchronous) store
+loads — is published over the workspace exports map as `@yaco/cli/core/task`; the writers, the lock, `archive.ts` and `link.ts` are
 not, because task mutation is one authority (lock + repository gate + write) and
 it stays behind the CLI subprocess boundary. CLI handlers in
 `cli/src/commands/task/` import those modules directly and wrap the library with
@@ -36,11 +36,12 @@ locking, payload parsing, and the `--json` envelope.
 ## Reading
 
 `app/server` reads the task graph in process — `GET /api/tasks/:project` calls
-`readTaskList` instead of spawning `yaco task list --workset all --json`
-(measured 154 ms → 11 ms median on this repository's own graph). One
-implementation serves both: the CLI command is an argv-and-render adapter over
-the same function, so a divergence between the two is a compile error rather
-than a drift.
+`readTaskList` instead of spawning `yaco task list --workset all --json`.
+Measured against a server running the previous code over this repository's own
+485-task graph: **181.6 ms → 28.5 ms** median end to end, of which the read
+itself went 153.9 ms → 10.7 ms. One implementation serves both callers — the
+CLI command is an argv-and-render adapter over the same function, so a
+divergence between them is a compile error rather than a drift.
 
 That is what makes the loads asynchronous. Rule 5 of the
 [export eligibility rules](exports.md) forbids an exported closure from walking

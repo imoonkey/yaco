@@ -2,7 +2,7 @@
 
 > What `@yaco/cli` may publish for in-process use, and the audit that decides it.
 
-Last updated: 2026-08-11 · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts` · Parent: [README.md](README.md)
+Last updated: 2026-08-11 (task-read-cutover: rule 5 owes nothing) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts` · Parent: [README.md](README.md)
 
 `app/server` imports four of the six exported subpaths in process today —
 `core/paths`, `core/task`, `core/agent`, `core/worktree`. (`core/result` and
