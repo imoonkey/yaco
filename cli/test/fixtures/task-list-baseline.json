@@ -1,0 +1,557 @@
+{
+  "_": [
+    "Frozen `yaco task list --json` envelopes from the PRE-CUTOVER CLI.",
+    "Captured by spawning the build at base commit 4cbd97c5 over the trees",
+    "`test/helpers/task-fixture.ts` builds, with the temporary root replaced by",
+    "<ROOT>. This is the baseline `test/integration/task/read-parity.integration.ts`",
+    "compares the in-process reader against; regenerate it only from a build that",
+    "predates the change under test, or it stops being a baseline."
+  ],
+  "graph": {
+    "all": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {
+            "legacy": {
+              "depends": [],
+              "description": "d",
+              "parent": null,
+              "state": "ready",
+              "title": "No workset on disk",
+              "workset": "active"
+            },
+            "milestone": {
+              "agents": [
+                "claude"
+              ],
+              "depends": [],
+              "description": "top of the tree",
+              "parent": null,
+              "state": "running",
+              "title": "Milestone",
+              "workset": "active"
+            },
+            "queued": {
+              "depends": [],
+              "description": "d",
+              "parent": "milestone",
+              "state": "blocked",
+              "title": "Queued",
+              "workset": "backlog",
+              "worktree": "queued-slug"
+            },
+            "shipped": {
+              "acceptCriteria": [
+                "one",
+                "two"
+              ],
+              "agents": [
+                "codex"
+              ],
+              "depends": [
+                "legacy"
+              ],
+              "description": "d",
+              "parent": "milestone",
+              "scope": [
+                "cli/src/**"
+              ],
+              "state": "done",
+              "title": "Shipped",
+              "workset": "archive"
+            }
+          },
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "default": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {
+            "legacy": {
+              "depends": [],
+              "description": "d",
+              "parent": null,
+              "state": "ready",
+              "title": "No workset on disk",
+              "workset": "active"
+            },
+            "milestone": {
+              "agents": [
+                "claude"
+              ],
+              "depends": [],
+              "description": "top of the tree",
+              "parent": null,
+              "state": "running",
+              "title": "Milestone",
+              "workset": "active"
+            }
+          },
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "backlog": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {
+            "queued": {
+              "depends": [],
+              "description": "d",
+              "parent": "milestone",
+              "state": "blocked",
+              "title": "Queued",
+              "workset": "backlog",
+              "worktree": "queued-slug"
+            }
+          },
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "archive": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {
+            "shipped": {
+              "acceptCriteria": [
+                "one",
+                "two"
+              ],
+              "agents": [
+                "codex"
+              ],
+              "depends": [
+                "legacy"
+              ],
+              "description": "d",
+              "parent": "milestone",
+              "scope": [
+                "cli/src/**"
+              ],
+              "state": "done",
+              "title": "Shipped",
+              "workset": "archive"
+            }
+          },
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "state-done": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {
+            "shipped": {
+              "acceptCriteria": [
+                "one",
+                "two"
+              ],
+              "agents": [
+                "codex"
+              ],
+              "depends": [
+                "legacy"
+              ],
+              "description": "d",
+              "parent": "milestone",
+              "scope": [
+                "cli/src/**"
+              ],
+              "state": "done",
+              "title": "Shipped",
+              "workset": "archive"
+            }
+          },
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    }
+  },
+  "empty": {
+    "all": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {},
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "default": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {},
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "backlog": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {},
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "archive": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {},
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    },
+    "state-done": {
+      "status": 0,
+      "envelope": {
+        "data": {
+          "tasks": {},
+          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/plan/tasks"
+        },
+        "ok": true
+      }
+    }
+  },
+  "malformed": {
+    "all": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+        },
+        "ok": false
+      }
+    }
+  },
+  "array": {
+    "all": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+        },
+        "ok": false
+      }
+    }
+  },
+  "duplicate": {
+    "all": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "INVALID",
+          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+        },
+        "ok": false
+      }
+    }
+  },
+  "absoluteTasksPath": {
+    "all": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
+        },
+        "ok": false
+      }
+    }
+  },
+  "brokenToml": {
+    "all": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 3,
+      "envelope": {
+        "error": {
+          "code": "ENV",
+          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+        },
+        "ok": false
+      }
+    }
+  },
+  "unreadableDirs": {
+    "all": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "IO",
+          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+        },
+        "ok": false
+      }
+    },
+    "default": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "IO",
+          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+        },
+        "ok": false
+      }
+    },
+    "backlog": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "IO",
+          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+        },
+        "ok": false
+      }
+    },
+    "archive": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "IO",
+          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+        },
+        "ok": false
+      }
+    },
+    "state-done": {
+      "status": 1,
+      "envelope": {
+        "error": {
+          "code": "IO",
+          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+        },
+        "ok": false
+      }
+    }
+  }
+}

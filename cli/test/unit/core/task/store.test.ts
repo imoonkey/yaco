@@ -160,6 +160,42 @@ describe("loadTaskStore", () => {
     }
   });
 
+  it("names the deepest-first unreadable directory, as the walk order decides", async () => {
+    // Depth-first over sorted entries: `a/deep` is reached while descending
+    // into `a`, before `b` is looked at. A breadth-first walk would name `b`,
+    // which is a different CLI error and a different HTTP failure body.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    const deep = join(tasksRoot, "a", "deep");
+    const shallow = join(tasksRoot, "b");
+    mkdirSync(deep, { recursive: true });
+    mkdirSync(shallow, { recursive: true });
+    chmodSync(deep, 0o000);
+    chmodSync(shallow, 0o000);
+    try {
+      await expect(loadTaskStore(tasksRoot)).rejects.toThrow(
+        new RegExp(`failed to read tasks directory ${deep}`),
+      );
+    } finally {
+      chmodSync(deep, 0o755);
+      chmodSync(shallow, 0o755);
+    }
+  });
+
+  it("reports an uninspectable tasks path as IO rather than as an empty graph", async () => {
+    // Absence is the only failure that means "no task graph yet". A permission
+    // wall answering `{}` is how a server returns 200 over a broken disk.
+    const root = tmp();
+    const parent = join(root, "locked");
+    mkdirSync(join(parent, "tasks"), { recursive: true });
+    chmodSync(parent, 0o000);
+    try {
+      await expect(loadTaskStore(join(parent, "tasks"))).rejects.toMatchObject({ code: "IO" });
+    } finally {
+      chmodSync(parent, 0o755);
+    }
+  });
+
   it("does not block the event loop while it walks", async () => {
     // The whole point of rule 5: an unrelated queued callback must get to run
     // during the walk, which a synchronous recursive readdir never allows.

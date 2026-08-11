@@ -26,11 +26,49 @@ locking, payload parsing, and the `--json` envelope.
 | `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `AGENT_HANDLE_RE`, `DEFAULT_TASK_LOCK_TIMEOUT_MS`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. `agents?: string[]` holds session-handle links (validated against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/`); the legacy scalar `agent` is upgraded to `agents` on load. Both `agent` and a full `agents` array are rejected on `set` — links are mutated only through `attach`/`detach`. |
 | `validation.ts` | `validateTypes`, `isAcceptCriteriaBlank` | Shape checks for a `set` payload. Throws `CliError(INVALID)`. |
 | `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `rollup`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard + milestone-rollup checks. `validateGraph` collects **all** problems for the `validate` command. |
-| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O. Exported: `loadTasks`, `loadTaskStore`, `sourceForTask`, `sourceForNewTask`, `defaultTaskFileFor`, `defaultTaskFileForId`, `resolveTasksPathForSessionPath`, `formatJson`. Not exported: `saveTasks`, `saveTaskStore`. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
+| `read.ts` | `readTaskList` | The composed list read: explicit `repoRoot` in, `Promise<Result<{tasks, tasksPath, tasksFile}>>` out. `yaco task list` and `app/server`'s task GET are both adapters over it. See [Reading](#reading). |
+| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O; **the loads are asynchronous** (see [Reading](#reading)). Exported: `loadTasks`, `loadTaskStore`, `sourceForTask`, `sourceForNewTask`, `defaultTaskFileFor`, `defaultTaskFileForId`, `resolveTasksPathForSessionPath`, `formatJson`. Not exported: `saveTasks`, `saveTaskStore`. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
 | `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
 | `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
 | `index.ts` | Re-exports a selected **read** surface, not whole modules: all of `graph.ts`; `model.ts` minus `AGENT_HANDLE_RE`; `validation.ts` minus `isObject`/`Json`; `store.ts` minus `saveTasks`/`saveTaskStore`. `test/unit/export-audit.test.ts` pins the exact list | The published `@yaco/cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
+
+## Reading
+
+`app/server` reads the task graph in process — `GET /api/tasks/:project` calls
+`readTaskList` instead of spawning `yaco task list --workset all --json`
+(measured 154 ms → 11 ms median on this repository's own graph). One
+implementation serves both: the CLI command is an argv-and-render adapter over
+the same function, so a divergence between the two is a compile error rather
+than a drift.
+
+That is what makes the loads asynchronous. Rule 5 of the
+[export eligibility rules](exports.md) forbids an exported closure from walking
+a tree synchronously, because inside the app's event loop that walk stalls every
+other queued request — measured at 8–14 ms on this repository's tree and 43–59 ms
+at ten times its size, against 1–3 ms for the chunked reader that replaced it.
+
+Three properties of the read are contract, not implementation detail:
+
+- **`repoRoot` is an argument.** No `process.cwd()`, no environment. Two
+  projects read concurrently without either seeing the other; the CLI resolves
+  `--repo` (or the working directory) at the command edge and passes the result
+  down.
+- **Failure is a `Result`, not an exception.** The composed read catches once
+  and normalizes with `toErr`, so the app cannot acquire an unhandled rejection
+  where its subprocess boundary used to be. The low-level loaders still throw.
+- **The walk is depth-first over name-sorted entries.** File order does not
+  depend on it — the result is sorted — but *failure* order does: which
+  unreadable directory a broken tree names ends up in the CLI envelope and in
+  the app's HTTP failure body. `test/fixtures/task-list-baseline.json` freezes
+  those envelopes from the pre-cutover build, and
+  `test/integration/task/read-parity.integration.ts` holds both routes to them.
+
+Only reads moved. Every mutation still spawns `yaco task …`: the lock, the
+repository gate and the write are one authority, and half of it inside the app
+process is how two writers end up disagreeing about who owns the file. That is
+also what keeps the cutover independently reversible — restore the `runYacoTask`
+list call in `app/server/src/routes/tasks.ts` and nothing else moves.
 
 ## CLI surface
 

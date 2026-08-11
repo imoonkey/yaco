@@ -25,10 +25,13 @@ import { CliError, ErrCode } from "../errors.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
 import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
-/** Items read per await. Wide enough that a task tree costs no more wall time
- *  than the synchronous walk it replaces, narrow enough that a large tree does
- *  not open a file descriptor per file at once. */
-const READ_CONCURRENCY = 16;
+/** Items read per await.
+ *
+ *  Swept over 4/8/16/32/64/128 against this repository's task tree and a
+ *  ten-times synthetic one: starvation climbs steadily with width (1.4 ms at 8,
+ *  5.6 ms at 64 on the real tree) while wall time is flat within noise from 4
+ *  to 16 and worsens above it. 8 sits at the bottom of both curves. */
+const READ_CONCURRENCY = 8;
 
 /** Map `items` through `fn`, `READ_CONCURRENCY` at a time, yielding to the
  *  event loop between chunks.
@@ -189,52 +192,62 @@ export function sourceForNewTask(store: TaskStore, id: string, parent: string | 
   return sourceForTask(store, id);
 }
 
-/** The tasks path as one stat, or null when it is absent or its parent denies
- *  the lookup. Both were already the "no task files" answer — `existsSync`
- *  reports false for either — so one call now says what two used to. */
-async function statOrNull(path: string): Promise<Stats | null> {
+/** The tasks path as one stat, or null when it is not there.
+ *
+ *  Absence is the only failure that means "no task graph yet"; a permission
+ *  wall, a dead mount or a descriptor exhaustion is breakage, and reporting it
+ *  as an empty graph would answer HTTP 200 with no tasks while the disk is on
+ *  fire. */
+async function statTasksPath(path: string): Promise<Stats | null> {
   try {
     return await stat(path);
-  } catch {
-    return null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new CliError(
+      ErrCode.IO,
+      `failed to inspect tasks path ${path}: ${(err as Error).message}`,
+    );
   }
 }
 
 async function discoverTaskFiles(tasksPath: string): Promise<string[]> {
-  const st = await statOrNull(tasksPath);
+  const st = await statTasksPath(tasksPath);
   if (!st) return [];
   if (st.isFile()) return [tasksPath];
   if (!st.isDirectory()) {
     throw new CliError(ErrCode.INVALID, `tasks path ${tasksPath} must be a file or directory`);
   }
-
-  // Breadth-first, one bounded chunk of `readdir` per level. The final sort is
-  // what fixes the order, so dropping the recursion's per-directory sort leaves
-  // the file list identical.
   const found: string[] = [];
-  let level = [tasksPath];
-  while (level.length > 0) {
-    const next: string[] = [];
-    for (const dir of await mapChunked(level, readTaskDir)) {
-      for (const entry of dir.entries) {
-        const path = join(dir.path, entry.name);
-        if (entry.isDirectory()) next.push(path);
-        else if (entry.isFile() && entry.name === "tasks.json") found.push(path);
-      }
-    }
-    level = next;
-  }
+  await walkTaskDir(tasksPath, found);
   return found.sort();
 }
 
-async function readTaskDir(path: string): Promise<{ path: string; entries: Dirent[] }> {
+/** Depth-first over each directory's name-sorted entries.
+ *
+ *  Depth-first is not aesthetic: it fixes *which* unreadable directory a broken
+ *  tree reports. A breadth-first walk would reach a shallow sibling before a
+ *  deep first child and name that one instead, so the same tree would produce a
+ *  different CLI error and a different HTTP failure body than it did before.
+ *  The order files come out in does not matter — `discoverTaskFiles` sorts —
+ *  but the order failures come out in is part of the contract.
+ *
+ *  Each `readdir` is an await, so the loop yields per directory; the expensive
+ *  half, reading the file set, keeps its bounded concurrency in
+ *  {@link loadTaskStore}. */
+async function walkTaskDir(dir: string, found: string[]): Promise<void> {
+  let entries: Dirent[];
   try {
-    return { path, entries: await readdir(path, { withFileTypes: true }) };
+    entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
     throw new CliError(
       ErrCode.IO,
-      `failed to read tasks directory ${path}: ${(err as Error).message}`,
+      `failed to read tasks directory ${dir}: ${(err as Error).message}`,
     );
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) await walkTaskDir(path, found);
+    else if (entry.isFile() && entry.name === "tasks.json") found.push(path);
   }
 }
 

@@ -14,10 +14,19 @@
 
 import { resolve } from "node:path";
 
-import { toErr } from "../errors.ts";
+import { CliError, ErrCode, toErr } from "../errors.ts";
 import { ok, type Result } from "../result.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
-import { DEFAULT_WORKSET, type State, type TaskGraph, type Workset } from "./model.ts";
+import {
+  DEFAULT_WORKSET,
+  STATES,
+  WORKSETS,
+  isState,
+  isWorkset,
+  type State,
+  type TaskGraph,
+  type Workset,
+} from "./model.ts";
 import { loadTaskStore } from "./store.ts";
 
 /** A workset filter, or `all` for every workset at once. */
@@ -43,10 +52,23 @@ export interface TaskListData {
 
 export async function readTaskList(input: TaskListInput): Promise<Result<TaskListData>> {
   try {
+    // A published entry point is a runtime interface, not only a typed one.
+    // An unrecognized filter must not read as "the graph is empty".
+    const workset = input.workset ?? DEFAULT_WORKSET;
+    if (workset !== "all" && !isWorkset(workset)) {
+      throw new CliError(
+        ErrCode.USAGE,
+        `workset must be one of: ${WORKSETS.join(", ")}, all`,
+      );
+    }
+    if (input.state !== undefined && !isState(input.state)) {
+      throw new CliError(ErrCode.USAGE, `state must be one of: ${STATES.join(", ")}`);
+    }
+
     const tasksPath = resolve(input.repoRoot, readYacoProjectPaths(input.repoRoot).tasks);
     const store = await loadTaskStore(tasksPath);
     return ok({
-      tasks: filterTasks(store.tasks, input.workset ?? DEFAULT_WORKSET, input.state),
+      tasks: filterTasks(store.tasks, workset, input.state),
       tasksPath,
       tasksFile: store.defaultFile,
     });

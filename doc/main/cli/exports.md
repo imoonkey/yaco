@@ -97,17 +97,27 @@ asserted. A gate nobody has watched fail is not known to work.
 on `projects.json`, not a reader of it, and one implementation of that on-disk
 shape beats two.
 
-## The one tracked debt
+## The tracked debt, and how it was paid
 
-`loadTaskStore` walks the task tree with a synchronous recursive `readdir`
-(`store.ts#walkTaskDir`) and `app/server` already calls it in process. The
-design retires it in Phase-2 cutover 1 — task GET against an `fs/promises`
-chunked reader — which owns the parity, concurrency and starvation proofs.
+Rule 5 shipped owing exactly one thing: `loadTaskStore` walked the task tree
+with a synchronous recursive `readdir` while `app/server` called it in process.
+It was pinned in `RULE_5_DEBT` as the **exact finding multiset**, not by file —
+waiving the file would have hidden every further traversal added to it — and
+the audit was written to fail the moment the list stopped matching.
 
-Until then it is pinned in `RULE_5_DEBT` as the **exact finding multiset**, not
-by file: waiving the file would hide every further traversal added to it. A
-second one fails, and when the cutover lands the audit fails until the list is
-emptied.
+Phase-2 cutover 1 paid it. `store.ts` now reads through `fs/promises`: the walk
+is depth-first with one `readdir` per await, and the file set is read
+`READ_CONCURRENCY` at a time. `RULE_5_DEBT` is empty, and "no violation in any
+exported closure" passes with no rule-5 filter left to apply.
+
+Depth-first is load-bearing rather than stylistic: it is what decides *which*
+unreadable directory a broken tree names, and that message is in the CLI
+envelope and the app's HTTP failure body.
+-> See: [task.md](task.md#reading)
+
+The empty list stays, because it is the shape of the check and not a waiver: a
+new synchronous traversal in an exported closure fails the audit, and admitting
+one means writing it down there with the task that retires it.
 
 ## Invariants
 

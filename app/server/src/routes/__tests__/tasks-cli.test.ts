@@ -145,18 +145,39 @@ describe('GET /:project — in-process task list', () => {
     expect(Object.keys(body.tasks).sort()).toEqual(['nested', 'root'])
   })
 
-  it('maps a task-graph failure to the same HTTP error the envelope did', async () => {
-    writeFileSync(join(testProjectPath, 'plan/tasks/tasks.json'), '{ not json')
+  it('maps a task-graph failure to the body the INVALID envelope produced', async () => {
+    const tasksFile = join(testProjectPath, 'plan/tasks/tasks.json')
+    writeFileSync(tasksFile, '{ not json')
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(400)
-    expect((await res.json()).error).toMatch(/is not valid JSON/)
+    // The whole body, not a substring: `fail(c, 400, message)` emits exactly
+    // `{error}` and the message is the CLI's, verbatim.
+    expect(await res.json()).toEqual({
+      error: `tasks file ${tasksFile} is not valid JSON: ` +
+        `Expected property name or '}' in JSON at position 2 (line 1 column 3)`,
+    })
     expect(spawnedArgv()).toBe('')
   })
 
-  it('maps a rejected yaco.toml path to 500, as the ENV envelope did', async () => {
+  it('maps a duplicate task id to the body the INVALID envelope produced', async () => {
+    const graph = { dup: { title: 'd', state: 'ready' } }
+    seedTasks(testProjectPath, graph)
+    seedTasks(testProjectPath, graph, 'other')
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: `duplicate task id 'dup' in ${join(testProjectPath, 'plan/tasks/other/tasks.json')} ` +
+        `and ${join(testProjectPath, 'plan/tasks/tasks.json')}`,
+    })
+  })
+
+  it('maps a rejected yaco.toml path to the body the ENV envelope produced', async () => {
     writeFileSync(join(testProjectPath, 'yaco.toml'), '[paths]\ntasks = "/etc"\n')
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({
+      error: `yaco.toml: [paths].tasks must be repo-relative, got absolute path "/etc"`,
+    })
   })
 
   it('keeps concurrent reads of two repo roots isolated', async () => {
