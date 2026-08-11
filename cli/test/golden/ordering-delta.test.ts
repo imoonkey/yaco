@@ -13,14 +13,14 @@
  *  the original capture was not: it verifies the recorded artifacts, it does not
  *  re-run the pre-ordering code. */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CASES } from "./cases.ts";
 import type { CaseResult, GoldenMatrix } from "./capture.ts";
 
 function load(name: string): GoldenMatrix {
-  return JSON.parse(readFileSync(join(import.meta.dir, name), "utf-8")) as GoldenMatrix;
+  return JSON.parse(readFileSync(join(import.meta.dirname, name), "utf-8")) as GoldenMatrix;
 }
 
 const original = load("matrix.original.json");

@@ -8,17 +8,11 @@
  *
  *  These are spawned subprocess tests because main() calls process.exit().
  */
-import { describe, it, expect } from "bun:test";
-import { spawnSync } from "child_process";
-import { resolve } from "path";
-
-const BIN = resolve(import.meta.dir, "../../src/main.ts");
+import { describe, it, expect } from "vitest";
+import { runCli } from "../helpers/cli-process.ts";
 
 function runYaco(args: string[]): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1" },
-  });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1" } });
   return {
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",

@@ -4,13 +4,12 @@
  *  verify the documented JSON shapes and the stderr-only failure envelope
  *  with exit-3 for ENV errors (malformed yaco.toml).
  */
-import { afterAll, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { afterAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
+import { runCli } from "../../../helpers/cli-process.ts";
 const TMP_DIRS: string[] = [];
 
 function tempDir(): string {
@@ -27,10 +26,7 @@ function runYaco(
   args: string[],
   env: Record<string, string> = {},
 ): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1", ...env },
-  });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...env } });
   return {
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",

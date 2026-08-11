@@ -4,7 +4,7 @@
  *  (hashing, snapshots, blocking wait) is covered in store.test.ts and the
  *  subprocess suite in align-cli.test.ts.
  */
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import {
   formatStatus,

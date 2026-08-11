@@ -4,23 +4,19 @@
  *  shape — `{ ok: true, data }` on stdout, exit 0 — without needing tmux,
  *  provider homes, or live sessions (help + catalog touch no provider files). */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { spawnSync } from "child_process";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { resolve, join } from "path";
+import { join } from "path";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 
-const BIN = resolve(import.meta.dir, "../src/main.ts");
+import { runCli } from "./helpers/cli-process.ts";
 
 function runJson(
   args: string[],
   extraEnv: Record<string, string> = {},
 ): { status: number | null; data: unknown; stderr: string } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1", ...extraEnv },
-  });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...extraEnv } });
   let data: unknown;
   try {
     data = JSON.parse((r.stdout ?? "").trim());
@@ -63,10 +59,7 @@ describe("agent list/status surface split", () => {
   });
 
   it("`agent status` without a handle exits non-zero with a USAGE error", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "status", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...hermetic() },
-    });
+    const r = runCli(["agent", "status", "--json"], { env: { ...process.env, NO_COLOR: "1", ...hermetic() } });
     expect(r.status).not.toBe(0);
     const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
     expect(err.ok).toBe(false);
@@ -78,10 +71,7 @@ describe("agent list/status surface split", () => {
     // real $HOME so tmux can authoritatively confirm the session is dead. The
     // `=`-prefixed exact handle below cannot collide with a live session.
     const sessionsDir = join(mkdtempSync(join(tmpdir(), "yaco-status-")), "sessions");
-    const r = spawnSync("bun", ["run", BIN, "agent", "status", "yaco-test-absent-handle-xyz", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: sessionsDir },
-    });
+    const r = runCli(["agent", "status", "yaco-test-absent-handle-xyz", "--json"], { env: { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: sessionsDir } });
     expect(r.status).not.toBe(0);
     expect(r.stdout.trim()).toBe("");
     const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
@@ -90,10 +80,7 @@ describe("agent list/status surface split", () => {
   });
 
   it("`agent list --all --path <p> --json` exits non-zero with USAGE (mutually exclusive)", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "list", "--all", "--path", "/tmp", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...hermetic() },
-    });
+    const r = runCli(["agent", "list", "--all", "--path", "/tmp", "--json"], { env: { ...process.env, NO_COLOR: "1", ...hermetic() } });
     expect(r.status).not.toBe(0);
     expect(r.stdout.trim()).toBe("");
     const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
@@ -171,10 +158,7 @@ describe("agent history/summaries data envelopes", () => {
       );
     }
 
-    const r = spawnSync("bun", ["run", BIN, "agent", "history", "--path", projectPath, "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...hermetic },
-    });
+    const r = runCli(["agent", "history", "--path", projectPath, "--json"], { env: { ...process.env, NO_COLOR: "1", ...hermetic } });
 
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
@@ -248,10 +232,7 @@ describe("agent history/summaries data envelopes", () => {
     [["agent", "history", "--limit", "-1", "--json"], "--limit requires"],
     [["agent", "history", "--limit", "0", "--json"], "--limit requires"],
   ])("`%s` exits with USAGE", (args, snippet) => {
-    const r = spawnSync("bun", ["run", BIN, ...args], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...hermetic },
-    });
+    const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...hermetic } });
     expect(r.status).toBe(2);
     expect(r.stdout.trim()).toBe("");
     const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string; message: string } };
