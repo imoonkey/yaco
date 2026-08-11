@@ -16,8 +16,8 @@
  *  A case whose observable was later changed on purpose stays in the comparison,
  *  and {@link INTENTIONAL_DELTAS} gives up as little of it as the change costs.
  *  `stdout` is a composite, so waiving the whole string is nearly as blunt as
- *  waiving the case: `doctor-json` carries eleven check records, of which two
- *  moved, and the other nine go on being compared here. Only where the two
+ *  waiving the case: `doctor-json` carries eleven check records, of which three
+ *  moved, and the other eight go on being compared here. Only where the two
  *  matrices have no corresponding value left — `install-dry-run-json` turned an
  *  error envelope into a success one — is a field given up whole, and then the
  *  transformation itself is pinned by {@link ASSERTED_TRANSFORMATIONS} rather
@@ -75,10 +75,12 @@ const INTENTIONAL_DELTAS: Record<
   { fields?: readonly ExemptField[]; checks?: readonly string[]; why: string }
 > = {
   "doctor-json": {
-    checks: ["registry", "skills-link"],
+    checks: ["registry", "skills-link", "providers"],
     why:
       "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
-      "`skills-link` resolves the manifest from the package rather than through it",
+      "`skills-link` resolves the manifest from the package rather than through it; " +
+      "`providers` skips instead of failing when no agent CLI is on $PATH, because " +
+      "YACO ships no agent and `yaco install` throws on any failing check",
   },
   "install-dry-run-json": {
     fields: ["stdout", "stderr", "exitCode"],
@@ -145,9 +147,25 @@ const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseR
     // the only reason left: the links are not there.
     expect(record(before, "skills-link").detail).toContain("no 'yaco' registry entry");
     expect(record(after, "skills-link").detail).toContain("missing");
+    // `providers` reports the same condition — this sandbox has no agent CLI on
+    // its $PATH — without failing on it, and still names what is missing. Both
+    // records whole: this record is exempted from the comparison above, so a
+    // substring match is the only thing a later recapture would have to satisfy
+    // to change the rest of the detail unnoticed.
+    expect(record(before, "providers")).toEqual({
+      name: "providers",
+      status: "fail",
+      detail: "no provider executable on $PATH (claude, codex)",
+    });
+    expect(record(after, "providers")).toEqual({
+      name: "providers",
+      status: "skip",
+      detail:
+        "no provider executable on $PATH (claude, codex) — install one before starting agents",
+    });
     const summary = (c: CaseResult) => (JSON.parse(c.stdout) as { data: { summary: unknown } }).data.summary;
     expect(summary(before)).toEqual({ pass: 2, fail: 9 });
-    expect(summary(after)).toEqual({ pass: 3, fail: 8 });
+    expect(summary(after)).toEqual({ pass: 3, fail: 7 });
   },
   "install-dry-run-json": (before, after) => {
     expect(before.exitCode).toBe(3);

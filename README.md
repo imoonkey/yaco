@@ -45,9 +45,13 @@ observability into every session your agents spawn — and they into yours.
 Linux or macOS, with:
 
 - **[Claude Code](https://claude.com/claude-code) (`claude`) or
-  [Codex](https://developers.openai.com/codex/cli) (`codex`) on your `PATH`.**
-  YACO ships no agent; without a provider the install's final `yaco doctor`
-  check fails and the bootstrap exits non-zero.
+  [Codex](https://developers.openai.com/codex/cli) (`codex`) on your `PATH`** —
+  one is enough. YACO ships no agent, so this is the one prerequisite it cannot
+  supply and the thing every agent command drives. You can install it after
+  YACO: `yaco install` completes either way, and reports the gap rather than
+  failing on it — `SKIP providers  no provider executable on $PATH (claude,
+  codex) — install one before starting agents`. Until you close it, `yaco
+  doctor` keeps printing that line and no agent session can run.
 - **Node.js ≥ 24.15 + npm**, **tmux**, **git**. The CLI declares that floor in
   `engines.node` and its launcher rejects anything below it — `node:sqlite` is
   silent from 24.15 and warns on stderr before it, and empty stderr is an
@@ -76,9 +80,11 @@ package, so nothing points at a directory that could go away. Add
 `npm install -g @yaco/app` for layer 3. Re-run `yaco install` after either
 upgrade.
 
-Doctor reports the checks that need a repo — the project registry, the task
-graph — as **SKIP** rather than failing; register your own repos with
-`yaco project add <name> <path>` when you have one.
+Doctor reports what you have not set up yet — the project registry, the task
+graph, an agent CLI — as **SKIP** rather than failing, so this install completes
+on a machine that is only part of the way there. Register your own repos with
+`yaco project add <name> <path>` when you have one; every line doctor skips
+names what it is waiting for.
 
 **From a clone — the way to change YACO.** The skills are the layer most people
 will want to edit, and an installed package is a read-only copy of them, so
