@@ -1,9 +1,14 @@
 /** How the suite starts the CLI as a child process.
  *
- *  One owner, because the answer changed twice: it was `bun run src/main.ts`,
- *  and `cli-sqlite-hop` made `src/main.ts` unloadable under Bun. Node 24 strips
- *  types on the way in, so the entry runs directly and the runtime is simply the
- *  one hosting the test.
+ *  One owner, because the answer kept changing: `bun run src/main.ts`, then
+ *  `node src/main.ts` while `cli-sqlite-hop` had no Node artifact to aim at,
+ *  and now the artifact itself. `bin/yaco.mjs` over `dist/yaco.mjs` is exactly
+ *  what an `npm install -g` puts on the user's PATH, so a subprocess assertion
+ *  here is an assertion about the shipped thing — including the Node floor
+ *  guard and the package-root offset, neither of which a source run exercises.
+ *
+ *  The bundle is rebuilt before the suite runs; `test/build-bundle.setup.ts`
+ *  owns that, so no caller has to remember it.
  *
  *  `process.execPath` is absolute, which matters: callers hand the child its own
  *  `env` and `uv_spawn` resolves the program against *that* PATH — which the
@@ -12,7 +17,7 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const CLI_ENTRY = fileURLToPath(new URL("../../src/main.ts", import.meta.url));
+export const CLI_ENTRY = fileURLToPath(new URL("../../bin/yaco.mjs", import.meta.url));
 
 export interface RunCliOptions {
   cwd?: string;

@@ -24,7 +24,13 @@ run_step() {
 }
 
 run_step "keepalive test" .          bash tools/claude-usage-keepalive.test.sh
-run_step "cli test"       cli        bun run test
+# The CLI's three gates are separate steps on purpose. `npm run test` passes on
+# code that does not type-check (Vitest strips types, it does not check them) and
+# on code that does not build, so a single test step reported green for both
+# classes of breakage. Typecheck first — it is the fastest and the most specific.
+run_step "cli typecheck"  cli        npm run typecheck
+run_step "cli build"      cli        npm run build
+run_step "cli test"       cli        npm run test
 run_step "codex transcribe typecheck" . npm run typecheck --workspace @yaco/codex-transcribe
 run_step "codex transcribe test"      . npm test --workspace @yaco/codex-transcribe
 run_step "server test"    app/server npm test

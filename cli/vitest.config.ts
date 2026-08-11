@@ -9,6 +9,9 @@ import { configDefaults, defineConfig } from "vitest/config";
  *  `bun:test`, so there is one runner again and the split is just two projects.
  */
 const shared = {
+  // The suite spawns the CLI as `dist/yaco.mjs`, so the bundle is a test input
+  // and has to be rebuilt before anything reads it — including a focused run.
+  globalSetup: ["./test/build-bundle.setup.ts"],
   // Many files build a sandbox out of process-wide state — cwd, PATH, HOME,
   // YACO_HOME. One process per file is what keeps that honest.
   isolate: true,
