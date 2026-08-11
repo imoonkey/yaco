@@ -17,12 +17,11 @@ app, the `yaco` CLI/runtime, and global agent configuration.
 
 - `app/server` invokes installed `yaco ... --json` commands for agent, task,
   and worktree operations, then maps the CLI envelope into HTTP responses.
-  **Four reads no longer spawn** — the task GET, the session-list labels, the
-  provider catalog before a start, and the channel `/last` message read call the
-  CLI's own function in process. Everything else does, including the history
-  tab, which was measured and deliberately left a subprocess. Mutations and
-  lifecycle do not move — the lock, the repository gate and the write are one
-  authority, and tmux is another.
+  **Five reads no longer spawn** — the task GET, the session-list labels, the
+  provider catalog before a start, the channel `/last` message read and the
+  History tab call the CLI's own function in process. Everything else does.
+  Mutations and lifecycle do not move — the lock, the repository gate and the
+  write are one authority, and tmux is another.
   -> See: [cli/read-path.md](cli/read-path.md)
 - `cli/package.json` exports shared TypeScript primitives for app/server, and
   `app/server` imports all eight subpaths in process: `@yaco/cli/core/paths`,

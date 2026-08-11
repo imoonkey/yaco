@@ -16,7 +16,10 @@ import {
 } from "../src/lib/core/agent/hook-event.ts";
 import { handleHookEvent } from "../src/commands/agent/hook-event.ts";
 import { writeState, readState, statePath } from "../src/lib/core/agent/session-state.ts";
-import { readOriginForSessionId } from "../src/lib/core/agent/origin.ts";
+import { readOrigins } from "../src/lib/core/agent/origin-read.ts";
+
+/** One durable origin record, through the chunked reader the history window uses. */
+const readOrigin = async (sessionId: string) => (await readOrigins([sessionId])).get(sessionId) ?? null;
 import {
   clampNotice,
   NOTICE_MAX,
@@ -513,7 +516,7 @@ describe("hook-event origin recording", () => {
       session_id: "hook-real-id",
     });
 
-    expect(readOriginForSessionId("hook-real-id")).toMatchObject({
+    expect(await readOrigin("hook-real-id")).toMatchObject({
       sessionId: "hook-real-id",
       spawnedBy: "agent",
       parentSession: "parent",
@@ -533,7 +536,7 @@ describe("hook-event origin recording", () => {
 
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
 
-    expect(readOriginForSessionId("already-real")).toBeNull();
+    expect(await readOrigin("already-real")).toBeNull();
   });
 });
 

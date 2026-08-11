@@ -1,26 +1,48 @@
-/** Provider history reconstruction.
+/** The one project-history read, shared by `yaco agent history` and the app's
+ *  History tab.
  *
  *  Claude and Codex rebuild project session history from their own persisted
- *  files and databases. This module co-locates the shared JSONL/SQLite parsing
- *  and exposes one `ProviderHistory` per provider, mirroring the
- *  `claudeHooks()` / `codexHooks()` factory pattern in `hooks.ts`. Keeping
- *  provider-home reads here is what lets `app/server` consume `yaco agent
- *  history --json` instead of parsing `~/.claude` and `~/.codex` directly.
+ *  files and databases. This module co-locates that parsing, merges the
+ *  providers, applies the window, and tags live YACO sessions — so `app/server`
+ *  never opens `~/.claude` or `~/.codex` itself and there is one implementation
+ *  behind both call mechanisms.
  *
- *  The per-session summary label is *not* here: `summary-read.ts` owns it,
- *  because `app/server` calls that one in process and this module's unbounded
- *  provider scans are not export-eligible. */
+ *  **Every provider scan is capped at the window.** The merge sorts newest-first
+ *  and `--since` filters on the same `updatedAt`, so the rows past any cutoff are
+ *  a *prefix* of each provider's own newest-first order: "the newest `cap` rows
+ *  of a provider" already is "that provider's window past the cutoff", whatever
+ *  the cutoff is. That is what lets the cap ignore `since` entirely — and it only
+ *  holds while a provider's cap key is the very key the merge sorts by, which is
+ *  the whole reason Claude is read in two phases below.
+ *
+ *  The cap is `limit + 1` rather than `limit` because `truncated` is
+ *  `matching.length > limit`: at `limit` a provider holding `limit + 5` matching
+ *  rows would report a full, untruncated window. At `limit + 1`, each of the top
+ *  `limit + 1` matching rows has at most `limit` rows above it *within its own
+ *  provider*, so all of them survive the cap and the comparison stays exact.
+ *
+ *  The live sessions are an explicit input: enumerating them is the caller's job
+ *  (the CLI reads its state files, the app already holds its own list), which is
+ *  what keeps this module clear of `session-state.ts` — a mutation module no
+ *  exported closure may reach. Failures come back as `Result`, never as a throw.
+ *
+ *  The per-session summary *label* is not here: `summary-read.ts` owns it, and
+ *  the collapsing rules both go through live in `prompt-label.ts` so the History
+ *  tab and the session list cannot drift.
+ *
+ *  -> See: `doc/main/cli/exports.md` (the six eligibility rules this obeys). */
 
-import { existsSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { toErr } from "../../errors.ts";
+import { ok, type Result } from "../../result.ts";
 import { encodeClaudeCwd } from "../../project/encode.ts";
-import { readOriginForSessionId } from "../origin.ts";
-import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
+import { readOrigins } from "../origin-read.ts";
+import { PENDING_SESSION_ID, type SpawnedBy } from "../model.ts";
+import { codexThreadWindow } from "./codex-thread-window.ts";
 import { extractUserText, firstMeaningfulMessage } from "./prompt-label.ts";
-import { codexDbPath, userHome } from "./provider-home.ts";
-import type { HistorySession, HistoryWindow, ProviderHistory } from "./types.ts";
+import { userHome } from "./provider-home.ts";
+import type { HistorySession, HistoryWindow } from "./types.ts";
 
 /** Default history row limit after filtering the merged provider rows. */
 export const DEFAULT_HISTORY_LIMIT = 200;
@@ -28,20 +50,93 @@ export const DEFAULT_HISTORY_LIMIT = 200;
 const HEAD_BYTES = 16384;
 /** Bytes read from the tail of each Claude JSONL (last custom-title + mtime). */
 const TAIL_BYTES = 65536;
+/** How many files are opened at once inside one fan-out. Same width as the task
+ *  store's and the summary read's chunked readers: wide enough that the reads
+ *  overlap, narrow enough that one chunk's synchronous tail stays short. */
+const READ_CONCURRENCY = 8;
+/** Lines parsed between yields when scanning a whole-file JSONL index. */
+const INDEX_LINES_PER_CHUNK = 500;
+
+/** Everything live tagging needs from a session, and nothing else. A
+ *  `SessionState` satisfies it, so the CLI passes its state files through
+ *  unchanged; the app maps its own session row. Spelling the input this narrowly
+ *  is what makes two concurrent calls on different projects structurally unable
+ *  to cross. */
+export interface HistoryLiveSession {
+  handle: string;
+  sessionId: string;
+  resumedFrom?: string | null;
+  spawnedBy?: SpawnedBy | null;
+  parentSession?: string | null;
+}
+
+/** A provider's newest `cap` rows for a project, newest-first by `updatedAt`. */
+type ProviderHistoryReader = (projectPath: string, cap: number) => Promise<HistorySession[]>;
+
+/** Run `worker` over `items` `READ_CONCURRENCY` at a time, yielding the loop
+ *  between chunks so an already-queued timer or socket is served. A loop of
+ *  awaits is what rule 5 asks a chunked reader to be — it is not a polling
+ *  loop. */
+async function chunked<T, R>(items: readonly T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += READ_CONCURRENCY) {
+    out.push(...await Promise.all(items.slice(i, i + READ_CONCURRENCY).map(worker)));
+    if (i + READ_CONCURRENCY < items.length) await yieldLoop();
+  }
+  return out;
+}
+
+function yieldLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+/** Read `length` bytes of `path` at `position`, or "" when unreadable. */
+async function readSlice(path: string, position: number, length: number): Promise<string> {
+  if (length <= 0) return "";
+  let file;
+  try {
+    file = await open(path, "r");
+  } catch {
+    return "";
+  }
+  try {
+    const buffer = Buffer.allocUnsafe(length);
+    const { bytesRead } = await file.read(buffer, 0, length, position);
+    return buffer.toString("utf-8", 0, bytesRead);
+  } catch {
+    return "";
+  } finally {
+    await file.close();
+  }
+}
 
 // -- Claude JSONL parsing --
 
-/** Parse the last custom-title from a chunk of JSONL text. */
+/** Iterate a chunk of JSONL text backwards, newest record first. A partial line
+ *  at a read boundary just fails to parse and is skipped. */
+function* linesFromEnd(text: string): Generator<string> {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line) yield line;
+  }
+}
+
+/** The last custom-title in a chunk of JSONL text.
+ *
+ *  Scanning backwards and stopping at the first hit returns the same title a
+ *  forward scan's last hit would, and parses one record instead of every
+ *  titled one — which is what makes a 64 KB tail cost a parse rather than a
+ *  scan. `parseLastTimestamp` and `parseLastClaudeTokens` are the same shape. */
 function parseLastTitle(text: string): string | null {
-  let title: string | null = null;
-  for (const line of text.split("\n")) {
-    if (!line || !line.includes("custom-title")) continue;
+  for (const line of linesFromEnd(text)) {
+    if (!line.includes("custom-title")) continue;
     try {
       const entry = JSON.parse(line);
-      if (entry.type === "custom-title" && entry.customTitle) title = entry.customTitle;
+      if (entry.type === "custom-title" && entry.customTitle) return entry.customTitle;
     } catch { /* partial line at a read boundary — skip */ }
   }
-  return title;
+  return null;
 }
 
 function parseEntryTimestamp(line: string): string | null {
@@ -64,41 +159,39 @@ function parseFirstTimestamp(text: string): string | null {
 }
 
 function parseLastTimestamp(text: string): string | null {
-  let ts: string | null = null;
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    ts = parseEntryTimestamp(line) ?? ts;
+  for (const line of linesFromEnd(text)) {
+    const ts = parseEntryTimestamp(line);
+    if (ts) return ts;
   }
-  return ts;
+  return null;
 }
 
-/** Parse the first meaningful user message from the head of a Claude JSONL file.
- *  Slash commands are restored to `/command args`; reminders and stdout are skipped. */
+/** The first meaningful user message in the head of a Claude JSONL file.
+ *  Slash commands are restored to `/command args`; reminders and stdout are
+ *  skipped. `firstMeaningfulMessage` judges each text independently of the ones
+ *  around it, so stopping at the first that qualifies returns the same label a
+ *  whole-head scan would. */
 function parseFirstUserMessage(head: string): string | null {
-  const texts: string[] = [];
   for (const line of head.split("\n")) {
     if (!line) continue;
     try {
       const entry = JSON.parse(line);
       if (entry.type !== "user" || !entry.message?.content) continue;
-      texts.push(extractUserText(entry.message.content));
+      const label = firstMeaningfulMessage([extractUserText(entry.message.content)]);
+      if (label) return label;
     } catch { continue; }
   }
-  return firstMeaningfulMessage(texts);
+  return null;
 }
 
 // -- Token usage (last-turn "session size" signal) --
 
 /** Last assistant turn's total tokens from a Claude JSONL slice: input plus the
  *  cache_creation/cache_read context (Claude reports cached tokens in separate
- *  fields disjoint from `input_tokens`, so all are summed) plus output. Scans
- *  backward for the last line carrying a usage record; a partial leading line
- *  from a tail read just fails to parse and is skipped. */
+ *  fields disjoint from `input_tokens`, so all are summed) plus output. */
 function parseLastClaudeTokens(text: string): number | null {
-  const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (!line || !line.includes('"usage"')) continue;
+  for (const line of linesFromEnd(text)) {
+    if (!line.includes('"usage"')) continue;
     try {
       const o = JSON.parse(line) as { message?: { usage?: Record<string, unknown> }; usage?: Record<string, unknown> };
       const u = o.message?.usage ?? o.usage;
@@ -116,10 +209,8 @@ function parseLastClaudeTokens(text: string): number | null {
  *  cached context into `input_tokens` and reports `total_tokens` (= input +
  *  output) directly, so the provided value is used as-is. */
 function parseLastCodexTokens(text: string): number | null {
-  const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (!line || !line.includes("last_token_usage")) continue;
+  for (const line of linesFromEnd(text)) {
+    if (!line.includes("last_token_usage")) continue;
     try {
       const o = JSON.parse(line) as { payload?: { info?: { last_token_usage?: { total_tokens?: unknown } } } };
       const t = o.payload?.info?.last_token_usage?.total_tokens;
@@ -133,19 +224,13 @@ function parseLastCodexTokens(text: string): number | null {
  *  token-usage record — a bounded read mirroring the Claude JSONL tail. */
 async function codexRolloutTokens(rolloutPath: string | null): Promise<number | null> {
   if (!rolloutPath) return null;
+  let size: number;
   try {
-    const st = await stat(rolloutPath);
-    if (st.size === 0) return null;
-    const readLen = Math.min(st.size, TAIL_BYTES);
-    const fh = await open(rolloutPath, "r");
-    try {
-      const buf = Buffer.alloc(readLen);
-      const res = await fh.read(buf, 0, readLen, st.size - readLen);
-      return parseLastCodexTokens(buf.toString("utf-8", 0, res.bytesRead));
-    } finally {
-      await fh.close();
-    }
+    size = (await stat(rolloutPath)).size;
   } catch { return null; }
+  if (size === 0) return null;
+  const length = Math.min(size, TAIL_BYTES);
+  return parseLastCodexTokens(await readSlice(rolloutPath, size - length, length));
 }
 
 // -- Claude provider history --
@@ -166,7 +251,9 @@ function claudeProjectDir(projectPath: string): string {
   return join(userHome(), ".claude", "projects", encodeClaudeCwd(projectPath));
 }
 
-/** Load sessions-index.json as optional per-session enrichment. */
+/** Load sessions-index.json as optional per-session enrichment. One file per
+ *  project, and one `JSON.parse` of it: no chunking divides a single parse, the
+ *  same limit the app's task store reaches on a single-file graph. */
 async function loadClaudeIndex(projectDir: string): Promise<Map<string, ClaudeIndexEntry>> {
   const map = new Map<string, ClaudeIndexEntry>();
   let raw: string;
@@ -183,99 +270,115 @@ async function loadClaudeIndex(projectDir: string): Promise<Map<string, ClaudeIn
   return map;
 }
 
-/** Read Claude session history for a project: only the head (summary) and tail
- *  (title) of each JSONL is read so large logs stay cheap. */
-async function claudeList(projectPath: string): Promise<HistorySession[]> {
-  const projectDir = claudeProjectDir(projectPath);
+/** What the tail of a Claude log settles: the row's ordering key, its title and
+ *  its token count. Everything the *window* then needs comes from the head. */
+interface ClaudeTail {
+  sessionId: string;
+  path: string;
+  size: number;
+  entry: ClaudeIndexEntry | undefined;
+  birthtime: string;
+  mtime: string;
+  updatedAt: string;
+  title: string | null;
+  tokens: number | null;
+}
 
-  // Sorted: the row order a raw directory read produces is undefined, and it
-  // survives into the output as the tie order of the newest-first history sort.
+/** Phase 1 for one Claude log: `stat` plus a single tail read, which is all the
+ *  ordering key needs.
+ *
+ *  The key cannot come from `stat` alone. `updatedAt` is the index's `modified`,
+ *  else the log's own last timestamp, and only then the file's mtime — so a cap
+ *  taken on mtime would order rows by a key the merge does not use. The golden
+ *  fixture writes literal in-log timestamps precisely so `stat` never reaches
+ *  the output, and the bench fixture's logs are all written within one second of
+ *  each other; on both, an mtime cap picks a different window than the merge
+ *  would. Hence: read the tail of every log, and the head of only the window.
+ *
+ *  When the file is no larger than `TAIL_BYTES` the tail *is* the whole file, so
+ *  it already covers the head. Only a larger log whose last 64 KB carries no
+ *  timestamp at all falls back to its head, and only that log pays a second
+ *  read here. */
+async function claudeTail(
+  dir: string,
+  file: string,
+  index: Map<string, ClaudeIndexEntry>,
+): Promise<ClaudeTail | null> {
+  const sessionId = file.replace(/\.jsonl$/, "");
+  const entry = index.get(sessionId);
+  if (entry?.isSidechain) return null;
+
+  const path = join(dir, file);
+  let birthtime: string;
+  let mtime: string;
+  let size: number;
+  try {
+    const st = await stat(path);
+    birthtime = (st.birthtime ?? st.ctime).toISOString();
+    mtime = st.mtime.toISOString();
+    size = st.size;
+  } catch { return null; }
+
+  const tailLength = Math.min(size, TAIL_BYTES);
+  const tail = await readSlice(path, size - tailLength, tailLength);
+  let fromLog = parseLastTimestamp(tail);
+  if (fromLog === null && size > TAIL_BYTES) {
+    fromLog = parseLastTimestamp(await readSlice(path, 0, HEAD_BYTES));
+  }
+
+  return {
+    sessionId,
+    path,
+    size,
+    entry,
+    birthtime,
+    mtime,
+    updatedAt: entry?.modified || fromLog || mtime,
+    title: parseLastTitle(tail),
+    tokens: parseLastClaudeTokens(tail),
+  };
+}
+
+/** Phase 2 for one Claude log in the window: the head read that carries the
+ *  summary and the start timestamp, plus the title fallback for a log whose
+ *  tail did not reach its head. */
+async function claudeRow(tail: ClaudeTail): Promise<HistorySession> {
+  const head = await readSlice(tail.path, 0, Math.min(HEAD_BYTES, tail.size));
+  return {
+    sessionId: tail.sessionId,
+    provider: "claude",
+    title: tail.title ?? parseLastTitle(head),
+    summary: tail.entry?.summary || parseFirstUserMessage(head) || "(no prompt)",
+    created: tail.entry?.created || parseFirstTimestamp(head) || tail.birthtime,
+    updatedAt: tail.updatedAt,
+    tokens: tail.tokens,
+    gitBranch: tail.entry?.gitBranch ?? null,
+  };
+}
+
+async function claudeList(projectPath: string, cap: number): Promise<HistorySession[]> {
+  const dir = claudeProjectDir(projectPath);
+
+  // The order a raw directory read produces is undefined; it does not reach the
+  // output, because `byUpdatedAtThenSessionId` decides the window and a session
+  // id is unique, so no pair of rows can tie under it.
   let files: string[];
   try {
-    files = (await readdir(projectDir)).filter((f) => f.endsWith(".jsonl")).sort();
+    files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
   } catch { return []; }
   if (files.length === 0) return [];
 
-  const index = await loadClaudeIndex(projectDir);
+  const index = await loadClaudeIndex(dir);
+  const tails = await chunked(files, (file) => claudeTail(dir, file, index));
+  const window = tails
+    .filter((t): t is ClaudeTail => t !== null)
+    .sort(byUpdatedAtThenSessionId)
+    .slice(0, cap);
 
-  const rows = await Promise.all(files.map(async (file): Promise<HistorySession | null> => {
-    const sessionId = file.replace(/\.jsonl$/, "");
-    const entry = index.get(sessionId);
-    if (entry?.isSidechain) return null;
-
-    const filePath = join(projectDir, file);
-    let created: string;
-    let modified: string;
-    let size: number;
-    try {
-      const st = await stat(filePath);
-      created = (st.birthtime ?? st.ctime).toISOString();
-      modified = st.mtime.toISOString();
-      size = st.size;
-    } catch { return null; }
-
-    let title: string | null = null;
-    let summary: string | null = null;
-    let createdFromLog: string | null = null;
-    let modifiedFromLog: string | null = null;
-    let tokens: number | null = null;
-    try {
-      const fh = await open(filePath, "r");
-      try {
-        const headBuf = Buffer.alloc(HEAD_BYTES);
-        const headRes = await fh.read(headBuf, 0, Math.min(HEAD_BYTES, size), 0);
-        const head = headBuf.toString("utf-8", 0, headRes.bytesRead);
-        summary = parseFirstUserMessage(head);
-        createdFromLog = parseFirstTimestamp(head);
-        modifiedFromLog = parseLastTimestamp(head);
-
-        // End slice: the last TAIL_BYTES (or the whole file when smaller) so the
-        // last title / timestamp / usage record is always reachable.
-        let endText = head;
-        if (size > HEAD_BYTES) {
-          const readLen = Math.min(size, TAIL_BYTES);
-          const tailBuf = Buffer.alloc(readLen);
-          const tailRes = await fh.read(tailBuf, 0, readLen, size - readLen);
-          endText = tailBuf.toString("utf-8", 0, tailRes.bytesRead);
-        }
-        title = parseLastTitle(endText) ?? parseLastTitle(head);
-        modifiedFromLog = parseLastTimestamp(endText) ?? modifiedFromLog;
-        tokens = parseLastClaudeTokens(endText);
-      } finally {
-        await fh.close();
-      }
-    } catch { /* skip unreadable files */ }
-
-    return {
-      sessionId,
-      provider: "claude",
-      title,
-      summary: entry?.summary || summary || "(no prompt)",
-      created: entry?.created || createdFromLog || created,
-      updatedAt: entry?.modified || modifiedFromLog || modified,
-      tokens,
-      gitBranch: entry?.gitBranch ?? null,
-    };
-  }));
-
-  return rows.filter((r): r is HistorySession => r !== null);
-}
-
-export function claudeHistory(): ProviderHistory {
-  return { list: (projectPath) => claudeList(projectPath) };
+  return chunked(window, claudeRow);
 }
 
 // -- Codex provider history --
-
-interface CodexThreadRow {
-  id: string;
-  title: string | null;
-  first_user_message: string | null;
-  created_at: number;
-  updated_at: number;
-  git_branch: string | null;
-  rollout_path: string | null;
-}
 
 /** Convert a Codex unix epoch (seconds or milliseconds) to ISO 8601. */
 function epochToISO(epoch: number): string {
@@ -283,53 +386,45 @@ function epochToISO(epoch: number): string {
   return new Date(ms).toISOString();
 }
 
-/** Last-entry-wins map of Codex thread id → user-assigned thread name. */
+/** Last-entry-wins map of Codex thread id → user-assigned thread name.
+ *
+ *  One whole-file JSONL scan, so the parse is chunked with a yield between
+ *  chunks the same way a file fan-out is: the file is a quarter of a megabyte
+ *  and two thousand records on the reference home and it only grows. */
 async function loadCodexThreadNames(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   let content: string;
   try {
     content = await readFile(join(userHome(), ".codex", "session_index.jsonl"), "utf-8");
   } catch { return map; }
-  for (const line of content.split("\n")) {
-    if (!line) continue;
-    try {
-      const entry = JSON.parse(line);
-      if (entry.id && entry.thread_name) map.set(entry.id, entry.thread_name);
-    } catch { continue; }
+
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += INDEX_LINES_PER_CHUNK) {
+    for (const line of lines.slice(i, i + INDEX_LINES_PER_CHUNK)) {
+      if (!line.includes("thread_name")) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.id && entry.thread_name) map.set(entry.id, entry.thread_name);
+      } catch { continue; }
+    }
+    if (i + INDEX_LINES_PER_CHUNK < lines.length) await yieldLoop();
   }
   return map;
 }
 
-/** Read Codex session history for a project from the threads table. */
-async function codexList(projectPath: string): Promise<HistorySession[]> {
-  const cwd = projectPath.replace(/\/+$/, "");
-  if (!existsSync(codexDbPath())) return [];
-
-  let rows: CodexThreadRow[];
-  try {
-    const db = new DatabaseSync(codexDbPath(), { readOnly: true });
-    try {
-      rows = db
-        .prepare(
-          // `id` breaks the updated_at tie: SQLite leaves the order of tied rows
-          // to the query plan, so without it the row order is undefined.
-          `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
-           FROM threads WHERE cwd = ? AND archived = 0
-           ORDER BY updated_at DESC, id ASC`,
-        )
-        // `node:sqlite` types every column as `SQLOutputValue`, so the row shape
-        // is the SELECT's to declare — through `unknown`, because a 7-column row
-        // and an open record do not overlap enough for a direct assertion.
-        .all(cwd) as unknown as CodexThreadRow[];
-    } finally {
-      db.close();
-    }
-  } catch { return []; }
+/** Read Codex session history for a project from the threads table.
+ *
+ *  The query's `LIMIT` is the exact cap: its ORDER BY key is the very column
+ *  `epochToISO` turns into the row's `updatedAt`. That holds while a table keeps
+ *  one epoch unit, which is what Codex writes; `epochToISO`'s seconds-or-ms
+ *  guard is for reading a value, not for ordering a mixed table. */
+async function codexList(projectPath: string, cap: number): Promise<HistorySession[]> {
+  const rows = codexThreadWindow(projectPath.replace(/\/+$/, ""), cap);
   if (rows.length === 0) return [];
 
   const threadNames = await loadCodexThreadNames();
 
-  return Promise.all(rows.map(async (row) => ({
+  return chunked(rows, async (row) => ({
     sessionId: row.id,
     provider: "codex",
     title: threadNames.get(row.id) ?? null,
@@ -338,14 +433,29 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
     updatedAt: epochToISO(row.updated_at),
     tokens: await codexRolloutTokens(row.rollout_path),
     gitBranch: row.git_branch ?? null,
-  })));
+  }));
 }
 
-export function codexHistory(): ProviderHistory {
-  return { list: (projectPath) => codexList(projectPath) };
+// -- The provider registry --
+
+/** Providers whose sessions appear in project history — the single answer to
+ *  "which history reader does this provider use", for the CLI and the app alike.
+ *
+ *  Deliberately not a `TuiProvider` capability: the TUI registry reaches tmux,
+ *  hook installation and the session lifecycle, which no exported closure may.
+ *  `test/history.test.ts` fails closed if a registered provider has no entry
+ *  here. A Map keeps membership to listed ids only — a plain object would
+ *  resolve inherited keys like "toString" or "constructor". */
+const HISTORY_PROVIDERS = new Map<string, ProviderHistoryReader>([
+  ["claude", claudeList],
+  ["codex", codexList],
+]);
+
+export function historyReaderForProvider(provider: string): ProviderHistoryReader | null {
+  return HISTORY_PROVIDERS.get(provider) ?? null;
 }
 
-// -- Generic merge + live tagging --
+// -- Merge + live tagging --
 
 /** Sort rank for an `updatedAt`: its epoch time, or −∞ when it does not parse so
  *  it ranks after every real timestamp. Never NaN — a NaN rank compares unequal
@@ -356,39 +466,57 @@ function updatedAtRank(updatedAt: string): number {
   return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
 }
 
-/** Sort merged provider rows newest-first, cap them, and tag rows whose
- *  sessionId matches a live YACO session. Live tagging is provider-agnostic and
- *  keyed by YACO `sessionId`.
+/** Newest-first, ties broken by ascending `sessionId`.
  *
  *  Rows sharing an `updatedAt` — routine once two providers' clocks are merged —
- *  are ordered by ascending `sessionId`. Without that the tie falls through to
- *  the merge order, which is a directory read, so the window boundary at `limit`
- *  could include a different row on each call. An `updatedAt` that does not parse
- *  ranks after every real timestamp rather than comparing as NaN, which would
- *  make the comparator intransitive and hand the order back to the sort's
- *  internals. */
-export function finalizeHistory(
+ *  would otherwise fall through to the merge order, which is a directory read,
+ *  so the window boundary at `limit` could include a different row on each call.
+ *  Each provider caps its own scan with this same comparator, which is what
+ *  makes a per-provider cap a prefix of what the merge would have chosen. */
+function byUpdatedAtThenSessionId(
+  a: { updatedAt: string; sessionId: string },
+  b: { updatedAt: string; sessionId: string },
+): number {
+  const at = updatedAtRank(a.updatedAt);
+  const bt = updatedAtRank(b.updatedAt);
+  if (at !== bt) return bt - at;
+  return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0;
+}
+
+/** Sort merged provider rows newest-first, filter by `since`, cap them at
+ *  `limit`, and tag the window's rows with their live session and durable
+ *  origin.
+ *
+ *  `since` is applied *after* the merge and *before* the limit, so a cutoff can
+ *  never cost the caller rows it would otherwise have seen — and the durable
+ *  origin index is read only for the rows that survive, at most `limit` small
+ *  files, asynchronously. */
+export async function finalizeHistory(
   rows: HistorySession[],
-  liveSessions: readonly SessionState[],
+  liveSessions: readonly HistoryLiveSession[],
   options: { limit?: number; since?: Date } = {},
-): HistoryWindow {
+): Promise<HistoryWindow> {
   const limit = options.limit ?? DEFAULT_HISTORY_LIMIT;
   const cutoff = options.since?.getTime();
-  const sorted = [...rows].sort((a, b) => {
-    const at = updatedAtRank(a.updatedAt);
-    const bt = updatedAtRank(b.updatedAt);
-    if (at !== bt) return bt - at;
-    return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0;
-  });
+  const sorted = [...rows].sort(byUpdatedAtThenSessionId);
   const matching = cutoff === undefined
     ? sorted
     : sorted.filter((row) => new Date(row.updatedAt).getTime() >= cutoff);
   const windowRows = matching.slice(0, limit);
 
-  const liveBySessionId = new Map<string, SessionState>();
+  const liveBySessionId = new Map<string, HistoryLiveSession>();
   for (const s of liveSessions) {
     if (s.sessionId && s.sessionId !== PENDING_SESSION_ID) liveBySessionId.set(s.sessionId, s);
   }
+
+  const durable = await readOrigins(
+    windowRows
+      .filter((row) => {
+        const live = liveBySessionId.get(row.sessionId);
+        return !(live && !live.resumedFrom && live.spawnedBy);
+      })
+      .map((row) => row.sessionId),
+  );
 
   const enriched = windowRows.map((row) => {
     const live = liveBySessionId.get(row.sessionId);
@@ -396,8 +524,7 @@ export function finalizeHistory(
     const liveOrigin = live && !live.resumedFrom && live.spawnedBy
       ? { spawnedBy: live.spawnedBy, parentSession: live.parentSession ?? null }
       : null;
-    const durableOrigin = liveOrigin ? null : readOriginForSessionId(row.sessionId);
-    const origin = liveOrigin ?? durableOrigin;
+    const origin = liveOrigin ?? durable.get(row.sessionId) ?? null;
     return {
       ...row,
       live: handle !== null,
@@ -413,4 +540,24 @@ export function finalizeHistory(
     truncated: matching.length > limit,
     oldestUpdatedAt: enriched.at(-1)?.updatedAt ?? null,
   };
+}
+
+/** Merged, windowed project history with live sessions tagged.
+ *
+ *  Every provider is asked for `limit + 1` rows — see this module's header for
+ *  why that cap is exact under `--since` and under `truncated` alike. */
+export async function readProjectHistory(
+  projectPath: string,
+  liveSessions: readonly HistoryLiveSession[],
+  options: { limit?: number; since?: Date } = {},
+): Promise<Result<HistoryWindow>> {
+  try {
+    const cap = (options.limit ?? DEFAULT_HISTORY_LIMIT) + 1;
+    const perProvider = await Promise.all(
+      [...HISTORY_PROVIDERS.values()].map((read) => read(projectPath, cap)),
+    );
+    return ok(await finalizeHistory(perProvider.flat(), liveSessions, options));
+  } catch (e) {
+    return toErr(e);
+  }
 }

@@ -54,32 +54,6 @@ export interface AgentSession {
   notice?: string
 }
 
-/** Raw history row from `yaco agent history --path <p> --json`. The CLI owns
- *  all provider-home reads and parsing; `sessionId`/`updatedAt` are mapped to
- *  the app's `id`/`modified` UI shape in history.ts. */
-export interface CliHistorySession {
-  sessionId: string
-  provider: string
-  title: string | null
-  summary: string
-  created: string
-  updatedAt: string
-  tokens: number | null
-  gitBranch: string | null
-  archived?: boolean
-  live?: boolean
-  liveSessionName?: string | null
-  spawnedBy?: 'user:web' | 'user:terminal' | 'agent' | null
-  parentSession?: string | null
-}
-
-interface CliHistoryWindow {
-  rows: CliHistorySession[]
-  returned: number
-  truncated: boolean
-  oldestUpdatedAt: string | null
-}
-
 /** Raw shape of `<AGENT_SESSIONS_DIR>/<handle>.json` state files
  *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts AGENT_SESSIONS_DIR).
  *  Written by the `yaco agent` runtime; read here. The `provider` field is
@@ -187,6 +161,19 @@ function parseYacoEnvelope(raw: string, what: string): unknown {
   return (parsed as { data: unknown }).data
 }
 
+/** The `{ok:false,error:...}` line a `--json` failure writes to stderr, or null
+ *  when the tail is not one. Separate from its caller so that a tail which does
+ *  not parse is the only thing its `catch` can absorb. */
+function parseFailureEnvelope(tail: string): { code: string; message: string } | null {
+  try {
+    const parsed = JSON.parse(tail) as { ok?: boolean; error?: { code?: string; message?: string } }
+    if (parsed && parsed.ok === false && parsed.error?.message) {
+      return { code: parsed.error.code ?? 'INTERNAL', message: parsed.error.message }
+    }
+  } catch { /* not JSON */ }
+  return null
+}
+
 /** Spawn `yaco agent <args> --json` and return the unwrapped `data`.
  *  Throws with the structured CLI error message on `{ok:false}` envelopes
  *  or non-zero exit. Per app↔CLI contract, every spawn from app/server
@@ -203,14 +190,13 @@ async function runYacoAgentJson(args: string[], timeoutMs: number, what: string)
     const msg = (e as Error).message ?? String(e)
     const m = msg.match(/exit \d+:\s*([\s\S]*)$/)
     const tail = m ? m[1].trim() : ''
-    if (tail) {
-      try {
-        const parsed = JSON.parse(tail) as { ok?: boolean; error?: { code?: string; message?: string } }
-        if (parsed && parsed.ok === false && parsed.error?.message) {
-          throw new Error(`yaco ${what} failed [${parsed.error.code ?? 'INTERNAL'}]: ${parsed.error.message}`)
-        }
-      } catch { /* not JSON — fall through */ }
-    }
+    // The parse is its own step, and its `catch` covers only the parse. Built
+    // inline, the structured `throw` below landed inside that same `try` and was
+    // caught by the very handler meant to absorb a non-JSON tail — so every
+    // caller saw the opaque `exit <code>: <stderr>` and the translation was
+    // dead code for as long as it has existed.
+    const failure = tail ? parseFailureEnvelope(tail) : null
+    if (failure) throw new Error(`yaco ${what} failed [${failure.code}]: ${failure.message}`)
     throw e
   }
   return parseYacoEnvelope(raw, what)
@@ -287,22 +273,6 @@ export async function inspectSessionMessages(handle: string, args: string[]): Pr
 
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
-
-/** Fetch project session history rows from `yaco agent history --path <p> --json`.
- *  Provider-home resolution and parsing live in the CLI provider adapters; the
- *  app only maps field names and applies its own live-session marker. */
-export async function fetchHistory(projectPath: string): Promise<CliHistorySession[]> {
-  // execSync.*'yaco agent history --path <p> --json'
-  const data = await runYacoAgentJson(
-    ['agent', 'history', '--path', projectPath, '--json'],
-    YACO_AGENT_STATUS_TIMEOUT_MS,
-    'agent history',
-  )
-  if (data && typeof data === 'object' && Array.isArray((data as Partial<CliHistoryWindow>).rows)) {
-    return (data as CliHistoryWindow).rows
-  }
-  return []
-}
 
 /** Reject a start request for a provider the CLI catalog does not know.
  *  Shell never reaches here — callers route shell through its own start path. */

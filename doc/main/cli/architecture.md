@@ -280,12 +280,11 @@ stream):
 
 | Surface | Shape | Server consumer |
 |---|---|---|
-| `yaco agent history --path <p> [--since <iso>] [--limit <n>] --json` | windowed `HistoryWindow` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Strict parser: unknown flag / bad value / stray positional → `USAGE`. `--since` is ISO-8601 only and filters (after provider merge, before the `--limit` slice, default 200); `truncated` = the limit dropped rows | History tab — measured against the in-process bound and left a subprocess, see [read-path.md](read-path.md#the-history-read-measured-admitted-and-still-a-subprocess) |
 | `yaco agent usage [provider] [--fresh] --json` | per-provider `{provider, plan?, windows[], checkedAt, error?}`; each window is `{window, scope?, percent, resetsAt?}` where `window` is the provider's own identity (Codex a duration — `"5h"`, `"7d"` — Claude a group — `"session"`, `"weekly"`) and `scope` names a model-scoped limit. A failed provider comes back as an entry with `error` and no windows; exit is non-zero only when no provider reported a window. Cached 120s per provider, bound to the credential file's mtime | app `/api/usage` proxy + desktop quota rail |
 | `yaco agent output-cursor <h> --json` | opaque `{token,offset,sourceMtimeMs}` | pre-send reply cursor |
 | `yaco agent output-follow <h> --cursor <t> --offset <b> --json` | persistent NDJSON `event`/`end` stream | channel reply streaming (one subprocess per turn) |
 
-Four reads crossed the boundary without crossing a process boundary — the app
+Five reads crossed the boundary without crossing a process boundary — the app
 calls the same function the command does, through an audited export, and the
 argv surface stays exactly as it was so the subprocess remains each route's
 rollback path:
@@ -296,6 +295,7 @@ rollback path:
 | `@yaco/cli/core/agent/summaries#readSessionSummaries` | per-session `{handle,sessionId,provider,label}` | `yaco agent summaries --path <p> --json` | session-list labels (app-side cache; misses only) |
 | `@yaco/cli/core/agent#providerCatalog` | provider catalog `{id,label,executable}` | `yaco agent providers --json` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
 | `@yaco/cli/core/agent/messages#readMessageRows` | indexed message rows, `role`/`type`/`range` filtered | a metadata sweep plus one child per kept row | channel `/last` |
+| `@yaco/cli/core/agent#readProjectHistory` | windowed `Result<HistoryWindow>` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` — an explicit input — and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Every provider scan is capped at `limit + 1`, which is exact under `--since` because the cutoff and the merge key on the same `updatedAt` | `yaco agent history --path <p> --json`, whose strict parser (unknown flag / bad value / stray positional → `USAGE`) and ISO-8601-only `--since` are unchanged and still shipped | History tab |
 
 -> See: [read-path.md](read-path.md) for the rule that admits a read, what each
 move measured, and how to put one back.

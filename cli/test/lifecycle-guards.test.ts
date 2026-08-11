@@ -186,7 +186,10 @@ import {
   listStateHandles,
   type SessionState,
 } from "../src/lib/core/agent/session-state.ts";
-import { readOriginForSessionId } from "../src/lib/core/agent/origin.ts";
+import { readOrigins } from "../src/lib/core/agent/origin-read.ts";
+
+/** One durable origin record, through the chunked reader the history window uses. */
+const readOrigin = async (sessionId: string) => (await readOrigins([sessionId])).get(sessionId) ?? null;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1060,7 +1063,7 @@ describe("start --json contract guarantees", () => {
     }
 
     expect(state!.sessionId).toBe("origin-start-id");
-    expect(readOriginForSessionId("origin-start-id")).toMatchObject({
+    expect(await readOrigin("origin-start-id")).toMatchObject({
       sessionId: "origin-start-id",
       spawnedBy: "user:terminal",
       parentSession: null,
@@ -1081,7 +1084,7 @@ describe("start --json contract guarantees", () => {
 
     expect(state.sessionId).toBe("resume-thread-id");
     expect(state.resumedFrom).toBe("resume-thread-id");
-    expect(readOriginForSessionId("resume-thread-id")).toBeNull();
+    expect(await readOrigin("resume-thread-id")).toBeNull();
   });
 
   it("returns pending sentinel when sessionId cannot be resolved", async () => {
@@ -1130,7 +1133,7 @@ describe("Codex sessionId resolution strategy", () => {
     expect(m.resolveSessionIdCalls).toBeGreaterThan(0);
     expect(resolved!.sessionId).toBe("codex-thread-xyz");
     expect(readState(handle)?.sessionId).toBe("codex-thread-xyz");
-    expect(readOriginForSessionId("codex-thread-xyz")).toMatchObject({
+    expect(await readOrigin("codex-thread-xyz")).toMatchObject({
       sessionId: "codex-thread-xyz",
       spawnedBy: "agent",
       parentSession: "parent-codex",

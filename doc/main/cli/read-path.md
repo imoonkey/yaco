@@ -4,10 +4,10 @@
 > spawn `yaco … --json`, what each move measured, and how to put any one of them
 > back.
 
-Last updated: 2026-08-11 (read-sdk-docs — the milestone record of the four landed cutovers) · Design: `plan/all/cli-node-sdk/final/design.md` (*Read-path adoption*, *Concurrency and event-loop safety*, *Staging and rollback*) · Parent: [README.md](README.md)
+Last updated: 2026-08-11 (history-read-land — the fifth cutover, and the reader it needed) · Design: `plan/all/cli-node-sdk/final/design.md` (*Read-path adoption*, *Concurrency and event-loop safety*, *Staging and rollback*) · Parent: [README.md](README.md)
 
 `app/server` used to reach every piece of CLI-owned data the same way: spawn the
-`yaco` binary, wait for the child, parse its `--json` envelope. Four read paths
+`yaco` binary, wait for the child, parse its `--json` envelope. Five read paths
 no longer do — they call the CLI's own function through
 [`cli/package.json#exports`](exports.md), and the CLI command becomes an
 argv-and-render adapter over that same function, so each read has one
@@ -24,9 +24,9 @@ flowchart LR
     L["session list"] --> RS["readSessionSummaries"]
     ST["start preflight"] --> PC["providerCatalog"]
     C["channel /last"] --> RM["readMessageRows"]
+    H["history tab"] --> RH["readProjectHistory"]
   end
   subgraph P["yaco subprocess"]
-    H["history tab"] --> HC["agent history"]
     M["task set/rm/archive · agent start/send/kill · capture · output-follow · usage · reconcile"] --> MC["yaco …  --json"]
   end
 ```
@@ -76,19 +76,30 @@ what shipped is the exception written down, not a softened condition.
    printed rather than bounded, because no threshold there separates a
    regression from the noise.
 
-Condition 3 is the one that has produced surprises in both directions, so two
+Condition 3 is the one that has produced surprises in both directions, so three
 findings belong with the rule itself:
 
 - **`spawn()` is not a free baseline.** A child that prints an empty envelope
-  accounts for **37.6 of the subprocess history route's 42.3 ms** p95, and still
-  costs 15.9 ms with `ssh-add` discovery removed — `fork` with a loaded heap.
-  "Keep the subprocess" is not automatically the safe side of a starvation
-  comparison.
-- **A measuring instrument needs a control.** `summary-stall.ts` carries a
-  `whole-file` route — the previous reader's shape through the same call
-  mechanism — and separates it from the bounded one by 10–50× at every scale.
-  Without that separation, no figure the harness printed about the in-process
-  route would have meant anything.
+  accounts for **33.2 of the subprocess history route's 32.3 ms** p95 — the two
+  are the same number within run-to-run drift — and still costs 15.9 ms with
+  `ssh-add` discovery removed: `fork` with a loaded heap. "Keep the subprocess"
+  is not automatically the safe side of a starvation comparison.
+- **A measuring instrument needs a control**, and the control has to be the
+  *previous reader*. Both stall harnesses carry one — `summary-stall.ts` its
+  `whole-file` route, `history-stall.ts` a checked-in copy of the reader it
+  replaced — and each separates from its bounded successor by 5–11×. Without
+  that separation, no figure either harness printed would have meant anything.
+  **But a control is not free to run beside the thing it validates**: it grows
+  the parent heap that every forked route then inherits, which moves the
+  subprocess baseline and not the in-process one. Separation and bound come from
+  different runs.
+- **Bounding a scan and chunking it are different instruments for different
+  problems, and only measurement tells them apart.** The history cutover does
+  both, and its first control removed only the cap: that route *starved less*
+  than what shipped, because a bigger scan yields more often. The chunked yield
+  is what bounds the stall; the cap bounds wall time, and at ten times scale
+  bounds both. A control on the wrong axis would have credited the cap with an
+  improvement it does not produce. -> See: [below](#5--history-tab--readprojecthistory)
 
 ## What moved, and what it measured
 
@@ -104,6 +115,7 @@ bound rather than a harness, and says so below.
 | 2 | session-list labels → `readSessionSummaries` | **122 → 30 ms** p50 real provider home · **138 → 36 ms** synthetic 10× | **27.1 → 13.4 ms** · **34.3 → 14.1 ms** |
 | 3 | `agent start` provider validation → `providerCatalog()` | **≥72.7 ms → <0.01 ms** (a CLI-only lower bound; see below) | no I/O and no environment read, so nothing to starve — and no failure mode |
 | 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 6.4×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
+| 5 | history tab → `readProjectHistory` | **206 → 119 ms** p50 real provider home · **154 → 83 ms** synthetic 1× · **285 → 260 ms** synthetic 10× | **26.8 → 12.4 ms** · **29.7 → 13.7 ms** · **29.8 → 18.4 ms** |
 
 Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
 over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** at
@@ -171,12 +183,17 @@ accepted with its reason.
   traversal, cutover 1 discharged it, and the empty list stays as the shape of
   the check: a new synchronous traversal in an exported closure fails the audit.
   -> See: [exports.md](exports.md#the-tracked-debt-and-how-it-was-paid)
+- **The history read is capped, not cheap.** Its cap is `limit + 1` rows per
+  provider, so a project with more sessions than the window pays a two-phase
+  Claude read — `stat` and a tail for *every* log — before the window is chosen.
+  What the cap bounds is the expensive half: the head reads and the Codex rollout
+  tails, 587 down to 201 on the reference home. Nothing bounds the number of logs
+  a project directory can hold. -> See: [above](#5--history-tab--readprojecthistory)
 
 ## What still spawns
 
 | Path | Why |
 |---|---|
-| **history tab** (`yaco agent history`) | **Measured and left as a subprocess** — see below |
 | `yaco agent messages` (`/messages`) | Reduced from `1+n` children to one. What it returns is the command's own **text rendering**, which lives in the command layer and is not export-eligible; moving it means lifting the renderers into `core` |
 | `agent start`, `send`, `kill`, `capture`, `output-cursor`/`output-follow` | Mutation, lifecycle, tmux, detachment, streaming |
 | `agent list --reconcile`, resume preflight | Synchronous tmux and process liveness |
@@ -189,38 +206,65 @@ provider storage, and the direct session-display reader is already in-process an
 asynchronous — the design keeps it, and any future shared reader for it would be
 a de-duplication case, not a latency one.
 
-### The history read: measured, admitted, and still a subprocess
+### 5 · history tab → `readProjectHistory`
 
 The history read was the first `node:sqlite` query put to rule 5, and the answer
-was not about the database.
+was not about the database: the `threads` query is **3.0 ms** at the p50, and
+what failed the bound was the unbounded per-provider fan-out around it — every
+row a provider holds read before the window is applied. The reader that ships
+caps each provider at the window and reads in chunked instalments, and the
+harness measures it against the one it replaced:
 
-| Route (real provider home: 11.6 MB `state_5.sqlite`, 2 275 Codex threads, 81 Claude logs) | p95 starvation | wall p50 |
+| Route (real provider home: 11.1 MB `state_5.sqlite`, 2 301 Codex threads, 81 Claude logs) | p95 starvation | wall p50 |
 |---|---:|---:|
-| a child that prints an empty envelope — the spawn alone | 37.6 ms | 64 ms |
-| subprocess — the route today | 42.3 ms | 344 ms |
-| the shipped reader called in process | 79.2 ms | 142 ms |
-| a bounded, chunked prototype of it | 12.8 ms | 103 ms |
+| a child that prints an empty envelope — the spawn alone | 27.9 ms | 71 ms |
+| subprocess — the retired route | 26.8 ms | 206 ms |
+| **the shipped reader called in process** | **12.4 ms** | **119 ms** |
 
-- The `threads` query costs **4–9 ms**. What fails the bound is the unbounded
-  per-provider fan-out around it — every row a provider holds is read before the
-  window is applied, ~22 MB of parsing per request.
-- A bounded, chunked reader clears the bound at **every** swept chunk size
-  (1–16), 12–18 ms across the sweep. At chunk 8 its p95 worst starvation is
-  **12.4–14.4 ms** across the three fixtures, against **42.3–119.8 ms** for the
-  subprocess route on the same three — and it runs 3–12× faster.
+**Which run a figure comes from is part of the figure**, and getting that wrong
+was worth ~80 ms here. A forked route inherits the parent process's native
+high-water mark and an in-process route pays no fork at all, so running the
+heavy controls beside the spawns inflates the *subprocess* side of
+`in-process <= subprocess` and barely moves the other — on the 10× fixture,
+`subprocess` p95 measured 91.7 ms with the controls interleaved and 29.8 ms
+without, while `in-process` moved 31.7 → 18.4 ms. So the bound is taken from
+`--routes spawn-noop,subprocess,in-process`, and the harness prints
+`NOT THE GATE` on any run that included a control.
 
-So the path is admitted — **in that bounded form only**, and nothing was
-exported. Landing it needs four files that task did not own (`core/agent`'s
-barrel, an asynchronous `origin.ts` lookup, the audit pins, and the CLI adapter)
-and two decisions the benchmark does not answer: `--since` filters *after* the
-provider merge, so a cap has to be the window past the cutoff; and the prototype
-drops the `sessions-index.json` enrichment, the Claude first-user-message
-summary, the Codex thread-name index, sidechain filtering and live tagging, all
-of which have to be restored before its numbers describe a shipped reader.
+The control is `cli/test/bench/history-retired-control.ts`, the previous module
+checked in verbatim, and its job is separation rather than a bound: run beside
+the shipped reader it is **over** the bound on all three fixtures (64.5 · 66.7 ·
+345.1 ms) where the shipped reader is within (11.4 · 13.9 · 31.7 ms). That
+separation is what makes the table above mean anything.
 
-**The successor is `history-read-land`**, in the task graph.
--> See: [exports.md](exports.md#the-queries-rule-5-has-judged) for the harness
-and its reproduction commands.
+Two decisions the benchmark could not answer:
+
+- **The per-provider cap is `limit + 1`, and `--since` needs no plumbing.** The
+  merge sorts by `updatedAt` and `--since` filters on the same `updatedAt`, so
+  the rows past any cutoff are a *prefix* of each provider's newest-first order:
+  a provider's newest `limit + 1` rows already are its window past every cutoff.
+  `+ 1` rather than `limit` because `truncated` is `matching.length > limit`,
+  which a cap of exactly `limit` would report as a full, untruncated window.
+  A test deep-equals the capped read against an uncapped one at nine cutoffs and
+  ten limits.
+- **A provider's cap key must be the key the merge sorts by**, which is what
+  retired the prototype's Claude cap on `stat` mtime: a Claude row's `updatedAt`
+  is the index's `modified`, else the log's *own* last timestamp. Claude is read
+  in two phases instead — tail-read every log for the ordering key, head-read
+  only the window. Codex's `LIMIT` is exact because its ORDER BY column is the
+  one `epochToISO` turns into `updatedAt`.
+
+Everything the prototype dropped is restored and in the measurement above: the
+`sessions-index.json` enrichment, the Claude first-user-message summary, the
+Codex thread-name index, sidechain filtering and live tagging. Three parsers
+were made to scan backward and stop at the first hit, which is why the restored
+work is affordable — the last match found scanning backward is the last match,
+so a 64 KB tail costs a `JSON.parse` rather than a scan.
+
+-> See: [exports.md](exports.md#the-queries-rule-5-has-judged) for the judged
+query and its bound, and
+[the dev workflow](../../dev/cli/workflow.md#re-running-the-read-path-measurements)
+for the commands.
 
 ## Rolling one back
 
@@ -235,7 +279,7 @@ call site*, one route at a time:
 | 2 · session summaries | the `yaco agent summaries --path <p> --json` spawn in `app/server/src/lib/session-summary.ts`. The cache in front of it is app-owned and unchanged | `3a773dab` |
 | 3 · provider catalog | the `yaco agent providers --json` spawn in `app/server/src/lib/agent.ts` before `startAgentSession` | `5bbc6f0a` |
 | 4 · channel `/last` | `agent.ts#lastAssistantMessages` and the router's import of it | `2709fcec` (app half); the CLI half `97ade32a` stays |
-| 5 · history | nothing — it never moved | |
+| 5 · history | `fetchHistory` in `app/server/src/lib/agent.ts` — a `runYacoAgentJson(['agent','history','--path',p,'--json'], YACO_AGENT_STATUS_TIMEOUT_MS, 'agent history')` returning `data.rows` — and `getHistory` calling it instead of `readProjectHistory`. This is the one restore that has to be *written back* rather than re-pointed: the helper was deleted with the cutover, because a dead second reader of the same data is what the cutover exists to remove | `4370553b` (the cutover), `66a27fc7` (review responses; it also fixes an unrelated defect in `runYacoAgentJson` that any rewrite of the helper should keep) |
 
 **`git revert <sha>` is not the procedure, and the record should not be read as
 one.** Each task tested its revert at the commit it had just made, and each

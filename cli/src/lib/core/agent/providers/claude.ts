@@ -4,7 +4,6 @@ import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
 import { shellEscape } from "./shell-escape.ts";
 import { hasNameFlag, hasPermissionFlag, extractResume, stripResume } from "./args.ts";
 import { claudeHooks } from "./hooks.ts";
-import { claudeHistory } from "./history.ts";
 import { claudeOutput } from "./output.ts";
 import { claudeProjectMove } from "./project-move.ts";
 import { CLAUDE_IDENTITY } from "../provider-catalog.ts";
@@ -83,8 +82,6 @@ export const claudeProvider: TuiProvider = {
   },
 
   hooks: claudeHooks(),
-
-  history: claudeHistory(),
 
   output: claudeOutput(),
 

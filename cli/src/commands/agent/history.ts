@@ -1,13 +1,14 @@
-/** `yaco agent history --path <project-path>` — project-scoped session history.
+/** `yaco agent history --path <project-path>` — the argv-and-render adapter over
+ *  the shared project-history read.
  *
- *  Merges every provider's persisted session rows for a project, sorted
- *  newest-first, filtered/windowed, with live YACO sessions tagged by sessionId.
- *  Provider-home resolution and parsing live in the provider adapters, so
- *  app/server never opens `~/.claude` or `~/.codex` itself. */
+ *  Merging, windowing and live tagging are `core/agent`'s `readProjectHistory`,
+ *  which `app/server` calls in process; this module resolves the flags, supplies
+ *  the live sessions from YACO's own state files, and renders. One
+ *  implementation behind both call mechanisms. */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { listProviders } from "../../lib/core/agent/providers/index.ts";
-import { DEFAULT_HISTORY_LIMIT, finalizeHistory } from "../../lib/core/agent/providers/history.ts";
+import { isErr } from "../../lib/core/result.ts";
+import { DEFAULT_HISTORY_LIMIT, readProjectHistory } from "../../lib/core/agent/providers/history.ts";
 import { listByPath } from "../../lib/core/agent/session-state.ts";
 import type { HistorySession, HistoryWindow } from "../../lib/core/agent/providers/types.ts";
 
@@ -84,13 +85,9 @@ export async function runHistory(
   projectPath: string,
   options: { limit?: number; since?: Date } = {},
 ): Promise<HistoryWindow> {
-  const liveSessions = listByPath(projectPath);
-  const perProvider = await Promise.all(
-    listProviders()
-      .filter((p) => p.history)
-      .map((p) => p.history!.list(projectPath, liveSessions)),
-  );
-  return finalizeHistory(perProvider.flat(), liveSessions, options);
+  const window = await readProjectHistory(projectPath, listByPath(projectPath), options);
+  if (isErr(window)) throw new CliError(window.code as ErrCode, window.message, window.details);
+  return window.value;
 }
 
 /** Concise text rendering: one line per session, newest-first as returned. */

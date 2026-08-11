@@ -11,7 +11,7 @@
  *  concurrency section requires alongside it — a graph is input-controlled, so
  *  no single sample bounds it. */
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
@@ -30,14 +30,35 @@ export interface FixtureScale {
   claudeSessions: number;
   /** Files in `$YACO_HOME/agent/origins` — the durable origin side index. */
   originFiles: number;
+  /** Records in `~/.codex/session_index.jsonl`.
+   *
+   *  Its own dimension because the reader splits and scans the **whole** file
+   *  regardless of the window, so it is an input the cap does not bound. Getting
+   *  this wrong is not hypothetical, and it has now been wrong twice: first the
+   *  fixture wrote `min(codexThreadsForProject, 200)` records, which is 200 at
+   *  *both* scales; then it wrote the right number of records at 55% of the
+   *  measured bytes, because a `named-N` line is a third the length of a real
+   *  one. The count and `codexNameBytes` are both pinned for that reason. */
+  codexNameRecords: number;
+  /** Bytes of `~/.codex/session_index.jsonl`. The reader decodes and splits all
+   *  of them, so the byte load is the cost and the record count only shapes it;
+   *  records are padded to hit this total. */
+  codexNameBytes: number;
 }
 
 /** Measured on the reference machine on 2026-08-11: 2,275 Codex threads
  *  (587 for the busiest cwd) in an 11.6 MB `state_5.sqlite`, 81 Claude JSONL
- *  files in the busiest project directory, 1,785 origin records. */
+ *  files in the busiest project directory, 1,785 origin records, and a
+ *  `session_index.jsonl` of 2,013 records in 266,393 bytes. */
 export const SCALES: Record<string, FixtureScale> = {
-  "1": { codexThreads: 2275, codexThreadsForProject: 587, claudeSessions: 81, originFiles: 1785 },
-  "10": { codexThreads: 22750, codexThreadsForProject: 5870, claudeSessions: 810, originFiles: 17850 },
+  "1": {
+    codexThreads: 2275, codexThreadsForProject: 587, claudeSessions: 81,
+    originFiles: 1785, codexNameRecords: 2013, codexNameBytes: 266_393,
+  },
+  "10": {
+    codexThreads: 22750, codexThreadsForProject: 5870, claudeSessions: 810,
+    originFiles: 17850, codexNameRecords: 20130, codexNameBytes: 2_663_930,
+  },
 };
 
 /** Bytes of rollout tail the read path examines per Codex row. Real rollout
@@ -136,16 +157,63 @@ const CODEX_SCHEMA = `CREATE TABLE threads (
   git_origin_url TEXT,
   cli_version TEXT NOT NULL DEFAULT '',
   first_user_message TEXT NOT NULL DEFAULT '',
+  created_at_ms INTEGER,
+  updated_at_ms INTEGER,
   preview TEXT NOT NULL DEFAULT '',
-  recency_at INTEGER NOT NULL DEFAULT 0
+  recency_at INTEGER NOT NULL DEFAULT 0,
+  recency_at_ms INTEGER NOT NULL DEFAULT 0
 )`;
 
-/** Index set Codex ships, so the benchmark's query plan matches production's. */
+/** The index set Codex ships, so the benchmark's query plan matches
+ *  production's.
+ *
+ *  The distinction the names carry is load-bearing and was got wrong once: the
+ *  composite `cwd` indexes order by the **millisecond** columns, while the read
+ *  orders by `updated_at` (seconds), whose only index does not carry `archived`
+ *  or `cwd`. So the planner filters through a composite index and sorts the
+ *  matches in a temp B-tree — it is *not* an index-prefix scan, and a fixture
+ *  index that spelled `updated_at` here would have made the benchmark measure a
+ *  plan production does not run. Verify with
+ *  `node cli/test/bench/history-stall.ts --sqlite-probe --home ~`, which prints
+ *  the plan it measured. */
 const CODEX_INDEXES = [
   "CREATE INDEX idx_threads_updated_at ON threads(updated_at DESC, id DESC)",
+  "CREATE INDEX idx_threads_updated_at_ms ON threads(updated_at_ms DESC, id DESC)",
   "CREATE INDEX idx_threads_archived ON threads(archived)",
-  "CREATE INDEX idx_threads_archived_cwd_updated_at_ms ON threads(archived, cwd, updated_at DESC, id DESC)",
+  "CREATE INDEX idx_threads_archived_cwd_updated_at_ms ON threads(archived, cwd, updated_at_ms DESC, id DESC)",
+  "CREATE INDEX idx_threads_recency_at_ms ON threads(recency_at_ms DESC, id DESC)",
+  "CREATE INDEX idx_threads_archived_cwd_recency_at_ms ON threads(archived, cwd, recency_at_ms DESC, id DESC)",
 ];
+
+/** `session_index.jsonl` at the scale's measured record count *and* byte size. */
+function buildNameIndex(scale: FixtureScale): string {
+  const lines: string[] = [];
+  for (let i = 0; i < scale.codexNameRecords; i++) {
+    // Ids repeat every ninth record, so ~11% of the file is a rename of a name
+    // already seen — the shape `loadCodexThreadNames` resolves last-entry-wins.
+    const n = i % 9 === 8 ? Math.max(0, i - 8) : i;
+    lines.push(JSON.stringify({ id: fixtureId(n % scale.codexThreads), thread_name: `named-${i}` }));
+  }
+  // Exactly what the return below writes: the join plus the trailing newline.
+  const bare = lines.join("\n").length + 1;
+  // Spread the shortfall across the names rather than appending filler records:
+  // the record count is itself pinned, and padding a name is what a longer real
+  // thread name is.
+  const shortfall = Math.max(0, scale.codexNameBytes - bare);
+  const padPerLine = Math.floor(shortfall / scale.codexNameRecords);
+  // The division's remainder goes on the first line, so the file lands on the
+  // measured size exactly rather than 1.4% under it. A fixture that is nearly
+  // the right size is how the last two versions of this one went wrong.
+  const remainder = shortfall - padPerLine * scale.codexNameRecords;
+  if (padPerLine + remainder > 0) {
+    for (let i = 0; i < lines.length; i++) {
+      const entry = JSON.parse(lines[i]!);
+      const pad = padPerLine + (i === 0 ? remainder : 0);
+      lines[i] = JSON.stringify({ ...entry, thread_name: entry.thread_name + "-".repeat(pad) });
+    }
+  }
+  return lines.join("\n") + "\n";
+}
 
 export interface Fixture {
   /** Value for `HOME` — the provider homes hang off it. */
@@ -155,7 +223,7 @@ export interface Fixture {
   /** Absolute path of the project whose history is read. */
   projectPath: string;
   /** Bytes written, for the report. */
-  bytes: { codexDb: number; rollouts: number; claude: number };
+  bytes: { codexDb: number; rollouts: number; claude: number; codexNameIndex: number };
 }
 
 /** Build the fixture under `root`, replacing anything already there. */
@@ -177,9 +245,13 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
     db.exec(CODEX_SCHEMA);
     for (const sql of CODEX_INDEXES) db.exec(sql);
     const insert = db.prepare(
-      `INSERT INTO threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd,
+      // The millisecond columns carry the same instant as the second columns, so
+      // the composite indexes are populated exactly as production's are and the
+      // planner faces the same choice.
+      `INSERT INTO threads (id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+        recency_at_ms, source, model_provider, cwd,
         title, sandbox_policy, approval_mode, git_branch, first_user_message)
-       VALUES (?, ?, ?, ?, 'main', 'openai', ?, ?, 'workspace-write', 'on-request', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'main', 'openai', ?, ?, 'workspace-write', 'on-request', ?, ?)`,
     );
     db.exec("BEGIN");
     const base = Math.floor(Date.parse("2026-08-10T00:00:00Z") / 1000);
@@ -198,6 +270,9 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
         path,
         base + i,
         base + i,
+        (base + i) * 1000,
+        (base + i) * 1000,
+        (base + i) * 1000,
         cwd,
         `bench-thread-${i}`,
         i % 3 === 0 ? "main" : `feat/bench-${i % 50}`,
@@ -209,11 +284,16 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
   } finally {
     db.close();
   }
-  writeFileSync(
-    join(home, ".codex", "session_index.jsonl"),
-    Array.from({ length: Math.min(scale.codexThreadsForProject, 200) }, (_, i) =>
-      JSON.stringify({ id: fixtureId(i), thread_name: `named-${i}` })).join("\n") + "\n",
-  );
+  // Every record is scanned whatever the window is, so this scales with the
+  // fixture rather than with the window, in both dimensions: `codexNameRecords`
+  // decides how many lines the split produces, `codexNameBytes` how much text is
+  // decoded to get them, and the thread name is padded to reconcile the two.
+  //
+  // Every ninth record repeats an earlier id, so the reader's last-entry-wins
+  // rule is exercised rather than merely described — a real file accumulates a
+  // record per rename, and the fixture would otherwise be all-unique.
+  const nameIndex = buildNameIndex(scale);
+  writeFileSync(join(home, ".codex", "session_index.jsonl"), nameIndex);
 
   // -- Claude: one JSONL per session plus the optional sessions index --
   const claudeDir = join(home, ".claude", "projects", encodeClaudeCwd(FIXTURE_PROJECT));
@@ -253,6 +333,11 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
     home,
     yacoHome,
     projectPath: FIXTURE_PROJECT,
-    bytes: { codexDb: 0, rollouts: rolloutBytes, claude: claudeBytes },
+    bytes: {
+      codexDb: statSync(dbPath).size,
+      rollouts: rolloutBytes,
+      claude: claudeBytes,
+      codexNameIndex: nameIndex.length,
+    },
   };
 }
