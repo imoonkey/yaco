@@ -302,7 +302,7 @@ ffmpeg -ss <start> -t <len> -i cap.webm -vf "fps=8,scale=900:-1:flags=lanczos,sp
 
 Do not reach for JPEG: measured on these screenshots it is *twice the size* of the quantized PNG at 2.4× the RMSE, because flat UI plus antialiased text is the case palette compression wins and DCT loses.
 
-The pair is selected by `<picture><source media="(prefers-color-scheme: dark)">`, with the light file as the `<img>` fallback. **That media query reads the browser/OS preference, not the reader's GitHub theme setting** — a reader who pins GitHub to dark while their OS stays light gets the light image on a dark page. That mismatch is accepted; the alternative (one theme for everyone) is worse for the majority who leave GitHub on "sync with system". A caption must therefore be true of *both* images in its pair, since no reader sees them side by side.
+The pair is selected by `<picture><source media="(prefers-color-scheme: dark)">`, with the light file as the `<img>` fallback. **That media query reads the browser/OS preference, not the reader's GitHub theme setting** — pinning GitHub to dark on a light OS serves the light image on a dark page, and GitHub's own "Night theme, light default" combination has reported the inverse. GitHub wraps the element in a `<themed-picture>` custom element, but that has never closed the gap ([community#16910](https://github.com/orgs/community/discussions/16910)). The mismatch is accepted: it only affects readers who override the default "sync with system", and the alternative — one theme for everyone — is worse for everyone else. A caption must therefore be true of *both* images in its pair, since no reader sees them side by side.
 
 ## Testing
 
