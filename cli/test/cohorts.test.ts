@@ -61,12 +61,47 @@ describe("bun cohort verdict", () => {
 
   it("refuses a zero-test file that prints its own positive summary", () => {
     // `bun test` exits 0 here and the console is shared with the test, so a
-    // console-scraping check reads the lie. The JUnit report is not written at
-    // all when nothing ran, and only the runner writes it.
+    // console-scraping check reads the lie.
     const { path, cleanup } = fixture(
       `import { test } from "bun:test";\n` +
         `console.log("Ran 1 test across 1 file");\n` +
         `console.error('<testsuites name="bun test" tests="99" />');\n`,
+    );
+    try {
+      expect(runBunFile(path)).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("refuses a zero-test file that forges the runner's own report", () => {
+    // The report path is on the child's `argv` and its directory is enumerable
+    // by anyone with the same uid, so a test file can write the report itself.
+    // The verdict therefore does not start from anything the run produced: a
+    // file that declares no test is rejected before bun is spawned, so the
+    // forgery below never executes.
+    const { path, cleanup } = fixture(
+      `import { test } from "bun:test";\n` +
+        `import { readdirSync, writeFileSync } from "node:fs";\n` +
+        `import { tmpdir } from "node:os";\n` +
+        `import { join } from "node:path";\n` +
+        `for (const dir of readdirSync(tmpdir())) {\n` +
+        `  if (!dir.startsWith("yaco-cohorts-")) continue;\n` +
+        `  writeFileSync(join(tmpdir(), dir, "junit.xml"), '<testsuites name="bun test" tests="99" />');\n` +
+        `}\n`,
+    );
+    try {
+      expect(runBunFile(path)).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("refuses a file whose declared tests never run", () => {
+    // The other half: the source says `test(`, and the run reaches none of it.
+    // `bun test` exits 0 and writes no report, which is what catches this.
+    const { path, cleanup } = fixture(
+      `import { test, expect } from "bun:test";\nprocess.exit(0);\ntest("x", () => expect(1).toBe(1));\n`,
     );
     try {
       expect(runBunFile(path)).toBe(false);

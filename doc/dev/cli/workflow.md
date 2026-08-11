@@ -120,15 +120,19 @@ bun run test:integration  # reinstalls CLI, then tmux-backed integration tests
 The suite is mid-migration to Vitest. Which runner owns a file is a fact *about
 the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
 reads that — from an **import declaration**, not from prose that mentions a
-runner — runs both cohorts, and **fails closed** three ways: a file naming
-neither runner or both, a suite selecting no files, and a bun-cohort file whose
-**JUnit report** says it ran nothing (`bun test` exits 0 on a file that declares
-no test; `vitest run` rejects it). The report, not the console summary, because
-the console is shared with the tests and a test can print a summary-shaped line
-of its own. So a new test cannot land in no suite, and a
-cohort cannot pass by running nothing. Both `test:unit` and `test:integration`
-are that script; there is no list to keep in sync, and `test/cohorts.test.ts`
-pins the partition rule.
+runner — runs both cohorts, and **fails closed** four ways: a file naming
+neither runner or both, a suite selecting no files, a bun-cohort file whose
+**source declares no test**, and one whose **JUnit report** says none ran
+(`bun test` exits 0 in both cases; `vitest run` rejects them itself).
+
+The source check is the authoritative one, and it is deliberately not derived
+from the run: everything a run produces — console, exit status, and the report
+file, whose path the child reads off its own `argv` — is written by the same
+process as the tests. The source is read before that process exists. The report
+check then catches the other half, a file whose declared tests never run. So a
+new test cannot land in no suite, and a cohort cannot pass by running nothing.
+Both `test:unit` and `test:integration` are that script; there is no list to
+keep in sync, and `test/cohorts.test.ts` pins both rules.
 
 Only 6 files are left on Bun, all of them database fixtures that open
 `bun:sqlite`: `test/{history,session-id,summary}.test.ts`,

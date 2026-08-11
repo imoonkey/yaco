@@ -65,19 +65,50 @@ function runVitest(args) {
   return spawnSync("npx", args, { cwd: CLI_ROOT, stdio: "inherit" }).status === 0;
 }
 
+/** The names a file bound from `bun:test` that declare tests — `it`, `test`, and
+ *  any `as` alias of them. `expect` and the hooks are deliberately not here: a
+ *  file full of `expect(` still declares nothing. */
+const DECLARERS = new Set(["it", "test"]);
+function declaresTest(source) {
+  const braces = /^\s*import\s*\{([^}]*)\}\s*from\s*["']bun:test["']/m.exec(source);
+  if (!braces) return false;
+  return braces[1].split(",").some((spec) => {
+    const [imported, local = imported] = spec.trim().split(/\s+as\s+/).map((s) => s.trim());
+    return DECLARERS.has(imported) && new RegExp(`\\b${local}(?:\\.\\w+)*\\s*\\(`).test(source);
+  });
+}
+
 /** `bun test` exits 0 on a file that declares no test, and a batch's summary
  *  counts that file among the ones it ran — so the exit code is not the whole
  *  answer and a batch tells you nothing about one file. Hence one invocation per
- *  file, and hence the **JUnit report** rather than the console summary: console
- *  output is shared with the tests, which can print a summary-shaped line of
- *  their own, while the report is a file only the runner writes. With zero tests
- *  bun writes no report at all, which is the signal.
+ *  file, and two independent checks around it.
+ *
+ *  The **source** check is the authoritative one, because it is the only
+ *  evidence the child cannot touch: it is read from the checked-in file before
+ *  the child exists. Everything the run produces — console output, exit status,
+ *  and the report file, whose path the child can read off its own `argv` — is
+ *  written by the same process as the tests, so none of it can be authoritative
+ *  against a file that sets out to lie. (A file that declares a test and then
+ *  never registers it could still forge a count. That is a lie in the tree, not
+ *  drift; this runner detects drift.)
+ *
+ *  The **report** check is the one that catches a file whose declared tests
+ *  don't run — an early `process.exit(0)`, a guard that registers nothing. With
+ *  zero tests bun writes no report at all, which is the signal. The report is
+ *  used rather than the console summary because console output is shared with
+ *  the tests, which can print a summary-shaped line of their own.
  *
  *  The path is spelled absolutely because a *bare* path is a name filter to
  *  `bun test`, and an `.integration.ts` file matches no filter at all. */
 export function runBunFile(file) {
+  const path = resolve(CLI_ROOT, file);
+  if (!declaresTest(readFileSync(path, "utf-8"))) {
+    console.error(`bun cohort: ${file} imports bun:test and declares no test — nothing the run reports can change that`);
+    return false;
+  }
+
   const report = join(mkdtempSync(join(tmpdir(), "yaco-cohorts-")), "junit.xml");
-  const args = ["test", "--reporter=junit", `--reporter-outfile=${report}`, resolve(CLI_ROOT, file)];
+  const args = ["test", "--reporter=junit", `--reporter-outfile=${report}`, path];
   announce("bun cohort", "bun", args);
   try {
     if (spawnSync("bun", args, { cwd: CLI_ROOT, stdio: "inherit" }).status !== 0) return false;
