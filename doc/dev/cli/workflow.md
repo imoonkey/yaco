@@ -122,8 +122,10 @@ the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
 reads that — from an **import declaration**, not from prose that mentions a
 runner — runs both cohorts, and **fails closed** three ways: a file naming
 neither runner or both, a suite selecting no files, and a bun-cohort file whose
-own run summary reports 0 tests (`bun test` exits 0 on a file that declares
-none; `vitest run` rejects it). So a new test cannot land in no suite, and a
+**JUnit report** says it ran nothing (`bun test` exits 0 on a file that declares
+no test; `vitest run` rejects it). The report, not the console summary, because
+the console is shared with the tests and a test can print a summary-shaped line
+of its own. So a new test cannot land in no suite, and a
 cohort cannot pass by running nothing. Both `test:unit` and `test:integration`
 are that script; there is no list to keep in sync, and `test/cohorts.test.ts`
 pins the partition rule.

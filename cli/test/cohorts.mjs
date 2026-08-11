@@ -17,8 +17,9 @@
  *  Deleted by `cli-sqlite-hop`, which leaves `vitest run`.
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -65,30 +66,35 @@ function runVitest(args) {
 }
 
 /** `bun test` exits 0 on a file that declares no test, and a batch's summary
- *  counts that file as run — so the only place it says whether *this* file
- *  contributed anything is a one-file run's own summary. Hence one invocation
- *  per file, and hence captured output rather than inherited.
+ *  counts that file among the ones it ran — so the exit code is not the whole
+ *  answer and a batch tells you nothing about one file. Hence one invocation per
+ *  file, and hence the **JUnit report** rather than the console summary: console
+ *  output is shared with the tests, which can print a summary-shaped line of
+ *  their own, while the report is a file only the runner writes. With zero tests
+ *  bun writes no report at all, which is the signal.
  *
  *  `./` matters too: a bare path is a name *filter* to `bun test`, and an
  *  `.integration.ts` file matches no filter at all. */
-function runBunFile(file) {
-  const args = ["test", `./${file}`];
+export function runBunFile(file) {
+  const report = join(mkdtempSync(join(tmpdir(), "yaco-cohorts-")), "junit.xml");
+  const args = ["test", "--reporter=junit", `--reporter-outfile=${report}`, `./${file}`];
   announce("bun cohort", "bun", args);
-  const result = spawnSync("bun", args, { cwd: CLI_ROOT, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
-  const output = (result.stdout ?? "") + (result.stderr ?? "");
-  process.stderr.write(output);
-  if (result.status !== 0) return false;
+  try {
+    if (spawnSync("bun", args, { cwd: CLI_ROOT, stdio: "inherit" }).status !== 0) return false;
 
-  const summary = /Ran (\d+) tests? across 1 file/.exec(output);
-  if (!summary) {
-    console.error(`bun cohort: ${file} exited 0 without a one-file run summary — refusing to call that a pass`);
-    return false;
+    const tests = existsSync(report) && /<testsuites\b[^>]*\btests="(\d+)"/.exec(readFileSync(report, "utf-8"));
+    if (!tests) {
+      console.error(`bun cohort: ${file} exited 0 and wrote no test report — refusing to call that a pass`);
+      return false;
+    }
+    if (Number(tests[1]) === 0) {
+      console.error(`bun cohort: ${file} ran 0 tests`);
+      return false;
+    }
+    return true;
+  } finally {
+    rmSync(dirname(report), { recursive: true, force: true });
   }
-  if (Number(summary[1]) === 0) {
-    console.error(`bun cohort: ${file} ran 0 tests`);
-    return false;
-  }
-  return true;
 }
 
 function main(suite) {

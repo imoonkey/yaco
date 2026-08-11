@@ -9,7 +9,12 @@
  *  Dies with `test/cohorts.mjs` in `cli-sqlite-hop`.
  */
 import { describe, it, expect } from "vitest";
-import { classify } from "./cohorts.mjs";
+import { classify, runBunFile } from "./cohorts.mjs";
+import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+
+const CLI_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const withTest = (head: string) => `${head}\nit("x", () => {});\n`;
 
@@ -42,5 +47,43 @@ describe("cohort partition", () => {
 
   it("accepts a qualified test call", () => {
     expect(classify(`import { it } from "vitest";\nit.sequential("x", () => {});\n`)).toBe("vitest");
+  });
+});
+
+describe("bun cohort verdict", () => {
+  /** A fixture under `cli/` so `runBunFile`'s CLI_ROOT-relative path resolves,
+   *  and outside `test/` so the real cohort scan never sees it. */
+  function fixture(body: string): { rel: string; cleanup: () => void } {
+    const dir = mkdtempSync(join(CLI_ROOT, ".cohorts-fixture-"));
+    writeFileSync(join(dir, "case.test.ts"), body);
+    return {
+      rel: `${basename(dir)}/case.test.ts`,
+      cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  }
+
+  it("refuses a zero-test file that prints its own positive summary", () => {
+    // `bun test` exits 0 here and the console is shared with the test, so a
+    // console-scraping check reads the lie. The JUnit report is not written at
+    // all when nothing ran, and only the runner writes it.
+    const { rel, cleanup } = fixture(
+      `import { test } from "bun:test";\n` +
+        `console.log("Ran 1 test across 1 file");\n` +
+        `console.error('<testsuites name="bun test" tests="99" />');\n`,
+    );
+    try {
+      expect(runBunFile(rel)).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("accepts a file that really runs a test", () => {
+    const { rel, cleanup } = fixture(`import { test, expect } from "bun:test";\ntest("x", () => expect(1).toBe(1));\n`);
+    try {
+      expect(runBunFile(rel)).toBe(true);
+    } finally {
+      cleanup();
+    }
   });
 });
