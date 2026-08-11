@@ -8,7 +8,7 @@
  *  tests drive the real spawn helper, because a child that is not there is
  *  exactly what the command needs a real `codex` to get past.
  */
-import { describe, it, expect, afterEach, afterAll } from "bun:test";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

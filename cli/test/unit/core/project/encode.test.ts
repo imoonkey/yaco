@@ -1,6 +1,6 @@
 /** Tests for the path encoder used by `yaco project move`. */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import { encodeClaudeCwd } from "../../../../src/lib/core/project/encode.ts";
 

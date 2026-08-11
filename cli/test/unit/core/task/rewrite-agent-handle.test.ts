@@ -2,7 +2,7 @@
  *  resolving a tasks path from a (possibly worktree/subdir) sessionPath and
  *  rewriting `agents` handle references old -> new. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
