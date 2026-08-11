@@ -218,17 +218,42 @@ const EXPECTED: Record<string, ExpectedExport> = {
       ],
     },
   },
+  // The pure session projection, the provider identity table, and the one
+  // project-history read. History is what puts a filesystem and a database in
+  // this closure at all: `providers/history.ts` for the merge and the two
+  // bounded provider scans, `codex-thread-window.ts` for the judged query,
+  // `origin-read.ts` for the window's origin lookup — and no writer beside any
+  // of them. It reaches neither `session-state.ts` (a mutation module; the live
+  // sessions are an explicit input) nor `providers/index.ts` (the TUI registry
+  // reaches tmux, hooks and the lifecycle; the history readers have their own
+  // two-entry lookup, and a test fails closed when a registered provider is
+  // missing from it).
   "./core/agent": {
     files: [
       "src/lib/core/agent/index.ts",
       "src/lib/core/agent/model.ts",
+      "src/lib/core/agent/origin-read.ts",
       "src/lib/core/agent/projection.ts",
       "src/lib/core/agent/provider-catalog.ts",
+      "src/lib/core/agent/providers/codex-thread-window.ts",
+      "src/lib/core/agent/providers/history.ts",
+      "src/lib/core/agent/providers/prompt-label.ts",
+      "src/lib/core/agent/providers/provider-home.ts",
       "src/lib/core/agent/words.ts",
       "src/lib/core/errors.ts",
+      "src/lib/core/paths/yaco-home.ts",
+      "src/lib/core/project/encode.ts",
       "src/lib/core/result.ts",
     ],
-    externals: ["node:crypto", "node:path"],
+    externals: [
+      "node:crypto",
+      "node:fs",
+      "node:fs/promises",
+      "node:os",
+      "node:path",
+      // The judged synchronous admission — see RULE_5_SQLITE below.
+      "node:sqlite",
+    ],
     names: {
       "src/lib/core/agent/model.ts": [
         "NOTICE_MAX",
@@ -248,6 +273,20 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "normalizeProjectPath",
         "resolveProjectForPath",
         "toSessionRow",
+      ],
+      // One read verb, the shape of its live-session input, the window's
+      // default, and the reader registry as the only answer to which reader a
+      // provider uses. No provider scan is published on its own: a caller that
+      // could reach one could scan a provider without the window.
+      "src/lib/core/agent/providers/history.ts": [
+        "DEFAULT_HISTORY_LIMIT",
+        "HistoryLiveSession",
+        "historyReaderForProvider",
+        "readProjectHistory",
+      ],
+      "src/lib/core/agent/providers/types.ts": [
+        "HistorySession",
+        "HistoryWindow",
       ],
     },
   },
@@ -386,6 +425,10 @@ interface SqliteAdmission {
    *  an enumeration of forbidden constructs cannot be: an admission says "*this
    *  code* costs 0.3 ms", and that sentence is only true of this code. */
   emitted: string;
+  /** The harness `bound` is reproducible from. Per admission, not one global
+   *  name: an admission nobody can re-run is a waiver wearing its clothes, and
+   *  the two judged queries are measured by two different benches. */
+  bench: string;
 }
 
 const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
@@ -397,11 +440,31 @@ const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
       "Reproduce with `node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
     prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
     emitted: "test/fixtures/rule5-sqlite/codex-thread.emit.js",
+    bench: "test/bench/summary-stall.ts",
+  },
+  // The history window's query. It is a *statement* bound rather than a scan
+  // bound, and the probe prints the plan that makes that so: Codex's composite
+  // `cwd` indexes order by its millisecond columns while this reads the
+  // second-resolution `updated_at`, so SQLite filters through an index and
+  // sorts the matches in a temp B-tree. `LIMIT` bounds what crosses into
+  // JavaScript — and therefore the per-row rollout tail-reads — not the rows
+  // examined. Measured whole, which is what the admission has to be.
+  "src/lib/core/agent/providers/codex-thread-window.ts import DatabaseSync": {
+    bound:
+      "the newest 201 non-archived threads of the busiest cwd (SEARCH threads " +
+      "USING INDEX idx_threads_archived_cwd_recency_at_ms (archived=? AND cwd=?) / " +
+      "USE TEMP B-TREE FOR ORDER BY, 587 rows matched) on an 11.1 MB, 2 301-row " +
+      "database: 3.0 ms p50, 5.4 ms p95, 8.3 ms max over 40 warm samples, open " +
+      "and close included. " +
+      "Reproduce with `node test/bench/history-stall.ts --sqlite-probe --home ~`.",
+    prepares: [
+      "SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path " +
+      "FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?",
+    ],
+    emitted: "test/fixtures/rule5-sqlite/codex-thread-window.emit.js",
+    bench: "test/bench/history-stall.ts",
   },
 };
-
-/** The evidence every entry of `RULE_5_SQLITE` is reproducible from. */
-const RULE_5_SQLITE_BENCH = "test/bench/summary-stall.ts";
 
 /** The subsystems the design excludes by name. Each entry names real files, and
  *  their existence is asserted: a rename that empties one of these lists would
@@ -527,12 +590,12 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
     const sites = Object.entries(RULE_5_SQLITE);
     if (sites.length === 0) return;
 
-    // Anti-vacuity: an admission is a measurement, and a measurement nobody can
-    // re-run is a waiver wearing its clothes.
-    expect(existsSync(resolve(CLI_ROOT, RULE_5_SQLITE_BENCH)), RULE_5_SQLITE_BENCH).toBe(true);
-
     for (const [site, admission] of sites) {
+      // Anti-vacuity: an admission is a measurement, and a measurement nobody
+      // can re-run is a waiver wearing its clothes.
+      expect(existsSync(resolve(CLI_ROOT, admission.bench)), admission.bench).toBe(true);
       expect(admission.bound, site).toMatch(/\d/);
+      expect(admission.bound, `${site}: bound must name its reproduction`).toContain(admission.bench);
       // What was measured is a point query. A second query, an edited one, or an
       // unbounded execution anywhere in the module is a different cost that the
       // file census cannot see — the module is already in the closure for the
@@ -953,7 +1016,7 @@ describe("the audit itself", () => {
       source.replace("    } finally {\n      db.close();", `      ${code}\n    } finally {\n      db.close();`);
 
     const UNBOUNDED = "SELECT * FROM threads";
-    const BYPASSES: [name: string, edit: (source: string) => string][] = [
+    const UNPINNED_EDITS: [name: string, edit: (source: string) => string][] = [
       ["a direct unbounded call", inject(`db.prepare("${UNBOUNDED}").all();`)],
       ["an aliased statement", inject(`const s = db.prepare("${UNBOUNDED}"); s.all();`)],
       ["a rebound method", inject(`const s = db.prepare("${UNBOUNDED}"); s.all.bind(s)();`)],
@@ -996,7 +1059,7 @@ describe("the audit itself", () => {
       );
     });
 
-    for (const [name, edit] of BYPASSES) {
+    for (const [name, edit] of UNPINNED_EDITS) {
       it(`fails on ${name}`, () => {
         // Every edit changes the emit — which is the whole claim, and it holds
         // for the constructs no rule was ever written against as much as for

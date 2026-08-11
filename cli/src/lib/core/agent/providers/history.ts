@@ -32,17 +32,16 @@
  *
  *  -> See: `doc/main/cli/exports.md` (the six eligibility rules this obeys). */
 
-import { existsSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { readOrigins } from "../origin-read.ts";
 import { PENDING_SESSION_ID, type SpawnedBy } from "../model.ts";
+import { codexThreadWindow } from "./codex-thread-window.ts";
 import { extractUserText, firstMeaningfulMessage } from "./prompt-label.ts";
-import { codexDbPath, userHome } from "./provider-home.ts";
+import { userHome } from "./provider-home.ts";
 import type { HistorySession, HistoryWindow } from "./types.ts";
 
 /** Default history row limit after filtering the merged provider rows. */
@@ -381,16 +380,6 @@ async function claudeList(projectPath: string, cap: number): Promise<HistorySess
 
 // -- Codex provider history --
 
-interface CodexThreadRow {
-  id: string;
-  title: string | null;
-  first_user_message: string | null;
-  created_at: number;
-  updated_at: number;
-  git_branch: string | null;
-  rollout_path: string | null;
-}
-
 /** Convert a Codex unix epoch (seconds or milliseconds) to ISO 8601. */
 function epochToISO(epoch: number): string {
   const ms = epoch < 1e12 ? epoch * 1000 : epoch;
@@ -425,36 +414,12 @@ async function loadCodexThreadNames(): Promise<Map<string, string>> {
 
 /** Read Codex session history for a project from the threads table.
  *
- *  `LIMIT` is the exact cap: the ORDER BY key is the very column `epochToISO`
- *  turns into the row's `updatedAt`, and the shipped
- *  `(archived, cwd, updated_at DESC, id DESC)` index makes it an index-prefix
- *  scan rather than a sort of every thread. It is exact while a table keeps one
- *  epoch unit, which is what Codex writes; `epochToISO`'s seconds-or-ms guard is
- *  for reading a value, not for ordering a mixed table. */
+ *  The query's `LIMIT` is the exact cap: its ORDER BY key is the very column
+ *  `epochToISO` turns into the row's `updatedAt`. That holds while a table keeps
+ *  one epoch unit, which is what Codex writes; `epochToISO`'s seconds-or-ms
+ *  guard is for reading a value, not for ordering a mixed table. */
 async function codexList(projectPath: string, cap: number): Promise<HistorySession[]> {
-  const cwd = projectPath.replace(/\/+$/, "");
-  if (!existsSync(codexDbPath())) return [];
-
-  let rows: CodexThreadRow[];
-  try {
-    const db = new DatabaseSync(codexDbPath(), { readOnly: true });
-    try {
-      rows = db
-        .prepare(
-          // `id` breaks the updated_at tie: SQLite leaves the order of tied rows
-          // to the query plan, so without it the row order is undefined.
-          `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
-           FROM threads WHERE cwd = ? AND archived = 0
-           ORDER BY updated_at DESC, id ASC LIMIT ?`,
-        )
-        // `node:sqlite` types every column as `SQLOutputValue`, so the row shape
-        // is the SELECT's to declare — through `unknown`, because a 7-column row
-        // and an open record do not overlap enough for a direct assertion.
-        .all(cwd, cap) as unknown as CodexThreadRow[];
-    } finally {
-      db.close();
-    }
-  } catch { return []; }
+  const rows = codexThreadWindow(projectPath.replace(/\/+$/, ""), cap);
   if (rows.length === 0) return [];
 
   const threadNames = await loadCodexThreadNames();

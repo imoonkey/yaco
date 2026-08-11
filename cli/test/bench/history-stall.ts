@@ -54,8 +54,9 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,6 +92,8 @@ interface Options {
   bareSpawn: boolean;
   /** Chunk sizes to run the bounded prototype at, one route each. */
   chunks: number[];
+  /** Time the windowed `threads` query alone — the rule-5 admission evidence. */
+  sqliteProbe: boolean;
 }
 
 function parseOptions(argv: string[]): Options {
@@ -106,6 +109,7 @@ function parseOptions(argv: string[]): Options {
     json: null,
     bareSpawn: false,
     chunks: [1, 2, 4, 8, 16],
+    sqliteProbe: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -124,6 +128,7 @@ function parseOptions(argv: string[]): Options {
     else if (arg === "--chunks") o.chunks = value().split(",").map(Number);
     else if (arg === "--keep") o.keep = true;
     else if (arg === "--bare-spawn") o.bareSpawn = true;
+    else if (arg === "--sqlite-probe") o.sqliteProbe = true;
     else throw new Error(`unknown flag: ${arg}`);
   }
   if (!o.home && !SCALES[o.scale]) throw new Error(`unknown --scale ${o.scale} (have ${Object.keys(SCALES)})`);
@@ -295,6 +300,68 @@ function spawnRoute(argv: string[], env: NodeJS.ProcessEnv, envDiscovery: boolea
     });
 }
 
+// -- the rule-5 SQLite probe --
+
+/** Time the windowed `threads` query on its own — the evidence rule 5 asks for
+ *  before `node:sqlite` may run inside the server.
+ *
+ *  Separate from the route benchmark on purpose: the routes measure the whole
+ *  read, in which this query is one component among provider file reads. An
+ *  admission that says "N ms for the query" has to be reproducible as exactly
+ *  that, not inferred from a route total. */
+function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
+  if (!existsSync(dbPath)) throw new Error(`no database at ${dbPath}`);
+  const SQL = "SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path" +
+    " FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?";
+
+  const opened = new DatabaseSync(dbPath, { readOnly: true });
+  let rows: number;
+  let plan: string;
+  let cwd: string;
+  let forCwd: number;
+  try {
+    rows = (opened.prepare("SELECT count(*) AS n FROM threads").get() as { n: number }).n;
+    // The busiest cwd, so the probe measures the worst window this database
+    // holds rather than an average one.
+    const busiest = opened
+      .prepare("SELECT cwd, count(*) AS n FROM threads WHERE archived = 0 GROUP BY cwd ORDER BY n DESC LIMIT 1")
+      .get() as { cwd: string; n: number } | undefined;
+    if (!busiest) throw new Error(`no non-archived threads in ${dbPath}`);
+    cwd = busiest.cwd;
+    forCwd = busiest.n;
+    plan = (opened.prepare(`EXPLAIN QUERY PLAN ${SQL}`).all(cwd, limit) as { detail: string }[])
+      .map((r) => r.detail).join(" / ");
+  } finally {
+    opened.close();
+  }
+
+  // Warm the page cache the way a steady server has it warm.
+  for (let i = 0; i < 3; i++) {
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    db.prepare(SQL).all(cwd, limit);
+    db.close();
+  }
+
+  const times: number[] = [];
+  let returned = 0;
+  for (let i = 0; i < samples; i++) {
+    const started = now();
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    returned = (db.prepare(SQL).all(cwd, limit) as unknown[]).length;
+    db.close();
+    times.push(now() - started);
+  }
+
+  console.log(`
+database     ${dbPath}
+size         ${(statSync(dbPath).size / 1024 / 1024).toFixed(1)} MB, ${rows} rows in \`threads\`
+cwd          ${cwd} — ${forCwd} non-archived threads, ${returned} returned at LIMIT ${limit}
+query        ${SQL}
+plan         ${plan}
+cost         open + all + close, ${times.length} samples, warm`);
+  console.log(`             ${fmt(stats(times))}`);
+}
+
 // -- run --
 
 /** One invocation's starvation: the worst delay any already-queued probe
@@ -392,6 +459,11 @@ async function main(): Promise<void> {
       const built = buildFixture(options.root, scale);
       home = built.home;
       yacoHome = built.yacoHome;
+    }
+
+    if (options.sqliteProbe) {
+      sqliteProbe(join(home, ".codex", "state_5.sqlite"), DEFAULT_HISTORY_LIMIT + 1);
+      return;
     }
 
     loadDir = mkdtempSync(join(tmpdir(), "yaco-bench-load-"));

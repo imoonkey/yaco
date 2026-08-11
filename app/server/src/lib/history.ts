@@ -1,4 +1,5 @@
-import { fetchHistory } from './agent'
+import { readProjectHistory } from '@yaco/cli/core/agent'
+import { isErr } from '@yaco/cli/core/result'
 import type { AgentSession } from './agent'
 import { PENDING_SESSION_ID } from './constants'
 
@@ -16,15 +17,38 @@ export interface HistorySession {
   liveSessionName: string | null
 }
 
-/** Get merged project session history from `yaco agent history --json`, sorted
- *  and capped by the CLI. Provider-home reads live in the CLI provider adapters;
- *  the app maps field names to the UI shape and tags live sessions by matching
- *  YACO `sessionId` against the live session list it already holds. */
+/** Get merged project session history from `@yaco/cli`'s `readProjectHistory`,
+ *  sorted and capped by the CLI. It replaces the `yaco agent history --json`
+ *  spawn this route used to pay; the CLI command is now an argv-and-render
+ *  adapter over the same function, so there is one implementation rather than
+ *  two. Provider-home reads stay in the CLI's provider adapters; the app maps
+ *  field names to the UI shape.
+ *
+ *  Live sessions are passed down rather than resolved there — the reader takes
+ *  them as an explicit input, which is what keeps YACO's session-state writer
+ *  out of an exported closure. The app then tags rows from the same list it
+ *  already holds, exactly as it did behind the subprocess.
+ *
+ *  A failure is raised as the message the subprocess route raised, so the HTTP
+ *  body this route produces is unchanged by the cutover.
+ *
+ *  -> See: `doc/main/cli/read-path.md`. */
 export async function getHistory(
   projectPath: string,
   liveSessions: AgentSession[],
 ): Promise<HistorySession[]> {
-  const rows = await fetchHistory(projectPath)
+  const window = await readProjectHistory(
+    projectPath,
+    liveSessions.map(s => ({
+      handle: s.name,
+      sessionId: s.sessionId,
+      spawnedBy: s.spawnedBy ?? null,
+      parentSession: s.parentSession ?? null,
+    })),
+  )
+  if (isErr(window)) {
+    throw new Error(`yaco agent history failed [${window.code}]: ${window.message}`)
+  }
 
   const liveMap = new Map<string, string>()
   for (const s of liveSessions) {
@@ -33,7 +57,7 @@ export async function getHistory(
     }
   }
 
-  return rows.map(row => ({
+  return window.value.rows.map(row => ({
     id: row.sessionId,
     provider: row.provider,
     title: row.title,

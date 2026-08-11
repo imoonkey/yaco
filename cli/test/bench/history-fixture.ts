@@ -136,15 +136,32 @@ const CODEX_SCHEMA = `CREATE TABLE threads (
   git_origin_url TEXT,
   cli_version TEXT NOT NULL DEFAULT '',
   first_user_message TEXT NOT NULL DEFAULT '',
+  created_at_ms INTEGER,
+  updated_at_ms INTEGER,
   preview TEXT NOT NULL DEFAULT '',
-  recency_at INTEGER NOT NULL DEFAULT 0
+  recency_at INTEGER NOT NULL DEFAULT 0,
+  recency_at_ms INTEGER NOT NULL DEFAULT 0
 )`;
 
-/** Index set Codex ships, so the benchmark's query plan matches production's. */
+/** The index set Codex ships, so the benchmark's query plan matches
+ *  production's.
+ *
+ *  The distinction the names carry is load-bearing and was got wrong once: the
+ *  composite `cwd` indexes order by the **millisecond** columns, while the read
+ *  orders by `updated_at` (seconds), whose only index does not carry `archived`
+ *  or `cwd`. So the planner filters through a composite index and sorts the
+ *  matches in a temp B-tree — it is *not* an index-prefix scan, and a fixture
+ *  index that spelled `updated_at` here would have made the benchmark measure a
+ *  plan production does not run. Verify with
+ *  `node cli/test/bench/history-stall.ts --sqlite-probe --home ~`, which prints
+ *  the plan it measured. */
 const CODEX_INDEXES = [
   "CREATE INDEX idx_threads_updated_at ON threads(updated_at DESC, id DESC)",
+  "CREATE INDEX idx_threads_updated_at_ms ON threads(updated_at_ms DESC, id DESC)",
   "CREATE INDEX idx_threads_archived ON threads(archived)",
-  "CREATE INDEX idx_threads_archived_cwd_updated_at_ms ON threads(archived, cwd, updated_at DESC, id DESC)",
+  "CREATE INDEX idx_threads_archived_cwd_updated_at_ms ON threads(archived, cwd, updated_at_ms DESC, id DESC)",
+  "CREATE INDEX idx_threads_recency_at_ms ON threads(recency_at_ms DESC, id DESC)",
+  "CREATE INDEX idx_threads_archived_cwd_recency_at_ms ON threads(archived, cwd, recency_at_ms DESC, id DESC)",
 ];
 
 export interface Fixture {
@@ -177,9 +194,13 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
     db.exec(CODEX_SCHEMA);
     for (const sql of CODEX_INDEXES) db.exec(sql);
     const insert = db.prepare(
-      `INSERT INTO threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd,
+      // The millisecond columns carry the same instant as the second columns, so
+      // the composite indexes are populated exactly as production's are and the
+      // planner faces the same choice.
+      `INSERT INTO threads (id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+        recency_at_ms, source, model_provider, cwd,
         title, sandbox_policy, approval_mode, git_branch, first_user_message)
-       VALUES (?, ?, ?, ?, 'main', 'openai', ?, ?, 'workspace-write', 'on-request', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'main', 'openai', ?, ?, 'workspace-write', 'on-request', ?, ?)`,
     );
     db.exec("BEGIN");
     const base = Math.floor(Date.parse("2026-08-10T00:00:00Z") / 1000);
@@ -198,6 +219,9 @@ export function buildFixture(root: string, scale: FixtureScale, seed = 20260811)
         path,
         base + i,
         base + i,
+        (base + i) * 1000,
+        (base + i) * 1000,
+        (base + i) * 1000,
         cwd,
         `bench-thread-${i}`,
         i % 3 === 0 ? "main" : `feat/bench-${i % 50}`,
