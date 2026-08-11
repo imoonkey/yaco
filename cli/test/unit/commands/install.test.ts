@@ -1,4 +1,4 @@
-/** Unit tests for `yaco install` — direct runInstall() calls.
+/** Unit tests for `yaco install` — direct await runInstall() calls.
  *
  *  Every test runs in an isolated tmpdir with $HOME, $YACO_HOME, $YACO_BIN_DIR,
  *  $YACO_REPO_ROOT all pointing at sandbox paths. No real-home modifications.
@@ -97,8 +97,8 @@ function baseOpts(overrides: Partial<Parameters<typeof runInstall>[0]> = {}): Pa
 }
 
 describe("runInstall — basic shape", () => {
-  it("returns a report with resolved paths and a non-empty action list", () => {
-    const r: InstallReport = runInstall(baseOpts());
+  it("returns a report with resolved paths and a non-empty action list", async () => {
+    const r: InstallReport = await runInstall(baseOpts());
     expect(r.repoRoot).toBe(repoRoot);
     expect(r.binDir).toBe(binDir);
     expect(r.yacoHome).toBe(process.env["YACO_HOME"]!);
@@ -106,7 +106,7 @@ describe("runInstall — basic shape", () => {
     expect(r.actions.length).toBeGreaterThan(0);
   });
 
-  it("does not let a defaulted bin dir outrank the yaco actually being run", () => {
+  it("does not let a defaulted bin dir outrank the yaco actually being run", async () => {
     // `--bin-dir` and $YACO_BIN_DIR are the caller saying where yaco lives.
     // The default, `~/.local/bin`, is a guess — and treating a guess as an
     // override is how `npm i -g @yaco/cli` into an nvm prefix, followed by
@@ -119,7 +119,7 @@ describe("runInstall — basic shape", () => {
     // The one on PATH is the one being run (the shim bin, prepended above).
     const onPath = join(sandbox, "shim-bin", "yaco");
 
-    runInstall(baseOpts({ binDir: undefined }));
+    await runInstall(baseOpts({ binDir: undefined }));
 
     const settings = JSON.parse(
       readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
@@ -135,8 +135,8 @@ describe("runInstall — basic shape", () => {
     expect(commands.join("\n")).not.toContain(join(stale, "yaco"));
   });
 
-  it("writes ${YACO_HOME}/agent-wrapper.sh and makes it executable", () => {
-    runInstall(baseOpts());
+  it("writes ${YACO_HOME}/agent-wrapper.sh and makes it executable", async () => {
+    await runInstall(baseOpts());
     const path = join(process.env["YACO_HOME"]!, "agent-wrapper.sh");
     expect(existsSync(path)).toBe(true);
     const body = readFileSync(path, "utf-8");
@@ -145,8 +145,8 @@ describe("runInstall — basic shape", () => {
     expect((st.mode & 0o111)).not.toBe(0);
   });
 
-  it("creates ~/.claude/skills as a real dir with one link per skill", () => {
-    runInstall(baseOpts());
+  it("creates ~/.claude/skills as a real dir with one link per skill", async () => {
+    await runInstall(baseOpts());
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     expect(lstatSync(container).isDirectory()).toBe(true);
@@ -162,8 +162,8 @@ describe("runInstall — basic shape", () => {
     expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
   });
 
-  it("upserts {id: yaco, path: repoRoot} into the registry", () => {
-    runInstall(baseOpts());
+  it("upserts {id: yaco, path: repoRoot} into the registry", async () => {
+    await runInstall(baseOpts());
     const reg = JSON.parse(
       readFileSync(join(process.env["YACO_HOME"]!, "projects.json"), "utf-8"),
     );
@@ -172,8 +172,8 @@ describe("runInstall — basic shape", () => {
 });
 
 describe("runInstall — idempotency (AC 2)", () => {
-  it("re-running yaco install twice leaves no diff in ${YACO_HOME}", () => {
-    runInstall(baseOpts());
+  it("re-running yaco install twice leaves no diff in ${YACO_HOME}", async () => {
+    await runInstall(baseOpts());
     const home = process.env["YACO_HOME"]!;
     const snapshot = () =>
       JSON.stringify({
@@ -181,25 +181,25 @@ describe("runInstall — idempotency (AC 2)", () => {
         registry: readFileSync(join(home, "projects.json"), "utf-8"),
       });
     const before = snapshot();
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(snapshot()).toBe(before);
   });
 
-  it("does not relink an already-correct symlink", () => {
-    runInstall(baseOpts());
+  it("does not relink an already-correct symlink", async () => {
+    await runInstall(baseOpts());
     const link = join(process.env["HOME"]!, ".claude", "skills", "alpha");
     const beforeM = lstatSync(link).mtimeMs;
     // tiny delay to make any rewrite detectable in mtime
     const start = Date.now();
     while (Date.now() - start < 5) { /* spin */ }
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     // No change → mtime unchanged.
     expect(lstatSync(link).mtimeMs).toBe(beforeM);
   });
 });
 
 describe("runInstall --dry-run (AC 3)", () => {
-  it("prints actions to stderr without touching the filesystem", () => {
+  it("prints actions to stderr without touching the filesystem", async () => {
     const captured: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: any) => {
@@ -207,7 +207,7 @@ describe("runInstall --dry-run (AC 3)", () => {
       return true;
     }) as typeof process.stderr.write;
     try {
-      runInstall(baseOpts({ dryRun: true }));
+      await runInstall(baseOpts({ dryRun: true }));
     } finally {
       process.stderr.write = originalWrite;
     }
@@ -218,7 +218,7 @@ describe("runInstall --dry-run (AC 3)", () => {
 });
 
 describe("runInstall — hook merge semantics (AC 4)", () => {
-  it("preserves unrelated user hooks while adding yaco entries", () => {
+  it("preserves unrelated user hooks while adding yaco entries", async () => {
     const claudeDir = join(process.env["HOME"]!, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     const userSettings = {
@@ -234,7 +234,7 @@ describe("runInstall — hook merge semantics (AC 4)", () => {
     };
     writeFileSync(join(claudeDir, "settings.json"), JSON.stringify(userSettings));
 
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
 
     const after = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf-8"));
     expect(after.theme).toBe("dark");
@@ -250,45 +250,45 @@ describe("runInstall — hook merge semantics (AC 4)", () => {
 });
 
 describe("runInstall — legacy bin cleanup (AC 5)", () => {
-  it("removes $BIN_DIR/mt and $BIN_DIR/multmux when they are symlinks", () => {
+  it("removes $BIN_DIR/mt and $BIN_DIR/multmux when they are symlinks", async () => {
     symlinkSync("/old/multmux", join(binDir, "mt"));
     symlinkSync("/old/multmux", join(binDir, "multmux"));
     expect(existsSync(join(binDir, "mt"))).toBe(false); // dangling — existsSync is false
     expect(lstatSync(join(binDir, "mt")).isSymbolicLink()).toBe(true);
 
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
 
     expect(() => lstatSync(join(binDir, "mt"))).toThrow();
     expect(() => lstatSync(join(binDir, "multmux"))).toThrow();
   });
 
-  it("does not touch a regular file at $BIN_DIR/mt", () => {
+  it("does not touch a regular file at $BIN_DIR/mt", async () => {
     writeFileSync(join(binDir, "mt"), "real binary\n");
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(existsSync(join(binDir, "mt"))).toBe(true);
     expect(readFileSync(join(binDir, "mt"), "utf-8")).toBe("real binary\n");
   });
 });
 
 describe("runInstall — error paths", () => {
-  it("ENV when agent-config/global/skills is missing", () => {
+  it("ENV when agent-config/global/skills is missing", async () => {
     rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
     let code: string | undefined;
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
     }
     expect(code).toBe("ENV");
   });
 
-  it("IO when a regular file blocks a target symlink path", () => {
+  it("IO when a regular file blocks a target symlink path", async () => {
     const claudeDir = join(process.env["HOME"]!, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(claudeDir, "skills"), "real content\n");
     let code: string | undefined;
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
     }
@@ -306,42 +306,42 @@ describe("runInstall — additive install (no global-rules takeover)", () => {
     return path;
   }
 
-  it("leaves a pre-existing ~/.claude/CLAUDE.md byte-identical", () => {
+  it("leaves a pre-existing ~/.claude/CLAUDE.md byte-identical", async () => {
     const path = seedUserClaudeMd();
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(lstatSync(path).isFile()).toBe(true);
     expect(readFileSync(path, "utf-8")).toBe(preExisting);
   });
 
-  it("--force still leaves a pre-existing ~/.claude/CLAUDE.md alone", () => {
+  it("--force still leaves a pre-existing ~/.claude/CLAUDE.md alone", async () => {
     const path = seedUserClaudeMd();
-    runInstall(baseOpts({ force: true }));
+    await runInstall(baseOpts({ force: true }));
     expect(readFileSync(path, "utf-8")).toBe(preExisting);
   });
 
-  it("never creates ~/.codex/AGENTS.md", () => {
-    runInstall(baseOpts());
+  it("never creates ~/.codex/AGENTS.md", async () => {
+    await runInstall(baseOpts());
     expect(existsSync(join(process.env["HOME"]!, ".codex", "AGENTS.md"))).toBe(false);
   });
 });
 
 describe("runInstall --skip-hooks", () => {
-  it("writes the wrapper but does not touch ~/.claude/settings.json", () => {
-    runInstall(baseOpts({ skipHooks: true }));
+  it("writes the wrapper but does not touch ~/.claude/settings.json", async () => {
+    await runInstall(baseOpts({ skipHooks: true }));
     expect(existsSync(join(process.env["YACO_HOME"]!, "agent-wrapper.sh"))).toBe(true);
     expect(existsSync(join(process.env["HOME"]!, ".claude", "settings.json"))).toBe(false);
   });
 });
 
 describe("runInstall --no-registry", () => {
-  it("does not write projects.json", () => {
-    runInstall(baseOpts({ noRegistry: true }));
+  it("does not write projects.json", async () => {
+    await runInstall(baseOpts({ noRegistry: true }));
     expect(existsSync(join(process.env["YACO_HOME"]!, "projects.json"))).toBe(false);
   });
 });
 
 describe("runInstall — global-link safety", () => {
-  it("refuses to retarget ~/.claude/skills when it points elsewhere — throws CONFLICT", () => {
+  it("refuses to retarget ~/.claude/skills when it points elsewhere — throws CONFLICT", async () => {
     // Pre-seed the global link pointing at a stale path (simulating the
     // worktree footgun: an earlier `yaco install` from .worktrees/<slug>/
     // pointed skills at the worktree's agent-config, and we now run
@@ -354,7 +354,7 @@ describe("runInstall — global-link safety", () => {
     let code: string | undefined;
     let msg = "";
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
       msg = (e as Error).message;
@@ -367,12 +367,12 @@ describe("runInstall — global-link safety", () => {
     expect(readlinkSync(join(claudeDir, "skills"))).toBe(stalePath);
   });
 
-  it("--force converts a different-target link into the per-skill dir", () => {
+  it("--force converts a different-target link into the per-skill dir", async () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     symlinkSync("/some/old/skills", join(claudeDir, "skills"));
-    runInstall(baseOpts({ force: true }));
+    await runInstall(baseOpts({ force: true }));
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isDirectory()).toBe(true);
     expect(readlinkSync(join(container, "alpha"))).toBe(
@@ -380,22 +380,22 @@ describe("runInstall — global-link safety", () => {
     );
   });
 
-  it("--skip-links leaves all global links untouched (even when stale)", () => {
+  it("--skip-links leaves all global links untouched (even when stale)", async () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     const stalePath = "/some/old/skills";
     symlinkSync(stalePath, join(claudeDir, "skills"));
-    runInstall(baseOpts({ skipLinks: true }));
+    await runInstall(baseOpts({ skipLinks: true }));
     // Stale link preserved verbatim — install did NOT touch it.
     expect(readlinkSync(join(claudeDir, "skills"))).toBe(stalePath);
     // And install did NOT create the other links either.
     expect(existsSync(join(home, ".agents", "skills"))).toBe(false);
   });
 
-  it("same-realpath alias is no-op (idempotent — no --force needed)", () => {
+  it("same-realpath alias is no-op (idempotent — no --force needed)", async () => {
     // First install plants canonical links.
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     const home = process.env["HOME"]!;
     const before = readlinkSync(join(home, ".claude", "skills", "alpha"));
     // Re-install via a symlink alias of the same repoRoot — should NOT throw.
@@ -406,7 +406,7 @@ describe("runInstall — global-link safety", () => {
       return; // sandbox refused symlink creation
     }
     try {
-      runInstall(baseOpts({ repoRoot: aliasDir }));
+      await runInstall(baseOpts({ repoRoot: aliasDir }));
       // Original per-skill link target preserved.
       expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(before);
     } finally {
@@ -414,7 +414,7 @@ describe("runInstall — global-link safety", () => {
     }
   });
 
-  it("migrates a RELATIVE legacy whole-dir symlink without --force (cwd-independent)", () => {
+  it("migrates a RELATIVE legacy whole-dir symlink without --force (cwd-independent)", async () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
@@ -424,7 +424,7 @@ describe("runInstall — global-link safety", () => {
       join("..", "..", "repo", "agent-config", "global", "skills"),
       join(claudeDir, "skills"),
     );
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isSymbolicLink()).toBe(false);
     expect(readlinkSync(join(container, "alpha"))).toBe(
@@ -432,25 +432,25 @@ describe("runInstall — global-link safety", () => {
     );
   });
 
-  it("ENV when agent-config/global/skills is a file, not a directory", () => {
+  it("ENV when agent-config/global/skills is a file, not a directory", async () => {
     rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
     writeFileSync(join(repoRoot, "agent-config", "global", "skills"), "not a dir\n");
     let code: string | undefined;
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
     }
     expect(code).toBe("ENV");
   });
 
-  it("migrates a legacy whole-dir symlink to per-skill links without --force", () => {
+  it("migrates a legacy whole-dir symlink to per-skill links without --force", async () => {
     const home = process.env["HOME"]!;
     const claudeDir = join(home, ".claude");
     mkdirSync(claudeDir, { recursive: true });
     // Pre-v0.1 layout: the whole dir symlinked at OUR canonical skillsDir.
     symlinkSync(join(repoRoot, "agent-config", "global", "skills"), join(claudeDir, "skills"));
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     const container = join(claudeDir, "skills");
     expect(lstatSync(container).isSymbolicLink()).toBe(false);
     expect(lstatSync(container).isDirectory()).toBe(true);
@@ -459,24 +459,24 @@ describe("runInstall — global-link safety", () => {
     );
   });
 
-  it("merges into an existing real dir, keeping the user's own skills", () => {
+  it("merges into an existing real dir, keeping the user's own skills", async () => {
     const home = process.env["HOME"]!;
     const mine = join(home, ".claude", "skills", "mine");
     mkdirSync(mine, { recursive: true });
     writeFileSync(join(mine, "SKILL.md"), "user skill\n");
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(readFileSync(join(mine, "SKILL.md"), "utf-8")).toBe("user skill\n");
     expect(readlinkSync(join(home, ".claude", "skills", "alpha"))).toBe(
       join(repoRoot, "agent-config", "global", "skills", "alpha"),
     );
   });
 
-  it("keeps a same-name user skill (real dir) and still installs the rest", () => {
+  it("keeps a same-name user skill (real dir) and still installs the rest", async () => {
     const home = process.env["HOME"]!;
     const userAlpha = join(home, ".claude", "skills", "alpha");
     mkdirSync(userAlpha, { recursive: true });
     writeFileSync(join(userAlpha, "SKILL.md"), "my alpha\n");
-    const r = runInstall(baseOpts());
+    const r = await runInstall(baseOpts());
     // User's alpha untouched — a real dir is never clobbered.
     expect(lstatSync(userAlpha).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(userAlpha, "SKILL.md"), "utf-8")).toBe("my alpha\n");
@@ -487,28 +487,28 @@ describe("runInstall — global-link safety", () => {
     expect(r.actions.some((a) => a.includes("keep alpha"))).toBe(true);
   });
 
-  it("replaces a dangling same-name skill link", () => {
+  it("replaces a dangling same-name skill link", async () => {
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     mkdirSync(container, { recursive: true });
     symlinkSync(join(sandbox, "gone", "alpha"), join(container, "alpha"));
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(readlinkSync(join(container, "alpha"))).toBe(
       join(repoRoot, "agent-config", "global", "skills", "alpha"),
     );
   });
 
-  it("skips a same-name link to a live foreign target without --force, retargets with it", () => {
+  it("skips a same-name link to a live foreign target without --force, retargets with it", async () => {
     const home = process.env["HOME"]!;
     const container = join(home, ".claude", "skills");
     mkdirSync(container, { recursive: true });
     const foreign = join(sandbox, "other-skills", "alpha");
     mkdirSync(foreign, { recursive: true });
     symlinkSync(foreign, join(container, "alpha"));
-    const r = runInstall(baseOpts());
+    const r = await runInstall(baseOpts());
     expect(readlinkSync(join(container, "alpha"))).toBe(foreign);
     expect(r.actions.some((a) => a.includes("skip alpha"))).toBe(true);
-    runInstall(baseOpts({ force: true }));
+    await runInstall(baseOpts({ force: true }));
     expect(readlinkSync(join(container, "alpha"))).toBe(
       join(repoRoot, "agent-config", "global", "skills", "alpha"),
     );
@@ -516,7 +516,7 @@ describe("runInstall — global-link safety", () => {
 });
 
 describe("runInstall — registry safety (HIGH 5)", () => {
-  it("refuses to overwrite a malformed projects.json — throws ENV", () => {
+  it("refuses to overwrite a malformed projects.json — throws ENV", async () => {
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
     const path = join(process.env["YACO_HOME"]!, "projects.json");
     const corrupt = "{not valid json[";
@@ -524,7 +524,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     let code: string | undefined;
     let msg = "";
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
       msg = (e as Error).message;
@@ -536,7 +536,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     expect(readFileSync(path, "utf-8")).toBe(corrupt);
   });
 
-  it("refuses to rebind \"yaco\" to a different path — throws CONFLICT", () => {
+  it("refuses to rebind \"yaco\" to a different path — throws CONFLICT", async () => {
     // Pre-seed the registry with yaco at a different path (simulating the
     // worktree footgun: `yaco install` ran from .worktrees/<slug> and
     // re-registered the project at the worktree root).
@@ -547,7 +547,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     let code: string | undefined;
     let msg = "";
     try {
-      runInstall(baseOpts());
+      await runInstall(baseOpts());
     } catch (e) {
       code = (e as { code?: string }).code;
       msg = (e as Error).message;
@@ -562,7 +562,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     expect(reg).toEqual([{ id: "yaco", path: existingPath }]);
   });
 
-  it("--force overwrites a different-path yaco entry", () => {
+  it("--force overwrites a different-path yaco entry", async () => {
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
     const regPath = join(process.env["YACO_HOME"]!, "projects.json");
     writeFileSync(
@@ -572,7 +572,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
         { id: "other-project", path: "/keep/me" },
       ]),
     );
-    runInstall(baseOpts({ force: true }));
+    await runInstall(baseOpts({ force: true }));
     const reg = JSON.parse(readFileSync(regPath, "utf-8"));
     expect(reg).toEqual([
       { id: "yaco", path: repoRoot },
@@ -580,18 +580,18 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     ]);
   });
 
-  it("same-path re-registration is a no-op (idempotent — no --force needed)", () => {
-    runInstall(baseOpts());
+  it("same-path re-registration is a no-op (idempotent — no --force needed)", async () => {
+    await runInstall(baseOpts());
     const regPath = join(process.env["YACO_HOME"]!, "projects.json");
     const before = readFileSync(regPath, "utf-8");
     // Re-run install from the same repoRoot — should NOT throw CONFLICT.
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     expect(readFileSync(regPath, "utf-8")).toBe(before);
   });
 
-  it("symlink alias of the same checkout is no-op, not CONFLICT", () => {
+  it("symlink alias of the same checkout is no-op, not CONFLICT", async () => {
     // First install at canonical repoRoot.
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
     const regPath = join(process.env["YACO_HOME"]!, "projects.json");
     const before = readFileSync(regPath, "utf-8");
     // Create a symlink that points at the same repo root.
@@ -605,7 +605,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     try {
       // Re-run install with the symlink as --repo. realpath on both sides
       // should resolve them equal → silent no-op, NOT a CONFLICT.
-      runInstall(baseOpts({ repoRoot: aliasDir }));
+      await runInstall(baseOpts({ repoRoot: aliasDir }));
       expect(readFileSync(regPath, "utf-8")).toBe(before);
     } finally {
       try { unlinkSync(aliasDir); } catch { /* best effort */ }
@@ -614,11 +614,11 @@ describe("runInstall — registry safety (HIGH 5)", () => {
 });
 
 describe("runInstall — canonical hook command (HIGH 4)", () => {
-  it("writes hooks pointing at <binDir>/yaco agent hook-event <Event>", () => {
+  it("writes hooks pointing at <binDir>/yaco agent hook-event <Event>", async () => {
     // Stage a yaco binary at binDir/yaco so the lifecycle resolver picks it.
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
-    runInstall(baseOpts());
+    await runInstall(baseOpts());
 
     const settings = JSON.parse(
       readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
@@ -637,7 +637,7 @@ describe("runInstall — canonical hook command (HIGH 4)", () => {
 });
 
 describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
-  it("emits no stderr chatter when --json is set", () => {
+  it("emits no stderr chatter when --json is set", async () => {
     // Stage a binary so doctor's binary check has something to find.
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
@@ -651,7 +651,7 @@ describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
       // Need to make doctor pass for runInstall to return; the in-process
       // doctor call would normally print per-check status to stderr but with
       // --json that chatter must be suppressed.
-      runInstall(baseOpts({
+      await runInstall(baseOpts({
         json: true,
         skipDoctor: false,
         // PATH was already seeded with the shim bin in beforeEach so all 11
@@ -663,7 +663,7 @@ describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
     expect(captured.join("")).toBe("");
   });
 
-  it("dry-run --json suppresses plan: lines on stderr too", () => {
+  it("dry-run --json suppresses plan: lines on stderr too", async () => {
     const captured: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: any) => {
@@ -671,7 +671,7 @@ describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
       return true;
     }) as typeof process.stderr.write;
     try {
-      runInstall(baseOpts({ json: true, dryRun: true }));
+      await runInstall(baseOpts({ json: true, dryRun: true }));
     } finally {
       process.stderr.write = originalWrite;
     }
@@ -690,7 +690,7 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     return otherRepo;
   }
 
-  it("threads --repo into the trailing doctor task-graph check", () => {
+  it("threads --repo into the trailing doctor task-graph check", async () => {
     const otherRepo = stageOtherRepo();
     // A present-but-broken graph in otherRepo: the failure detail naming that
     // repo proves doctor ran against --repo, not cwd.
@@ -699,7 +699,7 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     let code: string | undefined;
     let report: any;
     try {
-      runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
+      await runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
     } catch (e) {
       code = (e as { code?: string }).code;
       report = (e as { details?: any }).details;
@@ -710,10 +710,10 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     expect(taskGraph.detail).toContain(otherRepo);
   });
 
-  it("installs green against a repo with no plan/ (fresh clone)", () => {
+  it("installs green against a repo with no plan/ (fresh clone)", async () => {
     const otherRepo = stageOtherRepo();
     // No plan/ in otherRepo at all — the public fresh-clone shape.
-    const report = runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
+    const report = await runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
     const taskGraph = report.doctor!.checks.find((c) => c.name === "task-graph");
     expect(taskGraph?.status).toBe("skip");
     expect(taskGraph?.detail).toContain(otherRepo);

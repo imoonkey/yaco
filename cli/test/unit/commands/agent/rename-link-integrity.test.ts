@@ -87,7 +87,7 @@ describe("rename link integrity", () => {
     // Child re-pointed.
     expect(readState("kid")?.parentSession).toBe("new");
     // Task links rewritten, order/dedupe preserved, unrelated untouched.
-    const store = loadTaskStore(tasksPath);
+    const store = await loadTaskStore(tasksPath);
     expect(store.tasks.t1!.agents).toEqual(["new"]);
     expect(store.tasks.t2!.agents).toEqual(["keep", "new"]);
     expect(store.tasks.t3!.agents).toEqual(["unrelated"]);
@@ -121,7 +121,7 @@ describe("rename link integrity", () => {
 
     expect(outcome.warnings).toEqual([]);
     expect(outcome.tasks).toEqual(["t1"]);
-    expect(loadTaskStore(tasksPath).tasks.t1!.agents).toEqual(["new"]);
+    expect((await loadTaskStore(tasksPath)).tasks.t1!.agents).toEqual(["new"]);
 
     rmSync(root, { recursive: true, force: true });
   });
@@ -185,7 +185,7 @@ describe("rename link integrity", () => {
 
     expect(outcome.tasks).toEqual([]);
     expect(outcome.childSessions).toEqual([]);
-    expect(loadTaskStore(tasksPath).tasks.t1!.agents).toEqual(["new"]);
+    expect((await loadTaskStore(tasksPath)).tasks.t1!.agents).toEqual(["new"]);
     expect(readState("kid")?.parentSession).toBe("new");
 
     rmSync(root, { recursive: true, force: true });

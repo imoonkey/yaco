@@ -62,8 +62,8 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
 
   await withLock(
     paths.tasksPath,
-    () => {
-      const store = loadTaskStore(paths.tasksPath);
+    async () => {
+      const store = await loadTaskStore(paths.tasksPath);
       const tasks = store.tasks;
       const now = nowIso();
       const existed = id in tasks;

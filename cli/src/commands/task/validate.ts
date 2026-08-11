@@ -22,9 +22,9 @@ interface ValidateOpts {
   repo?: string | boolean;
 }
 
-export function runValidate(opts: ValidateOpts): Result<unknown> {
+export async function runValidate(opts: ValidateOpts): Promise<Result<unknown>> {
   const paths = resolveTaskPaths(opts.repo);
-  const store = loadTaskStore(paths.tasksPath);
+  const store = await loadTaskStore(paths.tasksPath);
   const tasks = store.tasks;
 
   if (opts.id !== undefined && !(opts.id in tasks)) {

@@ -1,5 +1,8 @@
-/** Public surface for @yaco/cli/core/task — the model, pure graph analysis, and
- *  the read half of the task store.
+/** Public surface for @yaco/cli/core/task — the model, pure graph analysis, the
+ *  composed task-list read, and the read half of the task store.
+ *
+ *  `readTaskList` is what an in-process consumer wants: an explicit repo root
+ *  in, a `Result` out, and the same implementation `yaco task list` renders.
  *
  *  Nothing that writes the graph or takes the tasks-file lock is exported.
  *  Task mutation stays behind the CLI subprocess boundary: the lock, the
@@ -44,6 +47,13 @@ export {
   type ValidationProblems,
   type ValidationReport,
 } from "./graph.ts";
+
+export {
+  readTaskList,
+  type TaskListInput,
+  type TaskListData,
+  type TaskWorksetFilter,
+} from "./read.ts";
 
 export {
   loadTasks,

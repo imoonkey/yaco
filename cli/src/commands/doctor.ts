@@ -315,7 +315,7 @@ function unreadableReason(path: string): string | null {
   }
 }
 
-function checkTaskGraph(repoRoot: string): CheckResult {
+async function checkTaskGraph(repoRoot: string): Promise<CheckResult> {
   // Validate in-process: callers thread the resolved repoRoot in (install
   // passes --repo through; the doctor handler resolves the flag/env/cwd
   // precedence chain before calling). Spawning `yaco task validate --json`
@@ -343,7 +343,7 @@ function checkTaskGraph(repoRoot: string): CheckResult {
       }
       return fail("task-graph", `${tasksPath}: ${reason}`);
     }
-    const store = loadTaskStore(tasksPath);
+    const store = await loadTaskStore(tasksPath);
     const report = validateGraph(store.tasks);
     if (!report.ok) {
       const problems = report.details ?? {};
@@ -366,7 +366,7 @@ export function resolveDoctorRepo(repoFlag?: string): string {
 
 /** Run all 11 required checks and return a structured report. Pure: no
  *  process.exit; callers decide how to react. */
-export function runAllChecks(repoRoot?: string): DoctorReport {
+export async function runAllChecks(repoRoot?: string): Promise<DoctorReport> {
   const resolvedRepo = resolveDoctorRepo(repoRoot);
   const checks: CheckResult[] = [
     checkBinary(),
@@ -379,7 +379,7 @@ export function runAllChecks(repoRoot?: string): DoctorReport {
     checkTmux(),
     checkGit(),
     checkProviders(),
-    checkTaskGraph(resolvedRepo),
+    await checkTaskGraph(resolvedRepo),
   ];
   const summary = { pass: 0, fail: 0 };
   for (const c of checks) {
@@ -419,7 +419,7 @@ export async function handleDoctor(
     }
     throw new CliError(ErrCode.USAGE, `unknown doctor flag: ${a}`);
   }
-  const report = runAllChecks(repoFlag);
+  const report = await runAllChecks(repoFlag);
   // doctor is a STATUS command: the --json envelope ALWAYS uses the success
   // shape so the data.checks / data.summary schema is stable even when checks
   // fail. The exit code (0 vs 1) carries the pass/fail signal, mirroring the

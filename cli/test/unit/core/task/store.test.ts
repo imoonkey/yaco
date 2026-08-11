@@ -1,7 +1,9 @@
-/** Unit tests for the on-disk store: byte-format parity with Python output. */
+/** Unit tests for the on-disk store: byte-format parity with Python output,
+ *  and the invariants the asynchronous chunked reader has to keep — the file
+ *  order, the merge order, and *which* error a broken tree reports. */
 
 import { describe, it, expect } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -12,12 +14,27 @@ function tmp(): string {
   return mkdtempSync(join(tmpdir(), "task-store-"));
 }
 
+function writeGraph(path: string, graph: Record<string, unknown>): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, formatJson(graph));
+}
+
+const task = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  parent: null,
+  depends: [],
+  state: "ready",
+  title: "t",
+  description: "d",
+  acceptCriteria: "ok",
+  ...over,
+});
+
 describe("loadTasks / saveTasks", () => {
-  it("round-trips an empty graph as {}", () => {
+  it("round-trips an empty graph as {}", async () => {
     const f = join(tmp(), "tasks.json");
     saveTasks(f, {});
     expect(readFileSync(f, "utf-8")).toBe("{}\n");
-    expect(loadTasks(f)).toEqual({});
+    expect(await loadTasks(f)).toEqual({});
   });
 
   it("preserves Python-style 2-space indent and final newline", () => {
@@ -45,56 +62,132 @@ describe("loadTasks / saveTasks", () => {
       );
   });
 
-  it("returns {} for a missing file", () => {
-    expect(loadTasks(join(tmp(), "nonexistent.json"))).toEqual({});
+  it("returns {} for a missing file", async () => {
+    expect(await loadTasks(join(tmp(), "nonexistent.json"))).toEqual({});
   });
 
-  it("loadTasks throws INVALID on malformed JSON", () => {
+  it("throws INVALID on malformed JSON", async () => {
     const f = join(tmp(), "bad.json");
     writeFileSync(f, "{ not json", "utf-8");
-    expect(() => loadTasks(f)).toThrow(/not valid JSON/);
+    await expect(loadTasks(f)).rejects.toThrow(/not valid JSON/);
   });
 
-  it("loadTaskStore recursively reads tasks.json files and defaults workset", () => {
-    const root = tmp();
-    const a = join(root, "tasks", "tasks.json");
-    const b = join(root, "tasks", "cli", "tasks.json");
-    mkdirSync(dirname(a), { recursive: true });
-    mkdirSync(dirname(b), { recursive: true });
-    writeFileSync(a, formatJson({
-      root: { parent: null, depends: [], state: "ready", title: "r", description: "d", acceptCriteria: "ok" },
-    }));
-    writeFileSync(b, formatJson({
-      child: { parent: "root", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok", workset: "backlog" },
-    }));
+  it("throws IO — not {} — when the path exists but cannot be read as a file", async () => {
+    // ENOENT is the one "no tasks here" answer; every other failure is real.
+    const dir = tmp();
+    await expect(loadTasks(dir)).rejects.toMatchObject({ code: "IO" });
+  });
+});
 
-    const store = loadTaskStore(join(root, "tasks"));
+describe("loadTaskStore", () => {
+  it("recursively reads tasks.json files and defaults workset", async () => {
+    const root = tmp();
+    writeGraph(join(root, "tasks", "tasks.json"), { root: task({ title: "r" }) });
+    writeGraph(join(root, "tasks", "cli", "tasks.json"), {
+      child: task({ parent: "root", title: "c", workset: "backlog" }),
+    });
+
+    const store = await loadTaskStore(join(root, "tasks"));
     expect(Object.keys(store.tasks).sort()).toEqual(["child", "root"]);
     expect(store.tasks.root!.workset).toBe("active");
     expect(store.tasks.child!.workset).toBe("backlog");
   });
 
-  it("loadTaskStore rejects duplicate task ids across files", () => {
+  it("accepts a single tasks file as the tasks path", async () => {
     const root = tmp();
-    const a = join(root, "tasks", "tasks.json");
-    const b = join(root, "tasks", "other", "tasks.json");
-    mkdirSync(dirname(a), { recursive: true });
-    mkdirSync(dirname(b), { recursive: true });
-    const graph = { x: { parent: null, depends: [], state: "ready" } };
-    writeFileSync(a, formatJson(graph));
-    writeFileSync(b, formatJson(graph));
-    expect(() => loadTaskStore(join(root, "tasks"))).toThrow(/duplicate task id 'x'/);
+    const file = join(root, "tasks.json");
+    writeGraph(file, { x: task() });
+    const store = await loadTaskStore(file);
+    expect(store.files).toEqual([file]);
+    expect(Object.keys(store.tasks)).toEqual(["x"]);
   });
 
-  it("saveTaskStore writes existing tasks back to their source file and new tasks to their own bundle file", () => {    const root = tmp();
+  it("returns an empty store for an absent tasks path", async () => {
+    const store = await loadTaskStore(join(tmp(), "nope"));
+    expect(store.files).toEqual([]);
+    expect(store.tasks).toEqual({});
+  });
+
+  it("rejects duplicate task ids across files", async () => {
+    const root = tmp();
+    const graph = { x: { parent: null, depends: [], state: "ready" } };
+    writeGraph(join(root, "tasks", "tasks.json"), graph);
+    writeGraph(join(root, "tasks", "other", "tasks.json"), graph);
+    await expect(loadTaskStore(join(root, "tasks"))).rejects.toThrow(/duplicate task id 'x'/);
+  });
+
+  it("orders files and merges tasks by sorted path, past the concurrency width", async () => {
+    // More files than one chunk, so a reader that merged in completion order
+    // rather than file order would scramble both `files` and the graph.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    const ids = Array.from({ length: 40 }, (_, i) => `t${String(i).padStart(2, "0")}`);
+    for (const id of ids) writeGraph(join(tasksRoot, id, "tasks.json"), { [id]: task() });
+
+    const store = await loadTaskStore(tasksRoot);
+    expect(store.files).toEqual(ids.map((id) => join(tasksRoot, id, "tasks.json")));
+    expect(Object.keys(store.tasks)).toEqual(ids);
+  });
+
+  it("reports the first broken file in path order, not the first to fail in time", async () => {
+    // Both live in the same chunk and both reject; `Promise.all` would surface
+    // whichever the disk finished first.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    writeGraph(join(tasksRoot, "a", "tasks.json"), { a: task() });
+    mkdirSync(join(tasksRoot, "b"), { recursive: true });
+    writeFileSync(join(tasksRoot, "b", "tasks.json"), "{ not json");
+    mkdirSync(join(tasksRoot, "c"), { recursive: true });
+    writeFileSync(join(tasksRoot, "c", "tasks.json"), "[]");
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(loadTaskStore(tasksRoot)).rejects.toThrow(
+        new RegExp(`${join(tasksRoot, "b", "tasks.json")} is not valid JSON`),
+      );
+    }
+  });
+
+  it("surfaces an unreadable directory as IO", async () => {
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    const walled = join(tasksRoot, "walled");
+    mkdirSync(walled, { recursive: true });
+    chmodSync(walled, 0o000);
+    try {
+      await expect(loadTaskStore(tasksRoot)).rejects.toMatchObject({ code: "IO" });
+    } finally {
+      chmodSync(walled, 0o755);
+    }
+  });
+
+  it("does not block the event loop while it walks", async () => {
+    // The whole point of rule 5: an unrelated queued callback must get to run
+    // during the walk, which a synchronous recursive readdir never allows.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    for (let i = 0; i < 60; i++) {
+      writeGraph(join(tasksRoot, `t${i}`, "tasks.json"), { [`t${i}`]: task() });
+    }
+
+    let ticks = 0;
+    const tick = (): void => {
+      ticks++;
+      if (ticks < 1000) setImmediate(tick);
+    };
+    setImmediate(tick);
+    await loadTaskStore(tasksRoot);
+    expect(ticks).toBeGreaterThan(0);
+  });
+});
+
+describe("saveTaskStore", () => {
+  it("writes existing tasks back to their source file and new tasks to their own bundle file", async () => {
+    const root = tmp();
     const tasksRoot = join(root, "tasks");
     const source = join(tasksRoot, "cli", "tasks.json");
-    mkdirSync(dirname(source), { recursive: true });
-    writeFileSync(source, formatJson({
-      x: { parent: null, depends: [], state: "ready", title: "x", description: "d", acceptCriteria: "ok" },
-    }));
+    writeGraph(source, { x: task({ title: "x" }) });
 
-    const store = loadTaskStore(tasksRoot);
+    const store = await loadTaskStore(tasksRoot);
     store.tasks.x!.title = "updated";
     store.tasks.y = { parent: null, depends: [], state: "ready", workset: "active", title: "y", description: "d", acceptCriteria: "ok" };
     saveTaskStore(store);
@@ -107,44 +200,43 @@ describe("loadTasks / saveTasks", () => {
 });
 
 describe("loadTaskStore agents normalization", () => {
-  function storeWith(task: Record<string, unknown>) {
+  async function storeWith(over: Record<string, unknown>) {
     const root = tmp();
     const file = join(root, "tasks", "tasks.json");
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, formatJson({ t: { parent: null, depends: [], state: "ready", ...task } }));
-    return { store: loadTaskStore(join(root, "tasks")), file };
+    writeGraph(file, { t: { parent: null, depends: [], state: "ready", ...over } });
+    return { store: await loadTaskStore(join(root, "tasks")), file };
   }
 
-  it("upgrades a legacy agent string to an agents list", () => {
-    const { store } = storeWith({ agent: "claude" });
+  it("upgrades a legacy agent string to an agents list", async () => {
+    const { store } = await storeWith({ agent: "claude" });
     expect(store.tasks.t!.agents).toEqual(["claude"]);
     expect("agent" in store.tasks.t!).toBe(false);
   });
 
-  it("trims, drops empty handles, and dedupes the agents list", () => {
-    const { store } = storeWith({ agents: [" claude ", "claude", "", "codex"] });
+  it("trims, drops empty handles, and dedupes the agents list", async () => {
+    const { store } = await storeWith({ agents: [" claude ", "claude", "", "codex"] });
     expect(store.tasks.t!.agents).toEqual(["claude", "codex"]);
   });
 
-  it("prefers agents over a stale legacy agent when both appear", () => {
-    const { store } = storeWith({ agent: "old", agents: ["claude"] });
+  it("prefers agents over a stale legacy agent when both appear", async () => {
+    const { store } = await storeWith({ agent: "old", agents: ["claude"] });
     expect(store.tasks.t!.agents).toEqual(["claude"]);
   });
 
-  it("honors an explicit empty agents array over a stale legacy agent", () => {
-    const { store } = storeWith({ agent: "old", agents: [] });
+  it("honors an explicit empty agents array over a stale legacy agent", async () => {
+    const { store } = await storeWith({ agent: "old", agents: [] });
     expect("agents" in store.tasks.t!).toBe(false);
     expect("agent" in store.tasks.t!).toBe(false);
   });
 
-  it("drops an empty or whitespace-only legacy agent entirely", () => {
-    const { store } = storeWith({ agent: "  " });
+  it("drops an empty or whitespace-only legacy agent entirely", async () => {
+    const { store } = await storeWith({ agent: "  " });
     expect("agents" in store.tasks.t!).toBe(false);
     expect("agent" in store.tasks.t!).toBe(false);
   });
 
-  it("omits agent and writes only agents back to disk", () => {
-    const { store, file } = storeWith({ agent: "claude" });
+  it("omits agent and writes only agents back to disk", async () => {
+    const { store, file } = await storeWith({ agent: "claude" });
     saveTaskStore(store);
     const body = readFileSync(file, "utf-8");
     expect(body).toContain('"agents"');

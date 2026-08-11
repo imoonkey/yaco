@@ -25,8 +25,8 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
 
   await withLock(
     paths.tasksPath,
-    () => {
-      const store = loadTaskStore(paths.tasksPath);
+    async () => {
+      const store = await loadTaskStore(paths.tasksPath);
       const tasks = store.tasks;
       const t = tasks[id];
       if (!t) throw new CliError(ErrCode.NOT_FOUND, `task '${id}' not found`);

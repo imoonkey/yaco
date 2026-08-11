@@ -33,11 +33,11 @@ function repoWith(tasks: Record<string, unknown>): string {
 }
 
 describe("yaco task get", () => {
-  it("JSON mode returns {id, task, tasksPath, tasksFile} with id included", () => {
+  it("JSON mode returns {id, task, tasksPath, tasksFile} with id included", async () => {
     const repo = repoWith({
       alpha: { parent: null, depends: ["beta"], state: "ready", title: "First" },
     });
-    const r = runGet("alpha", { json: true, repo });
+    const r = await runGet("alpha", { json: true, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const v = r.value as {
@@ -54,7 +54,7 @@ describe("yaco task get", () => {
     }
   });
 
-  it("reports the task's actual source file in a directory-backed store", () => {
+  it("reports the task's actual source file in a directory-backed store", async () => {
     const root = mkdtempSync(join(tmpdir(), "yaco-task-get-"));
     TMP_ROOTS.push(root);
     const tasksDir = join(root, "plan", "tasks");
@@ -68,7 +68,7 @@ describe("yaco task get", () => {
       join(tasksDir, "alpha", "tasks.json"),
       JSON.stringify({ alpha: { parent: null, depends: [], state: "ready" } }),
     );
-    const r = runGet("alpha", { json: true, repo: root });
+    const r = await runGet("alpha", { json: true, repo: root });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const v = r.value as { tasksFile: string };
@@ -76,7 +76,7 @@ describe("yaco task get", () => {
     }
   });
 
-  it("text mode returns a labeled detail block", () => {
+  it("text mode returns a labeled detail block", async () => {
     const repo = repoWith({
       alpha: {
         parent: "root",
@@ -90,7 +90,7 @@ describe("yaco task get", () => {
         description: "A task.",
       },
     });
-    const r = runGet("alpha", { json: false, repo });
+    const r = await runGet("alpha", { json: false, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const { text } = r.value as { text: string };
@@ -107,11 +107,11 @@ describe("yaco task get", () => {
     }
   });
 
-  it("omits absent fields from the text block", () => {
+  it("omits absent fields from the text block", async () => {
     const repo = repoWith({
       alpha: { parent: null, depends: [], state: "ready" },
     });
-    const r = runGet("alpha", { json: false, repo });
+    const r = await runGet("alpha", { json: false, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const { text } = r.value as { text: string };
@@ -123,10 +123,10 @@ describe("yaco task get", () => {
     }
   });
 
-  it("throws NOT_FOUND on a missing id", () => {
+  it("throws NOT_FOUND on a missing id", async () => {
     const repo = repoWith({ alpha: { parent: null, depends: [], state: "ready" } });
     try {
-      runGet("nope", { json: true, repo });
+      await runGet("nope", { json: true, repo });
       throw new Error("expected NOT_FOUND");
     } catch (e) {
       expect(e).toBeInstanceOf(CliError);
@@ -143,8 +143,8 @@ describe("yaco task list --state", () => {
     d: { parent: null, depends: [], state: "done", workset: "active", title: "D" },
   });
 
-  it("filters by state within the default active workset", () => {
-    const r = runListState({ json: true, repo, state: "running" });
+  it("filters by state within the default active workset", async () => {
+    const r = await runListState({ json: true, repo, state: "running" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const v = r.value as { tasks: Record<string, unknown> };
@@ -153,8 +153,8 @@ describe("yaco task list --state", () => {
     }
   });
 
-  it("composes with --workset", () => {
-    const r = runListState({ json: true, repo, workset: "all", state: "running" });
+  it("composes with --workset", async () => {
+    const r = await runListState({ json: true, repo, workset: "all", state: "running" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const v = r.value as { tasks: Record<string, unknown> };
@@ -162,8 +162,8 @@ describe("yaco task list --state", () => {
     }
   });
 
-  it("text mode renders the filtered table", () => {
-    const r = runListState({ json: false, repo, workset: "all", state: "done" });
+  it("text mode renders the filtered table", async () => {
+    const r = await runListState({ json: false, repo, workset: "all", state: "done" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const { text } = r.value as { text: string };
@@ -171,9 +171,9 @@ describe("yaco task list --state", () => {
     }
   });
 
-  it("text mode reports an empty filtered set", () => {
+  it("text mode reports an empty filtered set", async () => {
     const tasksPath = resolve(repo, "plan", "tasks");
-    const r = runListState({ json: false, repo, state: "cancelled" });
+    const r = await runListState({ json: false, repo, state: "cancelled" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       expect(r.value).toEqual({

@@ -1,5 +1,14 @@
 /** Disk I/O for the tasks file.
  *
+ *  Reading is asynchronous end to end — export eligibility rule 5, because
+ *  `app/server` runs this loader inside its own event loop and the tree is
+ *  input-sized. The walk and the file set are read through `fs/promises` in
+ *  bounded chunks (see {@link mapChunked}); a synchronous recursive `readdir`
+ *  here is what stalls every other queued request.
+ *
+ *  Writing stays synchronous: it is a single bounded write on a known path,
+ *  taken under the tasks-file lock, and it never leaves the CLI process.
+ *
  *  Output format is byte-compatible with the Python implementation:
  *  `JSON.stringify(tasks, null, 2)` + trailing "\n", which matches Python's
  *  `json.dumps(tasks, indent=2, ensure_ascii=False) + "\n"`. Both runtimes
@@ -7,14 +16,8 @@
  *  module keeps the file diff-clean.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile, readdir, stat } from "node:fs/promises";
 import type { Dirent, Stats } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -22,12 +25,37 @@ import { CliError, ErrCode } from "../errors.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
 import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
-export function loadTasks(path: string): TaskGraph {
-  if (!existsSync(path)) return {};
+/** Items read per await. Wide enough that a task tree costs no more wall time
+ *  than the synchronous walk it replaces, narrow enough that a large tree does
+ *  not open a file descriptor per file at once. */
+const READ_CONCURRENCY = 16;
+
+/** Map `items` through `fn`, `READ_CONCURRENCY` at a time, yielding to the
+ *  event loop between chunks.
+ *
+ *  `allSettled` rather than `all`: with two failures in flight `Promise.all`
+ *  surfaces whichever rejected first *in time*, so which error a caller sees
+ *  would depend on disk scheduling. Rethrowing in item order instead reproduces
+ *  the sequential loop's answer exactly — the first failing item wins, and the
+ *  remaining chunks are never started. */
+async function mapChunked<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += READ_CONCURRENCY) {
+    const chunk = await Promise.allSettled(items.slice(i, i + READ_CONCURRENCY).map(fn));
+    for (const settled of chunk) {
+      if (settled.status === "rejected") throw settled.reason;
+      out.push(settled.value);
+    }
+  }
+  return out;
+}
+
+export async function loadTasks(path: string): Promise<TaskGraph> {
   let raw: string;
   try {
-    raw = readFileSync(path, "utf-8");
+    raw = await readFile(path, "utf-8");
   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw new CliError(
       ErrCode.IO,
       `failed to read tasks file ${path}: ${(err as Error).message}`,
@@ -101,14 +129,15 @@ export function resolveTasksPathForSessionPath(sessionPath: string): string | nu
   return null;
 }
 
-export function loadTaskStore(tasksPath: string): TaskStore {
+export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
   const defaultFile = defaultTaskFileFor(tasksPath);
-  const files = discoverTaskFiles(tasksPath);
+  const files = await discoverTaskFiles(tasksPath);
+  const graphs = await mapChunked(files, loadTasks);
   const tasks: TaskGraph = {};
   const sources = new Map<string, string>();
 
-  for (const file of files) {
-    const graph = loadTasks(file);
+  for (const [index, graph] of graphs.entries()) {
+    const file = files[index]!;
     for (const [id, task] of Object.entries(graph)) {
       const existing = sources.get(id);
       if (existing) {
@@ -160,43 +189,52 @@ export function sourceForNewTask(store: TaskStore, id: string, parent: string | 
   return sourceForTask(store, id);
 }
 
-function discoverTaskFiles(tasksPath: string): string[] {
-  if (!existsSync(tasksPath)) return [];
-  let st: Stats;
+/** The tasks path as one stat, or null when it is absent or its parent denies
+ *  the lookup. Both were already the "no task files" answer — `existsSync`
+ *  reports false for either — so one call now says what two used to. */
+async function statOrNull(path: string): Promise<Stats | null> {
   try {
-    st = statSync(tasksPath);
-  } catch (err) {
-    throw new CliError(
-      ErrCode.IO,
-      `failed to inspect tasks path ${tasksPath}: ${(err as Error).message}`,
-    );
+    return await stat(path);
+  } catch {
+    return null;
   }
+}
+
+async function discoverTaskFiles(tasksPath: string): Promise<string[]> {
+  const st = await statOrNull(tasksPath);
+  if (!st) return [];
   if (st.isFile()) return [tasksPath];
   if (!st.isDirectory()) {
     throw new CliError(ErrCode.INVALID, `tasks path ${tasksPath} must be a file or directory`);
   }
-  const result: string[] = [];
-  walkTaskDir(tasksPath, result);
-  return result.sort();
+
+  // Breadth-first, one bounded chunk of `readdir` per level. The final sort is
+  // what fixes the order, so dropping the recursion's per-directory sort leaves
+  // the file list identical.
+  const found: string[] = [];
+  let level = [tasksPath];
+  while (level.length > 0) {
+    const next: string[] = [];
+    for (const dir of await mapChunked(level, readTaskDir)) {
+      for (const entry of dir.entries) {
+        const path = join(dir.path, entry.name);
+        if (entry.isDirectory()) next.push(path);
+        else if (entry.isFile() && entry.name === "tasks.json") found.push(path);
+      }
+    }
+    level = next;
+  }
+  return found.sort();
 }
 
-function walkTaskDir(dir: string, result: string[]): void {
-  let entries: Dirent[];
+async function readTaskDir(path: string): Promise<{ path: string; entries: Dirent[] }> {
   try {
-    entries = readdirSync(dir, { withFileTypes: true });
+    return { path, entries: await readdir(path, { withFileTypes: true }) };
   } catch (err) {
     throw new CliError(
       ErrCode.IO,
-      `failed to read tasks directory ${dir}: ${(err as Error).message}`,
+      `failed to read tasks directory ${path}: ${(err as Error).message}`,
     );
-  }
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walkTaskDir(path, result);
-    } else if (entry.isFile() && entry.name === "tasks.json") {
-      result.push(path);
-    }
   }
 }
 

@@ -79,7 +79,7 @@ describe("rewriteTaskAgentHandle", () => {
     const { tasks } = await rewriteTaskAgentHandle(tasksPath, "old", "new");
 
     expect(tasks.sort()).toEqual(["t1", "t2"]);
-    const store = loadTaskStore(tasksPath);
+    const store = await loadTaskStore(tasksPath);
     expect(store.tasks.t1!.agents).toEqual(["new"]);
     expect(store.tasks.t2!.agents).toEqual(["keep", "new"]);
     expect(store.tasks.t3!.agents).toEqual(["unrelated"]);
@@ -92,7 +92,7 @@ describe("rewriteTaskAgentHandle", () => {
 
     await rewriteTaskAgentHandle(tasksPath, "old", "new");
 
-    expect(loadTaskStore(tasksPath).tasks.t!.agents).toEqual(["a", "new", "b"]);
+    expect((await loadTaskStore(tasksPath)).tasks.t!.agents).toEqual(["a", "new", "b"]);
   });
 
   it("is idempotent — a second run finds nothing to rewrite", async () => {
@@ -103,7 +103,7 @@ describe("rewriteTaskAgentHandle", () => {
     const second = await rewriteTaskAgentHandle(tasksPath, "old", "new");
 
     expect(second.tasks).toEqual([]);
-    expect(loadTaskStore(tasksPath).tasks.t!.agents).toEqual(["new"]);
+    expect((await loadTaskStore(tasksPath)).tasks.t!.agents).toEqual(["new"]);
   });
 
   it("upgrades a legacy `agent` field on a rewritten task and drops it", async () => {
@@ -116,7 +116,7 @@ describe("rewriteTaskAgentHandle", () => {
 
     await rewriteTaskAgentHandle(tasksPath, "old", "new");
 
-    const store = loadTaskStore(tasksPath);
+    const store = await loadTaskStore(tasksPath);
     expect(store.tasks.t!.agents).toEqual(["new"]);
     expect((store.tasks.t as Record<string, unknown>).agent).toBeUndefined();
   });
@@ -131,7 +131,7 @@ describe("rewriteTaskAgentHandle", () => {
     await rewriteTaskAgentHandle(tasksPath, "old", "new");
 
     // t2 had no workset on disk; the targeted patch must not synthesize one.
-    const raw = loadTaskStore(tasksPath);
+    const raw = await loadTaskStore(tasksPath);
     expect((raw.tasks.t2 as Record<string, unknown>).title).toBe("untouched");
   });
 });

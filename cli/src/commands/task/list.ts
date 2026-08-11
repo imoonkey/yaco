@@ -2,21 +2,22 @@
  *
  *  Text mode prints a flat `id  state  title` table; --json mode returns
  *  the raw graph so consumers can render whatever shape they need.
+ *
+ *  The read itself is `core/task#readTaskList`, the same function `app/server`
+ *  calls in process — this file is only the argv/render adapter over it.
  */
 
-import { type Result } from "../../lib/core/result.ts";
+import { isErr, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import {
   DEFAULT_WORKSET,
-  isWorkset,
-  loadTaskStore,
+  readTaskList,
   type TaskGraph,
-  type Workset,
+  type TaskWorksetFilter,
 } from "../../lib/core/task/index.ts";
-import { resolveTaskPaths } from "./paths.ts";
+import { resolveRepoRoot } from "./paths.ts";
 
-export type TaskListWorkset = Workset | "all";
+export type TaskListWorkset = TaskWorksetFilter;
 
 interface ListOpts {
   json: boolean;
@@ -24,14 +25,20 @@ interface ListOpts {
   workset?: TaskListWorkset;
 }
 
-export function runList(opts: ListOpts): Result<unknown> {
-  const paths = resolveTaskPaths(opts.repo);
-  const store = loadTaskStore(paths.tasksPath);
-  const workset = opts.workset ?? DEFAULT_WORKSET;
-  const tasks = filterTasksByWorkset(store.tasks, workset);
+export async function runList(opts: ListOpts): Promise<Result<unknown>> {
+  const result = await readTaskList({
+    repoRoot: resolveRepoRoot(opts.repo),
+    workset: opts.workset,
+  });
+  if (isErr(result)) return result;
 
-  const data = { tasks, tasksPath: paths.tasksPath, tasksFile: store.defaultFile };
-  return dual(opts.json, data, () => renderText(tasks, workset, paths.tasksPath));
+  const { tasks, tasksPath, tasksFile } = result.value;
+  const workset = opts.workset ?? DEFAULT_WORKSET;
+  return dual(
+    opts.json,
+    { tasks, tasksPath, tasksFile },
+    () => renderText(tasks, workset, tasksPath),
+  );
 }
 
 function renderText(tasks: TaskGraph, workset: TaskListWorkset, tasksPath: string): string {
@@ -44,14 +51,4 @@ function renderText(tasks: TaskGraph, workset: TaskListWorkset, tasksPath: strin
     return `${id.padEnd(widest)}  ${t.state.padEnd(9)}  ${t.title ?? ""}`;
   });
   return lines.join("\n") + "\n";
-}
-
-function filterTasksByWorkset(tasks: TaskGraph, workset: TaskListWorkset): TaskGraph {
-  if (workset === "all") return tasks;
-  if (!isWorkset(workset)) {
-    throw new CliError(ErrCode.USAGE, "--workset must be one of: active, backlog, archive, all");
-  }
-  return Object.fromEntries(
-    Object.entries(tasks).filter(([, task]) => (task.workset ?? DEFAULT_WORKSET) === workset),
-  );
 }
