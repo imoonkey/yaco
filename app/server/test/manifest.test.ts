@@ -74,6 +74,14 @@ const LOADERS: Record<string, 'ts' | 'js'> = {
   '.ts': 'ts', '.mts': 'ts', '.cts': 'ts', '.js': 'js', '.mjs': 'js', '.cjs': 'js',
 }
 
+/** What has to follow `import(` in re-printed output for esbuild to have been
+ *  able to resolve it: one complete string literal and then the closing paren.
+ *  A concatenation, a template, or an identifier all leave something else
+ *  there — and esbuild prints each of them back verbatim, having quietly
+ *  declined to resolve it. Both quote styles, because the minifier picks
+ *  whichever escapes less. */
+const LITERAL_ARGUMENT = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\)/
+
 /** Every file the bundle inlined, re-emitted by esbuild's own parser with
  *  comments and layout gone.
  *
@@ -133,8 +141,8 @@ describe('the manifest decides what the bundle externalises', () => {
         continue
       }
       for (const match of code.matchAll(/\bimport\(/g)) {
-        const next = code[match.index + match[0].length]
-        if (next !== '"' && next !== "'") offenders.push(`${path}: non-literal import()`)
+        const argument = code.slice(match.index + match[0].length)
+        if (!LITERAL_ARGUMENT.test(argument)) offenders.push(`${path}: non-literal import()`)
       }
       if (/(?<![.\w$])require\(/.test(code)) offenders.push(`${path}: require()`)
       if (/\bcreateRequire\b/.test(code)) offenders.push(`${path}: createRequire`)
