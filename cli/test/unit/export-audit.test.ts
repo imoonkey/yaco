@@ -548,6 +548,15 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
       expect(use.emitted.join("\n") + "\n", `${file}: emitted JavaScript`).toBe(
         readFileSync(resolve(CLI_ROOT, admission.emitted), "utf-8"),
       );
+      // Proof the emit came from `tsconfig.build.json` rather than the typecheck
+      // config: only the build rewrites a relative specifier's extension. Without
+      // this, a change confined to the build config could alter what ships while
+      // the pin above stayed green — the emit it compares would be one nobody
+      // runs.
+      expect(
+        use.emitted.filter((line) => line.includes("./provider-home")),
+        `${file}: emit must be the build's, with relative specifiers rewritten`,
+      ).toEqual(['import { codexDbPath } from "./provider-home.js";']);
     }
   });
 });

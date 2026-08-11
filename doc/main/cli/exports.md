@@ -193,6 +193,13 @@ ones nobody has thought of alike, because none of them is something the check
 has to recognize. Failing means re-judge and re-measure, which is what should
 happen when the code carrying a measured stall bound changes.
 
+It is the **build** config's emit — `tsc -p tsconfig.build.json`, the compilation
+that produces `dist/**.js` — because that is the JavaScript an installed consumer
+loads, with relative specifiers rewritten to `.js`. Compiling with the typecheck
+config instead would leave a change confined to `tsconfig.build.json` free to
+alter the shipped program while the pin stayed green, and the audit asserts the
+rewritten specifier so the emit is provably the build's.
+
 Pinning the emit rather than a summary of the syntax tree is a correctness
 decision. A tree summary has to enumerate which node properties matter, and
 review found one a `forEachChild` walk cannot reach at all: `const` / `let` /

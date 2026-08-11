@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { codexDbPath } from "./provider-home.ts";
+import { codexDbPath } from "./provider-home.js";
 export function codexThreadRow(sessionId) {
     if (!existsSync(codexDbPath()))
         return null;

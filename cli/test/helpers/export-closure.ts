@@ -77,10 +77,15 @@ interface Parsed {
   specifiers: string[];
 }
 
-const compilerOptions = loadCompilerOptions();
+const compilerOptions = loadCompilerOptions("tsconfig.json");
+/** The options the package is *built* with. They differ from the typecheck
+ *  config's in ways that change the emitted program — `module: esnext` and
+ *  `rewriteRelativeImportExtensions`, today — so anything asserting about what
+ *  ships has to read these. */
+const buildCompilerOptions = loadCompilerOptions("tsconfig.build.json");
 
-function loadCompilerOptions(): ts.CompilerOptions {
-  const configPath = join(CLI_ROOT, "tsconfig.json");
+function loadCompilerOptions(file: string): ts.CompilerOptions {
+  const configPath = join(CLI_ROOT, file);
   const { config, error } = ts.readConfigFile(configPath, (p) =>
     readFileSync(p, "utf-8"),
   );
@@ -492,6 +497,12 @@ export interface SqliteUse {
  *  comments and type annotations are gone, and the formatting is the emitter's
  *  rather than the source's.
  *
+ *  It is the **build** config's emit, because that is the JavaScript an
+ *  installed consumer loads — `dist/**.js`, with relative specifiers rewritten
+ *  to `.js`. Compiling with the typecheck config instead would leave a change
+ *  confined to `tsconfig.build.json` free to alter the shipped program while
+ *  this pin stayed green.
+ *
  *  This is only livable because an admitted module does one thing. That is the
  *  point of `providers/codex-thread.ts` existing at all: the rule and the module
  *  are one decision, not two. */
@@ -514,11 +525,13 @@ export function scanSqliteUse(absPath: string, _root: string = SRC_ROOT): Sqlite
 
   use.emitted = ts.transpileModule(file.getFullText(), {
     fileName: absPath,
-    // The project's own options, so this is the emit the package ships — minus
-    // comments, which are not something Node runs and would make the pin fire
-    // on edits nobody needs to re-measure.
+    // `tsconfig.build.json`, not the typecheck config: the build overrides
+    // options that change the emitted program (`module`,
+    // `rewriteRelativeImportExtensions`), so pinning the typecheck emit would
+    // leave a build-config change free to alter what ships while this stayed
+    // green. Only non-semantic output controls are overridden on top.
     compilerOptions: {
-      ...compilerOptions,
+      ...buildCompilerOptions,
       removeComments: true,
       sourceMap: false,
       inlineSourceMap: false,
