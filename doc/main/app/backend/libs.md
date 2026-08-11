@@ -143,6 +143,7 @@ Returns session history for the History tab via the CLI, in the UI-facing shape.
 
 - `getHistory(projectPath, liveSessions)` — calls `fetchHistory(projectPath)` (`agent.ts` → `yaco agent history --path <p> --json`), then maps each CLI row to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`) and tags `liveSessionName` by matching CLI `sessionId` against the live `AgentSession[]` (skipping `pending:awaiting-first-prompt`). Sorting and the default 200-row `--limit` are CLI-owned.
 - Provider-home reads (`~/.claude` JSONL, `~/.codex` SQLite/`session_index.jsonl`) now live in the CLI provider adapters; app/server never opens them. -> See: `doc/main/cli/providers.md`.
+- The spawn is measured, not assumed. Pulling the read in process was benchmarked under concurrent load: the CLI reader as it stands starves an already-queued timer to p95 79 ms against this route's 42 ms, but a bounded, chunked form of it comes in at 13 ms and 3× faster, so the path is admitted for a later cutover — in that form only. -> See: [../../cli/exports.md](../../cli/exports.md#the-one-query-rule-5-has-judged).
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, tokens, gitBranch, liveSessionName }` — `tokens` is the last turn's total token count (a cheap session-size signal read from the log tail; `null` when no usage record is reachable). `provider` is `string` (no longer a `'claude' | 'codex'` union).
 
 ### notify.ts (~40 lines)
