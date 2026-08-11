@@ -31,7 +31,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -260,6 +260,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/providers/message-read.ts",
       "src/lib/core/agent/providers/messages.ts",
       "src/lib/core/agent/providers/output.ts",
+      "src/lib/core/agent/providers/provider-home.ts",
       "src/lib/core/agent/words.ts",
       "src/lib/core/errors.ts",
       "src/lib/core/project/encode.ts",
@@ -282,6 +283,43 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/providers/types.ts": [
         "MessageFull",
         "MessageRole",
+      ],
+    },
+  },
+  // The one session-summary read. Its closure reaches the provider log-path
+  // half of `providers/output.ts` and the label-collapsing rules it shares with
+  // the history list; it reaches neither `history.ts` (whose provider scans are
+  // unbounded) nor `session-state.ts` (a mutation module) — the sessions are
+  // explicit inputs, so it never enumerates them.
+  "./core/agent/summaries": {
+    files: [
+      "src/lib/core/agent/model.ts",
+      "src/lib/core/agent/providers/output.ts",
+      "src/lib/core/agent/providers/prompt-label.ts",
+      "src/lib/core/agent/providers/provider-home.ts",
+      "src/lib/core/agent/providers/summary-read.ts",
+      "src/lib/core/agent/words.ts",
+      "src/lib/core/errors.ts",
+      "src/lib/core/project/encode.ts",
+      "src/lib/core/result.ts",
+    ],
+    externals: [
+      "node:crypto",
+      "node:fs",
+      "node:fs/promises",
+      "node:os",
+      "node:path",
+      // The judged synchronous admission — see RULE_5_SQLITE below.
+      "node:sqlite",
+    ],
+    // One read verb plus the shape of its input and rows, and the summarizer
+    // registry as the only answer to which reader a provider uses.
+    names: {
+      "src/lib/core/agent/providers/summary-read.ts": [
+        "SessionSummary",
+        "SummaryTarget",
+        "readSessionSummaries",
+        "summarizerForProvider",
       ],
     },
   },
@@ -319,6 +357,29 @@ const EXPECTED: Record<string, ExpectedExport> = {
  *  owes exactly the tracked rule-5 debt", and admitting one means writing it
  *  down here with the task that retires it. */
 const RULE_5_DEBT: string[] = [];
+
+/** Rule 5's judged synchronous admissions — the opposite of a debt.
+ *
+ *  A debt is owed and has a task that retires it. These are permanent, and each
+ *  one is here because rule 5 admits it *against a measurement*: "`node:sqlite`
+ *  has no asynchronous interface, so a query is admitted only with a measured
+ *  stall bound on a realistically large database."
+ *
+ *  Keyed by exact site rather than by adding `DatabaseSync` to the walker's
+ *  bounded-name list, because the name is a database handle and not an
+ *  operation: `BOUNDED_SYNC` would admit `.all()` over a whole table, anywhere,
+ *  invisibly. Each value names the measurement and the shape that makes it
+ *  bounded, and the bench it is reproducible from is asserted to exist below —
+ *  an admission whose evidence has been deleted is not an admission. */
+const RULE_5_SQLITE: Record<string, string> = {
+  "src/lib/core/agent/providers/summary-read.ts import DatabaseSync":
+    "point lookup on the `threads` primary key (SEARCH ... USING INDEX " +
+    "sqlite_autoindex_threads_1 (id=?)); 1.45 ms p50 / 1.83 ms max including " +
+    "open and close on an 11.6 MB, 2 296-thread database",
+};
+
+/** The evidence every entry of `RULE_5_SQLITE` is reproducible from. */
+const RULE_5_SQLITE_BENCH = "test/bench/summary-stall.ts";
 
 /** The subsystems the design excludes by name. Each entry names real files, and
  *  their existence is asserted: a rename that empties one of these lists would
@@ -424,19 +485,44 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
 
   it("has no violation in any exported closure", () => {
     const offenders = allViolations()
-      .filter((v) => !(v.rule === 5 && RULE_5_DEBT.includes(v.key)))
+      .filter((v) => !(v.rule === 5 && (RULE_5_DEBT.includes(v.key) || v.key in RULE_5_SQLITE)))
       .map((v) => v.report);
     expect(offenders, offenders.join("\n")).toEqual([]);
   });
 
-  it("still owes exactly the tracked rule-5 debt", () => {
-    // When the task-read cutover lands its asynchronous reader, this fails and
-    // the debt list is emptied — the audit will not let it linger unnoticed.
-    const owing = allViolations()
+  it("owes exactly the tracked rule-5 debt and admits exactly the judged sites", () => {
+    // Both lists at once, because what the scan reports is one set: a new
+    // synchronous traversal has to be written down as one or the other, and a
+    // site that disappears has to be struck off.
+    const found = allViolations()
       .filter((v) => v.rule === 5)
       .map((v) => v.key)
       .sort();
-    expect(owing).toEqual(RULE_5_DEBT);
+    expect(found).toEqual([...RULE_5_DEBT, ...Object.keys(RULE_5_SQLITE)].sort());
+  });
+
+  it("keeps every judged admission evidenced and single-row", () => {
+    const sites = Object.entries(RULE_5_SQLITE);
+    if (sites.length === 0) return;
+
+    // Anti-vacuity: an admission is a measurement, and a measurement nobody can
+    // re-run is a waiver wearing its clothes.
+    expect(existsSync(resolve(CLI_ROOT, RULE_5_SQLITE_BENCH)), RULE_5_SQLITE_BENCH).toBe(true);
+
+    for (const [site, bound] of sites) {
+      expect(bound, site).toMatch(/\d/);
+      // What the measurement bounds is a *point query*. `.all()` and `.exec()`
+      // on the same handle are a different operation with a different cost, and
+      // adding one would inherit this admission silently — the file census
+      // cannot see it, because the module is already in the closure.
+      const file = site.slice(0, site.indexOf(" "));
+      const source = readFileSync(resolve(CLI_ROOT, file), "utf-8");
+      const methods = [...source.matchAll(/\.prepare\([\s\S]*?\)\s*\n?\s*\.(\w+)\(/g)]
+        .map((m) => m[1]);
+      expect(methods, `${file}: prepared statements must return one row`).toEqual(
+        methods.map(() => "get"),
+      );
+    }
   });
 });
 

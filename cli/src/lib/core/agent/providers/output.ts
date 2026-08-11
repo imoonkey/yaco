@@ -14,19 +14,18 @@
 
 import { open, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
+import { userHome } from "./provider-home.ts";
 import type { AgentOutputEvent, OutputCursor, ProviderOutput } from "./types.ts";
 
-/** Honor $HOME at call time so provider paths track test home overrides. */
-function userHome(): string {
-  const env = process.env["HOME"];
-  return env && env.length > 0 ? env : homedir();
-}
+/** What a provider log path is derived from. Spelled structurally rather than
+ *  as the whole session because the summary read passes an explicit target that
+ *  carries only these fields; a `SessionState` satisfies it unchanged. */
+type LogTarget = Pick<SessionState, "sessionId" | "sessionPath">;
 
-function hasResolvedId(session: SessionState): boolean {
+function hasResolvedId(session: Pick<SessionState, "sessionId">): boolean {
   return Boolean(session.sessionId) && session.sessionId !== PENDING_SESSION_ID;
 }
 
@@ -90,7 +89,7 @@ async function cursorForPath(
 
 // -- Claude output --
 
-function claudeLogPath(session: SessionState): string {
+function claudeLogPath(session: LogTarget): string {
   return join(
     userHome(),
     ".claude",
@@ -370,13 +369,15 @@ export function codexOutput(): ProviderOutput {
 /** Resolve the Claude message-log path for a session, or null until its id
  *  resolves. The same file the output cursor reads — exposed so the message
  *  inventory reader reuses one provider-path source and the pending guard. */
-export function resolveClaudeLogPath(session: SessionState): string | null {
+export function resolveClaudeLogPath(session: LogTarget): string | null {
   return hasResolvedId(session) ? claudeLogPath(session) : null;
 }
 
 /** Resolve the Codex rollout path for a session, or null until its id resolves
  *  and a rollout file exists. */
-export async function resolveCodexLogPath(session: SessionState): Promise<string | null> {
+export async function resolveCodexLogPath(
+  session: Pick<SessionState, "sessionId">,
+): Promise<string | null> {
   return hasResolvedId(session) ? codexLogPath(session.sessionId) : null;
 }
 

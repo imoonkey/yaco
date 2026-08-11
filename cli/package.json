@@ -46,6 +46,11 @@
       "types": "./dist/lib/core/agent/providers/message-read.d.ts",
       "default": "./dist/lib/core/agent/providers/message-read.js"
     },
+    "./core/agent/summaries": {
+      "development": "./src/lib/core/agent/providers/summary-read.ts",
+      "types": "./dist/lib/core/agent/providers/summary-read.d.ts",
+      "default": "./dist/lib/core/agent/providers/summary-read.js"
+    },
     "./core/worktree": {
       "development": "./src/lib/core/worktree/index.ts",
       "types": "./dist/lib/core/worktree/index.d.ts",

@@ -1,22 +1,26 @@
-/** Provider history & summary reconstruction.
+/** Provider history reconstruction.
  *
- *  Claude and Codex rebuild project session history and per-session summary
- *  labels from their own persisted files and databases. This module co-locates
- *  the shared JSONL/SQLite parsing and exposes one `ProviderHistory` per
- *  provider, mirroring the `claudeHooks()` / `codexHooks()` factory pattern in
- *  `hooks.ts`. Keeping provider-home reads here is what lets `app/server`
- *  consume `yaco agent history|summaries --json` instead of parsing
- *  `~/.claude` and `~/.codex` directly. */
+ *  Claude and Codex rebuild project session history from their own persisted
+ *  files and databases. This module co-locates the shared JSONL/SQLite parsing
+ *  and exposes one `ProviderHistory` per provider, mirroring the
+ *  `claudeHooks()` / `codexHooks()` factory pattern in `hooks.ts`. Keeping
+ *  provider-home reads here is what lets `app/server` consume `yaco agent
+ *  history --json` instead of parsing `~/.claude` and `~/.codex` directly.
+ *
+ *  The per-session summary label is *not* here: `summary-read.ts` owns it,
+ *  because `app/server` calls that one in process and this module's unbounded
+ *  provider scans are not export-eligible. */
 
 import { existsSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { readOriginForSessionId } from "../origin.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
-import type { HistorySession, HistoryWindow, ProviderHistory, SummaryResult } from "./types.ts";
+import { extractUserText, firstMeaningfulMessage } from "./prompt-label.ts";
+import { codexDbPath, userHome } from "./provider-home.ts";
+import type { HistorySession, HistoryWindow, ProviderHistory } from "./types.ts";
 
 /** Default history row limit after filtering the merged provider rows. */
 export const DEFAULT_HISTORY_LIMIT = 200;
@@ -24,73 +28,6 @@ export const DEFAULT_HISTORY_LIMIT = 200;
 const HEAD_BYTES = 16384;
 /** Bytes read from the tail of each Claude JSONL (last custom-title + mtime). */
 const TAIL_BYTES = 65536;
-
-/** Honor $HOME at call time so provider paths track test home overrides. */
-function userHome(): string {
-  const env = process.env["HOME"];
-  return env && env.length > 0 ? env : homedir();
-}
-
-// -- Shared message-text helpers --
-
-/** Flatten a JSONL user message `content` field to plain text. */
-function extractUserText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((b: { text?: string }) => b.text ?? "").join(" ");
-  }
-  return "";
-}
-
-/** Extract `<command-args>` content from a `<command-message>` wrapper. */
-function extractCommandArgs(text: string): string | null {
-  const match = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
-  const args = match?.[1]?.trim();
-  return args ? args : null;
-}
-
-/** Extract the command name (e.g. "/design") from a `<command-message>` wrapper. */
-function extractCommandName(text: string): string | null {
-  const match = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
-  return match ? match[1]!.trim() || null : null;
-}
-
-/** Harness-injected blocks that carry no user intent. */
-const NOISE_BLOCKS =
-  /<system-reminder>[\s\S]*?<\/system-reminder>|<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi;
-/** Slash-command wrapper tags; stripped so only the human-facing args/prose remain. */
-const COMMAND_BLOCKS = /<command-(?:message|name|args)>[\s\S]*?<\/command-(?:message|name|args)>/gi;
-/** Session-management commands that carry no task intent — skipped so the real
- *  prompt surfaces instead. */
-const META_COMMANDS = new Set(["/rename", "/clear", "/compact"]);
-
-/** Collapse one user message to its display intent, or "" if it is pure noise.
- *  Reminders and command stdout are dropped. Prose typed alongside a command
- *  wins; a slash command is restored to its original `/name args` input; a
- *  session-management command (e.g. `/rename`) collapses to "". */
-function collapseUserMessage(raw: string): string {
-  const stripped = raw.replace(NOISE_BLOCKS, "");
-  const prose = stripped.replace(COMMAND_BLOCKS, "").replace(/\s+/g, " ").trim();
-  if (prose) return prose;
-  const name = extractCommandName(stripped);
-  if (!name) return "";
-  if (META_COMMANDS.has(name)) return "";
-  const args = extractCommandArgs(stripped);
-  return (args ? `${name} ${args}` : name).replace(/\s+/g, " ").trim();
-}
-
-/** First user message that carries real intent, collapsed for display. Skips
- *  noise (reminders, stdout, session-management commands) and, when a handle is
- *  given, messages that merely echo it (e.g. an auto-assigned title). */
-function firstMeaningfulMessage(rawTexts: Iterable<string>, handle?: string): string | null {
-  for (const raw of rawTexts) {
-    const label = collapseUserMessage(raw);
-    if (!label) continue;
-    if (handle && handle.startsWith(label)) continue;
-    return label;
-  }
-  return null;
-}
 
 // -- Claude JSONL parsing --
 
@@ -324,34 +261,8 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
   return rows.filter((r): r is HistorySession => r !== null);
 }
 
-/** Resolve a Claude session's label from the first meaningful user message in
- *  its project JSONL, skipping reminders, command stdout, and `/rename` echoes. */
-async function claudeSummarize(session: SessionState): Promise<SummaryResult | null> {
-  if (!session.sessionPath) return null;
-  const jsonlPath = join(claudeProjectDir(session.sessionPath), `${session.sessionId}.jsonl`);
-
-  let content: string;
-  try {
-    content = await readFile(jsonlPath, "utf-8");
-  } catch { return null; }
-
-  const texts: string[] = [];
-  for (const line of content.split("\n")) {
-    if (!line) continue;
-    try {
-      const entry = JSON.parse(line);
-      if (entry.type === "user" && entry.message?.content) {
-        texts.push(extractUserText(entry.message.content));
-      }
-    } catch { continue; }
-  }
-
-  const label = firstMeaningfulMessage(texts, session.handle);
-  return label ? { sessionId: session.sessionId, label } : null;
-}
-
 export function claudeHistory(): ProviderHistory {
-  return { list: (projectPath) => claudeList(projectPath), summarize: claudeSummarize };
+  return { list: (projectPath) => claudeList(projectPath) };
 }
 
 // -- Codex provider history --
@@ -364,14 +275,6 @@ interface CodexThreadRow {
   updated_at: number;
   git_branch: string | null;
   rollout_path: string | null;
-}
-
-function codexDbPath(): string {
-  return join(userHome(), ".codex", "state_5.sqlite");
-}
-
-function codexSessionsDir(): string {
-  return join(userHome(), ".codex", "sessions");
 }
 
 /** Convert a Codex unix epoch (seconds or milliseconds) to ISO 8601. */
@@ -438,91 +341,8 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
   })));
 }
 
-/** Find a Codex session's rollout JSONL (today and 7 days back) and return the
- *  first real user message, skipping system/AGENTS.md context blocks. */
-async function codexRolloutSummary(sessionId: string, handle?: string): Promise<string | null> {
-  const now = new Date();
-  for (let daysBack = 0; daysBack <= 7; daysBack++) {
-    const d = new Date(now.getTime() - daysBack * 86400000);
-    const dayDir = join(
-      codexSessionsDir(),
-      String(d.getFullYear()),
-      String(d.getMonth() + 1).padStart(2, "0"),
-      String(d.getDate()).padStart(2, "0"),
-    );
-
-    let files: string[];
-    try {
-      files = (await readdir(dayDir)).sort();
-    } catch { continue; }
-
-    // Sorted, so "the first file naming this session" is a defined choice when
-    // a day holds more than one.
-    const match = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
-    if (!match) continue;
-
-    let content: string;
-    try {
-      content = await readFile(join(dayDir, match), "utf-8");
-    } catch { continue; }
-
-    const texts: string[] = [];
-    for (const line of content.split("\n")) {
-      if (!line) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type !== "response_item" || entry.payload?.role !== "user") continue;
-        for (const block of entry.payload.content ?? []) {
-          if (
-            block.type === "input_text" && block.text &&
-            !block.text.startsWith("#") && !block.text.startsWith("<")
-          ) {
-            texts.push(block.text);
-          }
-        }
-      } catch { continue; }
-    }
-    const label = firstMeaningfulMessage(texts, handle);
-    if (label) return label;
-  }
-  return null;
-}
-
-/** Resolve a Codex session's label. Codex auto-renames the thread `title` to the
- *  YACO handle on start, so the real signal is `first_user_message`; the rollout
- *  file is the fallback, and `title` only when it is not a handle echo. */
-async function codexSummarize(session: SessionState): Promise<SummaryResult | null> {
-  const sessionId = session.sessionId;
-  const handle = session.handle;
-
-  let title: string | null = null;
-  if (existsSync(codexDbPath())) {
-    try {
-      const db = new DatabaseSync(codexDbPath(), { readOnly: true });
-      try {
-        const row = db
-          .prepare("SELECT title, first_user_message FROM threads WHERE id = ?")
-          .get(sessionId) as
-            | { title: string | null; first_user_message: string | null }
-            | undefined;
-        title = row?.title ?? null;
-        const first = firstMeaningfulMessage([row?.first_user_message ?? ""], handle);
-        if (first) return { sessionId, label: first };
-      } finally {
-        db.close();
-      }
-    } catch { /* fall back to rollout scan */ }
-  }
-
-  const rollout = await codexRolloutSummary(sessionId, handle);
-  if (rollout) return { sessionId, label: rollout };
-
-  const titleLabel = firstMeaningfulMessage([title ?? ""], handle);
-  return titleLabel ? { sessionId, label: titleLabel } : null;
-}
-
 export function codexHistory(): ProviderHistory {
-  return { list: (projectPath) => codexList(projectPath), summarize: codexSummarize };
+  return { list: (projectPath) => codexList(projectPath) };
 }
 
 // -- Generic merge + live tagging --

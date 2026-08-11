@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { runCli } from "./helpers/cli-process.ts";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 import { readMessageRows, validateName } from "../src/lib/core/agent/providers/message-read.ts";
-import { getProvider, listProviderIds } from "../src/lib/core/agent/providers/index.ts";
+import { listProviderIds } from "../src/lib/core/agent/providers/index.ts";
 import { messagesForProvider } from "../src/lib/core/agent/providers/message-read.ts";
 import { isErr } from "../src/lib/core/result.ts";
 import type { CliError } from "../src/lib/core/errors.ts";
@@ -252,12 +252,13 @@ describe("concurrent reads across two project roots", () => {
 });
 
 describe("message-reader registry", () => {
-  it("covers every registered provider that advertises a messages capability", () => {
-    // Fails closed on a third provider whose TUI adapter can read messages but
-    // whose reader was never listed in message-read.ts — which would make
-    // `yaco agent messages` and the app both call it unregistered.
+  it("covers every registered provider", () => {
+    // Fails closed on a third provider whose reader was never listed in
+    // message-read.ts — which would make `yaco agent messages` and the app both
+    // call it unregistered. Asked of every registered id rather than of a
+    // `messages` capability flag on the adapter: the flag was only ever a shadow
+    // of this registry, and a provider that omitted it slipped through.
     for (const id of listProviderIds()) {
-      if (!getProvider(id).messages) continue;
       expect(messagesForProvider(id), id).not.toBeNull();
     }
   });
