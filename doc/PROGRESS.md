@@ -1,9 +1,10 @@
 # Progress
 
-## 2026-08-11: the CLI's production code stops depending on Bun
+## 2026-08-11: the CLI's production code drops every non-SQLite Bun API
 
 **What changed:**
-- `Bun.sleepSync` → `cli/src/lib/core/sleep.ts` (`Atomics.wait` on a lock nobody notifies), `Bun.TOML.parse` → `smol-toml`, and `Bun.spawn`/`Bun.spawnSync` → `node:child_process` in the codex app-server quota probe. `cli/src/` now contains no `Bun.` reference; the test suite still runs on Bun, which the Vitest cohorts task takes over.
+- `Bun.sleepSync` → `cli/src/lib/core/sleep.ts` (`Atomics.wait` on a lock nobody notifies), `Bun.TOML.parse` → `smol-toml`, and `Bun.spawn`/`Bun.spawnSync` → `node:child_process` in the codex app-server quota probe. `cli/src/` now contains no `Bun.*` reference.
+- This is the plateau, not the finish: `bun:sqlite` still backs session-id correlation, provider history, and project-move (Bun cannot load `node:sqlite`, so that hop is `cli-sqlite-hop`), `main.ts` keeps its bun shebang until the Node launcher exists, and the tests still run on `bun:test` until `cli-vitest-cohorts`.
 - New `cli/src/package-root.ts` owns the single package-relative expression and the "is this process the yaco executable" test. The agent wrapper and `doctor`'s manifest resolve through it; `hook-event-bin.ts`, two unreferenced path helpers, and legacy `hook-event-bin.ts` recognition in both hook-ownership matchers are deleted.
 - `tools/install.sh` installs the CLI's dependencies when nothing has been installed anywhere, and `cli/bun.lock` lists them.
 
