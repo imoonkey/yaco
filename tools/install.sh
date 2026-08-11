@@ -27,6 +27,18 @@ mkdir -p "$BIN_DIR"
 echo "yaco bootstrap"
 echo "  repo root: $REPO_ROOT"
 echo "  bin dir:   $BIN_DIR"
+
+# The CLI has runtime dependencies, and the build resolves them from
+# node_modules. The monorepo checkout installs them at its own root; the subset
+# a user clones ships no root manifest and no node_modules at all, so nothing
+# has been installed there. Fetch them under cli/ in exactly that case — a full
+# checkout must not have its workspace reinstalled on every bootstrap.
+# `cli/bun.lock` is what makes the fetch deterministic, so it has to list them.
+if [ ! -d "$REPO_ROOT/node_modules" ] && [ ! -d "$REPO_ROOT/cli/node_modules" ]; then
+  echo "  installing cli dependencies ..."
+  (cd "$REPO_ROOT/cli" && bun install --production --frozen-lockfile)
+fi
+
 echo "  building $BIN_DIR/yaco ..."
 
 (cd "$REPO_ROOT" && bun build cli/src/main.ts --compile --outfile "$BIN_DIR/yaco")
