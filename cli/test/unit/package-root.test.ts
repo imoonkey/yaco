@@ -18,7 +18,7 @@
  *  the artifact, and the version is the manifest's rather than `0.0.0`.
  */
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -50,15 +50,56 @@ describe("package assets from source", () => {
     expect(resolve(PACKAGE_ROOT, "src")).toBe(resolve(import.meta.dirname, "../../src"));
   });
 
-  it("names this package's own launcher when no override is set", () => {
-    const saved = { path: process.env["YACO_PATH"], bin: process.env["YACO_BIN_DIR"] };
+  it("names this package's own launcher when nothing else names a yaco", () => {
+    // The floor rung: no override, and no `yaco` on PATH. An install whose
+    // prefix is not on PATH lands here, and naming ourselves is the only true
+    // answer available.
+    const saved = {
+      yacoPath: process.env["YACO_PATH"],
+      binDir: process.env["YACO_BIN_DIR"],
+      path: process.env["PATH"],
+    };
     delete process.env["YACO_PATH"];
     delete process.env["YACO_BIN_DIR"];
+    process.env["PATH"] = mkdtempSync(join(tmpdir(), "yaco-no-path-"));
     try {
       expect(yacoExecutable()).toBe(packagedAssetPath("bin", "yaco.mjs"));
     } finally {
-      if (saved.path !== undefined) process.env["YACO_PATH"] = saved.path;
-      if (saved.bin !== undefined) process.env["YACO_BIN_DIR"] = saved.bin;
+      for (const [k, v] of Object.entries({
+        YACO_PATH: saved.yacoPath, YACO_BIN_DIR: saved.binDir, PATH: saved.path,
+      })) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("prefers a yaco already on PATH over its own launcher", () => {
+    // Without this rung, running any command from a checkout would repoint the
+    // machine's global hooks at that checkout — which then break the moment the
+    // worktree is deleted.
+    const dir = mkdtempSync(join(tmpdir(), "yaco-on-path-"));
+    const shim = join(dir, "yaco");
+    writeFileSync(shim, "#!/bin/sh\nexit 0\n");
+    chmodSync(shim, 0o755);
+    const saved = {
+      yacoPath: process.env["YACO_PATH"],
+      binDir: process.env["YACO_BIN_DIR"],
+      path: process.env["PATH"],
+    };
+    delete process.env["YACO_PATH"];
+    delete process.env["YACO_BIN_DIR"];
+    process.env["PATH"] = `${dir}:/usr/bin:/bin`;
+    try {
+      expect(yacoExecutable()).toBe(shim);
+    } finally {
+      for (const [k, v] of Object.entries({
+        YACO_PATH: saved.yacoPath, YACO_BIN_DIR: saved.binDir, PATH: saved.path,
+      })) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
@@ -86,6 +127,7 @@ describe("package assets from the built artifact", () => {
     });
     mkdirSync(join(sandbox, "home"), { recursive: true });
     mkdirSync(join(sandbox, "nowhere"), { recursive: true });
+    mkdirSync(join(sandbox, "empty-bin"), { recursive: true });
   });
 
   afterEach(() => {
@@ -99,6 +141,10 @@ describe("package assets from the built artifact", () => {
     env["HOME"] = join(sandbox, "home");
     env["YACO_HOME"] = join(sandbox, "yaco");
     env["YACO_REPO_ROOT"] = join(sandbox, "repo");
+    // No `yaco` reachable on PATH, so the resolver reaches its floor rung and
+    // the assertion below is about the package naming itself rather than about
+    // whatever the developer running the suite happens to have installed.
+    env["PATH"] = join(sandbox, "empty-bin");
     return runCli(args, { cwd: join(sandbox, "nowhere"), env });
   }
 

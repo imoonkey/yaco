@@ -146,10 +146,9 @@ exec, because:
   install `/tmp` into projects.json and point the global skills symlink at the
   wrong tree.
 - `package-root.ts#yacoExecutable()` chains `$YACO_PATH` → `$YACO_BIN_DIR/yaco`
-  → this package's own `bin/yaco.mjs`. Without the env, hook commands would name
-  the launcher deep inside `<prefix>/lib/node_modules/@yaco/cli` rather than the
-  executable on `$PATH`. Both work; only one survives the user moving their
-  global prefix.
+  → `which yaco` → this package's own `bin/yaco.mjs`. Without the env a fresh
+  install into a prefix that is not yet on `$PATH` would write hook commands
+  naming a *previously* installed yaco, not the one just put there.
 
 `install.ts` also exports `YACO_BIN_DIR` to `process.env` before merging hooks
 so the lifecycle resolver picks up the canonical bin dir even when install was
@@ -166,16 +165,20 @@ Hook configs written by `yaco install` use the canonical form:
 - Absolute path; never a runtime plus a source path, because neither the
   runtime nor the checkout is guaranteed to be reachable when the hook fires.
 - Resolution order (`package-root.ts#yacoExecutable`): `$YACO_PATH` →
-  `$YACO_BIN_DIR/yaco` → `<package-root>/bin/yaco.mjs`. Three rungs, and the last
-  one always exists — which is the point of resolving from the package root. It
-  used to have five, ending in `which yaco` and then the literal `"yaco"`,
-  because a Bun-compiled binary served its modules from a virtual filesystem and
-  the package could not name itself. Both of those could resolve to a *different*
-  installation than the one running, and the literal wrote a command that failed
-  silently at every hook fire.
-- The result is not cached. `runInstall` sets `$YACO_BIN_DIR` mid-process
-  precisely so the merge names the prefix it just installed into, and a cache is
-  how that gets missed.
+  `$YACO_BIN_DIR/yaco` → `which yaco` → `<package-root>/bin/yaco.mjs`. Four
+  rungs, ordered by how deliberately the machine said "this is my yaco", and the
+  last one always exists — which is the point of resolving from the package
+  root. It replaces two rungs that are gone: a `process.execPath` rung that only
+  ever fired for a Bun-compiled binary (whose files lived in a virtual
+  filesystem, so the package could not name itself), and a literal `"yaco"` last
+  resort that wrote a command failing at every hook fire.
+- **The `which yaco` rung is load-bearing, not legacy.** `ensureHooks` runs on
+  every `agent start` and rewrites a yaco entry whose command has drifted, so
+  without it a command run from a checkout would repoint the machine's global
+  hooks at that checkout — and they break the moment the worktree is deleted.
+- Only the PATH lookup is memoized, keyed on `$PATH` itself. The env rungs stay
+  live because `runInstall` sets `$YACO_BIN_DIR` mid-process precisely so the
+  merge names the prefix it just installed into.
 - `main.ts` branches on `argv[0:2] === ['agent','hook-event']` for the hook
   *contract* — read stdin, update state, suppress every failure, exit 0 — not
   for load time. The dispatcher statically imports the handler either way.

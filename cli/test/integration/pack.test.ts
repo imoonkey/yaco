@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const CLI_DIR = resolve(import.meta.dirname, "../..");
 const REPO_ROOT = resolve(CLI_DIR, "..");
@@ -46,6 +46,13 @@ function runInstalled(args: string[], input?: string) {
       HOME: home,
       YACO_HOME: join(sandbox, "yaco"),
       YACO_REPO_ROOT: join(sandbox, "repo"),
+      // The prefix's bin first and no other `yaco` — an installed user's PATH.
+      // It keeps the developer's own installation out of the assertions below,
+      // which is otherwise what `which yaco` finds. The running Node's
+      // directory has to be on it too: the launcher's shebang is
+      // `#!/usr/bin/env node`, so a PATH without it resolves whatever old
+      // system Node exists and the floor guard correctly refuses to run.
+      PATH: `${join(prefix, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin`,
     },
     timeout: 60_000,
   });
@@ -166,9 +173,9 @@ describe("an installed tarball, with no checkout above it", () => {
     );
 
     // No $YACO_BIN_DIR is set here, which is the `npm i -g` user's situation:
-    // the invocation the hook gets is the package's own launcher, absolute and
-    // inside the installed tree. `tools/install.sh` does set $YACO_BIN_DIR, and
-    // then it is that prefix's `yaco` instead — install.test.ts covers that arm.
+    // the hook gets the executable npm put on their PATH. `tools/install.sh`
+    // sets $YACO_BIN_DIR explicitly and arrives at the same file by rung 2 —
+    // install.test.ts covers that arm.
     const settings = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf-8"));
     const commands: string[] = Object.values(settings.hooks ?? {})
       .flatMap((groups) => groups as { hooks?: { command?: string }[] }[])
@@ -177,7 +184,7 @@ describe("an installed tarball, with no checkout above it", () => {
     expect(commands.length).toBeGreaterThan(0);
     for (const command of commands) {
       const executable = command.split(" ")[0]!;
-      expect(executable).toBe(join(installedPackage, "bin", "yaco.mjs"));
+      expect(executable).toBe(join(prefix, "bin", "yaco"));
       expect(existsSync(executable)).toBe(true);
       expect(executable).not.toContain(CLI_DIR);
     }

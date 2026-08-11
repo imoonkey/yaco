@@ -18,6 +18,7 @@
  *  `dist/yaco.mjs` from the bundle. So `../` is the package root in all three,
  *  and callers name assets instead of counting directories.
  */
+import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,25 +30,51 @@ export function packagedAssetPath(...segments: string[]): string {
   return join(PACKAGE_ROOT, ...segments);
 }
 
+/** `which yaco`, memoized against the PATH it was resolved under.
+ *
+ *  Memoized because the trust gate calls the resolver once per hook entry and
+ *  an install writes twenty of them; keyed on PATH because the test suite
+ *  rebuilds a shimmed PATH per case in one process, and a cache that outlived
+ *  that would answer with the previous sandbox's binary. Self-invalidating
+ *  beats a reset hook nobody remembers to call. */
+let _pathYaco: { path: string | undefined; found: string | null } | null = null;
+function yacoOnPath(): string | null {
+  const path = process.env["PATH"];
+  const cached = _pathYaco;
+  if (cached && cached.path === path) return cached.found;
+  let found: string | null = null;
+  try {
+    const r = execSync("which yaco", { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (r.length > 0) found = r;
+  } catch { /* not on PATH */ }
+  _pathYaco = { path, found };
+  return found;
+}
+
 /** The absolute `yaco` invocation to hand to something that will run it later —
  *  a provider hook entry, a tmux environment, a detached respawn.
  *
  *  Absolute because every one of those fires in an environment whose PATH yaco
- *  does not control. There are exactly three answers, in order:
+ *  does not control. Four answers, in order of how deliberately the machine
+ *  said "this is my yaco":
  *
- *    1. `$YACO_PATH`, honored verbatim — the deliberate override the app and the
+ *    1. `$YACO_PATH`, honored verbatim — the override the app and the
  *       crash-contract tests point at a specific binary or shim;
  *    2. `$YACO_BIN_DIR/yaco`, which `tools/install.sh` and `yaco install` set to
  *       the prefix they installed into, so a fresh install writes hook commands
  *       naming the executable it just put there rather than an older one;
- *    3. this package's own launcher.
+ *    3. `which yaco` — an executable of that name on PATH is an installation the
+ *       user chose. This rung is what keeps a command run *from a checkout* from
+ *       repointing global hooks at that checkout, which then break when the
+ *       worktree is deleted;
+ *    4. this package's own launcher.
  *
- *  Rung 3 is the floor and it always exists, which is the whole point of
- *  resolving from the package root: there used to be a `which yaco` rung and a
- *  bare `"yaco"` last resort below it, needed because a Bun-compiled binary's
- *  files lived in a virtual filesystem and the package could not name itself.
- *  Both could resolve to a *different* installation than the one running, and
- *  the bare rung wrote a command that fails at hook-fire time. */
+ *  Rung 4 is the floor and it always exists, which is the point of resolving
+ *  from the package root: it replaces a literal `"yaco"` last resort that wrote
+ *  a command failing at hook-fire time, and a `process.execPath` rung that only
+ *  ever fired for a Bun-compiled binary whose files lived in a virtual
+ *  filesystem. It is reached by an install whose prefix is not on PATH — where
+ *  naming ourselves is both correct and the only true answer. */
 export function yacoExecutable(): string {
   const explicit = process.env["YACO_PATH"];
   if (explicit && explicit.length > 0) return explicit;
@@ -58,5 +85,5 @@ export function yacoExecutable(): string {
     if (existsSync(candidate)) return candidate;
   }
 
-  return packagedAssetPath("bin", "yaco.mjs");
+  return yacoOnPath() ?? packagedAssetPath("bin", "yaco.mjs");
 }
