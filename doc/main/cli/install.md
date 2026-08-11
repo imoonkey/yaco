@@ -1,12 +1,15 @@
 # Install Subcommand
 
-> Last updated: 2026-08-11 (dual-artifact npm package)
+> Last updated: 2026-08-11 (skills in the package; install without a checkout)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
-bootstrap by design:
+bootstrap by design: **the package lands, then it configures the machine.**
+Landing it is `npm install -g @yaco/cli` or `tools/install.sh`, which packs and
+installs that same tarball; configuring is `yaco install`, and **it needs no
+checkout** — everything it plants comes out of the installed package.
 
-1. **`tools/install.sh`** is the ONLY entry point for first-time install or
-   recovery from a missing / broken yaco binary. It requires `node` and `npm`,
+1. **`tools/install.sh`** is the entry point for a clone, and the recovery path
+   for a missing / broken yaco binary. It requires `node` and `npm`,
    rejects a Node below `engines.node` before building anything, resolves
    `REPO_ROOT` and `BIN_DIR`, packs `@yaco/cli` into a tarball, installs that
    tarball with `npm install --global --prefix <dirname $BIN_DIR>`, then
@@ -35,29 +38,77 @@ bootstrap by design:
 
 Idempotent: re-running `yaco install` is a no-op (snapshot diff is empty).
 
+## What a checkout is still for
+
+Two steps need a repo, and both are skipped when there is none — the rest of the
+install is identical either way:
+
+| Step | Without a checkout |
+|---|---|
+| `npm install` in `app/server` + `app/ui` | the directories are absent, so the loop already skips them; a package user's app carries its own dependencies |
+| upsert `{id:"yaco", path: repoRoot}` | reported as a `skipped registry:` action. The entry names *the yaco repo itself*; a package user has no such repo and registers their own with `yaco project add` |
+
+`isYacoCheckout(repoRoot)` decides, and it asks for **repository identity**, not
+a directory layout: `<repoRoot>/cli/package.json` must declare `@yaco/cli`. The
+layout marker it replaced (`agent-config/global/skills` being present) answers
+yes for anyone's dotfiles or agent-configuration repo, which would then be
+registered under a reserved name it does not own — and the real checkout would
+need `--force` to take it back.
+
+Doctor follows: `registry` and `task-graph` **skip** rather than fail when there
+is nothing to check, which is what keeps a package user's first command at
+exit 0 (install throws on *any* failing doctor check). -> See:
+[doctor.md](doctor.md#required-checks-stable-contract)
+
 ## Global links are additive
 
 `~/.claude/skills` is a **real directory** shared with the user's other skill
-sources; `installGlobalLinks` plants one symlink per skill listed in the
-repo's `agent-config/global/skills/` (the directory IS the manifest — no
+sources; `installGlobalLinks` plants one symlink per skill listed in
+`package-root.ts#PACKAGED_SKILLS_DIR` (the directory IS the manifest — no
 hardcoded list), then keeps `~/.agents/skills` as a whole-dir symlink to it.
-It gates on the manifest being a directory (missing/non-dir ⇒ `ENV` exit 3)
-and never claims a tool's global instruction file — a user's own global rules
-are left byte-for-byte alone.
+It gates on the manifest being a directory (missing/non-dir ⇒ `ENV` exit 3 —
+a package that cannot show its own skills is broken, not merely bare) and never
+claims a tool's global instruction file — a user's own global rules are left
+byte-for-byte alone.
 
-Container migration and conflicts: a legacy whole-dir symlink at
-`~/.claude/skills` pointing at OUR skillsDir (relative targets resolved
-against the link's directory, never cwd) is migrated in place without
-`--force`; a symlink elsewhere is **refused** (`CONFLICT`) unless `--force`;
-a regular file there is refused unconditionally (`IO`). Per-skill merge is
-additive: a same-name real file/dir is **kept** (never clobbered, even with
-`--force`, reported as `keep <name>`), a live foreign link is skipped without
-`--force`, a dangling link is replaced. Links already on target are silent
-no-ops, which keeps re-runs idempotent. `--skip-links` leaves everything
-alone. `yaco doctor`'s `skills-link` check mirrors this tolerance: it
-resolves the manifest via the registry's `yaco` entry and requires every
-shipped skill name to resolve inside the real-directory container, accepting
-user overrides of any shape.
+**The manifest is a package asset.** `agent-config/global/` is mirrored into
+`cli/agent-config/` at build time and shipped in the tarball, so `npm i -g
+@yaco/cli` delivers the skills too and the links never name a checkout. -> See:
+[the mirror](../../dev/cli/workflow.md#the-skills-mirror) for how it gets there
+and what that costs a skill author.
+
+Container migration and conflicts: a whole-dir symlink at `~/.claude/skills`
+pointing at **a** yaco skills directory (relative targets resolved against the
+link's directory, never cwd) is migrated in place without `--force`, as is a
+dangling one; a symlink into anything else is **refused** (`CONFLICT`) unless
+`--force`; a regular file there is refused unconditionally (`IO`). Per-skill
+merge is additive: a same-name real file/dir is **kept** (never clobbered, even
+with `--force`, reported as `keep <name>`), a live foreign link is skipped
+without `--force`, a dangling link is replaced. Links already on target are
+silent no-ops, which keeps re-runs idempotent. `--skip-links` leaves everything
+alone.
+
+### Whose link is it — `isYacoSkillsDir`
+
+Moving the manifest into the package made every link a previous release planted
+differ from the desired target, and the additive rules above would have read all
+22 as user-managed and left them pointing into a clone the user is free to
+delete. An upgrade that silently does nothing, until it breaks.
+
+So a link into `<root>/agent-config/global/skills` is treated as *this
+installer's own earlier output* and migrated without `--force` — but only when
+`<root>` passes the same `isYacoCheckout` identity test the registry uses. The
+shape locates the candidate; identity decides. Taking the layout as proof was
+tried and is wrong for exactly the reason it is wrong for the registry: a
+dotfiles repo or a forked skill source can carry those three directories, and
+retargeting *those* links is the one thing an additive install promises never to
+do. A dangling target is repaired whoever made it — it serves nobody.
+
+`yaco doctor`'s `skills-link` check mirrors the installer's tolerance: it
+requires every shipped skill name to resolve inside the real-directory
+container, accepts user overrides of any shape, and **counts them in its
+detail** so a report does not read as a clean install while part of it is
+somebody else's.
 
 ## Installed Binary Boundary
 

@@ -1,6 +1,6 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-08 (oss-doc-cleanup + oss-doctor-fresh-clone)
+> Last updated: 2026-08-11 (registry skips; skills-link resolves from the package)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -32,8 +32,8 @@ yaco doctor [--repo <path>] [--json]
 | 1 | `binary` | `which yaco` resolves AND the binary is executable | resolved path | `yaco not on $PATH` / `not executable` |
 | 2 | `version` | Reports the version from `<package-root>/package.json`. **Never fails** — any read/parse error falls back to `0.0.0` and still passes. Every artifact now reports the real value: the manifest is a package asset, so the bundle and an installed tarball resolve it exactly as a source run does. `0.0.0` in the field means a damaged install, not a compiled one | `0.1.0` | — |
 | 3 | `yaco-home` | `getYacoHome()` exists and is a directory | path | `missing — run yaco install` / `not a directory` |
-| 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
-| 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill shipped by the registered yaco checkout resolves (manifest = `agent-config/global/skills/` listing, resolved via the registry's `yaco` entry) | `<dir> (<N> skills from <manifest>)` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / unresolvable registry or manifest |
+| 4 | `registry` | `${YACO_HOME}/projects.json` parses — **skips** when the file is absent | `<file> (<N> project(s))` | the parse error |
+| 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill **this package ships** resolves (manifest = `package-root.ts#PACKAGED_SKILLS_DIR`) | `<dir> (<N> skills from <manifest>[; <N> user override(s)])` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / an unreadable packaged manifest |
 | 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()`, which passes when the raw config text contains `agent hook-event` — the `yaco-agent-hook` marker alone does not satisfy it; only the lifecycle merge still recognizes marker-owned groups, to migrate them) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
 | 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
 | 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
@@ -43,9 +43,24 @@ yaco doctor [--repo <path>] [--json]
 
 `skills-link` mirrors the installer's additive-merge tolerance: a user override
 of any shape at a shipped name passes; only a missing/dangling entry, a legacy
-whole-dir symlink container, or an unresolvable manifest fails. `yaco install`
-plants skill links and nothing else, so there is no global-instruction-file
-link to assert.
+whole-dir symlink container, or an unresolvable manifest fails. It **counts** the
+overrides in its detail, because a report that says "22 skills" while some of
+them are somebody else's copy is not saying what the reader hears. Failing on
+one is not an option: install deliberately keeps a user override, and install
+throws on any failing check, so the check would break an install of a state
+install itself chose to allow. `yaco install` plants skill links and nothing
+else, so there is no global-instruction-file link to assert.
+
+It is **package-scoped**, so it never skips — a package that cannot show its own
+skills is broken, and "nothing to check here" would hide the one failure a
+partial install produces.
+
+`registry` is the mirror image. It stopped asserting a `yaco` entry because
+nothing reads one: `skills-link` was the last consumer and now resolves the
+manifest from the package. What is left is "the file parses", and an absent file
+is the legitimate zero state of an `npm i -g @yaco/cli` user who has not run
+`yaco project add` yet. -> See:
+[install.md](install.md#what-a-checkout-is-still-for)
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 eleven names above so consumers can rely on the contract. `claude-md-link` was

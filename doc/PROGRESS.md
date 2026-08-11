@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-11: the skills ship in `@yaco/cli`, and `yaco install` needs no checkout
+
+**What changed:**
+- `agent-config/global/` is mirrored into `cli/agent-config/` at build time (`build:assets`, `cli/scripts/sync-agent-config.mjs`), shipped by the `files` allowlist, and kept out of git. `install` and `doctor` resolve the skills manifest through `package-root.ts#PACKAGED_SKILLS_DIR` — the §3 resolver, not a second one — so `npm i -g @yaco/cli` delivers all 22 skills and the `~/.claude/skills` links never name a checkout. A checked-in `cli/agent-config -> ../agent-config` symlink was measured first and rejected: `npm pack` drops a symlinked directory from the tarball silently.
+- `yaco install` stopped being checkout-bound. The `npm install` in the app workspaces already skipped absent directories; the `{id:"yaco"}` registry upsert — which names *the yaco repo itself* — is now gated and reported as a `skipped registry:` action. `isYacoCheckout` asks for repository identity (`<repoRoot>/cli/package.json` declaring `@yaco/cli`), not a directory layout, so someone else's `agent-config/` tree is never registered under the reserved name.
+- Doctor's repo-scoped checks skip rather than fail, which is what keeps a package user at exit 0 (install throws on any failing check): `registry` stopped asserting a `yaco` entry — nothing reads one now that `skills-link` resolves from the package — so an absent `projects.json` is a zero state and only an unreadable one fails. `skills-link` became package-scoped, stays fail-closed, and counts user overrides in its detail.
+- Links a previous release planted into `<checkout>/agent-config/global/skills` are migrated to the package without `--force`, including the pre-v0.1 whole-directory container and a dangling one. Ownership is decided by identity, not by the path's shape: the shape locates the candidate root, `isYacoCheckout` decides, so a user's own skills tree with the same layout is still left alone.
+- `test/golden/matrix.json` recaptured for the two cases that changed on purpose. `ordering-delta.test.ts` now exempts *fields*, never cases: `doctor-json` gives up nothing (its stdout is compared minus the two named checks, with the full check-name order), `install-dry-run-json` gives up stdout/stderr/exitCode because an error envelope and a success envelope share no field — and `ASSERTED_TRANSFORMATIONS` then pins the exact plan, action for action. `durable` is exemptible by neither route.
+- README documents both install paths and states that changing YACO's behaviour means cloning it.
+
+**Why:**
+- Without the skills, `npm i -g @yaco/cli` delivered Layer 1 of a three-layer product — the CLI, and none of the behaviour it exists to drive. Shipping them costs 316 KB of markdown with no repo-relative references, and it is what makes the package a complete Layer 1 + 2 install (design §7).
+- The two residues were implemented rather than assumed away, per design §7: a package user has no yaco repo to register, and install throws when any doctor check fails, so repo-scoped checks had to skip.
+- The migration exists because moving the manifest made every existing link differ from the desired target, which the additive rules read as user-managed: without it a `tools/install.sh` upgrade would exit 0 having left all 22 links pointing into a clone the user is free to delete.
+
+**Key files:** `cli/package.json`, `cli/scripts/sync-agent-config.mjs`, `cli/src/package-root.ts`, `cli/src/commands/install.ts`, `cli/src/commands/doctor.ts`, `cli/test/{unit/commands,integration,golden}/**`, `README.md`, `doc/main/cli/{install,doctor}.md`, `doc/dev/cli/workflow.md`
+
+**Verification:** `bash scripts/verify.sh` all steps passed (1274 CLI unit, 12 pack, 831 server, UI lint + build). Cross-provider Codex review over four rounds — APPROVE, 0 unresolved Critical/High. QA: 27 assertions across three flows (package-only install, repo install, upgrade) against the real tarball in an isolated HOME/prefix. AC 4 evidence: the repo-install action list, doctor statuses and exit codes captured before and after in an isolated sandbox are byte-identical.
+
+**Commit:** `58f5a300..4ba96192`
+**Next:** the remaining `cli-node-sdk` tasks; `@yaco/app` and `@yaco/cli` release in lockstep.
+**Blockers:** None.
+
 ## 2026-08-11: the app ships as `@yaco/app` — one bundle, the built UI inside it
 
 **What changed:**
