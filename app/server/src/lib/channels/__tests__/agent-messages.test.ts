@@ -145,6 +145,15 @@ describe('lastAssistantMessages', () => {
     await expect(lastAssistantMessages('../escape', 1)).rejects.toThrow(/Invalid session name/)
   })
 
+  it("applies the CLI's stricter handle alphabet, which rejects a dot", async () => {
+    // The app's own guard admits dots; `yaco agent messages` never did, and it
+    // used to be the second check on this path.
+    await expect(lastAssistantMessages('dotted.handle', 1)).rejects.toThrow(
+      'yaco agent messages failed [USAGE]: Invalid session name: "dotted.handle". ' +
+        'Only alphanumeric, hyphens, and underscores allowed.',
+    )
+  })
+
   it.each([
     ['ghost', 'yaco agent messages failed [NOT_FOUND]: no live session named "ghost"'],
     ['pend', 'yaco agent messages failed [NOT_FOUND]: no message log yet for "pend"'],

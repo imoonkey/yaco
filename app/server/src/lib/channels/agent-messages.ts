@@ -17,8 +17,9 @@
 
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readMessageRows } from '@yaco/cli/core/agent/messages'
+import { readMessageRows, validateName } from '@yaco/cli/core/agent/messages'
 import { isErr } from '@yaco/cli/core/result'
+import { CliError } from '@yaco/cli/core/errors'
 import { AGENT_SESSIONS_DIR } from '../constants'
 import { validateSessionName } from '../session-names'
 import type { AgentSessionState } from '../agent'
@@ -53,7 +54,17 @@ export async function lastAssistantMessages(
   handle: string,
   n: number,
 ): Promise<{ index: number; text: string }[]> {
+  // Two guards, because the route this replaces had two and each one owns a
+  // different reply body. `validateSessionName` is the app's own guard on the
+  // path it is about to build; `validateName` is the stricter alphabet the CLI
+  // applied next — it rejects a dot, which the app's does not.
   validateSessionName(handle)
+  try {
+    validateName(handle)
+  } catch (e) {
+    throw messagesFailure(e instanceof CliError ? e.code : 'INTERNAL', (e as Error).message)
+  }
+
   const state = await readSessionState(handle)
   if (!state) throw messagesFailure('NOT_FOUND', `no live session named "${handle}"`)
 

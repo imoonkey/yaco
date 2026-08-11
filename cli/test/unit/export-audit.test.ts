@@ -254,6 +254,9 @@ const EXPECTED: Record<string, ExpectedExport> = {
     // follower, no provider registry: the TUI registry reaches tmux and the
     // session lifecycle, so the message-capable providers are listed here.
     names: {
+      "src/lib/core/agent/model.ts": [
+        "validateName",
+      ],
       "src/lib/core/agent/providers/message-read.ts": [
         "MessageFilter",
         "MessagesRange",

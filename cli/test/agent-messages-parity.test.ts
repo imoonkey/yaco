@@ -22,10 +22,11 @@ import { join } from "node:path";
 
 import { runCli } from "./helpers/cli-process.ts";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
-import { readMessageRows } from "../src/lib/core/agent/providers/message-read.ts";
+import { readMessageRows, validateName } from "../src/lib/core/agent/providers/message-read.ts";
 import { getProvider, listProviderIds } from "../src/lib/core/agent/providers/index.ts";
 import { messagesForProvider } from "../src/lib/core/agent/providers/message-read.ts";
 import { isErr } from "../src/lib/core/result.ts";
+import type { CliError } from "../src/lib/core/errors.ts";
 import type { SessionState } from "../src/lib/core/agent/model.ts";
 
 const PROJECT_A = "/tmp/yaco-parity-proj-a";
@@ -113,6 +114,11 @@ function viaSubprocess(handle: string, n: number): LastResult {
 
 /** The cutover route: one log read, filtered by the shared implementation. */
 async function inProcess(state: SessionState | null, handle: string, n: number): Promise<LastResult> {
+  try {
+    validateName(handle);
+  } catch (e) {
+    return { ok: false, message: `yaco agent messages failed [${(e as CliError).code}]: ${(e as Error).message}` };
+  }
   if (!state) {
     return { ok: false, message: `yaco agent messages failed [NOT_FOUND]: no live session named "${handle}"` };
   }
@@ -198,6 +204,9 @@ describe("channel /last — failure bodies match the subprocess route", () => {
     ["nolog", missingLog],
     ["stub", stub],
     ["ghost", null],
+    // A handle the CLI's alphabet rejects: the in-process caller resolves the
+    // handle itself, so it has to reject it with the same USAGE body.
+    ["dotted.handle", null],
   ];
 
   for (const [handle, state] of cases) {

@@ -26,6 +26,11 @@ import type { MessageFull, MessageRole, ProviderMessages } from "./types.ts";
 
 export type { MessageFull, MessageRole } from "./types.ts";
 
+/** The handle alphabet `yaco agent messages` enforces, published because an
+ *  in-process caller resolves the handle itself and must reject exactly what
+ *  the command rejects — down to the USAGE error body. */
+export { validateName } from "../model.ts";
+
 /** Inclusive absolute-index window. Null bounds are open; negatives count from
  *  the end. */
 export interface MessagesRange {

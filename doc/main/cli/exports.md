@@ -4,12 +4,12 @@
 
 Last updated: 2026-08-11 · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts` · Parent: [README.md](README.md)
 
-`app/server` imports four of the six exported subpaths in process today —
-`core/paths`, `core/task`, `core/agent`, `core/worktree`. (`core/result` and
-`core/errors` are published but not yet imported: the design keeps them as the
-one failure vocabulary Phase 2's shared reads return.) Each import is a piece of
-the CLI running inside the app's event loop, under the app's lifetime — so what
-an export may *contain* is a contract, not a preference. The six rules
+`app/server` imports all seven exported subpaths in process today —
+`core/paths`, `core/task`, `core/agent`, `core/agent/messages`, `core/worktree`,
+and, since the channel message read went in process, the `core/result` /
+`core/errors` failure vocabulary that shared reads answer in. Each import is a
+piece of the CLI running inside the app's event loop, under the app's lifetime —
+so what an export may *contain* is a contract, not a preference. The six rules
 below come from the `cli-node-sdk` design; the audit enforces them over each
 export's **transitive production import closure**, and nothing is
 grandfathered.
@@ -91,6 +91,20 @@ asserted. A gate nobody has watched fail is not known to work.
   byte-identical to what the deleted class's translation produced, and the line
   number stays where it always was, in the message.
   -> See: [paths.md](paths.md#files)
+
+- **`core/agent/messages`** publishes one verb, `readMessageRows` — a per-subpath
+  export rather than a widening of the `core/agent` barrel, because the barrel's
+  pinned census is a file two other Phase-2 cutovers also have to edit. It
+  publishes `messagesForProvider` as the *only* answer to which reader a provider
+  uses: `getProvider(id).messages` reaches tmux and the session lifecycle, so the
+  read side keeps its own two-entry lookup and a test fails closed if the two
+  disagree. `validateName` rides along because an in-process caller resolves the
+  handle itself and must reject exactly what `agent messages` rejects.
+  -> See: [providers.md](providers.md#message-inventory)
+
+Getting there cost `providers/output.ts` its follower: `followOutput` polls, and
+the message read reaches `output.ts` for provider log paths. The tailer is now
+`providers/follow.ts`, which no export reaches.
 
 `core/paths` still publishes its registry writers (`addProject`,
 `removeProject`, `writeProjects`) on purpose: the app server is the CLI's peer
