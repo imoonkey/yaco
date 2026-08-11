@@ -18,7 +18,7 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from "../../../src/lib/core/task/index.ts";
+import { DEFAULT_TASK_LOCK_TIMEOUT_MS, validateGraph } from "../../../src/lib/core/task/index.ts";
 import { lockPathFor } from "../../../src/lib/core/task/lock.ts";
 import { CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
@@ -123,21 +123,21 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(Object.keys(all.tasks).sort()).toEqual(["active-task", "archive-task", "backlog-task"]);
   });
 
-  it("stamps stateEnteredAt on the edited task and on a rollup-flipped parent (R5)", () => {
+  it("stamps stateEnteredAt on the edited task and on a re-derived milestone (R5)", () => {
     runYaco(repo, ["task", "set", "ms", "--data",
       JSON.stringify({ title: "ms", description: "d", acceptCriteria: "x" }), "--json"]);
     runYaco(repo, ["task", "set", "leaf", "--data",
       JSON.stringify({ title: "leaf", description: "d", acceptCriteria: "x", parent: "ms", state: "ready" }), "--json"]);
     const file = defaultTasksFile(repo, "ms");
 
-    // Completing the only child rolls the parent milestone to done.
+    // Completing the only child settles the parent milestone on done.
     const r = runYaco(repo, ["task", "set", "leaf", "--data", JSON.stringify({ state: "done" }), "--json"]);
     expect(r.status).toBe(0);
     const tasks = JSON.parse(readFileSync(file, "utf-8"));
     expect(tasks.leaf.state).toBe("done");
-    expect(tasks.ms.state).toBe("done"); // rolled up
+    expect(tasks.ms.state).toBe("done"); // derived from its children
     expect(typeof tasks.leaf.stateEnteredAt).toBe("string");
-    expect(typeof tasks.ms.stateEnteredAt).toBe("string"); // R5: rollup-flipped parent stamped too
+    expect(typeof tasks.ms.stateEnteredAt).toBe("string"); // R5: re-derived milestone stamped too
 
     // A non-state edit must NOT bump stateEnteredAt — the generation stays stable.
     const leafGen = tasks.leaf.stateEnteredAt;
@@ -368,28 +368,114 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(details.dangling.some((d) => d.ref === "ghost")).toBe(true);
   });
 
-  it("validate --json reports milestoneRollup divergence", () => {
-    // Hand-write a graph where parent state diverges from its children.
-    mkdirSync(join(defaultTasksPath(repo), "bad"), { recursive: true });
+  it("corrects a hand-written milestone state on read instead of reporting it", () => {
+    // A milestone's state is derived from its children, so a recorded value that
+    // disagrees with them is not an integrity problem to report — it is a stale
+    // projection, and every read rebuilds it. `validate` stays green and `get`
+    // answers from the children.
+    mkdirSync(join(defaultTasksPath(repo), "stale"), { recursive: true });
     writeFileSync(
-      join(defaultTasksPath(repo), "bad", "tasks.json"),
+      join(defaultTasksPath(repo), "stale", "tasks.json"),
       JSON.stringify({
         p: { parent: null, depends: [], state: "done", title: "p", description: "d" },
         c: { parent: "p", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok" },
       }, null, 2) + "\n",
     );
-    const r = runYaco(repo, ["task", "validate", "--json"]);
+    expect(runYaco(repo, ["task", "validate", "--json"]).status).toBe(0);
+
+    const got = parseJson(runYaco(repo, ["task", "get", "p", "--json"]).stdout).data as {
+      task: { state: string };
+    };
+    expect(got.task.state).toBe("ready");
+  });
+
+  it("reads a milestone as running while its children are in flight", () => {
+    // The reported bug: a milestone that has landed most of its work read
+    // `ready` — the same state as one nobody has started.
+    runYaco(repo, ["task", "set", "big", "--data",
+      JSON.stringify({ title: "big", description: "d", acceptCriteria: "x" }), "--json"]);
+    for (const id of ["k1", "k2"]) {
+      runYaco(repo, ["task", "set", id, "--data",
+        JSON.stringify({ title: id, description: "d", acceptCriteria: "x", parent: "big" }), "--json"]);
+    }
+    const stateOf = (id: string): string =>
+      (parseJson(runYaco(repo, ["task", "get", id, "--json"]).stdout).data as { task: { state: string } })
+        .task.state;
+
+    expect(stateOf("big")).toBe("ready"); // nothing has moved yet
+    runYaco(repo, ["task", "set", "k1", "--data", JSON.stringify({ state: "running" }), "--json"]);
+    expect(stateOf("big")).toBe("running");
+    runYaco(repo, ["task", "set", "k1", "--data", JSON.stringify({ state: "cancelled" }), "--json"]);
+    expect(stateOf("big")).toBe("running"); // k2 is still open
+    runYaco(repo, ["task", "set", "k2", "--data", JSON.stringify({ state: "cancelled" }), "--json"]);
+    expect(stateOf("big")).toBe("cancelled"); // every child abandoned — nothing was delivered
+
+    // The derived value is projected to disk by the write that produced it.
+    expect(JSON.parse(readFileSync(defaultTasksFile(repo, "big"), "utf-8")).big.state).toBe("cancelled");
+  });
+
+  it("re-derives the milestone a reparent left behind, and stamps it", () => {
+    // `old` keeps one done child once `moving` leaves. A derivation seeded from
+    // the edited task would only reach `fresh`, and `old` would persist as
+    // `running` with a stale stateEnteredAt — which the app reads as the
+    // task_done generation key.
+    runYaco(repo, ["task", "set", "old", "--data",
+      JSON.stringify({ title: "old", description: "d", acceptCriteria: "x" }), "--json"]);
+    runYaco(repo, ["task", "set", "fresh", "--data",
+      JSON.stringify({ title: "fresh", description: "d", acceptCriteria: "x" }), "--json"]);
+    for (const id of ["finished", "moving"]) {
+      runYaco(repo, ["task", "set", id, "--data",
+        JSON.stringify({ title: id, description: "d", acceptCriteria: "x", parent: "old" }), "--json"]);
+    }
+    runYaco(repo, ["task", "set", "sibling", "--data",
+      JSON.stringify({ title: "sibling", description: "d", acceptCriteria: "x", parent: "fresh" }), "--json"]);
+    runYaco(repo, ["task", "set", "finished", "--data", JSON.stringify({ state: "done" }), "--json"]);
+
+    const before = JSON.parse(readFileSync(defaultTasksFile(repo, "old"), "utf-8"));
+    expect(before.old.state).toBe("running");
+
+    // `stateEnteredAt` has one-second resolution, so the reparent has to land in
+    // a later second for "was it re-stamped?" to be answerable at all.
+    spawnSync("sleep", ["1.1"]);
+    const r = runYaco(repo, ["task", "set", "moving", "--data", JSON.stringify({ parent: "fresh" }), "--json"]);
+    expect(r.status).toBe(0);
+
+    const after = JSON.parse(readFileSync(defaultTasksFile(repo, "old"), "utf-8"));
+    expect(after.old.state).toBe("done"); // persisted, not just corrected on the next read
+    expect(after.old.stateEnteredAt).not.toBe(before.old.stateEnteredAt);
+    // `fresh` is a top-level task, so it owns its own bundle file.
+    const freshFile = JSON.parse(readFileSync(defaultTasksFile(repo, "fresh"), "utf-8"));
+    expect(freshFile.fresh.state).toBe("ready");
+  });
+
+  it("validate reports a milestone/child divergence a raw graph still carries", () => {
+    // `loadTaskStore` derives, so this cannot reach `validate` through the CLI —
+    // the CLI-level contract is the correction test above. What this pins is
+    // that the report still *has* the bucket for a caller that composes the
+    // published `loadTasks` + `validateGraph` itself.
+    const t = {
+      p: { parent: null, depends: [], state: "done", title: "p", description: "d" },
+      c: { parent: "p", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok" },
+    };
+    const report = validateGraph(t as unknown as Parameters<typeof validateGraph>[0]);
+    expect(report.ok).toBe(false);
+    expect(report.details!.milestoneRollup).toMatchObject([
+      { id: "p", recordedState: "done", impliedState: "ready" },
+    ]);
+  });
+
+  it("refuses to set a milestone's state and points at the rule", () => {
+    runYaco(repo, ["task", "set", "m", "--data",
+      JSON.stringify({ title: "m", description: "d", acceptCriteria: "x" }), "--json"]);
+    runYaco(repo, ["task", "set", "mc", "--data",
+      JSON.stringify({ title: "mc", description: "d", acceptCriteria: "x", parent: "m" }), "--json"]);
+
+    const r = runYaco(repo, ["task", "set", "m", "--data", JSON.stringify({ state: "done" }), "--json"]);
     expect(r.status).toBe(1);
     const env = parseJson(r.stderr);
-    const details = env.error!.details as {
-      milestoneRollup: { id: string; recordedState: string; impliedState: string }[];
-    };
-    expect(details.milestoneRollup.length).toBe(1);
-    expect(details.milestoneRollup[0]).toMatchObject({
-      id: "p",
-      recordedState: "done",
-      impliedState: "running",
-    });
+    expect(env.error!.code).toBe("INVALID");
+    expect(env.error!.message).toMatch(/state derived from children/);
+    expect(env.error!.message).toMatch(/doc\/main\/cli\/task\.md/);
   });
 
   it("list returns the configured graph", () => {

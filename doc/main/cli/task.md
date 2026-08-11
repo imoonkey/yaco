@@ -1,6 +1,6 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-08-11 (task-read-cutover: the loads go asynchronous and `app/server` reads in process; prior read-export-gate, oss-doc-cleanup)
+> Last updated: 2026-08-11 (milestone-derived-state: a milestone's state is derived from its children on load; prior task-read-cutover, read-export-gate, oss-doc-cleanup)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`. It
 defaults to `plan/tasks` and is overridden by `yaco.toml [paths]`: `tasks` is
@@ -25,7 +25,7 @@ locking, payload parsing, and the `--json` envelope.
 |------|---------|-------|
 | `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `AGENT_HANDLE_RE`, `DEFAULT_TASK_LOCK_TIMEOUT_MS`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. `agents?: string[]` holds session-handle links (validated against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/`); the legacy scalar `agent` is upgraded to `agents` on load. Both `agent` and a full `agents` array are rejected on `set` — links are mutated only through `attach`/`detach`. |
 | `validation.ts` | `validateTypes`, `isAcceptCriteriaBlank` | Shape checks for a `set` payload. Throws `CliError(INVALID)`. |
-| `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `rollup`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard + milestone-rollup checks. `validateGraph` collects **all** problems for the `validate` command. |
+| `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `deriveMilestoneStates`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard checks, and the [milestone state derivation](#milestone-state-is-derived-not-stored). `validateGraph` collects **all** problems for the `validate` command. |
 | `read.ts` | `readTaskList` | The composed list read: explicit `repoRoot` in, `Promise<Result<{tasks, tasksPath, tasksFile}>>` out. `yaco task list` and `app/server`'s task GET are both adapters over it. See [Reading](#reading). |
 | `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O; **the loads are asynchronous** (see [Reading](#reading)). Exported: `loadTasks`, `loadTaskStore`, `sourceForTask`, `sourceForNewTask`, `defaultTaskFileFor`, `defaultTaskFileForId`, `resolveTasksPathForSessionPath`, `formatJson`. Not exported: `saveTasks`, `saveTaskStore`. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
 | `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
@@ -82,6 +82,59 @@ list call in `app/server/src/routes/tasks.ts` and nothing else moves.
 -> See: [read-path.md](read-path.md) for the same statement about the other
 four cutovers, and the rule all five had to satisfy.
 
+## Milestone state is derived, not stored
+
+A task with children — a **milestone** — owns no work of its own, so its
+`state` carries no information its children do not already have. It is
+computed from them, never authored: `set` refuses to write it (`INVALID`, and
+the message names this rule). The `state` in `tasks.json` is a *projection*,
+rebuilt by `loadTaskStore` on every load and written back out by the next save.
+
+| children | derived state |
+|---|---|
+| none (a leaf) | the task's own recorded `state` |
+| all `cancelled` | `cancelled` |
+| all terminal (`done`/`cancelled`, at least one `done`) | `done` |
+| all `ready` | `ready` |
+| anything else | `running` |
+
+Read as one sentence: **a milestone is `ready` only while none of its children
+has moved, `done` once all of them have ended, and `running` in between.**
+`cancelled` is the same rule rather than an exception — a milestone whose
+children were all abandoned must not claim work was completed. `blocked` stays
+a leaf-only signal: a milestone with a blocked child is in progress, so it
+reads `running`.
+
+Two consequences worth stating outright:
+
+- **`ready` means untouched.** A milestone that has landed most of its children
+  reads `running`, so `task list` distinguishes *not started* from *in flight*
+  from *finished*. Before this was derived, a milestone kept its seeded `ready`
+  for its entire working life — `cli-node-sdk` read `ready` across 17 completed
+  children, which is what surfaced the bug.
+- **A recorded milestone `state` is never trusted.** Hand-edit one in
+  `tasks.json`, or move the last open child to another parent, and the next read
+  corrects it — so `yaco task validate` and `yaco doctor` never report a
+  milestone/child divergence, because they cannot see one. (An invalid `state`
+  *string* on a milestone is likewise replaced rather than reported; on a leaf it
+  is still reported.)
+
+Deriving in `loadTaskStore` — rather than in each command — is what makes the
+rule total: it is the one choke point `get`, `list`, `validate`, `doctor`,
+`app/server`'s in-process reads and every mutation all pass through. `set` and
+`rm` call `deriveMilestoneStates(tasks)` again before they save, because they
+have changed the graph in memory since that load.
+
+**Whole graph, not the edited task's ancestors.** A walk seeded from the task a
+command touched cannot find every milestone the change affects: reparenting
+moves a child between *two* chains, and only the new one is reachable from the
+child. The old parent would keep a state its remaining children no longer imply
+— and, because `set` stamps `stateEnteredAt` by diffing a pre-mutation snapshot,
+would never be stamped for the transition either, which the app reads as the
+`task_done` generation key. Deriving everything makes that a non-case. It costs
+one linear pass, against the `checkCycles` pass over the same graph that `set`
+already runs.
+
 ## CLI surface
 
 ```
@@ -124,8 +177,8 @@ object.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
 - A payload carrying `agent` or `agents` is rejected (`INVALID` exit 1) — session links are mutated only through [`attach`/`detach`](#attach-id-handle--detach-id-handle).
-- Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `rollup` → save.
-- **State-edge stamping**: `set` snapshots every task's `state` before the **whole** mutation, then after `rollup()` stamps `stateEnteredAt = now` on **every** task whose `state` changed — the edited task and any parent `rollup()` flipped to `done`. This is the durable task-state-edge generation key (`task_done|task_blocked:<proj>::<id>:<stateEnteredAt>`) the app's attention engine reads, so a rollup-induced parent transition gets a stable generation.
+- Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `deriveMilestoneStates` → save. `validateState` compares the payload against the task's **derived** state, so `set` on a milestone is a no-op when the value already matches and `INVALID` for anything else — see [Milestone state](#milestone-state-is-derived-not-stored).
+- **State-edge stamping**: `set` snapshots every task's `state` before the **whole** mutation, then after `deriveMilestoneStates()` stamps `stateEnteredAt = now` on **every** task whose `state` changed — the edited task and every milestone the derivation moved, including one on a chain the edit left rather than joined. This is the durable task-state-edge generation key (`task_done|task_blocked:<proj>::<id>:<stateEnteredAt>`) the app's attention engine reads, so a derived milestone transition gets a stable generation.
 - After save, if the task has a `worktree` slug, an advisory check compares scope globs across siblings sharing the slug and emits a warning if the implied repo sets diverge. Warnings land under `data.warnings` (text mode: `warning: ...` on stderr).
 
 Response shape (`--json`):
@@ -175,8 +228,8 @@ for it — only `yaco agent rename` calls it. -> See: [lifecycle.md](lifecycle.m
 
 Refuses on `state == "running"` (CONFLICT exit 1; `cancel` first). Refuses
 if any other task references it via `parent` or `depends` (CONFLICT). After
-delete, if there's a surviving sibling under the same parent, calls
-`rollup` so the parent can collapse to `done` when appropriate.
+delete, the milestone states are re-derived, so the parent settles on what the
+children it has left imply.
 
 ### `archive <id>`
 
@@ -209,8 +262,18 @@ returns exit 1 `INVALID`):
 | `missingAC` | `[id, ...]` | leaf task with blank `acceptCriteria` |
 | `invalidState` | `[{id, state}]` | `state` not in `STATES` |
 | `invalidWorkset` | `[{id, workset}]` | `workset` not in `WORKSETS` |
-| `milestoneRollup` | `[{id, recordedState, impliedState, reason}]` | parent state diverges from what its children imply (mirrors `rollup`'s two transitions) |
+| `milestoneRollup` | `[{id, recordedState, impliedState, reason}]` | a milestone's recorded state is not the one its children imply |
 | `staleLocks` | `[LockStatus]` | a cross-host lock is present (see [Locking](#locking)) |
+
+`milestoneRollup` cannot fire for a graph that arrived through
+`loadTaskStore` — that path [derives](#milestone-state-is-derived-not-stored)
+before anyone sees it, so `yaco task validate` and `yaco doctor` never report
+it. It is there for the other reachable composition: `loadTasks` and
+`validateGraph` are both published, and a consumer that pairs them hands this
+function a graph nobody has derived. The report and the derivation share one
+walk (`settledMilestoneStates`), so they cannot drift apart — and they would, at
+any depth past one, if the check compared a milestone against its children's
+*recorded* states instead of the states those children settle on.
 
 ### `list`
 
@@ -224,9 +287,10 @@ that need the full graph and apply their own UI filter.
 
 `--state <s>` filters to a single task state and **composes with `--workset`**
 (default workset `active`). The value is validated against the `STATES` enum;
-an invalid state is `USAGE` exit 2. It is a pure read — no roll-up, no mutation
-— so it never collapses a parent to `done` the way a `set`-triggered rollup
-would. `--json` returns the same `{ tasks, tasksPath, tasksFile }` shape over the
+an invalid state is `USAGE` exit 2. It is a pure read: milestone states are
+derived in memory as they are for every other read, but nothing is written —
+filtering on `--state done` never marks a task done.
+`--json` returns the same `{ tasks, tasksPath, tasksFile }` shape over the
 filtered map.
 
 ## Path resolution (the bug we fixed)
@@ -297,7 +361,7 @@ the canonical model.
 ## Tests
 
 - `cli/test/unit/core/task/{validation,graph,store,archive,lock,link}.test.ts` — pure unit coverage (`link.test.ts` covers idempotent attach/detach, last-detach key omission, legacy `agent` upgrade, concurrent attaches, and absent-`workset` preservation).
-- `cli/test/integration/task/task-cli.integration.ts` — spawns `yaco` and asserts the envelope contracts (create/update/rm/archive/validate/list, attach/detach lifecycle, `set` agents rejection, --file ENOENT mapping, warnings key, milestone-rollup detection, configured-path regression, lock contention, local stale-PID reclaim, cross-host lock → exit 4 set + exit 1 validate with `staleLocks`).
+- `cli/test/integration/task/task-cli.integration.ts` — spawns `yaco` and asserts the envelope contracts (create/update/rm/archive/validate/list, attach/detach lifecycle, `set` agents rejection, --file ENOENT mapping, warnings key, milestone state derived through the CLI (in-flight `running`, all-cancelled `cancelled`, stale recorded value corrected on read, `set` refusal), configured-path regression, lock contention, local stale-PID reclaim, cross-host lock → exit 4 set + exit 1 validate with `staleLocks`).
 
 ## Consumers
 

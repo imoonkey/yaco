@@ -83,7 +83,12 @@ export function validateState(
 ): void {
   if (!isState(newState)) fail(`invalid state '${newState}'`);
   if (hasChildren(tasks, tid) && newState !== oldState) {
-    fail("cannot set state on milestone task (state derived from children)");
+    fail(
+      "cannot set state on milestone task (state derived from children: " +
+        "ready until a child moves, running while any child is open, done once " +
+        "all children end) — set the child's state instead; " +
+        "see doc/main/cli/task.md",
+    );
   }
   if (newState === "running" && oldState !== "running") {
     for (const d of tasks[tid]?.depends ?? []) {
@@ -95,22 +100,97 @@ export function validateState(
   }
 }
 
-/** Propagate state up the parent chain: all-children-terminal → done;
- *  any-non-terminal AND parent.done → running. Mirrors the Python
- *  rollup() exactly. */
-export function rollup(tasks: TaskGraph, tid: string): void {
-  const pid = tasks[tid]?.parent;
-  if (!pid || !(pid in tasks)) return;
-  const children = childrenOf(tasks, pid);
-  const allTerminal = children.every((c) => TERMINAL.has(tasks[c]!.state));
-  const ps = tasks[pid]!.state;
-  if (allTerminal && !TERMINAL.has(ps)) {
-    tasks[pid]!.state = "done";
-    rollup(tasks, pid);
-  } else if (!allTerminal && ps === "done") {
-    tasks[pid]!.state = "running";
-    rollup(tasks, pid);
+/** The state a set of child states implies. Never called with an empty list —
+ *  the callers below hand it a milestone's children, and a task with none is a
+ *  leaf that owns its own state.
+ *
+ *  Read as one sentence: a milestone is `ready` only while none of its children
+ *  has moved, `done` once all of them have ended, and `running` in between.
+ *  `cancelled` is the same rule rather than an exception — a milestone whose
+ *  children were all abandoned must not claim work was completed. `blocked`
+ *  stays a leaf-only signal: a milestone with a blocked child is in progress. */
+function stateFromChildren(states: State[]): State {
+  if (states.every((s) => s === "cancelled")) return "cancelled";
+  if (states.every((s) => TERMINAL.has(s))) return "done";
+  if (states.every((s) => s === "ready")) return "ready";
+  return "running";
+}
+
+/** `parent id -> its children`, built in one pass. Every walk below wants the
+ *  edges in this direction, and re-deriving them per task is what makes a
+ *  whole-graph pass quadratic. */
+function childIndex(tasks: TaskGraph): Map<string, string[]> {
+  const children = new Map<string, string[]>();
+  for (const [tid, task] of Object.entries(tasks)) {
+    const pid = task.parent;
+    if (pid === null || pid === undefined || !(pid in tasks)) continue;
+    const kids = children.get(pid);
+    if (kids) kids.push(tid);
+    else children.set(pid, [tid]);
   }
+  return children;
+}
+
+/** The state every milestone settles on — one entry per task that has children,
+ *  none for a leaf — computed children-before-parents and without touching the
+ *  graph, so both the writer ({@link deriveMilestoneStates}) and the reader
+ *  ({@link validateGraph}) get their answer from the same walk. Two walks would
+ *  agree at depth one and disagree below it, since a parent's answer depends on
+ *  what its child *settles on*, not on what the file records for it.
+ *
+ *  An explicit stack, and each task settled once: the tree is input, so its
+ *  depth is too, and a recursive post-order overflows on a deep chain — the one
+ *  shape that most needs to *reach* `validateGraph` and be reported. `open` is
+ *  the cycle guard: a task already on the stack contributes its recorded state
+ *  instead of recursing, so a hand-edited `parent` loop unwinds. */
+function settledMilestoneStates(tasks: TaskGraph): Map<string, State> {
+  const children = childIndex(tasks);
+  const milestones = new Map<string, State>();
+  const settled = new Set<string>();
+  const open = new Set<string>();
+  const stateOf = (tid: string): State => milestones.get(tid) ?? tasks[tid]!.state;
+
+  for (const start of children.keys()) {
+    if (settled.has(start)) continue;
+    const stack = [start];
+    while (stack.length > 0) {
+      const tid = stack[stack.length - 1]!;
+      const kids = children.get(tid);
+      if (!kids || settled.has(tid)) {
+        // A leaf (it owns its state), or a milestone another walk finished.
+        settled.add(tid);
+        open.delete(tid);
+        stack.pop();
+      } else if (!open.has(tid)) {
+        // First visit: children have to settle before the parent can.
+        open.add(tid);
+        for (const c of kids) if (!settled.has(c) && !open.has(c)) stack.push(c);
+      } else {
+        milestones.set(tid, stateFromChildren(kids.map(stateOf)));
+        settled.add(tid);
+        open.delete(tid);
+        stack.pop();
+      }
+    }
+  }
+  return milestones;
+}
+
+/** Rebuild every milestone's state from its children.
+ *
+ *  A milestone owns no work of its own, so its state carries no information its
+ *  children do not already have: it is derived, never authored (`validateState`
+ *  refuses to set it). The value on disk is a projection, rebuilt here on every
+ *  load by `loadTaskStore` — the one choke point every reader and writer passes
+ *  through, so no command has to remember to derive — and by the mutation
+ *  commands before they save a graph they have changed in memory.
+ *
+ *  Whole-graph rather than "the edited task's ancestors": reparenting changes
+ *  *two* chains, and a walk that starts from the edited task can only find the
+ *  new one. Deriving everything makes that a non-case rather than a case to
+ *  remember, and costs less than the `checkCycles` pass `set` already runs. */
+export function deriveMilestoneStates(tasks: TaskGraph): void {
+  for (const [tid, state] of settledMilestoneStates(tasks)) tasks[tid]!.state = state;
 }
 
 export interface ValidationProblems {
@@ -141,6 +221,9 @@ export function validateGraph(
 ): ValidationReport {
   const ids = scope ? collectParentChain(tasks, scope.id) : Object.keys(tasks);
   const set = new Set(ids);
+  // One entry per milestone, the same walk the derivation applies. A task
+  // missing from it is a leaf.
+  const milestones = settledMilestoneStates(tasks);
   const problems: ValidationProblems = {
     cycles: [],
     dangling: [],
@@ -172,31 +255,22 @@ export function validateGraph(
         problems.dangling.push({ id: tid, kind: "depends", ref: d });
       }
     }
-    if (!hasChildren(tasks, tid) && isAcceptCriteriaBlank(t.acceptCriteria)) {
+    const implied = milestones.get(tid);
+    if (implied === undefined && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
     }
 
-    // Milestone rollup consistency — a parent whose recorded state
-    // disagrees with what its children imply. Mirrors the two rollup
-    // transitions: all-terminal ⇒ done, any-non-terminal ⇒ not-done.
-    const kids = childrenOf(tasks, tid);
-    if (kids.length > 0 && isState(t.state)) {
-      const allTerminal = kids.every((c) => TERMINAL.has(tasks[c]!.state));
-      if (allTerminal && !TERMINAL.has(t.state)) {
-        problems.milestoneRollup.push({
-          id: tid,
-          recordedState: t.state,
-          impliedState: "done",
-          reason: "all children are terminal but milestone state is not",
-        });
-      } else if (!allTerminal && t.state === "done") {
-        problems.milestoneRollup.push({
-          id: tid,
-          recordedState: t.state,
-          impliedState: "running",
-          reason: "milestone marked done but at least one child is non-terminal",
-        });
-      }
+    // A milestone whose recorded state is not the one its children imply.
+    // `loadTaskStore` derives, so nothing that comes through it can land here —
+    // but `loadTasks` and `validateGraph` are both published, and that
+    // composition reaches this function with a graph nobody has derived.
+    if (implied !== undefined && isState(t.state) && implied !== t.state) {
+      problems.milestoneRollup.push({
+        id: tid,
+        recordedState: t.state,
+        impliedState: implied,
+        reason: `milestone state '${t.state}' is not what its children imply ('${implied}')`,
+      });
     }
   }
 

@@ -23,6 +23,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
+import { deriveMilestoneStates } from "./graph.ts";
 import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
 /** Items read per await.
@@ -179,6 +180,11 @@ export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
       }
     }
   }
+
+  // A milestone's state is derived, not stored: the recorded value is a
+  // projection of its children, and the whole graph has to be assembled before
+  // it can be rebuilt (a milestone's children may live in other bundle files).
+  deriveMilestoneStates(tasks);
 
   return { tasksPath, defaultFile, files, tasks, sources };
 }

@@ -213,6 +213,42 @@ describe("loadTaskStore", () => {
     });
   });
 
+  it("derives every milestone's state from its children, across files", async () => {
+    // The loader is the one choke point every reader and writer passes through,
+    // so a milestone's recorded state never has to be trusted — and a milestone
+    // whose children span bundle files is derived from all of them.
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    writeGraph(join(tasksRoot, "ms", "tasks.json"), {
+      ms: task({ title: "ms", state: "ready" }),
+      a: task({ parent: "ms", title: "a", state: "done" }),
+    });
+    writeGraph(join(tasksRoot, "other", "tasks.json"), {
+      b: task({ parent: "ms", title: "b", state: "running" }),
+    });
+
+    const store = await loadTaskStore(tasksRoot);
+    expect(store.tasks.ms!.state).toBe("running");
+  });
+
+  it("corrects a recorded milestone state without touching the file it came from", async () => {
+    const root = tmp();
+    const tasksRoot = join(root, "tasks");
+    const file = join(tasksRoot, "ms", "tasks.json");
+    writeGraph(file, {
+      ms: task({ title: "ms", state: "ready" }),
+      a: task({ parent: "ms", title: "a", state: "done" }),
+    });
+    const before = readFileSync(file, "utf-8");
+
+    const store = await loadTaskStore(tasksRoot);
+    expect(store.tasks.ms!.state).toBe("done");
+    expect(readFileSync(file, "utf-8")).toBe(before); // reads never write
+
+    saveTaskStore(store); // ...but the next write projects the derived value
+    expect(JSON.parse(readFileSync(file, "utf-8")).ms.state).toBe("done");
+  });
+
   it("does not block the event loop while it walks", async () => {
     // The whole point of rule 5: an unrelated queued callback must get to run
     // during the walk, which a synchronous recursive readdir never allows.
