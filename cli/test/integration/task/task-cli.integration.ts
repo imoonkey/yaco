@@ -368,28 +368,64 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(details.dangling.some((d) => d.ref === "ghost")).toBe(true);
   });
 
-  it("validate --json reports milestoneRollup divergence", () => {
-    // Hand-write a graph where parent state diverges from its children.
-    mkdirSync(join(defaultTasksPath(repo), "bad"), { recursive: true });
+  it("corrects a hand-written milestone state on read instead of reporting it", () => {
+    // A milestone's state is derived from its children, so a recorded value that
+    // disagrees with them is not an integrity problem to report — it is a stale
+    // projection, and every read rebuilds it. `validate` stays green and `get`
+    // answers from the children.
+    mkdirSync(join(defaultTasksPath(repo), "stale"), { recursive: true });
     writeFileSync(
-      join(defaultTasksPath(repo), "bad", "tasks.json"),
+      join(defaultTasksPath(repo), "stale", "tasks.json"),
       JSON.stringify({
         p: { parent: null, depends: [], state: "done", title: "p", description: "d" },
         c: { parent: "p", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok" },
       }, null, 2) + "\n",
     );
-    const r = runYaco(repo, ["task", "validate", "--json"]);
+    expect(runYaco(repo, ["task", "validate", "--json"]).status).toBe(0);
+
+    const got = parseJson(runYaco(repo, ["task", "get", "p", "--json"]).stdout).data as {
+      task: { state: string };
+    };
+    expect(got.task.state).toBe("ready");
+  });
+
+  it("reads a milestone as running while its children are in flight", () => {
+    // The reported bug: a milestone that has landed most of its work read
+    // `ready` — the same state as one nobody has started.
+    runYaco(repo, ["task", "set", "big", "--data",
+      JSON.stringify({ title: "big", description: "d", acceptCriteria: "x" }), "--json"]);
+    for (const id of ["k1", "k2"]) {
+      runYaco(repo, ["task", "set", id, "--data",
+        JSON.stringify({ title: id, description: "d", acceptCriteria: "x", parent: "big" }), "--json"]);
+    }
+    const stateOf = (id: string): string =>
+      (parseJson(runYaco(repo, ["task", "get", id, "--json"]).stdout).data as { task: { state: string } })
+        .task.state;
+
+    expect(stateOf("big")).toBe("ready"); // nothing has moved yet
+    runYaco(repo, ["task", "set", "k1", "--data", JSON.stringify({ state: "running" }), "--json"]);
+    expect(stateOf("big")).toBe("running");
+    runYaco(repo, ["task", "set", "k1", "--data", JSON.stringify({ state: "cancelled" }), "--json"]);
+    expect(stateOf("big")).toBe("running"); // k2 is still open
+    runYaco(repo, ["task", "set", "k2", "--data", JSON.stringify({ state: "cancelled" }), "--json"]);
+    expect(stateOf("big")).toBe("cancelled"); // every child abandoned — nothing was delivered
+
+    // The derived value is projected to disk by the write that produced it.
+    expect(JSON.parse(readFileSync(defaultTasksFile(repo, "big"), "utf-8")).big.state).toBe("cancelled");
+  });
+
+  it("refuses to set a milestone's state and points at the rule", () => {
+    runYaco(repo, ["task", "set", "m", "--data",
+      JSON.stringify({ title: "m", description: "d", acceptCriteria: "x" }), "--json"]);
+    runYaco(repo, ["task", "set", "mc", "--data",
+      JSON.stringify({ title: "mc", description: "d", acceptCriteria: "x", parent: "m" }), "--json"]);
+
+    const r = runYaco(repo, ["task", "set", "m", "--data", JSON.stringify({ state: "done" }), "--json"]);
     expect(r.status).toBe(1);
     const env = parseJson(r.stderr);
-    const details = env.error!.details as {
-      milestoneRollup: { id: string; recordedState: string; impliedState: string }[];
-    };
-    expect(details.milestoneRollup.length).toBe(1);
-    expect(details.milestoneRollup[0]).toMatchObject({
-      id: "p",
-      recordedState: "done",
-      impliedState: "running",
-    });
+    expect(env.error!.code).toBe("INVALID");
+    expect(env.error!.message).toMatch(/state derived from children/);
+    expect(env.error!.message).toMatch(/doc\/main\/cli\/task\.md/);
   });
 
   it("list returns the configured graph", () => {

@@ -83,7 +83,12 @@ export function validateState(
 ): void {
   if (!isState(newState)) fail(`invalid state '${newState}'`);
   if (hasChildren(tasks, tid) && newState !== oldState) {
-    fail("cannot set state on milestone task (state derived from children)");
+    fail(
+      "cannot set state on milestone task (state derived from children: " +
+        "ready until a child moves, running while any child is open, done once " +
+        "all children end) — set the child's state instead; " +
+        "see doc/main/cli/task.md",
+    );
   }
   if (newState === "running" && oldState !== "running") {
     for (const d of tasks[tid]?.depends ?? []) {
@@ -95,21 +100,77 @@ export function validateState(
   }
 }
 
-/** Propagate state up the parent chain: all-children-terminal → done;
- *  any-non-terminal AND parent.done → running. Mirrors the Python
- *  rollup() exactly. */
+/** The state a set of child states implies. Never called with an empty list —
+ *  the callers below hand it a milestone's children, and a task with none is a
+ *  leaf that owns its own state.
+ *
+ *  Read as one sentence: a milestone is `ready` only while none of its children
+ *  has moved, `done` once all of them have ended, and `running` in between.
+ *  `cancelled` is the same rule rather than an exception — a milestone whose
+ *  children were all abandoned must not claim work was completed. `blocked`
+ *  stays a leaf-only signal: a milestone with a blocked child is in progress. */
+function stateFromChildren(states: State[]): State {
+  if (states.every((s) => s === "cancelled")) return "cancelled";
+  if (states.every((s) => TERMINAL.has(s))) return "done";
+  if (states.every((s) => s === "ready")) return "ready";
+  return "running";
+}
+
+/** The state `tid`'s children imply, or null when it has none.
+ *
+ *  A milestone owns no work of its own, so its state carries no information its
+ *  children do not already have: it is derived, never authored (`validateState`
+ *  refuses to set it). The value on disk is a projection, rebuilt on every load
+ *  by {@link deriveMilestoneStates}. */
+export function deriveMilestoneState(tasks: TaskGraph, tid: string): State | null {
+  const children = childrenOf(tasks, tid);
+  if (children.length === 0) return null;
+  return stateFromChildren(children.map((c) => tasks[c]!.state));
+}
+
+/** Rebuild every milestone's state from its children, children before parents.
+ *
+ *  Applied by `loadTaskStore`, which is the one choke point every reader and
+ *  writer passes through — so no command has to remember to derive, and a
+ *  recorded state that disagrees with the children is corrected rather than
+ *  believed.
+ *
+ *  `deriving` is the cycle guard. The loader does not run {@link checkCycles} —
+ *  a hand-edited `parent` loop must still reach `validateGraph` to be *reported*
+ *  rather than hang the walk — so a task already on the stack contributes its
+ *  recorded state and the recursion unwinds. */
+export function deriveMilestoneStates(tasks: TaskGraph): void {
+  const children = new Map<string, string[]>();
+  for (const [tid, task] of Object.entries(tasks)) {
+    const pid = task.parent;
+    if (pid === null || pid === undefined || !(pid in tasks)) continue;
+    const kids = children.get(pid);
+    if (kids) kids.push(tid);
+    else children.set(pid, [tid]);
+  }
+
+  const deriving = new Set<string>();
+  const derive = (tid: string): State => {
+    const kids = children.get(tid);
+    if (!kids || deriving.has(tid)) return tasks[tid]!.state;
+    deriving.add(tid);
+    const state = stateFromChildren(kids.map(derive));
+    deriving.delete(tid);
+    tasks[tid]!.state = state;
+    return state;
+  };
+  for (const tid of children.keys()) derive(tid);
+}
+
+/** Recompute every ancestor of `tid` from its children, nearest first.
+ *
+ *  The write-side counterpart of {@link deriveMilestoneStates}: a command has
+ *  changed a task in memory since the load, so the ancestors it can no longer
+ *  agree with are re-derived before the graph is saved. */
 export function rollup(tasks: TaskGraph, tid: string): void {
-  const pid = tasks[tid]?.parent;
-  if (!pid || !(pid in tasks)) return;
-  const children = childrenOf(tasks, pid);
-  const allTerminal = children.every((c) => TERMINAL.has(tasks[c]!.state));
-  const ps = tasks[pid]!.state;
-  if (allTerminal && !TERMINAL.has(ps)) {
-    tasks[pid]!.state = "done";
-    rollup(tasks, pid);
-  } else if (!allTerminal && ps === "done") {
-    tasks[pid]!.state = "running";
-    rollup(tasks, pid);
+  for (const id of collectParentChain(tasks, tid).slice(1)) {
+    const derived = deriveMilestoneState(tasks, id);
+    if (derived) tasks[id]!.state = derived;
   }
 }
 
@@ -120,12 +181,6 @@ export interface ValidationProblems {
   missingAC: string[];
   invalidState: { id: string; state: unknown }[];
   invalidWorkset: { id: string; workset: unknown }[];
-  milestoneRollup: {
-    id: string;
-    recordedState: State;
-    impliedState: State;
-    reason: string;
-  }[];
 }
 
 export interface ValidationReport {
@@ -148,7 +203,6 @@ export function validateGraph(
     missingAC: [],
     invalidState: [],
     invalidWorkset: [],
-    milestoneRollup: [],
   };
 
   for (const tid of ids) {
@@ -175,29 +229,9 @@ export function validateGraph(
     if (!hasChildren(tasks, tid) && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
     }
-
-    // Milestone rollup consistency — a parent whose recorded state
-    // disagrees with what its children imply. Mirrors the two rollup
-    // transitions: all-terminal ⇒ done, any-non-terminal ⇒ not-done.
-    const kids = childrenOf(tasks, tid);
-    if (kids.length > 0 && isState(t.state)) {
-      const allTerminal = kids.every((c) => TERMINAL.has(tasks[c]!.state));
-      if (allTerminal && !TERMINAL.has(t.state)) {
-        problems.milestoneRollup.push({
-          id: tid,
-          recordedState: t.state,
-          impliedState: "done",
-          reason: "all children are terminal but milestone state is not",
-        });
-      } else if (!allTerminal && t.state === "done") {
-        problems.milestoneRollup.push({
-          id: tid,
-          recordedState: t.state,
-          impliedState: "running",
-          reason: "milestone marked done but at least one child is non-terminal",
-        });
-      }
-    }
+    // No milestone/child state check: a milestone's state is derived from its
+    // children on load (deriveMilestoneStates), so it cannot disagree with them
+    // by the time any caller gets here.
   }
 
   // Parent-chain cycles — walk only within scope ids; the chain may step
@@ -251,8 +285,7 @@ export function validateGraph(
     problems.selfReference.length > 0 ||
     problems.missingAC.length > 0 ||
     problems.invalidState.length > 0 ||
-    problems.invalidWorkset.length > 0 ||
-    problems.milestoneRollup.length > 0;
+    problems.invalidWorkset.length > 0;
 
   return hasAny ? { ok: false, details: problems } : { ok: true };
 }

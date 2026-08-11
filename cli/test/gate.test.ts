@@ -472,17 +472,21 @@ describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
           parent: "M", depends: [], state: "ready", workset: "active",
           title: "A", description: "d", acceptCriteria: "x",
         },
+        B: {
+          parent: "M", depends: [], state: "done", workset: "active",
+          title: "B", description: "d", acceptCriteria: "x",
+        },
       },
     });
     // A → cancelled is terminal but NOT a set-done, so the guard never fires;
-    // M then rolls up to done from its now-all-terminal children — and a
-    // rollup-derived done is NOT gated either. A naive "any task that became
-    // done" guard would wrongly block here on the red gate.
+    // M is then re-derived as done from its now-all-terminal children (B done,
+    // A cancelled) — and a derived done is NOT gated either. A naive "any task
+    // that became done" guard would wrongly block here on the red gate.
     const r = setState(repo, "A", "cancelled");
     expect(r.status).toBe(0);
     const after = readTasks(repo);
     expect(after.A!.state).toBe("cancelled");
-    expect(after.M!.state).toBe("done"); // rolled up despite the red gate
+    expect(after.M!.state).toBe("done"); // derived despite the red gate
   });
 
   it("dormant when the repo has no scripts/gate.sh (gate is opt-in)", () => {
