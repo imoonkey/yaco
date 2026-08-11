@@ -520,12 +520,18 @@ export function runInstall(opts: InstallOptions): InstallReport {
   const yacoHome = getYacoHome();
   const actions: string[] = [];
 
-  // Export the resolved BIN_DIR so lifecycle's hookBinary() resolves to
-  // <binDir>/yaco — the canonical form per the install/distribution design.
-  // Without this, hook commands written into ~/.claude/settings.json would
-  // point at whatever YACO_BIN_DIR happened to be in the calling shell, or at
-  // this package's own launcher rather than the prefix being installed into.
-  process.env["YACO_BIN_DIR"] = binDir;
+  // Export the bin dir so `yacoExecutable()` writes `<binDir>/yaco` into
+  // provider hooks — but ONLY when the caller actually named one, via --bin-dir
+  // or $YACO_BIN_DIR. `tools/install.sh` always does, so the bootstrap still
+  // names the prefix it just installed into.
+  //
+  // The default (`~/.local/bin`) is a guess, and exporting a guess here made it
+  // outrank a real installation: `npm i -g @yaco/cli` into an nvm prefix,
+  // followed by `yaco install`, wrote every hook command back to a stale
+  // `~/.local/bin/yaco` left over from an older bootstrap. Left unset, the
+  // resolver falls through to the executable actually on PATH — the one the
+  // user just ran.
+  if (opts.binDir || process.env["YACO_BIN_DIR"]) process.env["YACO_BIN_DIR"] = binDir;
 
   // Always: wrapper script + global links + legacy bin cleanup.
   installAgentWrapper(actions, opts.dryRun);

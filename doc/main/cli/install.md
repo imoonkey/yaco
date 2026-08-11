@@ -118,13 +118,20 @@ When the pack fails, the remedy depends on what is already there:
 | `node_modules` at the repo root | Behavior |
 |---|---|
 | absent | `npm ci --workspace cli --include-workspace-root --omit=optional`, then pack again. About 3 s and 74 MB — the CLI's workspace only, no `node-pty` or `better-sqlite3` compile. |
-| present | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
+| present, carrying `node_modules/.yaco-bootstrap-incomplete` | the same install: this is a bootstrap of ours that did not finish. |
+| present, no marker | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
 
-The second row is not timidity. `npm ci --workspace` **prunes every workspace it
+The last row is not timidity. `npm ci --workspace` **prunes every workspace it
 was not asked about**: run against a developer's full tree it would delete the
 app's dependencies — minutes of native compilation — to fix a problem it cannot
-even diagnose. The bootstrap install exists for a clone that has never been
-installed; anything else is the caller's to repair.
+even diagnose.
+
+The marker is what keeps that safety from costing the advertised recovery path.
+It is written *before* the dependency install and removed after the pack that
+follows succeeds, so its presence means exactly "a bootstrap this script started
+did not complete" — an interrupted first run, which re-running must fix. A
+developer's own `npm install` never leaves it, so existence of `node_modules`
+alone is not what decides.
 
 The probe cannot say *why* the pack failed, so a source error selects the
 dependency branch too. Its log is kept and printed if the install then fails —
@@ -165,20 +172,32 @@ Hook configs written by `yaco install` use the canonical form:
 - Absolute path; never a runtime plus a source path, because neither the
   runtime nor the checkout is guaranteed to be reachable when the hook fires.
 - Resolution order (`package-root.ts#yacoExecutable`): `$YACO_PATH` →
-  `$YACO_BIN_DIR/yaco` → `which yaco` → `<package-root>/bin/yaco.mjs`. Four
-  rungs, ordered by how deliberately the machine said "this is my yaco", and the
-  last one always exists — which is the point of resolving from the package
-  root. It replaces two rungs that are gone: a `process.execPath` rung that only
-  ever fired for a Bun-compiled binary (whose files lived in a virtual
-  filesystem, so the package could not name itself), and a literal `"yaco"` last
-  resort that wrote a command failing at every hook fire.
-- **The `which yaco` rung is load-bearing, not legacy.** `ensureHooks` runs on
-  every `agent start` and rewrites a yaco entry whose command has drifted, so
-  without it a command run from a checkout would repoint the machine's global
-  hooks at that checkout — and they break the moment the worktree is deleted.
-- Only the PATH lookup is memoized, keyed on `$PATH` itself. The env rungs stay
-  live because `runInstall` sets `$YACO_BIN_DIR` mid-process precisely so the
-  merge names the prefix it just installed into.
+  `$YACO_BIN_DIR/yaco` → an executable `yaco` on `$PATH` →
+  `<package-root>/bin/yaco.mjs`. Four rungs, ordered by how deliberately the
+  machine said "this is my yaco", and the last one always exists — which is the
+  point of resolving from the package root. It replaces two rungs that are gone:
+  a `process.execPath` rung that only ever fired for a Bun-compiled binary
+  (whose files lived in a virtual filesystem, so the package could not name
+  itself), and a literal `"yaco"` last resort that wrote a command failing at
+  every hook fire.
+- **The PATH rung is load-bearing, not legacy.** `ensureHooks` runs on every
+  `agent start` and rewrites a yaco entry whose command has drifted, so without
+  it a command run from a checkout would repoint the machine's global hooks at
+  that checkout — and they break the moment the worktree is deleted.
+- **It is a PATH walk, not `which yaco`.** npm creates a `yaco` shim in every
+  workspace's `node_modules/.bin` (this package declares a `bin`) and prepends
+  those directories to `$PATH` for the length of an npm script, so the first hit
+  under `npm run <anything>` in a checkout *is* that checkout. Those directories
+  are skipped and the walk continues; so are relative `$PATH` entries, which
+  cannot yield the absolute invocation a later-firing hook needs.
+- **Rung 2 is only for an explicit bin dir.** `runInstall` exports
+  `$YACO_BIN_DIR` only when `--bin-dir` or the environment supplied one. Its
+  default (`~/.local/bin`) is a guess, and exporting the guess made it outrank a
+  real installation: `npm i -g @yaco/cli` into an nvm prefix followed by `yaco
+  install` wrote every hook command back to a stale binary an older bootstrap
+  had left behind. `tools/install.sh` always passes one, so the bootstrap still
+  names the prefix it just installed into.
+- Only the PATH walk is memoized, keyed on `$PATH` itself.
 - `main.ts` branches on `argv[0:2] === ['agent','hook-event']` for the hook
   *contract* — read stdin, update state, suppress every failure, exit 0 — not
   for load time. The dispatcher statically imports the handler either way.

@@ -22,8 +22,9 @@ app, the `yaco` CLI/runtime, and global agent configuration.
   `@yaco/cli/core/errors`.
 - Runtime state resolves through `${YACO_HOME:-~/.yaco}`. Path helpers under
   `@yaco/cli/core/paths` are the shared source of truth.
-- `tools/install.sh` is the recovery-safe bootstrap. It builds `cli/src/main.ts`
-  into `yaco`, then delegates to `yaco install`.
+- `tools/install.sh` is the recovery-safe bootstrap. It packs `@yaco/cli` and
+  installs that tarball into `${YACO_BIN_DIR:-~/.local/bin}`'s prefix — the same
+  artifact npm would deliver — then delegates to `yaco install`.
 - `yaco install` owns global hook/wrapper install, skill symlinks, and registry
   upsert into `${YACO_HOME}/projects.json`.
 - **Session-state edge contract (cli → app).** The CLI agent runtime writes the

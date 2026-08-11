@@ -79,6 +79,25 @@ describe("tools/install.sh — static contract", () => {
     expect(body).toMatch(/"\$BIN_DIR\/yaco" install/);
   });
 
+  it("delegates the Node floor to the launcher's comparator, keeping one copy", () => {
+    // A second hand-written comparator here is how `24.15.0-rc.1` was admitted
+    // by the installer and refused by the launcher: the shell copy mapped the
+    // prerelease patch component to NaN, and every comparison against NaN is
+    // false. `test/unit/node-floor.test.ts` is the table; this asserts the
+    // installer is under it rather than beside it.
+    const body = readFileSync(INSTALL_SH, "utf-8");
+    expect(body).toContain("cli/bin/node-floor.mjs");
+    expect(body).toContain("belowNodeFloor");
+    // Comments may name the version — the prose explaining this rule does.
+    // What must not exist is a second executable statement of it.
+    const code = body
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+    expect(code).not.toMatch(/\d+\.\d+\.\d+/);
+    expect(code).not.toMatch(/split\(["']\.["']\)/);
+  });
+
   it("passes bash -n syntax check", () => {
     const r = spawnSync("bash", ["-n", INSTALL_SH], { encoding: "utf-8" });
     expect(r.status).toBe(0);
@@ -262,6 +281,26 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     const again = bootstrap(clone);
     expect(again.status).toBe(0);
     expect(again.stdout).not.toContain("installing cli dependencies");
+  }, 180_000);
+
+  it("repairs its own interrupted dependency install", () => {
+    // An interrupted first run leaves a populated `node_modules` that is not a
+    // developer's install, and the README advertises this script as the
+    // recovery path — so existence alone cannot be the irreversible state
+    // transition. The marker the bootstrap writes before installing says
+    // "a bootstrap I started did not finish", which is the one state in which
+    // re-running the workspace install is safe.
+    const clone = fullClone();
+    mkdirSync(join(clone, "node_modules"), { recursive: true });
+    writeFileSync(join(clone, "node_modules", ".yaco-bootstrap-incomplete"), "");
+
+    const r = bootstrap(clone);
+    if (r.status !== 0) console.error("install.sh stderr:\n", r.stderr);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("installing cli dependencies");
+    // Cleared on the way out, so a later failure over a finished tree is
+    // reported rather than repaired.
+    expect(existsSync(join(clone, "node_modules", ".yaco-bootstrap-incomplete"))).toBe(false);
   }, 180_000);
 
   it("refuses to reinstall over a populated node_modules, and prunes nothing", () => {

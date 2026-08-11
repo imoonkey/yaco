@@ -106,6 +106,10 @@ afterAll(() => {
 describe("npm pack contains only intended files", () => {
   it("ships the launcher, both artifacts, the wrapper, the manifest and the license", () => {
     expect(tarballEntries).toContain("bin/yaco.mjs");
+    // The launcher statically imports this before it touches the bundle, so a
+    // `files` entry narrowed to the launcher alone would ship a package whose
+    // every invocation dies on a missing module.
+    expect(tarballEntries).toContain("bin/node-floor.mjs");
     expect(tarballEntries).toContain("dist/yaco.mjs");
     expect(tarballEntries).toContain("dist/package-root.js");
     expect(tarballEntries).toContain("scripts/agent-wrapper.sh");

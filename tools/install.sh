@@ -17,7 +17,6 @@ set -euo pipefail
 
 REPO_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${YACO_BIN_DIR:-$HOME/.local/bin}"
-NODE_FLOOR="24.15.0"
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -29,17 +28,25 @@ require() {
 require node
 require npm
 
-# The floor is the CLI's own `engines.node`, and it is checked before anything
-# is built: the build targets Node 24 and the CLI imports `node:sqlite`, so an
-# older Node fails somewhere deep instead of saying which Node it wants.
+# The floor is checked before anything is built: the build targets Node 24 and
+# the CLI imports `node:sqlite`, so an older Node fails somewhere deep instead of
+# saying which Node it wants.
+#
+# The comparison is the launcher's own, imported rather than restated. A second
+# hand-written comparator here is how `24.15.0-rc.1` got admitted by one and
+# refused by the other — the shell copy mapped the prerelease patch component to
+# NaN and every comparison against NaN is false. `bin/node-floor.mjs` has no
+# dependencies and is not built, so it is importable at this point in the
+# bootstrap, and `test/unit/node-floor.test.ts` is its table.
 if ! node -e '
-  const floor = process.argv[1].split(".").map(Number);
-  const found = process.versions.node.split(".").map(Number);
-  for (let i = 0; i < floor.length; i++) {
-    if (found[i] !== floor[i]) process.exit(found[i] < floor[i] ? 1 : 0);
-  }
-' "$NODE_FLOOR"; then
-  echo "install: yaco requires Node >= $NODE_FLOOR, found $(node -v)" >&2
+  import(process.argv[1]).then(({ belowNodeFloor, MINIMUM_NODE }) => {
+    if (!belowNodeFloor(process.versions.node)) return;
+    process.stderr.write(
+      `install: yaco requires Node >= ${MINIMUM_NODE}, found ${process.versions.node}\n`,
+    );
+    process.exit(1);
+  });
+' "$REPO_ROOT/cli/bin/node-floor.mjs"; then
   exit 2
 fi
 
@@ -76,24 +83,38 @@ pack() {
   (cd "$REPO_ROOT" && npm pack --workspace @yaco/cli --pack-destination "$stage")
 }
 
+# Marks a `node_modules` this script created and has not finished filling. It is
+# written before the install and removed after the pack that follows succeeds,
+# so its presence means exactly "a bootstrap I started did not complete" — the
+# one state in which re-running the dependency install is safe. Existence of
+# `node_modules` alone cannot say that: a developer's tree looks identical, and
+# `npm ci --workspace` prunes every workspace it was not asked about, so
+# repairing on that signal would delete an app/ install this script has no
+# business touching.
+bootstrap_marker="$REPO_ROOT/node_modules/.yaco-bootstrap-incomplete"
+
+install_cli_dependencies() {
+  # Only the CLI's own workspace: the app's native dependencies take minutes to
+  # compile and `--cli-only` exists precisely to skip them.
+  echo "  installing cli dependencies ..."
+  mkdir -p "$REPO_ROOT/node_modules"
+  : > "$bootstrap_marker"
+  (cd "$REPO_ROOT" && npm ci --workspace cli --include-workspace-root --omit=optional)
+}
+
 probe_log="$stage/pack.log"
 if ! pack >/dev/null 2>"$probe_log"; then
-  if [ -e "$REPO_ROOT/node_modules" ]; then
-    # Dependencies are already installed and the build still failed, so this is
-    # a source error or a damaged tree — either way not something to fix by
-    # reinstalling. `npm ci --workspace` prunes every workspace it was not asked
-    # about, so running it here would delete an app/ install this script has no
-    # business touching.
+  if [ -e "$REPO_ROOT/node_modules" ] && [ ! -e "$bootstrap_marker" ]; then
+    # A dependency tree someone else owns, and the build still failed — a source
+    # error or damage, not something to fix by reinstalling over it.
     echo "install: the cli build failed with dependencies already present in $REPO_ROOT/node_modules." >&2
     echo "install: if that tree is incomplete, run \`npm ci\` in $REPO_ROOT and retry." >&2
     cat "$probe_log" >&2
     exit 1
   fi
-  # A clone that has never been installed — the README's first-run case. Only
-  # the CLI's own workspace is installed: the app's native dependencies take
-  # minutes to compile and `--cli-only` exists precisely to skip them.
-  echo "  installing cli dependencies ..."
-  if ! (cd "$REPO_ROOT" && npm ci --workspace cli --include-workspace-root --omit=optional); then
+  # Either a clone that has never been installed — the README's first-run case —
+  # or one of this script's own installs that did not finish.
+  if ! install_cli_dependencies; then
     echo "install: could not install the cli dependencies." >&2
     echo "install: the build failure that asked for them was:" >&2
     cat "$probe_log" >&2
@@ -101,6 +122,7 @@ if ! pack >/dev/null 2>"$probe_log"; then
   fi
   pack
 fi
+rm -f "$bootstrap_marker"
 
 # `find`, not a glob: under `set -o pipefail` an unmatched `ls "$stage"/*.tgz`
 # fails the assignment and `set -e` exits before the check below can say

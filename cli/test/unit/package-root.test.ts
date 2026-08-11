@@ -74,6 +74,41 @@ describe("package assets from source", () => {
     }
   });
 
+  it("walks past a workspace shim to the yaco a user installed", () => {
+    // npm creates a `yaco` shim in every workspace's node_modules/.bin — this
+    // package declares a `bin` — and prepends those to PATH for the length of
+    // an npm script. Answering with the first PATH hit would name the checkout,
+    // and a hook command written from it dies with the worktree.
+    const dir = mkdtempSync(join(tmpdir(), "yaco-shim-order-"));
+    const shimDir = join(dir, "node_modules", ".bin");
+    const installedDir = join(dir, "real-bin");
+    mkdirSync(shimDir, { recursive: true });
+    mkdirSync(installedDir, { recursive: true });
+    for (const d of [shimDir, installedDir]) {
+      writeFileSync(join(d, "yaco"), "#!/bin/sh\nexit 0\n");
+      chmodSync(join(d, "yaco"), 0o755);
+    }
+    const saved = {
+      yacoPath: process.env["YACO_PATH"],
+      binDir: process.env["YACO_BIN_DIR"],
+      path: process.env["PATH"],
+    };
+    delete process.env["YACO_PATH"];
+    delete process.env["YACO_BIN_DIR"];
+    process.env["PATH"] = `${shimDir}:${installedDir}`;
+    try {
+      expect(yacoExecutable()).toBe(join(installedDir, "yaco"));
+    } finally {
+      for (const [k, v] of Object.entries({
+        YACO_PATH: saved.yacoPath, YACO_BIN_DIR: saved.binDir, PATH: saved.path,
+      })) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("prefers a yaco already on PATH over its own launcher", () => {
     // Without this rung, running any command from a checkout would repoint the
     // machine's global hooks at that checkout — which then break the moment the
