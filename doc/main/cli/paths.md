@@ -31,14 +31,17 @@ exports map).
   possible) before storing. `removeProject()` removes by name only and throws
   `NOT_FOUND` when missing.
 
-## Bun/Node neutrality
+## Loader neutrality
 
-This module is loaded by both Bun (cli) and Node via `tsx`/`vitest`
-(app/server). To keep parity:
+This module is loaded three ways from the same `.ts` source: by the CLI under
+Node's type stripping, and by `app/server` under `tsx` and `vitest`. To keep
+parity:
 
 - Use only `node:os`, `node:path`, `node:fs` (sync APIs are fine).
-- No Bun-only globals (`Bun.*`), no top-level await, no async I/O for path resolution.
-- The exports map in `cli/package.json` points at the `.ts` source — `tsx` and `vitest` transpile on the fly; no build step.
+- No top-level await, no async I/O for path resolution — a loader that only
+  strips types cannot rewrite either away.
+- The exports map in `cli/package.json` points at the `.ts` source; nothing here
+  goes through a build step.
 
 ## CLI surface (`yaco paths`)
 

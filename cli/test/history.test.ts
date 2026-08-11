@@ -4,11 +4,11 @@
  *  Provider homes ($HOME/.claude, $HOME/.codex) and the YACO sessions dir are
  *  redirected to a sandbox so no test touches a real provider home. */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import {
   claudeHistory,
   codexHistory,
@@ -52,8 +52,8 @@ interface CodexFixtureRow {
 function createCodexDb(rows: CodexFixtureRow[]): void {
   const codexDir = join(sandbox, ".codex");
   mkdirSync(codexDir, { recursive: true });
-  const db = new Database(join(codexDir, "state_5.sqlite"));
-  db.run(
+  const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+  db.exec(
     `CREATE TABLE threads (
        id TEXT PRIMARY KEY, title TEXT, first_user_message TEXT,
        created_at INTEGER, updated_at INTEGER, git_branch TEXT,

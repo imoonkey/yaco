@@ -20,7 +20,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { BUN_BIN, runCli } from "../../../helpers/cli-process.ts";
+import { runCli } from "../../../helpers/cli-process.ts";
 const TMP: string[] = [];
 afterAll(() => {
   for (const dir of TMP) rmSync(dir, { recursive: true, force: true });
@@ -111,8 +111,8 @@ describe("codex app-server failures", () => {
         NO_COLOR: "1",
         HOME: root,
         YACO_HOME: join(root, ".yaco"),
-        // Only `codex` is missing — bun's own directory stays on PATH.
-        PATH: dirname(BUN_BIN),
+        // Only `codex` is missing — the runtime's own directory stays on PATH.
+        PATH: dirname(process.execPath),
       },
     });
     expect(r.status).not.toBe(0);

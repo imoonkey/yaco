@@ -6,7 +6,7 @@
  *  specific paths are redacted, so a matrix is comparable across checkouts and
  *  runtimes and the only thing a diff can report is behavior.
  *
- *  Usage: `bun run test/golden/capture.ts --out test/golden/matrix.json` */
+ *  Usage: `node test/golden/capture.ts --out test/golden/matrix.json` */
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -97,7 +97,7 @@ export function captureMatrix(): GoldenMatrix {
 if (import.meta.main) {
   const outFlag = process.argv.indexOf("--out");
   if (outFlag < 0 || !process.argv[outFlag + 1]) {
-    console.error("usage: bun run test/golden/capture.ts --out <file>");
+    console.error("usage: node test/golden/capture.ts --out <file>");
     process.exit(2);
   }
   const out = resolve(process.argv[outFlag + 1]!);

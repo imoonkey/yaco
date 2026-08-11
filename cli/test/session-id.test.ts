@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir, homedir } from "os";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 import { resolveSessionId, PENDING_SESSION_ID } from "../src/lib/core/agent/session-id.ts";
 
@@ -67,15 +67,15 @@ describe("resolveSessionId — codex SQL correctness (threads table)", () => {
   it("returns latest thread id when multiple threads exist for a cwd", () => {
     const dbPath = join(homedir(), ".codex", "state_5.sqlite");
     try {
-      const db = new Database(dbPath, { readonly: true });
+      const db = new DatabaseSync(dbPath, { readOnly: true });
       // Find a cwd with at least one thread
       const row = db
-        .query<{ cwd: string; latest_id: string; created_at: number }, []>(
+        .prepare(
           `SELECT cwd, id as latest_id, created_at
            FROM threads
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get();
+        .get() as { cwd: string; latest_id: string; created_at: number } | undefined;
       db.close();
 
       if (!row) return; // No threads — skip

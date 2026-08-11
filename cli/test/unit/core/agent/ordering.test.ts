@@ -15,9 +15,9 @@
  *  The golden matrix pins the same behavior end to end; these pin it per reader,
  *  so a failure names the reader that regressed. */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -178,7 +178,7 @@ describe("codex rollout selection", () => {
     "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   ];
   const name = (id: string): string => `rollout-2026-06-01T00-00-00-${id}.jsonl`;
-  const SRC = resolve(import.meta.dir, "../../../../src/lib/core/agent/session-id.ts");
+  const SRC = resolve(import.meta.dirname, "../../../../src/lib/core/agent/session-id.ts");
 
   /** Build a rollout day directory holding one inode under `creationOrder`
    *  names — identical birthtime, so all delays are exactly equal and nothing
@@ -225,10 +225,11 @@ describe("codex rollout selection", () => {
   it("breaks an equal-created_at threads tie by ascending id", () => {
     const home = join(sandbox, "db-home");
     mkdirSync(join(home, ".codex"), { recursive: true });
-    const db = new Database(join(home, ".codex", "state_5.sqlite"), { create: true });
-    db.run("CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT, created_at INTEGER)");
+    const db = new DatabaseSync(join(home, ".codex", "state_5.sqlite"));
+    db.exec("CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT, created_at INTEGER)");
+    const insert = db.prepare("INSERT INTO threads (id, cwd, created_at) VALUES (?, ?, ?)");
     for (const id of [...IDS].reverse()) {
-      db.run("INSERT INTO threads (id, cwd, created_at) VALUES (?, ?, ?)", [id, "/work/alpha", 1_780_000_000]);
+      insert.run(id, "/work/alpha", 1_780_000_000);
     }
     db.close();
 

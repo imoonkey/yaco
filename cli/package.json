@@ -23,13 +23,12 @@
     "./core/worktree": "./src/lib/core/worktree/index.ts"
   },
   "scripts": {
-    "start": "bun run src/main.ts",
-    "test": "bun run test:unit",
-    "test:unit": "node test/cohorts.mjs unit",
+    "start": "node src/main.ts",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --project unit",
     "reinstall": "../tools/install.sh --cli-only",
-    "test:integration": "bun run reinstall && node test/cohorts.mjs integration",
-    "test:all": "bun run test:unit && bun run test:integration",
-    "build": "bun build src/main.ts --compile --outfile yaco"
+    "test:integration": "npm run reinstall && vitest run --project integration",
+    "test:all": "npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
     "@types/bun": "latest",

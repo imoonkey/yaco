@@ -13,9 +13,8 @@
  *   - --json envelope success shape via subprocess
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
-import { spawnSync } from "node:child_process";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import {
   existsSync,
   mkdirSync,
@@ -25,12 +24,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { handleProject } from "../../../../src/commands/project/index.ts";
 import { isOk } from "../../../../src/lib/core/result.ts";
-
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
+import { runCli } from "../../../helpers/cli-process.ts";
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const ORIGINAL_HOME = process.env["HOME"];
@@ -103,8 +101,8 @@ function stageCodexConfig(fix: Fix, p: string): void {
 
 function stageCodexState5(fix: Fix, rows: Array<{ id: string; cwd: string }>): void {
   mkdirSync(join(fix.root, ".codex"), { recursive: true });
-  const db = new Database(join(fix.root, ".codex", "state_5.sqlite"));
-  db.run(`CREATE TABLE threads (
+  const db = new DatabaseSync(join(fix.root, ".codex", "state_5.sqlite"));
+  db.exec(`CREATE TABLE threads (
     id TEXT PRIMARY KEY,
     rollout_path TEXT NOT NULL,
     created_at INTEGER NOT NULL,
@@ -365,10 +363,7 @@ describe("yaco project move — legacy provider count surface", () => {
 
 describe("yaco project move — --json envelope (subprocess)", () => {
   function runYaco(args: string[], env: Record<string, string>) {
-    const r = spawnSync("bun", ["run", BIN, ...args], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...env },
-    });
+    const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...env } });
     return {
       stdout: r.stdout ?? "",
       stderr: r.stderr ?? "",

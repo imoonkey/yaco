@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-08-10: the CLI leaves Bun — `bun:sqlite` → `node:sqlite` in one commit
+
+**What changed:**
+- `cli/src/lib/core/agent/session-id.ts` and `providers/{history,project-move}.ts` open `node:sqlite`'s `DatabaseSync`. With them, in the same commit: the 6 test files that stage a database move to Vitest, `test/cohorts.mjs` + `cohorts.test.ts` + `helpers/bun-sqlite-stub.ts` + its `vitest.config.ts` alias are deleted, `module-mock-scope.test.ts` loses its bun clause, and `runCli` spawns `process.execPath` on `src/main.ts` instead of `bun run`.
+- `vitest.config.ts` declares the two suites as projects — `integration` is `test/integration/**`, `unit` is everything else — and both include `*.test.ts` and `*.integration.ts`, so the "file in no suite" bug the deleted runner existed to prevent stays prevented by the glob.
+- Two new tests in `test/unit/core/project/move.test.ts`: a `state_5.sqlite` with no `threads` table is a no-op, and an aborting bucket leaves no partial write. Both were verified by mutating the production code until they fail.
+- `cli/package.json` drops the cohort scripts and the `build` script; `npm run test:unit` is `vitest run --project unit`.
+- **`tools/install.sh` is broken until `cli-dual-artifact-package`.** It ends by running the binary it just built, and that binary is `bun build --compile`. Documented in `cli/CLAUDE.md` and `doc/dev/cli/workflow.md`.
+
+**Why:**
+- Bun 1.3.13 answers `node:sqlite` with "No such built-in module", so there is no ordering in which the production users and their fixtures move separately and the tree stays green. Everything that reaches SQLite — three source files, six fixtures, the runner that partitioned them, the helper that spawns the CLI — is one atomic set.
+- The mapping is mechanical except in one place, and that place was a silent behavior change: `.get()` returns `undefined` on a miss where `bun:sqlite` returned `null`, so `project-move`'s ported `hasThreadsTable` reported *present* for every database without the table, and the planner would then query a table that does not exist. Raw SQL is the other trap in the opposite direction — `DatabaseSync` has no `run` at all, so a missed call site is a `TypeError` raised from inside the write transaction, which is the least-read path in the file.
+- `providers/claude.ts`'s eager `history`/`project-move` imports were left alone. They were flagged by the previous task only because they forced the Vitest stub; the stub dies here from the specifier resolving natively, and deferring them for real would require `ProviderProjectMove.plan`/`apply`/`renderText` — all synchronous — to become async.
+- The compiled artifact was the cost, not an accident: `package-root.test.ts`'s "from a compiled artifact" block (3 assertions) is deleted and `install.test.ts`'s clean-`$BIN_DIR` bootstrap is skipped, both naming `cli-dual-artifact-package`, which owns the `bin/yaco.mjs` + `dist/` layout that replaces the single-file binary.
+
+**Key files:** `cli/src/lib/core/agent/session-id.ts`, `cli/src/lib/core/agent/providers/{history,project-move}.ts`, `cli/vitest.config.ts`, `cli/test/helpers/cli-process.ts`, `cli/test/unit/core/project/move.test.ts`, `cli/test/unit/package-root.test.ts`, `cli/package.json`, `cli/CLAUDE.md`, `doc/dev/cli/workflow.md`
+**Verification:** `scripts/verify.sh` all steps passed; `npx tsc --noEmit -p .` clean in `cli/`; unit 1196 passed / 0 failed (1209 → 1196 = −12 `cohorts.test.ts`, −3 compiled artifact, +2 SQLite), integration 80 passed / 1 skipped (was 81); `cli/test/golden/matrix.json` reproduces byte-identical with a Node child against the Bun-captured baseline and was **not** recaptured; cross-provider review (Codex) and QA in `plan/all/cli-node-sdk/`.
+**Next:** `cli-dual-artifact-package` — the Node artifact, `tools/install.sh`, and the manifest/lock cleanup (`@types/bun`, `cli/bun.lock`, `src/main.ts`'s dead bun shebang).
+**Blockers:** None
+
 ## 2026-08-10: the CLI test suite moves to Vitest, minus six database fixtures
 
 **What changed:**

@@ -1,6 +1,6 @@
 # cli (`@yaco/cli`)
 
-Bun-based CLI hosting the `yaco` unified dispatcher and the tmux-backed agent
+Node 24 CLI hosting the `yaco` unified dispatcher and the tmux-backed agent
 runtime.
 
 ## Read First
@@ -13,22 +13,22 @@ runtime.
 ## Commands
 
 ```bash
-cd cli && bun run test
-cd cli && bun run test:integration
-cd cli && bun run reinstall
-cd cli && bun build src/main.ts --compile --outfile yaco
+cd cli && npm run test
+cd cli && npm run test:integration
+cd cli && npx tsc --noEmit -p .
 ```
 
-`bun run test` is `node test/cohorts.mjs unit`, which runs both test cohorts:
-Vitest owns every file that imports `vitest`, bun owns the 6 database fixtures
-that import `bun:test`, and a file naming neither is an error. A focused run is
-`npx vitest run <files>`. -> See:
-[../doc/dev/cli/workflow.md](../doc/dev/cli/workflow.md#two-runners-one-command)
+Everything runs under Vitest. `vitest.config.ts` declares the two suites as
+projects and the split is one directory: `integration` is `test/integration/**`,
+`unit` is everything else. A focused run is `npx vitest run <files>`. -> See:
+[../doc/dev/cli/workflow.md](../doc/dev/cli/workflow.md#one-runner-two-projects)
 
-`bun run build` only writes `cli/yaco`. Real provider hooks call the installed
-binary (`~/.local/bin/yaco` by default), so run `bun run reinstall` before live
-Claude/Codex lifecycle checks or after hook/runtime changes. `bun run
-test:integration` does this automatically.
+There is **no working build**: the CLI imports `node:sqlite`, which Bun cannot
+resolve, so `bun build --compile` emits a binary that exits before `main` — and
+that is what `tools/install.sh` and `npm run reinstall` build.
+`cli-dual-artifact-package` replaces it. Until then real provider hooks keep
+calling whatever `~/.local/bin/yaco` was installed last, and
+`npm run test:integration` cannot refresh it.
 
 ## Contracts
 
@@ -36,7 +36,7 @@ test:integration` does this automatically.
 - `--json` failure writes exactly one `{ok:false,error:...}` line to stderr.
 - Text mode (no `--json`) is the default readable surface: ordinary result-bearing commands branch once through `dual` (`src/lib/core/render.ts`) and return a `{text}` envelope; `{help}` is usage-only. `render()` writes both verbatim and treats any other bare object in text mode as an `INTERNAL` error. Streaming/process-owning commands (`agent output-follow`, `align poll`, `doctor`) are the explicit exceptions — they own stdout directly. See [../doc/main/cli/command-surface.md](../doc/main/cli/command-surface.md).
 - One runtime dependency, `smol-toml`. Adding a second is a distribution decision — every dependency has to survive `npm install -g` and the `tools/install.sh` bootstrap ([install.md](../doc/main/cli/install.md#bootstrap-dependencies)); a native one would forfeit the CLI's zero-native-dependency property.
-- Prefer Node built-ins (`node:child_process`, `node:fs`, `node:stream`) over Bun globals. Production and test code are free of `Bun.*` today; `bun:sqlite` (`agent/session-id.ts`, `agent/providers/{history,project-move}.ts`), the 6 tests that open it, and `main.ts`'s bun shebang are the deliberate remainder, retired by `cli-sqlite-hop` and the Node package task.
+- Node built-ins only (`node:child_process`, `node:fs`, `node:sqlite`, `node:stream`). Production and test code are free of every Bun surface; `main.ts`'s `#!/usr/bin/env bun` shebang is the last one, and it is dead — nothing executes the file through it — and the Node package task replaces the entry outright.
 - Shell boundary stays narrow: `cli/scripts/agent-wrapper.sh` is the durable shell artifact; new behavior should be TypeScript unless a specific task proves otherwise.
 
 ## Rules

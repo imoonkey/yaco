@@ -5,8 +5,8 @@
  *  operator's real `~/.claude`, `~/.codex`, or `~/.yaco` state.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -459,8 +459,8 @@ function stageCodexState5(
   rows: Array<{ id: string; cwd: string; agent_path?: string | null }>,
 ): string {
   const dbPath = join(fix.codexHome, "state_5.sqlite");
-  const db = new Database(dbPath);
-  db.run(`CREATE TABLE threads (
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE threads (
     id TEXT PRIMARY KEY,
     rollout_path TEXT NOT NULL,
     created_at INTEGER NOT NULL,
@@ -489,7 +489,7 @@ function stageCodexState5(
 }
 
 function readThreadsCwd(dbPath: string): Map<string, { cwd: string; agent_path: string | null }> {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const rows = db.prepare("SELECT id, cwd, agent_path FROM threads").all() as Array<
       { id: string; cwd: string; agent_path: string | null }
@@ -595,6 +595,80 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
 
     const counts = applyPlan(plan);
     expect(counts.codexThreads).toBe(0);
+  });
+
+  /** Older codex installs have a `state_5.sqlite` with a different shape, and
+   *  the planner probes `sqlite_master` before querying `threads`. The probe is
+   *  the one place where the two SQLite bindings disagree: a `.get()` that
+   *  matches nothing is `null` under `bun:sqlite` and `undefined` under
+   *  `node:sqlite`, so the ported `row !== null` answered *yes, present* for
+   *  every database without the table. */
+  it("is a no-op when the database has no threads table", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    mkdirSync(fix.codexHome, { recursive: true });
+    const db = new DatabaseSync(join(fix.codexHome, "state_5.sqlite"));
+    db.exec("CREATE TABLE something_else (id TEXT PRIMARY KEY, cwd TEXT)");
+    db.close();
+    stageYacoSession(fix, "alpha", fix.oldPath); // so totalHits > 0
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    expect(codexThreadItems(plan)).toEqual([]);
+    expect(applyPlan(plan).codexThreads).toBe(0);
+  });
+
+  /** The rewrite runs inside an explicit `BEGIN`/`COMMIT`, and a bucket that
+   *  fails part way through must leave the table exactly as it found it — a
+   *  half-rekeyed threads table is invisible history, not a partial move.
+   *
+   *  It also pins the transaction statements themselves. `bun:sqlite` ran them
+   *  through `db.run`, which `node:sqlite` does not have at all, so a missed
+   *  call site is a `TypeError` raised from inside the write path — where it is
+   *  furthest from any test that only ever reads.
+   *
+   *  Both rows carry the *same* `cwd`, so the planner buckets them together and
+   *  they share one transaction. And the trigger refuses the **second** update
+   *  whichever row that is, rather than naming a row: the planner's SELECT has
+   *  no `ORDER BY`, so a trigger keyed on an id proves atomicity only for the
+   *  scan order SQLite happens to pick, and passes a transaction-free
+   *  implementation under the other one. */
+  it("commits a bucket whole or not at all", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const dbPath = stageCodexState5(fix, [
+      { id: "t1", cwd: fix.oldPath },
+      { id: "t2", cwd: fix.oldPath },
+    ]);
+
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE updates (n INTEGER NOT NULL);
+      INSERT INTO updates (n) VALUES (0);
+      CREATE TRIGGER refuse_the_second BEFORE UPDATE OF cwd ON threads BEGIN
+        UPDATE updates SET n = n + 1;
+        SELECT CASE WHEN (SELECT n FROM updates) > 1
+          THEN RAISE(ABORT, 'refused') END;
+      END`);
+    db.close();
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      providerHomeOverrides: homes(fix),
+    });
+    const buckets = codexThreadItems(plan);
+    expect(buckets).toHaveLength(1);
+    expect([...buckets[0]!.ids].sort()).toEqual(["t1", "t2"]);
+
+    expect(() => applyPlan(plan)).toThrow(/refused/);
+
+    // One update did land before the refusal, so "unchanged" is only reachable
+    // by rolling back — not by never having written.
+    const after = readThreadsCwd(dbPath);
+    expect(after.get("t1")!.cwd).toBe(fix.oldPath);
+    expect(after.get("t2")!.cwd).toBe(fix.oldPath);
   });
 });
 

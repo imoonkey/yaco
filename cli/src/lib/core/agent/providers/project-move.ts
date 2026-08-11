@@ -23,7 +23,7 @@
  *  are idempotent: re-planning a tree that was already rekeyed yields no items.
  */
 
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import {
   existsSync,
   mkdirSync,
@@ -383,9 +383,9 @@ function planCodexThreads(inputs: ProjectMoveInputs): CodexThreadsPlanItem[] {
   const dbPath = join(providerHome(inputs, "codex", ".codex"), "state_5.sqlite");
   if (!existsSync(dbPath)) return [];
 
-  let db: Database;
+  let db: DatabaseSync;
   try {
-    db = new Database(dbPath, { readonly: true });
+    db = new DatabaseSync(dbPath, { readOnly: true });
   } catch {
     // Unreadable DB — silent no-op rather than aborting the whole move.
     return [];
@@ -450,18 +450,20 @@ function planCodexThreads(inputs: ProjectMoveInputs): CodexThreadsPlanItem[] {
   }
 }
 
-function hasThreadsTable(db: Database): boolean {
+function hasThreadsTable(db: DatabaseSync): boolean {
   try {
+    // A miss is `undefined`, not `null` — `node:sqlite` and `bun:sqlite` differ
+    // here, and a `!== null` test would call every table-less database a hit.
     const row = db.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'threads'",
     ).get();
-    return row !== null;
+    return row !== undefined;
   } catch {
     return false;
   }
 }
 
-function hasColumn(db: Database, table: string, column: string): boolean {
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   try {
     const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     return rows.some((r) => r.name === column);
@@ -489,16 +491,16 @@ function applyCodexThreads(
   items: CodexThreadsPlanItem[],
 ): number {
   if (!existsSync(dbPath)) return 0;
-  let db: Database;
+  let db: DatabaseSync;
   try {
-    db = new Database(dbPath); // read-write
+    db = new DatabaseSync(dbPath); // read-write
   } catch {
     return 0;
   }
   let updated = 0;
   try {
     const hasAgentPath = hasColumn(db, "threads", "agent_path");
-    db.run("BEGIN");
+    db.exec("BEGIN");
     try {
       const updateCwd = db.prepare(
         "UPDATE threads SET cwd = ? WHERE id = ? AND cwd = ?",
@@ -518,9 +520,9 @@ function applyCodexThreads(
           }
         }
       }
-      db.run("COMMIT");
+      db.exec("COMMIT");
     } catch (e) {
-      try { db.run("ROLLBACK"); } catch { /* ignore */ }
+      try { db.exec("ROLLBACK"); } catch { /* ignore */ }
       throw e;
     }
   } finally {
