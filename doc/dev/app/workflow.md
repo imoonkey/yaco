@@ -6,6 +6,28 @@
 - tmux (for Claude/Codex terminal attach)
 - yaco (Bun-based unified CLI; the `yaco agent` surface drives Claude/Codex session management — see `cli/`)
 
+### WhatsApp channel (optional, opt-in cost)
+
+`whatsapp-web.js` is an `optionalDependency` of `app/server`, and the repo-root
+`.puppeteerrc.cjs` sets `skipDownload: true` so its puppeteer does **not** pull
+~626 MB of Chromium during `npm install`. Everyone who never turns the channel
+on pays nothing: the module is behind an `await import()` and never loads.
+
+To actually use the channel, fetch a browser once:
+
+```bash
+npx puppeteer browsers install chrome     # or: export PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+```
+
+`.puppeteerrc.cjs` has to live at the repo root: puppeteer v24 reads
+`PUPPETEER_SKIP_DOWNLOAD` from the environment and otherwise resolves config
+with cosmiconfig walking up from `node_modules/puppeteer`. It never reads npm
+config, so `.npmrc` does nothing, and a workspace `package.json` is not on that
+walk.
+
+Installing with `--omit=optional` skips `whatsapp-web.js` entirely; switching the
+channel on then reports the install command instead of a stack trace.
+
 ## Project Structure
 
 ```

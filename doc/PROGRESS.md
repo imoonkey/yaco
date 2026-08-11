@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-08-10: WhatsApp loads lazily — 626 MB of Chromium leaves the default install
+
+**What changed:**
+- `whatsapp-web.js` is now behind `whatsapp/load.ts`'s cached `await import()`, an `optionalDependency`, and the repo-root `.puppeteerrc.cjs` sets `skipDownload: true` so its puppeteer stops downloading Chromium. Absent, it reports the install command instead of a stack trace. The task brief said to move the import site in `app/server/src/index.ts` into the `if (channels.whatsapp)` gate; that alone would not have worked, because `routes/whatsapp.ts` also imports `lib/whatsapp` statically — deferring the dependency itself is the one boundary that covers every entry point, and `index.ts` needed no change at all.
+- Deferring it split `initWhatsApp()` into a synchronous prologue and an async `startClient()`, which opened a window where a start is running but `client` is not yet published. Four rounds of independent Codex review found four lifecycle defects in that window and around it, each reproduced before it was fixed and each now pinned by a test that fails when the fix is removed: a stop racing the load launched a browser anyway; a retired client's events could resurrect a stopped channel; a restart during teardown either lost (before) or stole live resources (after the first fix); and `myJid` survived a session, letting a replacement answer a message before its own `ready`.
+- The answer is three collaborating pieces in `whatsapp/index.ts`: `endSession()` takes every piece of per-session state synchronously before any await, `stopGeneration` supersedes a start that is still invisible and silences a retired client's callbacks, and `releaseSession()` serializes the physical teardown (destroy, logout, `rm -rf SESSION_DIR`, taps) that a successor's identical browser profile directory has to wait for.
+
+**Why:**
+- The `if (channels.whatsapp)` gate gated initialization, not loading, so every clone-install user paid 626 MB in `~/.cache/puppeteer` and every boot pulled the graph in — for a channel that is off by default.
+- The lifecycle work was not scope creep for its own sake: three of the four defects were only reachable through windows this change opened, and the fourth (`myJid`) only through the restart path the third fix made work.
+
+**Key files:** `app/server/src/lib/whatsapp/{load.ts,index.ts}`, `app/server/src/lib/whatsapp/__tests__/`, `app/server/package.json`, `.puppeteerrc.cjs`, `package-lock.json`
+**Verification:** `scripts/verify.sh` green (825 server tests, 9 new). Every new test falsified by breaking its fix. Boot registry proven by child-process `require.cache` sampling, not timing — pre-fix it returns `["whatsapp-web.js","puppeteer","puppeteer-core"]`, post-fix `[]`. Live HTTP against a real server on a throwaway `YACO_HOME`: 0 Chrome with the channel off → real QR from WhatsApp plus 9 Chrome processes after `POST /enabled {true}` → 0 after `{false}`. An authenticated session and reply streaming were **not** exercised (needs a linked device; the operator declined to have their account used) — see `plan/all/cli-node-sdk/qa_whatsapp-lazy-load.md`.
+**Commits:** `43300179`, `f2e756e2`, `8bbcaeb3`, `b7bb57ba`, `6d20130a`
+**Next:** `app-package` (this was its blocking dependency).
+**Blockers:** None.
+
 ## 2026-08-10: per-skill skills links + the shipped set shrinks to 22 yaco-coupled skills
 
 **What changed:**
