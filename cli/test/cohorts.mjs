@@ -7,8 +7,11 @@
  *  from the tree — the drift that left `test/wrapper-resolve.test.ts` in no
  *  suite at all for a whole task.
  *
- *  Fail-closed: a test file that names neither runner, or both, is an error
- *  rather than a file that quietly runs nowhere.
+ *  Fail-closed in three places, because "this file ran somewhere" is the whole
+ *  point and each of these has silently been false: a file that names neither
+ *  runner or both, a suite that selects no files, and a cohort that reports
+ *  success without running what it was given — `vitest run` rejects a file with
+ *  no test, but `bun test` reports `0 pass / 0 fail` and exits 0.
  *
  *  Usage: `node test/cohorts.mjs unit|integration`
  *  Deleted by `cli-sqlite-hop`, which leaves `vitest run`.
@@ -26,6 +29,21 @@ const SUITES = {
   integration: (rel) => rel.startsWith("test/integration/"),
 };
 
+/** An `import`/`export … from "<runner>"` **declaration**, not a mention of one.
+ *  Anchored to the start of a line so a `*`-prefixed comment body cannot match,
+ *  and `[^;]` spans newlines so a braced multi-line import still does. */
+const declares = (source, runner) =>
+  new RegExp(`^\\s*(?:import|export)\\b[^;]*?from\\s*["']${runner}["']`, "m").test(source);
+
+/** Which cohort this file's source puts it in. Exactly one, or the tree is broken. */
+export function classify(source, rel = "<source>") {
+  const bun = declares(source, "bun:test");
+  const vitest = declares(source, "vitest");
+  if (bun && vitest) throw new Error(`${rel} imports both bun:test and vitest — pick one`);
+  if (!bun && !vitest) throw new Error(`${rel} imports neither bun:test nor vitest — it would run in no cohort`);
+  return bun ? "bun" : "vitest";
+}
+
 function testFiles(dir) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -36,50 +54,71 @@ function testFiles(dir) {
   return out;
 }
 
-/** Which runner the file imports. Exactly one, or the tree is broken. */
-function cohortOf(rel) {
-  const source = readFileSync(join(CLI_ROOT, rel), "utf-8");
-  const bun = /from\s*["']bun:test["']/.test(source);
-  const vitest = /from\s*["']vitest["']/.test(source);
-  if (bun && vitest) throw new Error(`${rel} imports both bun:test and vitest — pick one`);
-  if (!bun && !vitest) throw new Error(`${rel} imports neither bun:test nor vitest — it would run in no cohort`);
-  return bun ? "bun" : "vitest";
-}
-
-function run(label, command, args) {
+function announce(label, command, args) {
   console.error(`\n=== ${label}: ${command} ${args.slice(0, 3).join(" ")} … (${args.length} args)`);
-  const result = spawnSync(command, args, { cwd: CLI_ROOT, stdio: "inherit" });
-  return result.status === 0;
 }
 
-const suite = process.argv[2];
-if (!Object.hasOwn(SUITES, suite)) {
-  console.error(`usage: node test/cohorts.mjs ${Object.keys(SUITES).join("|")}`);
-  process.exit(2);
+/** Vitest fails a file that declares no test, so its exit code is the whole answer. */
+function runVitest(args) {
+  announce("vitest cohort", "npx", args);
+  return spawnSync("npx", args, { cwd: CLI_ROOT, stdio: "inherit" }).status === 0;
 }
 
-const files = testFiles(TEST_ROOT).filter(SUITES[suite]);
-const cohorts = { bun: [], vitest: [] };
-for (const file of files) cohorts[cohortOf(file)].push(file);
+/** `bun test` exits 0 on a file that declares no test, and a batch's summary
+ *  counts that file as run — so the only place it says whether *this* file
+ *  contributed anything is a one-file run's own summary. Hence one invocation
+ *  per file, and hence captured output rather than inherited.
+ *
+ *  `./` matters too: a bare path is a name *filter* to `bun test`, and an
+ *  `.integration.ts` file matches no filter at all. */
+function runBunFile(file) {
+  const args = ["test", `./${file}`];
+  announce("bun cohort", "bun", args);
+  const result = spawnSync("bun", args, { cwd: CLI_ROOT, encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+  const output = (result.stdout ?? "") + (result.stderr ?? "");
+  process.stderr.write(output);
+  if (result.status !== 0) return false;
 
-console.error(`${suite}: ${cohorts.vitest.length} vitest + ${cohorts.bun.length} bun = ${files.length} files`);
-
-// Integration files own tmux sessions, the installed binary, and real
-// checkouts; they have always run one at a time and still must.
-const sequential = suite === "integration";
-
-const results = [];
-if (cohorts.vitest.length) {
-  const args = ["vitest", "run", ...(sequential ? ["--no-file-parallelism"] : []), ...cohorts.vitest];
-  results.push(["vitest", run("vitest cohort", "npx", args)]);
+  const summary = /Ran (\d+) tests? across 1 file/.exec(output);
+  if (!summary) {
+    console.error(`bun cohort: ${file} exited 0 without a one-file run summary — refusing to call that a pass`);
+    return false;
+  }
+  if (Number(summary[1]) === 0) {
+    console.error(`bun cohort: ${file} ran 0 tests`);
+    return false;
+  }
+  return true;
 }
-// `./` matters: a bare path is a name *filter* to `bun test`, and an
-// `.integration.ts` file matches no filter at all.
-const bunPaths = cohorts.bun.map((file) => `./${file}`);
-for (const batch of bunPaths.length === 0 ? [] : sequential ? bunPaths.map((f) => [f]) : [bunPaths]) {
-  results.push(["bun", run("bun cohort", "bun", ["test", ...batch])]);
+
+function main(suite) {
+  if (!Object.hasOwn(SUITES, suite)) {
+    console.error(`usage: node test/cohorts.mjs ${Object.keys(SUITES).join("|")}`);
+    process.exit(2);
+  }
+
+  const files = testFiles(TEST_ROOT).filter(SUITES[suite]);
+  if (files.length === 0) throw new Error(`${suite}: no test files found — the suite would pass by running nothing`);
+
+  const cohorts = { bun: [], vitest: [] };
+  for (const file of files) cohorts[classify(readFileSync(join(CLI_ROOT, file), "utf-8"), file)].push(file);
+
+  console.error(`${suite}: ${cohorts.vitest.length} vitest + ${cohorts.bun.length} bun = ${files.length} files`);
+
+  // Integration files own tmux sessions, the installed binary, and real
+  // checkouts; they have always run one at a time and still must. (The bun
+  // cohort runs one file per process regardless — see `runBunFile`.)
+  const sequential = suite === "integration";
+
+  const results = [];
+  if (cohorts.vitest.length) {
+    results.push(["vitest", runVitest(["vitest", "run", ...(sequential ? ["--no-file-parallelism"] : []), ...cohorts.vitest])]);
+  }
+  for (const file of cohorts.bun) results.push(["bun", runBunFile(file)]);
+
+  console.error(`\n=== ${suite} cohorts`);
+  for (const [name, ok] of results) console.error(`  ${name}: ${ok ? "pass" : "FAIL"}`);
+  process.exit(results.every(([, ok]) => ok) ? 0 : 1);
 }
 
-console.error(`\n=== ${suite} cohorts`);
-for (const [name, ok] of results) console.error(`  ${name}: ${ok ? "pass" : "FAIL"}`);
-process.exit(results.every(([, ok]) => ok) ? 0 : 1);
+if (import.meta.main) main(process.argv[2]);

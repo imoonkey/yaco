@@ -119,9 +119,14 @@ bun run test:integration  # reinstalls CLI, then tmux-backed integration tests
 
 The suite is mid-migration to Vitest. Which runner owns a file is a fact *about
 the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
-reads that, runs both cohorts, and **fails closed** on a file that names neither
-or both — so a new test cannot land in no suite. Both `test:unit` and
-`test:integration` are that script; there is no list to keep in sync.
+reads that — from an **import declaration**, not from prose that mentions a
+runner — runs both cohorts, and **fails closed** three ways: a file naming
+neither runner or both, a suite selecting no files, and a bun-cohort file whose
+own run summary reports 0 tests (`bun test` exits 0 on a file that declares
+none; `vitest run` rejects it). So a new test cannot land in no suite, and a
+cohort cannot pass by running nothing. Both `test:unit` and `test:integration`
+are that script; there is no list to keep in sync, and `test/cohorts.test.ts`
+pins the partition rule.
 
 Only 6 files are left on Bun, all of them database fixtures that open
 `bun:sqlite`: `test/{history,session-id,summary}.test.ts`,
