@@ -472,6 +472,22 @@
 **Next:** the app renders mermaid on a white card in dark theme — visible in a dark-theme markdown preview, so no diagram shot is in the set.
 **Blockers:** None.
 
+## 2026-08-11: both themes ship, selected by `<picture>`
+
+**What changed:**
+- Every asset was re-captured in the light theme and the set renamed to explicit pairs — `doc/assets/<name>-{light,dark}.{png,gif}`, 9 pairs including two walkthrough GIFs. README and `tour.md` select between them with `<picture><source media="(prefers-color-scheme: dark)">` and the light file as the `<img>` fallback.
+- Captions and alt text were rewritten to be true of *both* images in a pair — the two sets were captured hours apart, so the session lineage and notification rows differ, and no reader ever sees them side by side.
+- [doc/dev/app/workflow.md](dev/app/workflow.md#refreshing-the-screenshots) now documents how to refresh the set: viewport and scale, the `localStorage['workflow-theme']` seed, the yaco-only/English-only content rules, and the media-query caveat.
+
+**Why:**
+- Comparing all four combinations (GitHub light/dark × screenshot light/dark) showed the dark shot never looks wrong but the light shot is more legible at README width, and the light theme is what most GitHub readers are in. Shipping both removes the tradeoff for anyone on the default "sync with system" setting.
+- The caveat that survives: `prefers-color-scheme` reads the browser/OS preference, **not** GitHub's own theme setting, so a reader who pins GitHub to dark while their OS is light gets the light image on a dark page.
+
+**Key files:** `README.md`, `doc/main/app/tour.md`, `doc/dev/app/workflow.md`, `doc/assets/*`
+**Verification:** rendered both docs headless under `colorScheme: light` and `dark` — all 7 README `<picture>`s resolve to the matching set (`img.currentSrc` asserted per scheme), zero broken images either way; no unreferenced files left in `doc/assets/`.
+**Next:** —
+**Blockers:** None.
+
 ## 2026-08-10: per-skill skills links + the shipped set shrinks to 22 yaco-coupled skills
 
 **What changed:**

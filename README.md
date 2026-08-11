@@ -21,7 +21,10 @@ and a browser IDE to watch it all happen — from any device you own.**
 </div>
 
 <p align="center">
-  <img src="doc/assets/hero.png" alt="The YACO app: file tree and git on the left, the task graph beside a live Claude Code session in the middle, the agent session tree on the right" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/assets/hero-dark.png">
+    <img src="doc/assets/hero-light.png" alt="The YACO app: file tree and git on the left, the task graph beside a live Claude Code session in the middle, the agent session tree on the right" width="100%">
+  </picture>
 </p>
 
 YACO is an **orchestration layer, not an agent** — it never talks to a model.
@@ -140,11 +143,14 @@ multi-agent works here: your agents run these same commands to spawn and
 coordinate sub-agents, so every session an agent creates is one you can list,
 capture, and attach to. No hidden recursion, no privileged internal API.
 
-<img src="doc/assets/agent-tree.png" alt="yaco agent list and yaco agent status in a terminal, beside the app's session tree showing a parent orchestrator, its worktree worker, and that worker's Codex reviewer" width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/assets/agent-tree-dark.png">
+  <img src="doc/assets/agent-tree-light.png" alt="yaco agent list and yaco agent status in a terminal, beside the app's session tree showing an orchestrator and the worker it spawned in a worktree" width="100%">
+</picture>
 
-The same three sessions, from the CLI and from the app. `spawnedBy: agent` and
-`parentSession` are all the lineage there is — an orchestrator that started a
-worker, which started its own Codex reviewer.
+The same sessions, from the CLI and from the app. `spawnedBy: agent` and
+`parentSession` are all the lineage there is — here an orchestrator that started
+a worker in its own worktree, and whatever that worker starts in turn.
 
 ## Layer 2 — skills and the workflow
 
@@ -192,8 +198,8 @@ same loop.
 
 <table>
 <tr>
-<td width="62%"><img src="doc/assets/tasks.png" alt="The task graph: milestones with their tasks, dependency edges, and per-task state" width="100%"></td>
-<td width="38%"><img src="doc/assets/worktrees.png" alt="The file explorer's worktree picker listing main and two task branches" width="100%"></td>
+<td width="62%"><picture><source media="(prefers-color-scheme: dark)" srcset="doc/assets/tasks-dark.png"><img src="doc/assets/tasks-light.png" alt="The task graph: milestones with their tasks, dependency edges, and per-task state" width="100%"></picture></td>
+<td width="38%"><picture><source media="(prefers-color-scheme: dark)" srcset="doc/assets/worktrees-dark.png"><img src="doc/assets/worktrees-light.png" alt="The file explorer's worktree picker listing main and two task branches" width="100%"></picture></td>
 </tr>
 <tr>
 <td><b>The task graph is a file</b>, and the app renders it — states, worksets,
@@ -223,12 +229,15 @@ a traditional IDE doesn't have:
   the `/design` and `/discuss` review loops.
 - **The task graph, live.** The plan under `plan/tasks/` rendered as a graph.
 
-<img src="doc/assets/walkthrough.gif" alt="Opening the task graph, splitting the working area, and attaching to a running agent that is editing files" width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/assets/walkthrough-dark.gif">
+  <img src="doc/assets/walkthrough-light.gif" alt="Opening the task graph, switching to the dependency view, splitting the working area, and attaching to an agent session" width="100%">
+</picture>
 
 <table>
 <tr>
-<td width="58%"><img src="doc/assets/notifications.png" alt="The notification panel: a task marked done, and four sessions waiting on a reply" width="100%"></td>
-<td width="42%"><img src="doc/assets/mobile.png" alt="The same agent session on a phone, with a terminal key bar" width="100%"></td>
+<td width="58%"><picture><source media="(prefers-color-scheme: dark)" srcset="doc/assets/notifications-dark.png"><img src="doc/assets/notifications-light.png" alt="The notification panel: finished tasks, and sessions waiting on a reply" width="100%"></picture></td>
+<td width="42%"><picture><source media="(prefers-color-scheme: dark)" srcset="doc/assets/mobile-dark.png"><img src="doc/assets/mobile-light.png" alt="The same agent session on a phone, with a terminal key bar" width="100%"></picture></td>
 </tr>
 <tr>
 <td><b>It tells you when it's your turn.</b> Sessions and tasks raise their own

@@ -287,6 +287,14 @@ that one path has to be right both in a checkout and inside the published
 
 Vite empties the output directory on every build, watch rebuilds included, so siblings never go stale — a missing `.br`/`.gz` degrades to identity encoding, it is never served as the wrong bytes.
 
+## Refreshing the screenshots
+
+`doc/assets/` feeds the root README and [doc/main/app/tour.md](../../main/app/tour.md). Every shot ships **twice** — `<name>-light.png` and `<name>-dark.png` — captured against a running instance at 1440×900 with `deviceScaleFactor: 2` (mobile: 390×844 @3), then downscaled (hero 1600px wide, wide panels 1200px, phone 420px). Force the theme by seeding `localStorage['workflow-theme']` before first paint; the app reads it in `index.html`.
+
+Two content rules the captures have to satisfy, both easiest to enforce in-page before the shot: **only this repo** (hide other project rows in the sidebar) and **English only** (drop `.notif-row`s from other projects, and check the attached session's transcript — a session that was prompted in another language will show it).
+
+The pair is selected by `<picture><source media="(prefers-color-scheme: dark)">`, with the light file as the `<img>` fallback. **That media query reads the browser/OS preference, not the reader's GitHub theme setting** — a reader who pins GitHub to dark while their OS stays light gets the light image on a dark page. That mismatch is accepted; the alternative (one theme for everyone) is worse for the majority who leave GitHub on "sync with system". A caption must therefore be true of *both* images in its pair, since no reader sees them side by side.
+
 ## Testing
 
 ```bash
