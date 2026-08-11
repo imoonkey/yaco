@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-11: channel message reads run in process
+
+**What changed:**
+- `readMessageRows(session, filter)` (`cli/src/lib/core/agent/providers/message-read.ts`) is the one message-inventory read: one pass over a session's provider log, a stable absolute index per message, and the rows a `role`/`type`/`range` filter keeps. `yaco agent messages` composes it and keeps only its projections (`--index`, `--summary`, `--preview`/`--ts`, rendering).
+- New export `@yaco/cli/core/agent/messages`. `app/server`'s channel `/last` (`app/server/src/lib/channels/agent-messages.ts`) calls it in process, replacing `1 + n` CLI subprocesses — a metadata sweep plus one child per kept row, each re-reading the same log. `/messages` still forwards to the CLI: one spawn, and what it returns is the command's text rendering.
+- `followOutput` moved from `providers/output.ts` to a new `providers/follow.ts`. It polls, and a polling loop is banned from every exported closure; the message read reaches `output.ts` for provider log paths.
+- One error message changed: a provider with no message reader reports `has no registered adapter`, the string the command's own `hasProvider` pre-check produced before it was deleted. `messagesForProvider` is now the single answer to which reader a provider uses.
+- The read yields every 256 KB and applies `role`/`type` as it scans. `app/server/tsconfig.json` gained `allowImportingTsExtensions`, retiring 38 TS5097 errors on CLI modules the server reaches.
+
+**Why:**
+- Phase-2 cutover 4 of the `cli-node-sdk` design. `/last` on a p50 log cost ~330 ms of subprocess wall time to read a file already on disk; the same answer in process is ~4 ms.
+- Yielding on bytes rather than lines because a JSONL record is not a bounded unit: the largest log in the local corpus is 38 MB in 854 records, sixteen over a megabyte. A line budget looked fine on synthetic small records and did nothing on real ones — caught by review, not by the first benchmark.
+- Two guards on the handle (the app's `validateSessionName`, then the CLI's stricter `validateName`) because the retired route ran both and each owns a different shipped reply body.
+
+**Key files:** `cli/src/lib/core/agent/providers/{message-read,follow,output}.ts`, `cli/src/commands/agent/messages.ts`, `cli/package.json`, `cli/test/{agent-messages-parity.test.ts,bench/message-read-bench.mjs,unit/export-audit.test.ts}`, `app/server/src/lib/channels/{agent-messages.ts,router.ts}`, `app/server/src/lib/agent.ts`
+**Verification:** `bash scripts/verify.sh` green (CLI 1280 tests incl. the export audit and the pack smoke; server 841 across 50 files). `cli/test/agent-messages-parity.test.ts` runs the retired `1+n` algorithm against the real built CLI and deep-equals rows and failure bodies. Route medians recorded in `plan/all/cli-node-sdk/qa-message-read-cutover.md`. Cross-provider Codex review over five rounds.
+**Commit:** 97ade32a..HEAD
+**Next:** the remaining Phase-2 cutovers (history, task, summary reads).
+
 ## 2026-08-11: the history read is measured against rule 5, and the first instrument was wrong
 
 **What changed:**

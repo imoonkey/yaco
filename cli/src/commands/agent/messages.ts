@@ -8,9 +8,13 @@
  *  index. Text rendering is compact (single-letter role, human-readable chars,
  *  first-absolute-then-relative timestamps) while `--json` stays exact. */
 
-import { readFile } from "node:fs/promises";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
+import {
+  readMessageRows,
+  type MessageFilter,
+  type MessagesRange,
+} from "../../lib/core/agent/providers/message-read.ts";
+import { isErr } from "../../lib/core/result.ts";
 import { validateName, type SessionState } from "../../lib/core/agent/model.ts";
 import { readState } from "../../lib/core/agent/session-state.ts";
 import type {
@@ -18,8 +22,6 @@ import type {
   MessageMeta,
   MessageRole,
   MessagesSummary,
-  ParsedMessage,
-  ProviderMessages,
 } from "../../lib/core/agent/providers/types.ts";
 
 export const MESSAGES_USAGE =
@@ -30,11 +32,6 @@ export const MESSAGES_USAGE =
 
 const PREVIEW_DEFAULT = 100;
 const PREVIEW_MAX = 1000;
-
-export interface MessagesRange {
-  from: number | null;
-  to: number | null;
-}
 
 export type MessagesMode =
   | { kind: "meta"; role?: MessageRole; type?: string; range?: MessagesRange; preview?: number; ts: boolean }
@@ -134,110 +131,59 @@ export function parseMessagesArgs(args: string[]): MessagesArgs {
   return { handle, mode: { kind: "meta", role, type, range, preview, ts } };
 }
 
-/** Resolve a live session's message-capable provider, mirroring resolveOutput.
- *  validateName runs first (typed USAGE) so a traversal handle never reaches
- *  readState. */
-export function resolveMessages(handle: string): { state: SessionState; messages: ProviderMessages } {
+/** Resolve a live session's state, mirroring resolveOutput. validateName runs
+ *  first (typed USAGE) so a traversal handle never reaches readState. Whether
+ *  the provider has a message reader is `readMessageRows`' answer — one
+ *  authority, so the CLI and the app cannot disagree about it. */
+export function resolveMessages(handle: string): SessionState {
   validateName(handle);
   const state = readState(handle);
   if (!state) throw new CliError(ErrCode.NOT_FOUND, `no live session named "${handle}"`);
-  if (!hasProvider(state.provider)) {
-    throw new CliError(ErrCode.INVALID, `provider "${state.provider}" has no registered adapter`);
-  }
-  const messages = getProvider(state.provider).messages;
-  if (!messages) {
-    throw new CliError(ErrCode.INVALID, `provider "${state.provider}" does not support message inspection`);
-  }
-  return { state, messages };
-}
-
-interface IndexedMessage {
-  index: number;
-  msg: ParsedMessage;
+  return state;
 }
 
 function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function toMeta(row: IndexedMessage, preview: number | undefined, ts: boolean): MessageMeta {
-  const meta: MessageMeta = { index: row.index, role: row.msg.role, types: row.msg.types, chars: row.msg.text.length };
-  if (ts && row.msg.ts !== null) meta.ts = row.msg.ts;
-  if (preview !== undefined) meta.preview = collapse(row.msg.text).slice(0, preview);
+function toMeta(row: MessageFull, preview: number | undefined, ts: boolean): MessageMeta {
+  const meta: MessageMeta = { index: row.index, role: row.role, types: row.types, chars: row.chars };
+  if (ts && row.ts !== null) meta.ts = row.ts;
+  if (preview !== undefined) meta.preview = collapse(row.text).slice(0, preview);
   return meta;
 }
 
-function toFull(row: IndexedMessage): MessageFull {
-  return {
-    index: row.index,
-    role: row.msg.role,
-    types: row.msg.types,
-    chars: row.msg.text.length,
-    ts: row.msg.ts,
-    text: row.msg.text,
-  };
-}
-
-/** Inclusive absolute-index window; null bounds are open, negatives count from
- *  the end, and the result is clamped to [0,n). An empty window yields []. */
-function applyRange(rows: IndexedMessage[], range: MessagesRange, n: number): IndexedMessage[] {
-  let from = range.from ?? 0;
-  let to = range.to ?? n - 1;
-  if (from < 0) from += n;
-  if (to < 0) to += n;
-  from = Math.max(0, from);
-  to = Math.min(n - 1, to);
-  return rows.filter((r) => r.index >= from && r.index <= to);
-}
-
-function matchesType(types: string[], t: string): boolean {
-  return types.some((x) => x === t || x.startsWith(`${t}:`));
+/** Which rows the shared read should return for a mode. `--index` and
+ *  `--summary` are computed over the whole inventory, so they filter nothing. */
+function filterFor(mode: MessagesMode): MessageFilter {
+  return mode.kind === "meta" ? { role: mode.role, type: mode.type, range: mode.range } : {};
 }
 
 export async function runMessages(args: MessagesArgs): Promise<MessageMeta[] | MessageFull | MessagesSummary> {
-  const { state, messages } = resolveMessages(args.handle);
-  const path = await messages.resolveLogPath(state);
-  if (!path) throw new CliError(ErrCode.NOT_FOUND, `no message log yet for "${args.handle}"`);
+  const mode = args.mode;
+  const state = resolveMessages(args.handle);
+  const rows = await readMessageRows(state, filterFor(mode));
+  if (isErr(rows)) throw new CliError(rows.code as ErrCode, rows.message, rows.details);
 
-  let content: string;
-  try {
-    content = await readFile(path, "utf-8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") {
-      throw new CliError(ErrCode.NOT_FOUND, `message log for "${args.handle}" not found`);
-    }
-    throw new CliError(ErrCode.IO, `failed to read message log for "${args.handle}"`);
-  }
+  if (mode.kind === "summary") return summarize(rows.value);
 
-  const rows: IndexedMessage[] = [];
-  for (const line of content.split("\n")) {
-    const msg = messages.parseLine(line);
-    if (msg) rows.push({ index: rows.length, msg });
-  }
-
-  if (args.mode.kind === "summary") return summarize(rows);
-
-  if (args.mode.kind === "index") {
-    const n = rows.length;
-    const i = args.mode.index < 0 ? args.mode.index + n : args.mode.index;
-    const row = rows[i];
+  if (mode.kind === "index") {
+    const n = rows.value.length;
+    const i = mode.index < 0 ? mode.index + n : mode.index;
+    const row = rows.value[i];
     if (i < 0 || !row) {
-      throw new CliError(ErrCode.NOT_FOUND, `index ${args.mode.index} out of range (${n} message${n === 1 ? "" : "s"})`);
+      throw new CliError(ErrCode.NOT_FOUND, `index ${mode.index} out of range (${n} message${n === 1 ? "" : "s"})`);
     }
-    return toFull(row);
+    return row;
   }
 
-  const m = args.mode;
-  let selected = m.range ? applyRange(rows, m.range, rows.length) : rows;
-  if (m.role) selected = selected.filter((r) => r.msg.role === m.role);
-  if (m.type) selected = selected.filter((r) => matchesType(r.msg.types, m.type!));
-  return selected.map((r) => toMeta(r, m.preview, m.ts));
+  return rows.value.map((r) => toMeta(r, mode.preview, mode.ts));
 }
 
 /** Constant-size session orientation: role/kind/tool histograms, the empty-row
  *  noise floor, and the prompt-landmark indices (real user messages — role
  *  user, not a tool_result). */
-function summarize(rows: IndexedMessage[]): MessagesSummary {
+function summarize(rows: MessageFull[]): MessagesSummary {
   const roles = { assistant: 0, user: 0 };
   const kinds: Record<string, number> = {};
   const tools: Record<string, number> = {};
@@ -246,23 +192,23 @@ function summarize(rows: IndexedMessage[]): MessagesSummary {
   let chars = 0;
   let toolResults = 0;
 
-  for (const { index, msg } of rows) {
-    roles[msg.role]++;
-    chars += msg.text.length;
-    if (msg.text.length === 0) empty++;
+  for (const row of rows) {
+    roles[row.role]++;
+    chars += row.chars;
+    if (row.chars === 0) empty++;
 
-    const bucket = (msg.types[0] ?? "empty").split(":")[0]!;
+    const bucket = (row.types[0] ?? "empty").split(":")[0]!;
     kinds[bucket] = (kinds[bucket] ?? 0) + 1;
-    for (const t of msg.types) {
+    for (const t of row.types) {
       if (t.startsWith("tool_use:")) {
         const name = t.slice("tool_use:".length);
         tools[name] = (tools[name] ?? 0) + 1;
       }
     }
 
-    if (msg.role === "user") {
-      if (msg.types.includes("tool_result")) toolResults++;
-      else prompts.push(index);
+    if (row.role === "user") {
+      if (row.types.includes("tool_result")) toolResults++;
+      else prompts.push(row.index);
     }
   }
 

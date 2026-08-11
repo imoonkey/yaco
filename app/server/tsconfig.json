@@ -8,6 +8,11 @@
     // CLI edit needs no rebuild — and its typecheck has to resolve the same
     // files the runtime does, or it would type-check a build that may not exist.
     "customConditions": ["development"],
+    // ...which means the CLI's own `.ts`-suffixed relative imports are part of
+    // this program. They are legal here — `noEmit` is on, so nothing is being
+    // asked to rewrite them — and without this every CLI module the server
+    // reaches reports TS5097 instead of its real type errors.
+    "allowImportingTsExtensions": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

@@ -1,17 +1,16 @@
-/** Provider output cursor resolution, line classification, and the shared
- *  output follower.
+/** Provider output cursor resolution and line classification.
  *
  *  Claude and Codex persist a structured per-turn JSONL log. This module
- *  co-locates each provider's cursor resolution and line classification (the
- *  `ProviderOutput` capability, mirroring `claudeHistory()` / `codexHistory()`
- *  in `history.ts`) and the provider-agnostic `followOutput()` tailer that the
- *  `output-follow` CLI surface drives.
+ *  co-locates each provider's log location, cursor resolution and line
+ *  classification (the `ProviderOutput` capability, mirroring `claudeHistory()`
+ *  / `codexHistory()` in `history.ts`), so one place knows where a provider
+ *  writes and how to read a line of it.
  *
- *  The follower owns `stat`, byte-range reads, partial-line buffering, and
- *  offset advancement; providers only resolve the cursor and classify complete
- *  lines. Keeping the log location and parsing here is what lets `app/server`
- *  consume `yaco agent output-cursor|output-follow` instead of opening
- *  `~/.claude` / `~/.codex` itself. */
+ *  It is the read half only: the polling tailer that drives `output-follow`
+ *  lives in `follow.ts`, because a polling loop is banned from every closure
+ *  `package.json#exports` publishes and this module is reached from the
+ *  exported message read (`message-read.ts`). -> See:
+ *  `doc/main/cli/exports.md`. */
 
 import { open, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -419,55 +418,13 @@ export async function turnStateFromTranscript(session: SessionState): Promise<Tr
   return null;
 }
 
-// -- Shared output follower --
+// -- Byte-range reads (shared with the follower in follow.ts) --
 
-/** Why a follow stream stopped. `timeout` is intentionally NOT a value here:
- *  it is never a provider classification event, and the defensive lifetime cap
- *  surfaces as `max-lifetime`, not `timeout`. */
-export type FollowEndReason = "final" | "max-lifetime" | "error";
-
-/** One NDJSON frame written by the follower. `nextOffset` is the absolute byte
- *  offset just past the last fully-consumed line, safe to pass back as the next
- *  `--offset` to resume without reprocessing. */
-export type FollowFrame =
-  | { type: "event"; event: AgentOutputEvent; nextOffset: number }
-  | { type: "end"; reason: FollowEndReason; nextOffset: number };
-
-export interface FollowParams {
-  /** Resolved provider log path (the opaque cursor token). */
-  sourcePath: string;
-  /** Byte offset to begin reading from. */
-  startOffset: number;
-  /** Provider line classifier — at most one event per complete line. */
-  classify: (line: string) => AgentOutputEvent | null;
-  /** Sink for each NDJSON frame. */
-  emit: (frame: FollowFrame) => void;
-  /** Poll interval while the log is quiet (default 250ms). */
-  pollMs?: number;
-  /** Defensive cap to reap orphan tailers (default 30m). */
-  maxLifetimeMs?: number;
-  /** Injectable clock for deterministic tests. */
-  now?: () => number;
-  /** Injectable sleep for deterministic tests. */
-  sleep?: (ms: number) => Promise<void>;
-  /** Cooperative cancel — caller termination flips `aborted`. */
-  signal?: { aborted: boolean };
-  /** Flush a complete-but-unterminated trailing record on the terminal `end`.
-   *  Off for the streaming `output-follow` surface (a partial line may still be
-   *  growing). On for the completion-wait drain, where a session that died after
-   *  writing its final record but before the closing newline must still surface
-   *  that final rather than read as "ended without a final". */
-  flushPendingOnEnd?: boolean;
-}
-
-export const DEFAULT_POLL_MS = 250;
-export const DEFAULT_MAX_LIFETIME_MS = 30 * 60_000;
-
-const NEWLINE = 0x0a;
+export const NEWLINE = 0x0a;
 
 /** Read bytes `[from, to)` from a file as a Buffer; short reads (file shrank
  *  mid-read) return only the bytes actually read. */
-async function readRange(path: string, from: number, to: number): Promise<Buffer> {
+export async function readRange(path: string, from: number, to: number): Promise<Buffer> {
   const fh = await open(path, "r");
   try {
     const len = to - from;
@@ -476,90 +433,5 @@ async function readRange(path: string, from: number, to: number): Promise<Buffer
     return res.bytesRead === len ? buf : buf.subarray(0, res.bytesRead);
   } finally {
     await fh.close();
-  }
-}
-
-/** Tail a provider log from `startOffset`, classifying each complete line into
- *  `event` frames and ending with one `end` frame. Buffers partial lines across
- *  reads in byte space (a UTF-8 multibyte char never contains a newline byte),
- *  so `nextOffset` is always byte-accurate. Terminates on the first `final`
- *  event, on the defensive lifetime cap, on caller abort, or on a read error. */
-export async function followOutput(p: FollowParams): Promise<void> {
-  const pollMs = p.pollMs ?? DEFAULT_POLL_MS;
-  const maxLifetimeMs = p.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS;
-  const now = p.now ?? (() => Date.now());
-  const sleep = p.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
-  const start = now();
-
-  // Defensive: a non-finite or negative startOffset would corrupt nextOffset
-  // accounting. Callers validate `--offset` before this point, but clamp here
-  // so the follower can never emit nextOffset:null.
-  let readPos =
-    Number.isFinite(p.startOffset) && p.startOffset > 0 ? Math.floor(p.startOffset) : 0;
-  let lineOffset = readPos; // byte offset just past the last consumed line
-  let pending: Buffer = Buffer.alloc(0); // unconsumed bytes of the current partial line
-
-  const end = (reason: FollowEndReason) => {
-    // A complete record written without its closing newline (e.g. a final the
-    // session flushed just before dying) is still sitting in `pending`, never
-    // classified by the newline loop. On an opt-in terminal end, classify it
-    // once. An incomplete record parses to null, so this is safe even mid-write.
-    if (p.flushPendingOnEnd && pending.length > 0) {
-      const line = pending.toString("utf-8").replace(/\r$/, "").trim();
-      if (line) {
-        const event = p.classify(line);
-        if (event) p.emit({ type: "event", event, nextOffset: lineOffset + pending.length });
-      }
-    }
-    p.emit({ type: "end", reason, nextOffset: lineOffset });
-  };
-
-  while (true) {
-    if (p.signal?.aborted) return end("max-lifetime");
-    if (now() - start >= maxLifetimeMs) return end("max-lifetime");
-
-    let size: number;
-    try {
-      size = (await stat(p.sourcePath)).size;
-    } catch {
-      return end("error");
-    }
-
-    if (size < readPos) {
-      // File truncated/rotated under us — restart from the new head.
-      readPos = 0;
-      lineOffset = 0;
-      pending = Buffer.alloc(0);
-    }
-    if (size <= readPos) {
-      await sleep(pollMs);
-      continue;
-    }
-
-    let chunk: Buffer;
-    try {
-      chunk = await readRange(p.sourcePath, readPos, size);
-    } catch {
-      // open/read can fail after a successful stat (rotation, permissions).
-      // Surface it as an end frame, never as a bubbled exception that would
-      // corrupt the NDJSON stream once frames have started.
-      return end("error");
-    }
-    readPos += chunk.length;
-    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
-
-    let nl: number;
-    while ((nl = pending.indexOf(NEWLINE)) >= 0) {
-      const lineBuf = pending.subarray(0, nl);
-      lineOffset += nl + 1; // line bytes + the newline
-      pending = pending.subarray(nl + 1);
-      const line = lineBuf.toString("utf-8").replace(/\r$/, "").trim();
-      if (!line) continue;
-      // At most one event per complete line keeps nextOffset unambiguous.
-      const event = p.classify(line);
-      if (!event) continue;
-      p.emit({ type: "event", event, nextOffset: lineOffset });
-      if (event.kind === "final") return end("final");
-    }
   }
 }

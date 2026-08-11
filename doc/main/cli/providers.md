@@ -180,9 +180,12 @@ Frame shapes:
 
 Contract details:
 
-- The shared follower (`followOutput`) owns `stat`, byte-range reads,
-  byte-space partial-line buffering, and offset advancement. Providers only
-  `resolveCursor` and `classifyLine`.
+- The shared follower (`followOutput`, in `providers/follow.ts`) owns `stat`,
+  byte-range reads, byte-space partial-line buffering, and offset advancement.
+  Providers only `resolveCursor` and `classifyLine`. It is a *sibling* of
+  `output.ts`, not part of it: it polls, and a polling loop is banned from every
+  exported closure — while `output.ts` is reached from the exported message read.
+  -> See: [exports.md](exports.md#the-rules)
 - `classifyLine` returns **at most one** `AgentOutputEvent` per complete line
   (`AgentOutputEvent | null`), so each event maps to a unique `nextOffset` and
   no same-line event is lost across a reconnect. Claude folds lead-in text into
@@ -203,7 +206,7 @@ Contract details:
   provider/sessionId → `INVALID`. `--help`/`-h` is honored only as a standalone
   help request.
 
--> See: [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts), [src/commands/agent/output.ts](../../../cli/src/commands/agent/output.ts)
+-> See: [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts), [src/lib/core/agent/providers/follow.ts](../../../cli/src/lib/core/agent/providers/follow.ts), [src/commands/agent/output.ts](../../../cli/src/commands/agent/output.ts)
 
 ## Message Inventory
 
@@ -216,6 +219,14 @@ index. Claude and Codex both declare it
 It serves `agent messages` so an orchestrator can navigate a session's history
 without PTY `capture` (debug-only) — the structured **final** message still
 comes from `wait` / `--wait`.
+
+The read itself is **shared, not command-owned**. `readMessageRows(session,
+filter)` in `providers/message-read.ts` does one read of the log, indexes every
+message, and returns the rows a filter keeps; the command adds only the
+projections (`--meta`, `--index`, `--summary`, rendering). `app/server` calls the
+same function in process through `@yaco/cli/core/agent/messages`, so the
+filtering and index semantics have exactly one implementation.
+-> See: [exports.md](exports.md), [../app/backend/libs.md](../app/backend/libs.md)
 
 ```text
 yaco agent messages <name> [--meta] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
@@ -250,6 +261,11 @@ Contract details:
   `preview = collapseWhitespace(text).slice(0, N)`. Path resolution reuses the
   `output` log-path helpers (`resolveClaudeLogPath` / `resolveCodexLogPath`)
   and the pending-session guard.
+- **Event-loop budget.** The scan yields every 256 KB consumed, and `--role` /
+  `--type` are applied as it goes so only kept rows are materialized. Bytes, not
+  lines: a real 38 MB log here is 854 records, sixteen of them over a megabyte.
+  What that cannot bound is one record's own parse — measured 2 ms for a 1.36 MB
+  record. -> See: [test/bench/message-read-bench.mjs](../../../cli/test/bench/message-read-bench.mjs)
 - **Text rendering** is compact (single-letter role, human-readable `chars`,
   first-absolute-then-relative `--ts` deltas with a multi-day date prefix);
   `--json` stays exact (absolute ISO `ts`).
@@ -258,7 +274,7 @@ Contract details:
   deleted log → `NOT_FOUND`; other read failure → `IO`. `--index` out of range →
   `NOT_FOUND`.
 
--> See: [src/lib/core/agent/providers/messages.ts](../../../cli/src/lib/core/agent/providers/messages.ts), [src/commands/agent/messages.ts](../../../cli/src/commands/agent/messages.ts)
+-> See: [src/lib/core/agent/providers/messages.ts](../../../cli/src/lib/core/agent/providers/messages.ts), [src/lib/core/agent/providers/message-read.ts](../../../cli/src/lib/core/agent/providers/message-read.ts), [src/commands/agent/messages.ts](../../../cli/src/commands/agent/messages.ts)
 
 ## Project Move
 
