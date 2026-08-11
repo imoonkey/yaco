@@ -293,6 +293,15 @@ Vite empties the output directory on every build, watch rebuilds included, so si
 
 Two content rules the captures have to satisfy, both easiest to enforce in-page before the shot: **only this repo** (hide other project rows in the sidebar) and **English only** (drop `.notif-row`s from other projects, and check the attached session's transcript — a session that was prompted in another language will show it).
 
+Compress before committing — the set is committed twice over, so it earns it. PNGs are quantized in place to a 256-colour palette (`magick in.png -colors 256 PNG8:out.png`), which keeps the `.png` extension and therefore every existing reference; GIFs are re-encoded from the recording with a **diff-mode palette**, which is what makes a mostly-static screencast compress:
+
+```bash
+ffmpeg -ss <start> -t <len> -i cap.webm -vf "fps=8,scale=900:-1:flags=lanczos,split[a][b];\
+[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=diff_mode=rectangle:dither=none" out.gif
+```
+
+Do not reach for JPEG: measured on these screenshots it is *twice the size* of the quantized PNG at 2.4× the RMSE, because flat UI plus antialiased text is the case palette compression wins and DCT loses.
+
 The pair is selected by `<picture><source media="(prefers-color-scheme: dark)">`, with the light file as the `<img>` fallback. **That media query reads the browser/OS preference, not the reader's GitHub theme setting** — a reader who pins GitHub to dark while their OS stays light gets the light image on a dark page. That mismatch is accepted; the alternative (one theme for everyone) is worse for the majority who leave GitHub on "sync with system". A caption must therefore be true of *both* images in its pair, since no reader sees them side by side.
 
 ## Testing

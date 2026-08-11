@@ -477,14 +477,15 @@
 **What changed:**
 - Every asset was re-captured in the light theme and the set renamed to explicit pairs — `doc/assets/<name>-{light,dark}.{png,gif}`, 9 pairs including two walkthrough GIFs. README and `tour.md` select between them with `<picture><source media="(prefers-color-scheme: dark)">` and the light file as the `<img>` fallback.
 - Captions and alt text were rewritten to be true of *both* images in a pair — the two sets were captured hours apart, so the session lineage and notification rows differ, and no reader ever sees them side by side.
-- [doc/dev/app/workflow.md](dev/app/workflow.md#refreshing-the-screenshots) now documents how to refresh the set: viewport and scale, the `localStorage['workflow-theme']` seed, the yaco-only/English-only content rules, and the media-query caveat.
+- [doc/dev/app/workflow.md](dev/app/workflow.md#refreshing-the-screenshots) now documents how to refresh the set: viewport and scale, the `localStorage['workflow-theme']` seed, the yaco-only/English-only content rules, the media-query caveat, and the compression step.
+- Doubling the set doubled the bytes, so everything was recompressed: PNGs quantized to a 256-colour palette in place (still `.png`, so no reference churn) and both GIFs re-encoded with a diff-mode palette at 64 colours. **`doc/assets/` went 9.6 MB → 5.0 MB**, smaller than the single-theme set was before this change.
 
 **Why:**
 - Comparing all four combinations (GitHub light/dark × screenshot light/dark) showed the dark shot never looks wrong but the light shot is more legible at README width, and the light theme is what most GitHub readers are in. Shipping both removes the tradeoff for anyone on the default "sync with system" setting.
 - The caveat that survives: `prefers-color-scheme` reads the browser/OS preference, **not** GitHub's own theme setting, so a reader who pins GitHub to dark while their OS is light gets the light image on a dark page.
 
 **Key files:** `README.md`, `doc/main/app/tour.md`, `doc/dev/app/workflow.md`, `doc/assets/*`
-**Verification:** rendered both docs headless under `colorScheme: light` and `dark` — all 7 README `<picture>`s resolve to the matching set (`img.currentSrc` asserted per scheme), zero broken images either way; no unreferenced files left in `doc/assets/`.
+**Verification:** rendered both docs headless under `colorScheme: light` and `dark` — README (7 pairs) and tour (9 pairs) each resolve to the matching set (`img.currentSrc` asserted per scheme), zero broken images in any of the four renders; no unreferenced files left in `doc/assets/`. Compression was chosen on measurements, not preference: against JPEG q88 on the same file, the 256-colour PNG is **half the bytes at 2.4× lower RMSE** (0.0040 vs 0.0094), and a 1:1 crop of terminal text is indistinguishable from the original.
 **Next:** —
 **Blockers:** None.
 
