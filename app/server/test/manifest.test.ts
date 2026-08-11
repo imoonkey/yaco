@@ -17,6 +17,13 @@
  *
  *  Neither is visible to a test that runs the server, because in a checkout
  *  both resolve. This file is where they are visible.
+ *
+ *  The audit reads the sources for literal specifiers, and that is a complete
+ *  view of the import graph only because two other things hold it closed: the
+ *  build refuses to emit on an esbuild warning, which is what an `import(name)`
+ *  esbuild cannot follow produces, and the last test here refuses a
+ *  `createRequire` in production code, which is the loader esbuild does not see
+ *  at all. Take either away and a package could enter the graph unnamed.
  */
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -43,16 +50,19 @@ function packageOf(specifier: string): string | null {
   return BUILTINS.has(name) ? null : name
 }
 
-/** Every package the production sources import, static or dynamic. Tests are
- *  excluded: they are entitled to devDependencies, and none of them is in the
- *  bundle. */
+/** The production sources as `[path relative to src/, text]`. Tests are excluded:
+ *  they are entitled to devDependencies, and none of them is in the bundle. */
+function sourceFiles(): Array<[string, string]> {
+  return readdirSync(join(SERVER_DIR, 'src'), { recursive: true, encoding: 'utf-8' })
+    .filter((relative) => relative.endsWith('.ts') && !relative.includes('__tests__'))
+    .map((relative) => [relative, readFileSync(join(SERVER_DIR, 'src', relative), 'utf-8')])
+}
+
+/** Every package the production sources import, static or dynamic, mapped to the
+ *  first file that imports it. */
 function importedPackages(): Map<string, string> {
   const found = new Map<string, string>()
-  const files = readdirSync(join(SERVER_DIR, 'src'), { recursive: true, encoding: 'utf-8' })
-  for (const relative of files) {
-    if (!relative.endsWith('.ts')) continue
-    if (relative.includes('__tests__')) continue
-    const source = readFileSync(join(SERVER_DIR, 'src', relative), 'utf-8')
+  for (const [relative, source] of sourceFiles()) {
     // `from "x"`, `import("x")`, and the side-effect form `import "x"` — which
     // `dotenv/config` is, and which a `from`-only pattern reports as unused.
     const specifiers = source.matchAll(
@@ -83,5 +93,16 @@ describe('the manifest decides what the bundle externalises', () => {
   it('declares nothing the server does not import', () => {
     const unused = [...declared].filter((name) => !imported.has(name))
     expect(unused).toEqual([])
+  })
+
+  it('loads nothing through a require the scan cannot see', () => {
+    // `createRequire` reaches a package without an import statement, so it is
+    // invisible both to the scan above and to esbuild — the module would simply
+    // not be in the bundle, and the failure would surface on a consumer's
+    // machine the first time that code path ran.
+    const offenders = sourceFiles()
+      .filter(([, source]) => source.includes('createRequire'))
+      .map(([file]) => `src/${file}`)
+    expect(offenders).toEqual([])
   })
 })
