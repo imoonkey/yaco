@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-22 (Codex `Stop` now also fills idle `notice` from the rollout `final_answer`; prior: codex-hooks-review trust gate)
+> Last updated: 2026-08-11 (session summaries are a shared in-process read; provider identity is one catalog; prior: Codex `Stop` fills idle `notice` from the rollout `final_answer`)
 
 ## Supported Providers
 
@@ -24,6 +24,24 @@ authority; the flat `providers.ts` is now a thin legacy shim that adapts the
 registry to the `Provider` shape a few not-yet-migrated call sites still import.
 New code imports from `providers/` directly.
 
+A provider's **identity** — `{id, label, executable}` — lives one level up, in
+`src/lib/core/agent/provider-catalog.ts`, and the adapters spread it rather than
+declaring their own literals. That is what lets `app/server` hold the startable
+catalog in process (`@yaco/cli/core/agent#providerCatalog`) without loading an
+adapter: the registry reaches tmux, hook installation and the session lifecycle,
+none of which an exported closure may contain. There is one definition, so the
+two cannot disagree; `test/providers.test.ts` asserts it anyway, which is what
+catches a third adapter that writes its own literals.
+-> See: [exports.md](exports.md)
+
+Two capabilities are deliberately **not** on `TuiProvider`: the message reader
+and the summary reader. `app/server` calls both in process, so their registries
+live in the read modules (`providers/message-read.ts`,
+`providers/summary-read.ts`) where no adapter is reachable. A capability flag on
+the adapter would only be a shadow of those registries — and a provider that
+omitted the flag would slip past the guard — so each read module's test instead
+asserts that *every registered provider id* has a reader.
+
 All provider-specific filesystem, database, and log parsing lives under `cli/`.
 `app/server` never resolves or parses `~/.claude`, `~/.codex`, or a future
 provider home directly — it consumes `yaco agent ... --json` or one explicit CLI
@@ -40,10 +58,16 @@ Adapter responsibilities, by capability:
 | `sessionId` | yes | pending sentinel, session-id env keys, start-resolution strategy, `resolve` from provider storage |
 | `hooks` | optional | hook events, install/merge, config path, install probe (drives `install` + `doctor`) |
 | `terminal` | optional | provider-runtime / headless-PTY terminal compatibility (see below) |
-| `history` | optional | History-tab rows + per-session summary labels; absent ⇒ provider omitted from history. Labels are the **first meaningful** user message — `<system-reminder>`/command-stdout dropped, slash commands restored to `/name args` in both history rows and live labels, `/rename`·`/clear`·`/compact` and handle echoes skipped. Codex prefers `first_user_message` over the handle-echo `title`. Each row also carries `tokens` — the last turn's total token count (a cheap session-size signal read from the log tail: Claude sums `input + cache_creation + cache_read + output` of the last `message.usage` in the JSONL tail it already reads; Codex tail-reads the `rollout_path` for the last `last_token_usage.total_tokens`), `null` when no usage record is reachable. Rows come back newest-first with an ascending-`sessionId` tie break → See: [architecture.md#read-ordering](architecture.md#read-ordering), `src/lib/core/agent/providers/history.ts` |
+| `history` | optional | History-tab rows; absent ⇒ provider omitted from history. A row's `summary` is the **first meaningful** user message — `<system-reminder>`/command-stdout dropped, slash commands restored to `/name args`, `/rename`·`/clear`·`/compact` and handle echoes skipped (`providers/prompt-label.ts`, shared with the live-session labels in [Session Summaries](#session-summaries)). Each row also carries `tokens` — the last turn's total token count (a cheap session-size signal read from the log tail: Claude sums `input + cache_creation + cache_read + output` of the last `message.usage` in the JSONL tail it already reads; Codex tail-reads the `rollout_path` for the last `last_token_usage.total_tokens`), `null` when no usage record is reachable. Rows come back newest-first with an ascending-`sessionId` tie break → See: [architecture.md#read-ordering](architecture.md#read-ordering), `src/lib/core/agent/providers/history.ts` |
 | `output` | optional | output cursor + line classification for reply streaming; absent ⇒ callers fall back to `capture` |
-| `messages` | optional | full-inventory message reader: log-path resolution + per-line reconstruction into normalized `{role,types,text,ts}` rows for `agent messages`; absent ⇒ `INVALID`. → See [Message Inventory](#message-inventory) |
 | `projectMove` | optional | provider-native cwd-keyed rewrites (see [Project Move](#project-move)) |
+
+Registered in the read modules rather than on the adapter, for the reason above:
+
+| Reader | Registry | Owns |
+|---|---|---|
+| `ProviderMessages` | `providers/message-read.ts` | full-inventory message reader: log-path resolution + per-line reconstruction into normalized `{role,types,text,ts}` rows for `agent messages`; unregistered ⇒ `INVALID`. → See [Message Inventory](#message-inventory) |
+| summarizer | `providers/summary-read.ts` | the live session's display label; unregistered ⇒ the session is dropped from the list. → See [Session Summaries](#session-summaries) |
 
 The shared runtime owns tmux, YACO state files, wrapper installation, name
 validation, send/capture/kill/rename commands, and the HTTP/UI boundary. The
@@ -275,6 +299,58 @@ Contract details:
   `NOT_FOUND`.
 
 -> See: [src/lib/core/agent/providers/messages.ts](../../../cli/src/lib/core/agent/providers/messages.ts), [src/lib/core/agent/providers/message-read.ts](../../../cli/src/lib/core/agent/providers/message-read.ts), [src/commands/agent/messages.ts](../../../cli/src/commands/agent/messages.ts)
+
+## Session Summaries
+
+A summary is the label a live session is recognized by in the session list: the
+**first meaningful** user message in its provider log, collapsed for display by
+the rules `prompt-label.ts` also applies to history rows.
+
+`readSessionSummaries(targets)` in `providers/summary-read.ts` is the one
+implementation. `yaco agent summaries --path <p>` enumerates the project's state
+files and hands them in; `app/server` hands in exactly the sessions its cache is
+missing, in process through `@yaco/cli/core/agent/summaries`. Sessions are
+explicit inputs, which is what keeps the module clear of the state-file
+enumeration an exported closure may not reach, and what makes two concurrent
+calls on different projects structurally unable to cross.
+
+```text
+yaco agent summaries --path <project-path> [--json]     # handle  label, one line per session
+```
+
+Per provider, in order, stopping at the first label:
+
+| Provider | Source |
+|---|---|
+| claude | the session's project JSONL |
+| codex | `state_5.sqlite` `first_user_message` → every rollout naming the session, newest first → the `title` column |
+
+Codex auto-renames the thread `title` to the YACO handle on start, so the title
+is a name echo and only ever the last resort.
+
+**The scan is bounded, and that is the whole reason it may run in the server.**
+A provider log is input-sized — 38 MB at the top of the local corpus — and the
+reader it replaced decoded and parsed all of it to find a label that is almost
+always in the first record. The scan reads 256 KB at a time, parses only
+complete records, yields between steps, and stops at the first label. Because
+`firstMeaningfulMessage` judges each text independently of the ones around it,
+stopping early is the same answer, not an approximation.
+
+Two things it does **not** answer identically, both deliberate:
+
+- **A record over 4 MiB is skipped undecoded.** Chunking bounds the scan but not
+  one record: decode + `JSON.parse` + collapse is ~2 ms per MB in one
+  uninterruptible go, so a 36 MB record is ~73 ms — three times the whole
+  subprocess route. Across the 300 largest local logs (1.15 GB) the largest
+  record of any kind is 4.15 MB and the largest *user* record — the only kind
+  that can be a label — is 0.85 MB.
+- **Codex rollout search is the whole `YYYY/MM/DD` tree**, not the eight days the
+  previous private walk covered, and it continues past a rollout that yields no
+  label. Strictly more labels than before.
+
+-> See: [exports.md](exports.md) (the eligibility rules and the one judged
+`node:sqlite` admission), `test/bench/summary-stall.ts` (the starvation bound and
+the query's own measurement).
 
 ## Project Move
 
