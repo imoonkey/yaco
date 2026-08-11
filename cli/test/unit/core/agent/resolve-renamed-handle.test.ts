@@ -1,7 +1,7 @@
 /** Unit tests for resolveRenamedHandle: normalize a possibly-stale parent
  *  handle to its current name by following the `.renamed-<old>` breadcrumb
  *  chain (cycle-safe). Pins YACO_AGENT_SESSIONS_DIR at a fresh tmp dir. */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

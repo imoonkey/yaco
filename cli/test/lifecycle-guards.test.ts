@@ -1,13 +1,14 @@
 // Phase 2: Guard/regression tests for lifecycle fixes G8, G9, G10, G11
 // Replaces tmux/hooks/session-id with file-scoped module mocks for pure unit testing.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, existsSync, rmSync, utimesSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { stateDir } from "../src/lib/core/agent/session-state.ts";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
-import { mockSrcModule } from "./helpers/module-mock.ts";
+import { isInputEmpty } from "../src/lib/core/agent/providers/idle.ts";
+import { stripAnsi } from "../src/lib/core/agent/model.ts";
 
 // Redirect the session-state dir to a tmp fixture for this suite so a clean
 // CI box (no YACO_AGENT_SESSIONS_DIR / YACO_HOME set) doesn't drop test state into
@@ -54,16 +55,21 @@ interface MockConfig {
   resolveSessionIdResult: { sessionId: string; summary?: string } | null;
 }
 
-let mockConfig: MockConfig;
-let checkAliveIdx: number;
-let hasSessionIdx: number;
-let resolveSessionIdCalls: number;
-let sendKeysCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
-let rawKeyCaptures: Array<{ handle: string; key: string }>;
-let responderCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
+// `vi.mock` is hoisted above every import, so every piece of state its
+// factories close over has to be hoisted with them — one container, reset
+// wholesale in `beforeEach`.
+const m = vi.hoisted(() => ({
+  config: {} as MockConfig,
+  checkAliveIdx: 0,
+  hasSessionIdx: 0,
+  resolveSessionIdCalls: 0,
+  sendKeysCaptures: [] as Array<{ handle: string; stateAtCallTime: unknown }>,
+  rawKeyCaptures: [] as Array<{ handle: string; key: string }>,
+  responderCaptures: [] as Array<{ handle: string; stateAtCallTime: unknown }>,
+}));
 
 function resetMocks(): void {
-  mockConfig = {
+  m.config = {
     checkSessionAlive: [true],
     hasSession: [true],
     captureOutput: "❯ ",
@@ -71,45 +77,65 @@ function resetMocks(): void {
     sendKeysThrow: false,
     resolveSessionIdResult: null,
   };
-  checkAliveIdx = 0;
-  hasSessionIdx = 0;
-  resolveSessionIdCalls = 0;
-  sendKeysCaptures = [];
-  rawKeyCaptures = [];
-  responderCaptures = [];
+  m.checkAliveIdx = 0;
+  m.hasSessionIdx = 0;
+  m.resolveSessionIdCalls = 0;
+  m.sendKeysCaptures = [];
+  m.rawKeyCaptures = [];
+  m.responderCaptures = [];
 }
 
-// ---------------------------------------------------------------------------
-// Module mocks — installed for this file only (see helpers/module-mock.ts)
-// ---------------------------------------------------------------------------
-
-mockSrcModule("lib/core/agent/tmux.ts", () => ({
-  hasSession: () => {
-    const idx = Math.min(hasSessionIdx, mockConfig.hasSession.length - 1);
-    hasSessionIdx++;
-    return mockConfig.hasSession[idx]!;
+/** The two tmux behaviors the factory needs twice: the `hasSession` sequence
+ *  and the `sendKeys` state snapshot. Hoisted with the state they read. */
+const { nextHasSession, captureSendKeys } = vi.hoisted(() => ({
+  nextHasSession: (): boolean => {
+    const idx = Math.min(m.hasSessionIdx, m.config.hasSession.length - 1);
+    m.hasSessionIdx++;
+    return m.config.hasSession[idx]!;
   },
-  checkSessionAlive: () => {
-    const idx = Math.min(checkAliveIdx, mockConfig.checkSessionAlive.length - 1);
-    checkAliveIdx++;
-    return mockConfig.checkSessionAlive[idx]!;
-  },
-  sendKeys: (handle: string, _text: string) => {
+  captureSendKeys: (handle: string, _text?: string): void => {
     // G10: Snapshot state file at the moment sendKeys is called
     const path = join(stateDir(), `${handle}.json`);
     let state = null;
     if (existsSync(path)) {
       try { state = JSON.parse(readFileSync(path, "utf-8")); } catch { /* ignore */ }
     }
-    sendKeysCaptures.push({ handle, stateAtCallTime: state });
-    if (mockConfig.sendKeysThrow) throw new Error("sendKeys mock failure");
+    m.sendKeysCaptures.push({ handle, stateAtCallTime: state });
+    if (m.config.sendKeysThrow) throw new Error("sendKeys mock failure");
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Module mocks — `vi.mock` is file-scoped by construction
+// ---------------------------------------------------------------------------
+
+vi.mock("../src/lib/core/agent/tmux.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/core/agent/tmux.ts")>()),
+  hasSession: nextHasSession,
+  checkSessionAlive: () => {
+    const idx = Math.min(m.checkAliveIdx, m.config.checkSessionAlive.length - 1);
+    m.checkAliveIdx++;
+    return m.config.checkSessionAlive[idx]!;
+  },
+  sendKeys: captureSendKeys,
+  // The real `sendKeysWhenInputEmpty` is `hasSession` → `isPaneInputEmpty` →
+  // `sendKeys`, and those are calls to tmux.ts's own top-level bindings. Bun's
+  // `mock.module` rewrote them; `vi.mock` replaces the module's exports and
+  // leaves a real function's internals alone. So the gate is spelled out here,
+  // over the same mock state and the real `isInputEmpty` predicate — only the
+  // tmux boundary is faked, the decision is still production code.
+  sendKeysWhenInputEmpty: (handle: string, providerId: string, text: string) => {
+    if (!nextHasSession()) return "missing";
+    if (!isInputEmpty(stripAnsi(m.config.captureOutput), providerId, m.config.captureOutput)) return "queued";
+    captureSendKeys(handle, text);
+    return "sent";
   },
   isTmuxAvailable: () => true,
-  capturePane: () => mockConfig.captureOutput,
+  capturePane: () => m.config.captureOutput,
   createSession: () => {},
-  getAgentPid: () => mockConfig.agentPid,
+  getAgentPid: () => m.config.agentPid,
   sendRawKeys: (handle: string, key: string) => {
-    rawKeyCaptures.push({ handle, key });
+    m.rawKeyCaptures.push({ handle, key });
   },
   startOscColorQueryResponder: (handle: string) => {
     const path = join(stateDir(), `${handle}.json`);
@@ -117,7 +143,7 @@ mockSrcModule("lib/core/agent/tmux.ts", () => ({
     if (existsSync(path)) {
       try { state = JSON.parse(readFileSync(path, "utf-8")); } catch { /* ignore */ }
     }
-    responderCaptures.push({ handle, stateAtCallTime: state });
+    m.responderCaptures.push({ handle, stateAtCallTime: state });
   },
   getPanePid: () => null,
   ensureTrueColorSupport: () => {},
@@ -126,7 +152,8 @@ mockSrcModule("lib/core/agent/tmux.ts", () => ({
   resolveAgentPidFromProcesses: () => null,
 }));
 
-mockSrcModule("lib/core/agent/lifecycle.ts", () => ({
+vi.mock("../src/lib/core/agent/lifecycle.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/core/agent/lifecycle.ts")>()),
   ensureHooks: () => {},
   buildWrappedCommand: (_h: string, _c: string, cmd: string) => cmd,
   HOOK_MARKER: "yaco-agent-hook",
@@ -135,11 +162,12 @@ mockSrcModule("lib/core/agent/lifecycle.ts", () => ({
   TOOL_SCOPED_EVENTS: new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "PreCompact", "PostCompact"]),
 }));
 
-mockSrcModule("lib/core/agent/session-id.ts", () => ({
+vi.mock("../src/lib/core/agent/session-id.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/core/agent/session-id.ts")>()),
   PENDING_SESSION_ID: "pending:awaiting-first-prompt",
   resolveSessionId: () => {
-    resolveSessionIdCalls++;
-    return mockConfig.resolveSessionIdResult;
+    m.resolveSessionIdCalls++;
+    return m.config.resolveSessionIdResult;
   },
 }));
 
@@ -273,7 +301,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeInterruptLine()]);
     const past = new Date(Date.now() - 20 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "still busy"; // would be processing if PTY fallback won
+    m.config.captureOutput = "still busy"; // would be processing if PTY fallback won
 
     const result = await reconcileSession(handle);
 
@@ -291,7 +319,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeCodexTranscript(state, [codexEventLine("turn_aborted")]);
     const past = new Date(Date.now() - 20 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "still busy";
+    m.config.captureOutput = "still busy";
 
     const result = await reconcileSession(handle);
 
@@ -309,7 +337,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeAssistantLine("tool_use")]);
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "❯ "; // would be idle if PTY fallback won
+    m.config.captureOutput = "❯ "; // would be idle if PTY fallback won
 
     const result = await reconcileSession(handle);
 
@@ -327,7 +355,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
 
-    mockConfig.captureOutput = "❯ "; // idle prompt
+    m.config.captureOutput = "❯ "; // idle prompt
 
     const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
@@ -377,7 +405,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeInterruptLine()]);
     const past = new Date(Date.now() - 20 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "still busy";
+    m.config.captureOutput = "still busy";
 
     const result = await reconcileSession(handle);
 
@@ -399,7 +427,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeAssistantLine("tool_use")]);
     const past = new Date(Date.now() - 20 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "❯ ";
+    m.config.captureOutput = "❯ ";
 
     const result = await reconcileSession(handle);
 
@@ -420,7 +448,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeAssistantLine("end_turn")]);
     const past = new Date(Date.now() - 20 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "❯ ";
+    m.config.captureOutput = "❯ ";
 
     const result = await reconcileSession(handle);
 
@@ -436,7 +464,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
 
-    mockConfig.captureOutput = "Thinking..."; // busy indicator
+    m.config.captureOutput = "Thinking..."; // busy indicator
 
     const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
@@ -451,7 +479,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     writeClaudeTranscript(state, [claudeAssistantLine("end_turn")]);
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "Thinking...";
+    m.config.captureOutput = "Thinking...";
 
     const result = await reconcileSession(handle);
 
@@ -465,7 +493,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     trackHandle(handle);
     writeState(makeState({ handle }));
 
-    mockConfig.checkSessionAlive = [false];
+    m.config.checkSessionAlive = [false];
 
     const result = await reconcileSession(handle);
     expect(result).toBeNull();
@@ -484,9 +512,9 @@ describe("G9: start throws when session dies during bootstrap", () => {
 
     // hasSession: false for resolveStartHandle + collision preflight, true for waitForReady
     // checkSessionAlive: false at the final G9 guard (session died)
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.checkSessionAlive = [false];
-    mockConfig.captureOutput = "❯ ";
+    m.config.hasSession = [false, false, true];
+    m.config.checkSessionAlive = [false];
+    m.config.captureOutput = "❯ ";
 
     expect(() => {
       start("claude", ["--name", handle]);
@@ -508,8 +536,8 @@ describe("G10: send optimistic processing hint", () => {
 
     send(handle, "test message");
 
-    expect(sendKeysCaptures).toHaveLength(1);
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(m.sendKeysCaptures).toHaveLength(1);
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.status).toBe("processing");
   });
 
@@ -520,7 +548,7 @@ describe("G10: send optimistic processing hint", () => {
 
     send(handle, "test message");
 
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.status).toBe("processing");
 
     // State file still processing after send
@@ -533,13 +561,13 @@ describe("G10: send optimistic processing hint", () => {
     const createdAt = new Date().toISOString();
     writeState(makeState({ handle, status: "idle", createdAt }));
 
-    mockConfig.sendKeysThrow = true;
+    m.config.sendKeysThrow = true;
 
     expect(() => send(handle, "test")).toThrow("sendKeys mock failure");
 
     // Optimistic hint was written before failure
-    expect(sendKeysCaptures).toHaveLength(1);
-    expect((sendKeysCaptures[0]!.stateAtCallTime as SessionState).status).toBe("processing");
+    expect(m.sendKeysCaptures).toHaveLength(1);
+    expect((m.sendKeysCaptures[0]!.stateAtCallTime as SessionState).status).toBe("processing");
 
     // State reverted to idle
     expect(readState(handle)?.status).toBe("idle");
@@ -552,7 +580,7 @@ describe("G10: send optimistic processing hint", () => {
 
     send(handle, "the answer");
 
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.status).toBe("processing");
     expect(captured.blockReason).toBeUndefined();
 
@@ -569,7 +597,7 @@ describe("G10: send optimistic processing hint", () => {
     send(handle, "text");
 
     // No optimistic flip — the trust screen still needs the user.
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.status).toBe("blocked");
     expect(captured.blockReason).toBe("trust");
 
@@ -585,7 +613,7 @@ describe("G10: send optimistic processing hint", () => {
 
     send(handle, "text");
 
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.status).toBe("blocked");
     expect(captured.blockReason).toBe("permission");
 
@@ -610,9 +638,9 @@ describe("G11: dead handle reclaim allows name reuse", () => {
 
     // Sequence: G11 reclaim → false (dead), resolveStartHandle → false (no tmux),
     // collision preflight → false, waitForReady → true, G9 guard → true
-    mockConfig.checkSessionAlive = [false, true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "❯ ";
+    m.config.checkSessionAlive = [false, true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "❯ ";
 
     const state = start("claude", ["--name", handle]);
 
@@ -651,7 +679,7 @@ describe("reconcile capture status is runtime-only", () => {
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
 
-    mockConfig.captureOutput = "❯ "; // idle prompt
+    m.config.captureOutput = "❯ "; // idle prompt
 
     const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
@@ -679,7 +707,7 @@ describe("resolveSession is a pure read", () => {
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
 
-    mockConfig.captureOutput = "❯ "; // idle prompt
+    m.config.captureOutput = "❯ "; // idle prompt
 
     const result = await resolveSession(handle);
     expect(result).not.toBeNull();
@@ -695,7 +723,7 @@ describe("resolveSession is a pure read", () => {
     // pid 0 → isProcessAlive false, so tmux-gone makes it confirmed dead.
     writeState(makeState({ handle, pid: 0 }));
 
-    mockConfig.checkSessionAlive = [false];
+    m.config.checkSessionAlive = [false];
 
     const result = await resolveSession(handle);
     expect(result).toBeNull();
@@ -708,7 +736,7 @@ describe("resolveSession is a pure read", () => {
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0, status: "idle" }));
 
-    mockConfig.checkSessionAlive = [null]; // tmux timeout / wrong socket
+    m.config.checkSessionAlive = [null]; // tmux timeout / wrong socket
 
     const result = await resolveSession(handle);
     expect(result).not.toBeNull(); // uncertain → keep the session
@@ -726,7 +754,7 @@ describe("reconcileSession GC is pid-guarded", () => {
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 }));
 
-    mockConfig.checkSessionAlive = [false];
+    m.config.checkSessionAlive = [false];
 
     const result = await reconcileSession(handle);
     expect(result).toBeNull();
@@ -739,7 +767,7 @@ describe("reconcileSession GC is pid-guarded", () => {
     // The running test process is a guaranteed-live pid.
     writeState(makeState({ handle, pid: process.pid, status: "idle" }));
 
-    mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
+    m.config.checkSessionAlive = [false]; // wrong-socket: tmux says gone
 
     const result = await reconcileSession(handle);
     expect(result).not.toBeNull(); // live pid vetoes deletion
@@ -751,7 +779,7 @@ describe("reconcileSession GC is pid-guarded", () => {
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0, status: "idle" }));
 
-    mockConfig.checkSessionAlive = [null];
+    m.config.checkSessionAlive = [null];
 
     const result = await reconcileSession(handle);
     expect(result).not.toBeNull();
@@ -769,7 +797,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     const handle = `${TEST_PREFIX}-list-pure-dead`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 })); // pid dead
-    mockConfig.checkSessionAlive = [false];     // tmux gone → confirmed dead
+    m.config.checkSessionAlive = [false];     // tmux gone → confirmed dead
 
     const rows = JSON.parse(await list({ all: true, json: true }));
     expect(rows.find((r: any) => r.name === handle)).toBeUndefined(); // hidden
@@ -780,7 +808,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     const handle = `${TEST_PREFIX}-list-recon-dead`;
     trackHandle(handle);
     writeState(makeState({ handle, pid: 0 }));
-    mockConfig.checkSessionAlive = [false];
+    m.config.checkSessionAlive = [false];
 
     JSON.parse(await list({ all: true, reconcile: true, json: true }));
     expect(readState(handle)).toBeNull(); // GC'd
@@ -791,7 +819,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     trackHandle(handle);
     // The running test process is a guaranteed-live pid.
     writeState(makeState({ handle, pid: process.pid, status: "idle" }));
-    mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
+    m.config.checkSessionAlive = [false]; // wrong-socket: tmux says gone
 
     const rows = JSON.parse(await list({ all: true, reconcile: true, json: true }));
     expect(readState(handle)).not.toBeNull();                        // live pid vetoes GC
@@ -802,7 +830,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     const handle = `${TEST_PREFIX}-status-recon`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "idle" }));
-    mockConfig.checkSessionAlive = [true]; // alive
+    m.config.checkSessionAlive = [true]; // alive
 
     const obj = JSON.parse(await status(handle, { json: true, reconcile: true }));
     expect(obj.handle).toBe(handle);
@@ -824,7 +852,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
       spawnedBy: "agent",
       parentSession: "guard-parent",
     }));
-    mockConfig.checkSessionAlive = [true];
+    m.config.checkSessionAlive = [true];
 
     const obj = JSON.parse(await status(handle, { json: true }));
     expect(obj).toMatchObject({
@@ -846,7 +874,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     const handle = `${TEST_PREFIX}-status-text-block`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "idle", sessionId: "test-session-id" }));
-    mockConfig.checkSessionAlive = [true];
+    m.config.checkSessionAlive = [true];
 
     const text = await status(handle);
     expect(text.split("\n").length).toBeGreaterThan(1);
@@ -866,7 +894,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     const handle = `${TEST_PREFIX}-needs-review`;
     trackHandle(handle);
     writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
-    mockConfig.checkSessionAlive = [true];
+    m.config.checkSessionAlive = [true];
 
     const text = await status(handle);
     expect(text).toMatch(/^status:\s+blocked$/m);
@@ -882,7 +910,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     writeState(makeState({ handle, status: "processing", blockReason: "question" }));
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "❯ "; // idle prompt
+    m.config.captureOutput = "❯ "; // idle prompt
 
     const resolved = await reconcileSession(handle);
     expect(resolved!.status).toBe("idle");
@@ -904,7 +932,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     writeState(makeState({ handle, status: "processing", blockReason: "question" }));
     const past = new Date(Date.now() - 35 * 60 * 1000);
     utimesSync(statePath(handle), past, past);
-    mockConfig.captureOutput = "Thinking..."; // busy → capturedStatus "processing"
+    m.config.captureOutput = "Thinking..."; // busy → capturedStatus "processing"
 
     const resolved = await reconcileSession(handle);
     expect(resolved!.status).toBe("processing");
@@ -926,36 +954,36 @@ describe("start --json contract guarantees", () => {
     const handle = `${TEST_PREFIX}-codex-responder`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "› ";
-    mockConfig.agentPid = 42002;
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "› ";
+    m.config.agentPid = 42002;
     // Provider storage *could* resolve a thread id, but a state-file-only start
     // must not consult it; the pending sentinel stands until a hook backfills.
-    mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-not-consulted-at-start" };
+    m.config.resolveSessionIdResult = { sessionId: "codex-thread-not-consulted-at-start" };
 
     const state = start("codex", ["--name", handle]);
 
     // Codex declares terminal.respondToColorQuery, so the responder starts
     // right after createSession. Provider-title /rename waits for bootstrap
     // readiness but no longer waits for provider-title settle.
-    expect(responderCaptures).toHaveLength(1);
-    expect((responderCaptures[0]!.stateAtCallTime as SessionState).pid).toBe(0);
-    expect(sendKeysCaptures).toHaveLength(1);
-    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(m.responderCaptures).toHaveLength(1);
+    expect((m.responderCaptures[0]!.stateAtCallTime as SessionState).pid).toBe(0);
+    expect(m.sendKeysCaptures).toHaveLength(1);
+    const captured = m.sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.pid).toBe(42002);
     expect(state.pid).toBe(42002);
     expect(state.sessionId).toBe("pending:awaiting-first-prompt");
-    expect(resolveSessionIdCalls).toBe(0);
+    expect(m.resolveSessionIdCalls).toBe(0);
   });
 
   it("does not replay Codex hook-review keys when the slash prompt is already active", async () => {
     const handle = `${TEST_PREFIX}-codex-slash-prompt`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true, true, true];
-    mockConfig.captureOutput = [
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true, true, true];
+    m.config.captureOutput = [
       "Hooks need review",
       "",
       "Review hooks",
@@ -963,32 +991,32 @@ describe("start --json contract guarantees", () => {
       "",
       "› /",
     ].join("\n");
-    mockConfig.agentPid = 42003;
+    m.config.agentPid = 42003;
 
     const state = withCleanCodexHome(() => start("codex", ["--name", handle]));
 
     expect(state.handle).toBe(handle);
-    expect(rawKeyCaptures).toEqual([]);
+    expect(m.rawKeyCaptures).toEqual([]);
   });
 
   it("still answers the active Codex hook-review menu", async () => {
     const handle = `${TEST_PREFIX}-codex-hook-review`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true, false];
-    mockConfig.captureOutput = [
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true, false];
+    m.config.captureOutput = [
       "Hooks need review",
       "",
       "› Review hooks",
       "  Trust all and continue",
     ].join("\n");
-    mockConfig.agentPid = 42004;
+    m.config.agentPid = 42004;
 
     const state = withCleanCodexHome(() => start("codex", ["--name", handle]));
 
     expect(state.handle).toBe(handle);
-    expect(rawKeyCaptures).toEqual([
+    expect(m.rawKeyCaptures).toEqual([
       { handle, key: "Down" },
       { handle, key: "Enter" },
     ]);
@@ -998,10 +1026,10 @@ describe("start --json contract guarantees", () => {
     const handle = `${TEST_PREFIX}-json-contract`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "❯ ";
-    mockConfig.agentPid = 42000;
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "❯ ";
+    m.config.agentPid = 42000;
 
     const state = start("claude", ["--name", handle]);
 
@@ -1015,11 +1043,11 @@ describe("start --json contract guarantees", () => {
     const handle = `${TEST_PREFIX}-origin-start`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "❯ ";
-    mockConfig.agentPid = 42005;
-    mockConfig.resolveSessionIdResult = { sessionId: "origin-start-id" };
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "❯ ";
+    m.config.agentPid = 42005;
+    m.config.resolveSessionIdResult = { sessionId: "origin-start-id" };
 
     const originalAgentHandle = process.env.YACO_AGENT_HANDLE;
     let state: SessionState | undefined;
@@ -1044,10 +1072,10 @@ describe("start --json contract guarantees", () => {
     const handle = `${TEST_PREFIX}-origin-resume`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "❯ ";
-    mockConfig.agentPid = 42006;
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "❯ ";
+    m.config.agentPid = 42006;
 
     const state = start("claude", ["--name", handle, "--resume", "resume-thread-id"]);
 
@@ -1060,10 +1088,10 @@ describe("start --json contract guarantees", () => {
     const handle = `${TEST_PREFIX}-json-pending`;
     trackHandle(handle);
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.hasSession = [false, false, true];
-    mockConfig.captureOutput = "❯ ";
-    mockConfig.agentPid = 42001;
+    m.config.checkSessionAlive = [true];
+    m.config.hasSession = [false, false, true];
+    m.config.captureOutput = "❯ ";
+    m.config.agentPid = 42001;
 
     const state = start("claude", ["--name", handle]);
 
@@ -1091,15 +1119,15 @@ describe("Codex sessionId resolution strategy", () => {
       parentSession: "parent-codex",
     }));
 
-    mockConfig.checkSessionAlive = [true];
-    mockConfig.agentPid = 43100;
-    mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-xyz" };
+    m.config.checkSessionAlive = [true];
+    m.config.agentPid = 43100;
+    m.config.resolveSessionIdResult = { sessionId: "codex-thread-xyz" };
 
     const resolved = await reconcileSession(handle);
 
     // Backfill consults the adapter resolver and persists the real thread id.
     expect(resolved).not.toBeNull();
-    expect(resolveSessionIdCalls).toBeGreaterThan(0);
+    expect(m.resolveSessionIdCalls).toBeGreaterThan(0);
     expect(resolved!.sessionId).toBe("codex-thread-xyz");
     expect(readState(handle)?.sessionId).toBe("codex-thread-xyz");
     expect(readOriginForSessionId("codex-thread-xyz")).toMatchObject({
@@ -1121,7 +1149,7 @@ describe("send rollback guard", () => {
     trackHandle(handle);
     writeState(makeState({ handle, status: "starting" }));
 
-    mockConfig.sendKeysThrow = true;
+    m.config.sendKeysThrow = true;
 
     expect(() => send(handle, "test")).toThrow("sendKeys mock failure");
 

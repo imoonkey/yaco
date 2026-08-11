@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { stringify, parse } from "../../../src/lib/core/json.ts";
 import { isOk, isErr } from "../../../src/lib/core/result.ts";
 

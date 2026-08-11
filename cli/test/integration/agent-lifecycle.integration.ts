@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { execSync } from "child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync } from "fs";
 import { homedir, tmpdir } from "os";
@@ -12,6 +12,7 @@ import { status } from "../../src/commands/agent/status.ts";
 import { readState, writeState, deleteState, statePath } from "../../src/lib/core/agent/session-state.ts";
 import { hasSession, isTmuxAvailable } from "../../src/lib/core/agent/tmux.ts";
 import { PENDING_SESSION_ID } from "../../src/lib/core/agent/session-id.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // ---------------------------------------------------------------------------
 // Skip conditions
@@ -30,8 +31,8 @@ const tmux = isTmuxAvailable();
 const hasClaude = cliAvailable("claude");
 const hasCodex = cliAvailable("codex");
 
-const claudeIt = tmux && hasClaude ? it.serial : it.skip;
-const codexIt = tmux && hasCodex ? it.serial : it.skip;
+const claudeIt = tmux && hasClaude ? it.sequential : it.skip;
+const codexIt = tmux && hasCodex ? it.sequential : it.skip;
 
 // ---------------------------------------------------------------------------
 // Unique handle prefix
@@ -98,7 +99,7 @@ async function waitFor(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
-    await Bun.sleep(500);
+    await sleep(500);
   }
   throw new Error(`Timed out after ${timeoutMs}ms`);
 }

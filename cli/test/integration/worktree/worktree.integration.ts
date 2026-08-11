@@ -8,7 +8,7 @@
  *  cleanup safety, cross-repo isolation, and gh stdout containment.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -19,8 +19,8 @@ import {
   writeFileSync,
 } from "node:fs";import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { runCli } from "../../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../../src/main.ts");
 
 interface RunResult {
   stdout: string;
@@ -33,11 +33,7 @@ function runYaco(
   args: string[],
   env: Record<string, string> = {},
 ): RunResult {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    cwd,
-    env: { ...process.env, NO_COLOR: "1", ...env },
-  });
+  const r = runCli(args, { cwd, env: { ...process.env, NO_COLOR: "1", ...env } });
   return {
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",

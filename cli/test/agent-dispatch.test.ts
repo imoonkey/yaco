@@ -5,14 +5,13 @@
  *  capture envelope. These do not touch tmux or any provider — they exercise
  *  argv parsing and the handler's return shape against the renderer.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { spawnSync } from "child_process";
+import { describe, it, expect } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { resolve } from "path";
 import { parseStartArgs } from "../src/commands/agent/index.ts";
+import { runCli } from "./helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../src/main.ts");
 
 describe("parseStartArgs — `--` passthrough contract", () => {
   it("treats provider as argv[0] and yaco-side --json before --", () => {
@@ -79,20 +78,16 @@ describe("parseStartArgs — `--` passthrough contract", () => {
 
 describe("yaco agent wait — origin contract", () => {
   it("requires an explicit origin (no flags → USAGE)", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "wait", "some-handle", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1" },
-    });
+    const r = runCli(["agent", "wait", "some-handle", "--json"], { env: { ...process.env, NO_COLOR: "1" } });
     expect(r.status).toBe(2);
     const err = JSON.parse((r.stderr ?? "").trim());
     expect(err.error.code).toBe("USAGE");
   });
 
   it("rejects mixing --from-start with --cursor as USAGE", () => {
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "agent", "wait", "h", "--from-start", "--cursor", "oc1_x", "--offset", "0", "--json"],
-      { encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    const r = runCli(
+      ["agent", "wait", "h", "--from-start", "--cursor", "oc1_x", "--offset", "0", "--json"],
+      { env: { ...process.env, NO_COLOR: "1" } },
     );
     expect(r.status).toBe(2);
     expect(JSON.parse((r.stderr ?? "").trim()).error.code).toBe("USAGE");
@@ -101,10 +96,9 @@ describe("yaco agent wait — origin contract", () => {
   it("returns NOT_FOUND for a missing session with a valid origin", () => {
     const stateDir = mkdtempSync(resolve(tmpdir(), "yaco-wait-missing-"));
     try {
-      const r = spawnSync(
-        "bun",
-        ["run", BIN, "agent", "wait", "yaco-test-absent-handle-xyz", "--from-start", "--json"],
-        { encoding: "utf-8", env: { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: stateDir } },
+      const r = runCli(
+        ["agent", "wait", "yaco-test-absent-handle-xyz", "--from-start", "--json"],
+        { env: { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: stateDir } },
       );
       expect(r.status).toBe(1);
       expect(r.stdout.trim()).toBe("");
@@ -146,8 +140,7 @@ describe("yaco agent send --stdin", () => {
   // Driven through a subprocess so we can pipe stdin properly.
 
   it("rejects --stdin alongside an inline message with USAGE", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "send", "noop", "extra", "--stdin", "--json"], {
-      encoding: "utf-8",
+    const r = runCli(["agent", "send", "noop", "extra", "--stdin", "--json"], {
       env: { ...process.env, NO_COLOR: "1" },
       input: "",
     });
@@ -158,8 +151,7 @@ describe("yaco agent send --stdin", () => {
   });
 
   it("rejects --stdin with empty stdin (no message)", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "send", "noop", "--stdin", "--json"], {
-      encoding: "utf-8",
+    const r = runCli(["agent", "send", "noop", "--stdin", "--json"], {
       env: { ...process.env, NO_COLOR: "1" },
       input: "",
     });
@@ -168,8 +160,7 @@ describe("yaco agent send --stdin", () => {
   });
 
   it("rejects send with no message and no --stdin", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "send", "noop", "--json"], {
-      encoding: "utf-8",
+    const r = runCli(["agent", "send", "noop", "--json"], {
       env: { ...process.env, NO_COLOR: "1" },
       input: "",
     });
@@ -179,8 +170,7 @@ describe("yaco agent send --stdin", () => {
 
   it("reads stdin as message when --stdin is set (fails on missing session, "
     + "not on missing message)", () => {
-    const r = spawnSync("bun", ["run", BIN, "agent", "send", "no-such-session", "--stdin", "--json"], {
-      encoding: "utf-8",
+    const r = runCli(["agent", "send", "no-such-session", "--stdin", "--json"], {
       env: { ...process.env, NO_COLOR: "1" },
       input: "hello from stdin\n",
     });
@@ -195,8 +185,7 @@ describe("yaco agent whoami", () => {
   it("returns NOT_FOUND outside a yaco-managed agent session", () => {
     const stateDir = mkdtempSync(resolve(tmpdir(), "yaco-whoami-empty-"));
     try {
-      const r = spawnSync("bun", ["run", BIN, "agent", "whoami", "--json"], {
-        encoding: "utf-8",
+      const r = runCli(["agent", "whoami", "--json"], {
         env: {
           ...process.env,
           CODEX_THREAD_ID: "",

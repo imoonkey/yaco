@@ -1,7 +1,7 @@
 /** Store tests — the fs side: fingerprinting, bundle resolution, open-turn
  *  snapshots, and the blocking wait loop driven by a stubbed clock.
  */
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

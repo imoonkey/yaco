@@ -3,7 +3,7 @@
  *  Pure tests cover applyHookEvent() state transitions directly. End-to-end
  *  tests exercise the CLI handler against a temp state file via stdin.
  */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
 import { spawn } from "child_process";
 import { join } from "path";

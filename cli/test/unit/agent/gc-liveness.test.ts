@@ -5,7 +5,7 @@
  *
  *  Regression: 31 live agent sessions vanished from `yaco agent list` + the web
  *  when the app server's 60s reconciler ran `list` against the wrong socket. */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { isProcessAlive } from "../../../src/lib/core/agent/tmux.ts";
 import { confirmedDead } from "../../../src/commands/agent/status.ts";
 

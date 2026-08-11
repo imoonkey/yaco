@@ -11,7 +11,7 @@
  *  once broke `yaco agent start` after a fresh `tools/install.sh`, so the
  *  artifact is really built and really run here rather than simulated.
  */
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +19,7 @@ import { join, resolve } from "node:path";
 
 import { PACKAGE_ROOT, packagedAssetPath, selfExecutablePath } from "../../src/package-root.ts";
 import { readAgentWrapperScript } from "../../src/lib/core/agent/lifecycle.ts";
+import { BUN_BIN } from "../helpers/cli-process.ts";
 
 describe("package assets from source", () => {
   it("resolves the manifest to this package's own", () => {
@@ -37,7 +38,7 @@ describe("package assets from source", () => {
     // layouts hold the same offset, so this assertion is what makes the one
     // expression correct in all three.
     expect(existsSync(packagedAssetPath("src", "package-root.ts"))).toBe(true);
-    expect(resolve(PACKAGE_ROOT, "src")).toBe(resolve(import.meta.dir, "../../src"));
+    expect(resolve(PACKAGE_ROOT, "src")).toBe(resolve(import.meta.dirname, "../../src"));
   });
 
   it("reports no self executable — the runtime was handed an entry point", () => {
@@ -82,8 +83,10 @@ describe("package assets from a compiled artifact", () => {
     mkdirSync(join(repoRoot, "cli", "scripts"), { recursive: true });
     writeFileSync(join(repoRoot, "cli", "scripts", "agent-wrapper.sh"), "#!/bin/bash\n# fixture wrapper\n");
 
+    // `--compile` is a bun-only build, and under Vitest the host runtime is
+    // node — so the compiler has to be named rather than inherited.
     const built = spawnSync(
-      process.execPath,
+      BUN_BIN,
       ["build", packagedAssetPath("src", "main.ts"), "--compile", "--outfile", artifact],
       { encoding: "utf-8" },
     );

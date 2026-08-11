@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-08-10: the CLI test suite moves to Vitest, minus six database fixtures
+
+**What changed:**
+- 84 of the tree's 90 `cli/test` files now import `vitest`. The 6 that remain open a `bun:sqlite` `Database` — `test/{history,session-id,summary}.test.ts`, `test/unit/{commands,core}/project/move.test.ts`, `test/unit/core/agent/ordering.test.ts` — and are `cli-sqlite-hop`'s to move. No pre-existing test changed meaning: 1187 → 1209 unit, the +22 being `test/wrapper-resolve.test.ts` (10 tests, added by `cli-portable-runtime` and never listed in `test:unit`) and the new `test/cohorts.test.ts` (12).
+- `cli/test/cohorts.mjs` replaces the hand-maintained file list in `cli/package.json`. It assigns each file to a cohort by which runner it imports, runs both, and fails closed on a file that names neither or both — the class of drift that orphaned `wrapper-resolve.test.ts` for a whole task — and on a bun-cohort file that runs no test, judged from the file's own source rather than from anything the run reports.
+- Two temporary bridges, both deleted by `cli-sqlite-hop`: `vitest.config.ts` aliases `bun:sqlite` to a stub whose constructor throws, and `test/helpers/cli-process.ts` owns how a test starts the CLI.
+- The three `mock.module` users move to `vi.mock` + `vi.hoisted` and `test/helpers/module-mock.ts` is deleted rather than ported. `module-mock-scope.test.ts` survives with its exemption removed.
+- `cli/test/unit/core/agent/usage-child-process.test.ts` now observes the codex child's stdin `EPIPE` instead of asserting a listener exists.
+
+**Why:**
+- 32 files reach `bun:sqlite` only because `providers/claude.ts` statically imports `history.ts` and `project-move.ts`; none opens a database. Reading "closure requires `node:sqlite`" as *static graph* rather than *runtime need* would have left the migration at 51 files and stranded all three `mock.module` users, which this task owed. The stub answers the barrel without putting a database in play, and is fail-closed: a test that really wants one throws.
+- `src/main.ts` still imports `bun:sqlite` transitively, so a subprocess test's child is a Bun process whichever runner hosts it. `process.execPath` is the *host* — under Vitest, node — which is why `test/golden/capture.ts` broke: the golden child's env carries an empty PATH and `uv_spawn` resolves the program against the child's PATH, so the runtime must be named absolutely. Naming it in one place makes `cli-sqlite-hop` a one-line change instead of eighteen.
+- Bun's `mock.module` rewrites a module's own internal references; `vi.mock` replaces its exports and leaves a real function's internals alone. A straight port silently stopped exercising the Codex post-start-input path, because the real `sendKeysWhenInputEmpty` called real tmux. Found by a failing assertion, not by review.
+- The EPIPE conversion was owed from `cli-portable-runtime`, whose test could only be structural because Bun raises no such event. Neither scenario it used reproduces it on Node: a child that never spawned and one that has already exited both leave `stdin.errored` null. Only a child that is alive with its read end closed raises it — and deleting the guard in `usage.ts` makes the run exit 1 with an unhandled `EPIPE`, so the assertion is load-bearing.
+
+**Key files:** `cli/test/cohorts.mjs`, `cli/vitest.config.ts`, `cli/test/helpers/{cli-process,bun-sqlite-stub}.ts`, `cli/test/{kill,lifecycle-guards}.test.ts`, `cli/test/unit/agent/reclaim-crashed.test.ts`, `cli/test/unit/core/agent/usage-child-process.test.ts`, `cli/test/golden/capture.ts`, `cli/package.json`, `cli/bun.lock`, `doc/dev/cli/workflow.md`
+**Verification:** `scripts/verify.sh` all steps passed; `npx tsc --noEmit -p .` clean in `cli/`; unit 1115 vitest + 94 bun, integration 81 vitest, 0 fail, both cohorts run at every batch commit; `cli/test/golden/matrix.json` recaptured byte-identical from a Node-hosted runner; the former `mock.module` users green under `--sequence.shuffle` at 5 seeds, `--no-file-parallelism` at 2, and solo.
+**Commit:** 64243403..HEAD
+**Next:** `cli-sqlite-hop` — the three production `bun:sqlite` users, the 6 fixtures, and the temporary runner in one commit.
+**Blockers:** None
+
 ## 2026-08-11: the CLI's production code drops every non-SQLite Bun API
 
 **What changed:**

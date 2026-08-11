@@ -1,7 +1,7 @@
 /** Unit tests for rewriteChildParentSessions: a parent rename must re-point
  *  every live child session's `parentSession` from the old handle to the new
  *  one. Pins YACO_AGENT_SESSIONS_DIR at a fresh tmp dir. */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

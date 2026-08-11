@@ -4,12 +4,12 @@
  *  handoff → status, to DONE) plus every rejection path. The test process plays
  *  the agent: it writes final/* and the turn files between CLI calls.
  */
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
+import { runCli } from "../../../helpers/cli-process.ts";
 const ROOTS: string[] = [];
 
 function bundle(): string {
@@ -20,11 +20,11 @@ function bundle(): string {
 afterAll(() => ROOTS.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
 function yaco(args: string[]): { stdout: string; stderr: string; status: number } {
-  const r = Bun.spawnSync(["bun", "run", BIN, ...args], { env: { ...process.env, NO_COLOR: "1" } });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1" } });
   return {
-    stdout: r.stdout.toString(),
-    stderr: r.stderr.toString(),
-    status: r.exitCode,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? "",
+    status: r.status ?? -1,
   };
 }
 

@@ -5,7 +5,7 @@
  *  write land mid-debounce), and it must return immediately rather than park
  *  forever when a caller hands it a non-positive remaining-time delta.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { sleepSync } from "../../../src/lib/core/sleep.ts";
 
 describe("sleepSync", () => {

@@ -4,8 +4,7 @@
  *  to sandbox paths. PATH is a shim bin so doctor's `which` lookups for
  *  tmux/git/claude/codex are hermetic.
  */
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   chmodSync,
   mkdirSync,
@@ -15,12 +14,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { runAllChecks, REQUIRED_CHECKS } from "../../../src/commands/doctor.ts";
 import { runInstall } from "../../../src/commands/install.ts";
+import { runCli } from "../../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../../src/main.ts");
 
 const ORIG = {
   HOME: process.env["HOME"],
@@ -307,10 +306,7 @@ describe("runAllChecks — individual failure modes", () => {
 describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
   it("data.checks shape and data.summary {pass, fail} via subprocess", () => {
     installPrereqs();
-    const r = spawnSync("bun", ["run", BIN, "doctor", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env },
-    });
+    const r = runCli(["doctor", "--json"], { env: { ...process.env } });
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.ok).toBe(true);
@@ -331,10 +327,7 @@ describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
   it("returns {ok:true, data:{checks, summary}} with exit 1 when checks fail", () => {
     // No install — most checks fail. Subprocess captures the real exit code
     // path through process.exit().
-    const r = spawnSync("bun", ["run", BIN, "doctor", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env },
-    });
+    const r = runCli(["doctor", "--json"], { env: { ...process.env } });
     // Exit code reflects fail count, not envelope shape.
     expect(r.status).toBe(1);
     // Stdout must still be the canonical success envelope so callers can
@@ -355,10 +348,9 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     const otherRepo = join(sandbox, "other-repo");
     mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
     writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "doctor", "--repo", otherRepo, "--json"],
-      { encoding: "utf-8", env: { ...process.env } },
+    const r = runCli(
+      ["doctor", "--repo", otherRepo, "--json"],
+      { env: { ...process.env } },
     );
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout);
@@ -372,10 +364,9 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     // laundered into the zero-state skip.
     installPrereqs();
     const missing = join(sandbox, "no-such-repo");
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "doctor", "--repo", missing, "--json"],
-      { encoding: "utf-8", env: { ...process.env } },
+    const r = runCli(
+      ["doctor", "--repo", missing, "--json"],
+      { env: { ...process.env } },
     );
     expect(r.status).toBe(1);
     const parsed = JSON.parse(r.stdout);
@@ -386,10 +377,9 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
 
   it("exits 0 with a task-graph skip when --repo has no tasks tree", () => {
     installPrereqs();
-    const r = spawnSync(
-      "bun",
-      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
-      { encoding: "utf-8", env: { ...process.env } },
+    const r = runCli(
+      ["doctor", "--repo", sandbox, "--json"],
+      { env: { ...process.env } },
     );
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);

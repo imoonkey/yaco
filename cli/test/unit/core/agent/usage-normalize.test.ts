@@ -16,7 +16,7 @@
  *       to hold a number: a null must never become a 1970 reset time or an
  *       invented window.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import {
   normalizeClaudeQuota,
   normalizeCodexQuota,

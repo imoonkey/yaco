@@ -1,5 +1,5 @@
 /** Pure slug-validation tests — no git, no fs. */
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import { validateSlug } from "../../../../src/lib/core/worktree/slug.ts";
 

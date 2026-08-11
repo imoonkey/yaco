@@ -1,7 +1,7 @@
 /** T2: setStatus stamps the durable status-edge generation key (statusEnteredAt)
  *  on a real transition, and leaves it untouched when the same status is
  *  re-affirmed — so re-seeing the same edge never mints a new generation. */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { setStatus, type BlockReason } from "../../../src/lib/core/agent/model.ts";
 
 type TestStatus = "starting" | "idle" | "blocked";

@@ -1,16 +1,16 @@
 /** T1: a `crashed` tombstone must survive `start`'s dead-handle reclaim, while a
  *  non-crashed dead handle is still freed for reuse. tmux is mocked to report
  *  the session dead, so this runs without tmux or a real provider. */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { mockSrcModule } from "../../helpers/module-mock.ts";
 import { writeState, readState } from "../../../src/lib/core/agent/session-state.ts";
 import { reclaimRequestedHandleIfDead } from "../../../src/commands/agent/start.ts";
 import type { SessionState } from "../../../src/lib/core/agent/model.ts";
 
-mockSrcModule("lib/core/agent/tmux.ts", () => ({
+vi.mock("../../../src/lib/core/agent/tmux.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/lib/core/agent/tmux.ts")>()),
   checkSessionAlive: () => false, // tmux says gone
   capturePane: () => "",
   createSession: () => {},

@@ -5,7 +5,7 @@
  *  files surface clearly instead of parsing to silent defaults.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import {
   parseScopedToml,

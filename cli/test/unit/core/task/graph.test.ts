@@ -1,7 +1,7 @@
 /** Unit tests for the graph helpers: refs, cycles, state guard, rollup,
  *  and the structured validateGraph report used by `yaco task validate`. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 
 import {
   checkCycles,

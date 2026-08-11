@@ -3,14 +3,14 @@
  *  a snapshot of one run — a capture that cannot reproduce itself cannot tell a
  *  runtime port apart from noise. */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { captureMatrix, type GoldenMatrix } from "./capture.ts";
 import { CASES, CASES_DIGEST } from "./cases.ts";
 
 const committed = JSON.parse(
-  readFileSync(join(import.meta.dir, "matrix.json"), "utf-8"),
+  readFileSync(join(import.meta.dirname, "matrix.json"), "utf-8"),
 ) as GoldenMatrix;
 
 describe("golden matrix", () => {

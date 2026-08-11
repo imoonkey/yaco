@@ -4,7 +4,7 @@
  *  ~/.claude/settings.json + ~/.codex/hooks.json; pre-existing unrelated
  *  entries are preserved.
  */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir, homedir } from "os";

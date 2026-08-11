@@ -8,16 +8,15 @@
  *
  *  Usage: `bun run test/golden/capture.ts --out test/golden/matrix.json` */
 
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
+import { runCli } from "../helpers/cli-process.ts";
 import { buildSandbox, type Sandbox } from "./fixture.ts";
 import { CASES, CASES_DIGEST, type GoldenCase } from "./cases.ts";
 
-const REPO_ROOT = resolve(import.meta.dir, "../..");
-const BIN = join(REPO_ROOT, "src", "main.ts");
+const REPO_ROOT = resolve(import.meta.dirname, "../..");
 
 export interface CaseResult {
   id: string;
@@ -74,13 +73,9 @@ function runCase(testCase: GoldenCase): CaseResult {
   const cwd = testCase.cwd === "root" ? sandbox.root : sandbox.projects[testCase.cwd];
 
   try {
-    // process.execPath is the Bun (or Node) binary running this capture; the
-    // child's PATH is deliberately empty, so it must be invoked absolutely.
-    const run = spawnSync(process.execPath, ["run", BIN, ...testCase.argv.map(expand)], {
-      cwd,
-      env: sandbox.env,
-      encoding: "utf-8",
-    });
+    // The child's PATH is deliberately empty, so the runtime must be named
+    // absolutely — which is exactly what `runCli` owns.
+    const run = runCli(testCase.argv.map(expand), { cwd, env: sandbox.env });
     return {
       id: testCase.id,
       argv: testCase.argv,

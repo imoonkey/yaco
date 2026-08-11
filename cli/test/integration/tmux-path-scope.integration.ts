@@ -2,7 +2,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, mkdirSync, rmSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { describe, expect, it, afterEach } from "bun:test";
+import { describe, expect, it, afterEach } from "vitest";
 import { capture } from "../../src/commands/agent/capture.ts";
 import { kill } from "../../src/commands/agent/kill.ts";
 import { send } from "../../src/commands/agent/send.ts";
@@ -14,8 +14,9 @@ import {
   isTmuxAvailable,
 } from "../../src/lib/core/agent/tmux.ts";
 import { writeState, deleteState, listByPath, type SessionState } from "../../src/lib/core/agent/session-state.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
-const tmuxIt = isTmuxAvailable() ? it.serial : it.skip;
+const tmuxIt = isTmuxAvailable() ? it.sequential : it.skip;
 const BOOT_TIMEOUT_MS = 5000;
 const POLL_MS = 100;
 
@@ -38,7 +39,7 @@ async function waitFor(
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await predicate()) return;
-    await Bun.sleep(POLL_MS);
+    await sleep(POLL_MS);
   }
   throw new Error(`Timed out after ${timeoutMs}ms`);
 }

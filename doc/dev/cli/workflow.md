@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-08-08 (file-scoped module mocks in the cli unit suite)
+> Last updated: 2026-08-10 (dual Vitest/Bun test cohorts)
 
 ## Prerequisites
 
@@ -115,6 +115,50 @@ bun run test              # unit tests, no tmux required
 bun run test:integration  # reinstalls CLI, then tmux-backed integration tests
 ```
 
+### Two runners, one command
+
+The suite is mid-migration to Vitest. Which runner owns a file is a fact *about
+the file*: it imports `vitest`, or it imports `bun:test`. `test/cohorts.mjs`
+reads that — from an **import declaration**, not from prose that mentions a
+runner — runs both cohorts, and **fails closed** four ways: a file naming
+neither runner or both, a suite selecting no files, a bun-cohort file whose
+**source declares no test**, and one whose **JUnit report** says none executed —
+no report at all, or every case parked behind `.skip`/`.todo`, which bun counts
+in `tests`. (`bun test` exits 0 in all of those; `vitest run` rejects them
+itself.)
+
+The source check is the authoritative one, and it is deliberately not derived
+from the run: everything a run produces — console, exit status, and the report
+file, whose path the child reads off its own `argv` — is written by the same
+process as the tests. The source is read before that process exists. The report
+check then catches the other half, a file whose declared tests never run. So a
+new test cannot land in no suite, and a cohort cannot pass by running nothing.
+Both `test:unit` and `test:integration` are that script; there is no list to
+keep in sync, and `test/cohorts.test.ts` pins both rules.
+
+Only 6 files are left on Bun, all of them database fixtures that open
+`bun:sqlite`: `test/{history,session-id,summary}.test.ts`,
+`test/unit/{commands,core}/project/move.test.ts`,
+`test/unit/core/agent/ordering.test.ts`. `cli-sqlite-hop` moves them to
+`node:sqlite` and deletes `cohorts.mjs`.
+
+Everything else runs under Vitest, so a focused run is `npx vitest run <files>`
+— and `npx vitest run --sequence.shuffle --sequence.seed=<n>` is the cheapest
+way to smoke out order coupling.
+
+Two things exist only to bridge the gap and die with `cli-sqlite-hop`:
+
+- `vitest.config.ts` aliases `bun:sqlite` to `test/helpers/bun-sqlite-stub.ts`,
+  whose `Database` constructor throws. 32 files reach that specifier only
+  through `providers/claude.ts`'s eager `history`/`project-move` imports and
+  never open a database; a test that really wants one fails loudly and belongs
+  in the Bun cohort.
+- `test/helpers/cli-process.ts` owns how a test starts the CLI. `src/main.ts`
+  still imports `bun:sqlite` transitively, so the child is a Bun process
+  whichever runner hosts the test — `process.execPath` is the *host*, which
+  under Vitest is node. Use `runCli(args, opts)`; never spell the runtime at a
+  call site.
+
 Test split:
 - `bun run test` / `bun run test:unit`: pure unit tests (model, state, providers, lifecycle, hook-event, hooks-install, agent-wrapper.sh content+exec, agent-dispatch parseStartArgs / send --stdin / capture envelope, dispatcher + envelope, task validation / graph / store / archive / lock, worktree slug validation), no tmux required.
 - `bun run test:integration`: first runs `bun run reinstall`
@@ -162,29 +206,32 @@ commit and say in the message which cases moved and why.
 
 ### Mocking a module
 
-`bun test` runs the whole unit suite in one process, and bun's module-mock registry is
-process-global — `mock.restore()` does not undo a registration. An unscoped mock therefore
-changes what every other test file imports, and since bun's load order follows filesystem
-traversal, which files it hits depends on the checkout path.
-
-Use `test/helpers/module-mock.ts`, never bun's registration directly:
+Use `vi.mock`, which is file-scoped by construction — one process per file, no
+registry to leak. State the factory closes over must be created with
+`vi.hoisted`, because `vi.mock` is hoisted above every import.
 
 ```ts
-import { mockSrcModule } from "./helpers/module-mock.ts";
+const tmux = vi.hoisted(() => ({ alive: false }));
 
-mockSrcModule("lib/core/agent/tmux.ts", () => ({
-  checkSessionAlive: () => false,
+vi.mock("../src/lib/core/agent/tmux.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/core/agent/tmux.ts")>()),
+  checkSessionAlive: () => tmux.alive,
 }));
 ```
 
-The path is relative to `cli/src`. The mock is installed for the calling file only, and the
-module's real exports are put back afterwards. The replacement **merges**: an export the
-factory omits keeps its real implementation, so list every export the code under test
-reaches or it will run for real.
+Spreading `importOriginal()` keeps every export the factory omits real. Drop it
+and an unlisted export is `undefined` at the call site.
 
-`test/unit/module-mock-scope.test.ts` fails the suite if any other test file registers a
-module mock. `bun test --randomize --seed=<n>` is the cheapest way to smoke out order
-coupling between files.
+**The landmine.** `vi.mock` replaces a *module's exports*. A real function's own
+internal calls to its module's other top-level bindings are untouched — so
+mocking `sendKeys` does not change what the real `sendKeysWhenInputEmpty` calls.
+Bun's `mock.module` did rewrite those, which is why a straight port of a
+bun-era mock can silently stop exercising the path it used to. When a mocked
+module's functions call each other, mock the *entry* the code under test
+actually reaches (`test/lifecycle-guards.test.ts` has a worked example).
+
+`test/unit/module-mock-scope.test.ts` fails the suite if any test file calls
+`mock.module(` — for as long as anything still runs under bun.
 
 ### Verifying provider adapter changes
 
@@ -195,21 +242,22 @@ slice that matches what you touched, then the full unit suite:
 
 ```bash
 # Contract / start / status / rename / whoami / tmux / terminal runtime
-bun test test/providers.test.ts test/start.test.ts test/rename.test.ts \
+npx vitest run test/providers.test.ts test/start.test.ts test/rename.test.ts \
   test/whoami.test.ts test/tmux.test.ts test/lifecycle-guards.test.ts
 
 # Hooks, install, doctor (registry-driven)
-bun test test/hooks-install.test.ts test/unit/commands/doctor.test.ts \
+npx vitest run test/hooks-install.test.ts test/unit/commands/doctor.test.ts \
   test/unit/commands/install.test.ts
 
-# History / summaries / providers JSON surfaces
-bun test test/history.test.ts test/summary.test.ts test/agent-json-surfaces.test.ts
+# Providers JSON surfaces; history/summary are still Bun-cohort fixtures
+npx vitest run test/agent-json-surfaces.test.ts
+bun test ./test/history.test.ts ./test/summary.test.ts
 
 # Output cursor + output-follow NDJSON stream
-bun test test/unit/agent-output.test.ts
+npx vitest run test/unit/agent-output.test.ts
 
-# Provider-owned project move
-bun test test/unit/core/project/move.test.ts test/unit/commands/project/move.test.ts
+# Provider-owned project move (Bun cohort — opens a database)
+bun test ./test/unit/core/project/move.test.ts ./test/unit/commands/project/move.test.ts
 
 # Full gate (always run before commit)
 bun run test:unit

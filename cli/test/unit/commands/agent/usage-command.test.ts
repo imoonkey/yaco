@@ -5,7 +5,7 @@
  *  all the exit rule, which decides whether losing one provider is a partial
  *  report or a failure.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { CliError, ErrCode } from "../../../../src/lib/core/errors.ts";
 import { parseUsageArgs, renderUsage, requireReported } from "../../../../src/commands/agent/usage.ts";
 import type { ProviderUsage } from "../../../../src/lib/core/agent/providers/usage.ts";

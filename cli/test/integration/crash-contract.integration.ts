@@ -7,7 +7,7 @@
  *  exit tombstones, a real `kill` (SIGTERM) clean-deletes via the sentinel, and
  *  a crashed tombstone survives `list --reconcile`.
  */
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -16,11 +16,12 @@ import { createSession, hasSession, isTmuxAvailable } from "../../src/lib/core/a
 import { writeState, readState, ensureStateDir, type SessionState } from "../../src/lib/core/agent/session-state.ts";
 import { kill } from "../../src/commands/agent/kill.ts";
 import { list } from "../../src/commands/agent/status.ts";
+import { BUN_BIN, CLI_ENTRY } from "../helpers/cli-process.ts";
 
-const itt = isTmuxAvailable() ? it.serial : it.skip;
+const itt = isTmuxAvailable() ? it.sequential : it.skip;
 
-const WRAPPER = resolve(import.meta.dir, "../../scripts/agent-wrapper.sh");
-const MAIN_TS = resolve(import.meta.dir, "../../src/main.ts");
+const WRAPPER = resolve(import.meta.dirname, "../../scripts/agent-wrapper.sh");
+
 const TEST_CWD = "/tmp/yaco-crash-int";
 const PREFIX = `crash-int-${process.pid}`;
 const CREATED_AT = "2026-04-10T00:00:00.000Z";
@@ -70,7 +71,7 @@ beforeAll(() => {
   process.env["YACO_HOME"] = sandbox;
   ensureStateDir();
   shim = join(sandbox, "yaco-shim");
-  writeFileSync(shim, `#!/bin/bash\nexec bun "${MAIN_TS}" "$@"\n`, { mode: 0o755 });
+  writeFileSync(shim, `#!/bin/bash\nexec "${BUN_BIN}" run "${CLI_ENTRY}" "$@"\n`, { mode: 0o755 });
   // createSession resolves YACO_BIN from YACO_PATH → point it at the shim so the
   // wrapper's crash path runs THIS worktree's `agent mark-crashed`.
   savedYacoPath = process.env["YACO_PATH"];

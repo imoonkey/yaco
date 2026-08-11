@@ -1,8 +1,7 @@
 /** Tests for `yaco init links` — direct runInitLinks calls plus subprocess
  *  coverage for exit codes and dispatcher wiring.
  */
-import { afterAll, describe, expect, it } from "bun:test";
-import { spawnSync } from "child_process";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   lstatSync,
   mkdirSync,
@@ -17,7 +16,7 @@ import { join, resolve } from "node:path";
 
 import { runInitLinks } from "../../../src/commands/init.ts";
 
-const BIN = resolve(import.meta.dir, "../../../src/main.ts");
+import { runCli } from "../../helpers/cli-process.ts";
 
 const TMP_ROOTS: string[] = [];
 
@@ -36,12 +35,7 @@ function runYaco(
   args: string[],
   cwd?: string,
 ): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1" },
-    cwd,
-    timeout: 20_000,
-  });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1" }, cwd, timeout: 20_000 });
   return {
     stdout: r.stdout ?? "",
     stderr: r.stderr ?? "",

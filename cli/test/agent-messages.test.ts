@@ -4,14 +4,13 @@
  *  addressing, filters (absolute-index preserving), index stability across
  *  appends, and the typed-error surfaces. */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { spawnSync } from "child_process";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { resolve, join } from "path";
+import { join } from "path";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 
-const BIN = resolve(import.meta.dir, "../src/main.ts");
+import { runCli } from "./helpers/cli-process.ts";
 const SESSION_PATH = "/tmp/yaco-msgs-proj";
 const SESSION_ID = "sess-msgs-1";
 
@@ -95,7 +94,7 @@ beforeAll(() => {
 afterAll(() => rmSync(sandbox, { recursive: true, force: true }));
 
 function run(args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync("bun", ["run", BIN, ...args], { encoding: "utf-8", env: { ...process.env, ...env } });
+  const r = runCli(args, { env: { ...process.env, ...env } });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 

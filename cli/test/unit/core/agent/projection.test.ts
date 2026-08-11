@@ -1,7 +1,7 @@
 /** Unit tests for the pure session → row projection shared by the CLI
  *  `agent list` command and the app server's hot state-file reads. Pure: no
  *  tmux, fs, or reconcile — exercised entirely in-memory. */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import {
   isPathDescendantOrEqual,
   normalizeProjectPath,

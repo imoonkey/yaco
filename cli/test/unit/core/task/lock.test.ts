@@ -1,7 +1,7 @@
 /** Unit tests for the file lock: contention, stale-PID reclaim, and the
  *  cross-host non-reclamation contract surfaced via describeLock. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import {
   existsSync,
   mkdirSync,

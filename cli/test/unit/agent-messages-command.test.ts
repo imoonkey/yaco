@@ -3,7 +3,7 @@
  *  (runMessages) and JSON envelopes are covered end-to-end in
  *  test/agent-messages.test.ts. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { parseMessagesArgs, renderMetaTable } from "../../src/commands/agent/messages.ts";
 import { CliError } from "../../src/lib/core/errors.ts";
 import type { MessageMeta } from "../../src/lib/core/agent/providers/types.ts";

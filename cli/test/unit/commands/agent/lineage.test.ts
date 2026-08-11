@@ -2,7 +2,7 @@
  *  (agent child / web / terminal), plus stale-handle breadcrumb normalization.
  *  The agent branch resolves the parent handle through the global sessions dir,
  *  so tests that exercise it pin YACO_AGENT_SESSIONS_DIR at a fresh tmp dir. */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

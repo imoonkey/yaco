@@ -14,7 +14,7 @@
  *  mktemp root, asserted before any git init, and removed in afterEach.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -28,11 +28,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { runCli } from "./helpers/cli-process.ts";
 import { runGate } from "../src/lib/core/gate/index.ts";
 import { getMergeBase } from "../src/lib/core/worktree/git.ts";
 
-const BIN = resolve(import.meta.dir, "../src/main.ts");
-const REAL_GATE_SH = resolve(import.meta.dir, "../../scripts/gate.sh");
+const REAL_GATE_SH = resolve(import.meta.dirname, "../../scripts/gate.sh");
 const TMP_PREFIX = join(tmpdir(), "yaco-gate-test-");
 
 interface RunResult {
@@ -47,8 +47,7 @@ function git(cwd: string, ...args: string[]): RunResult {
 }
 
 function runYaco(cwd: string, args: string[]): RunResult {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
+  const r = runCli(args, {
     cwd,
     env: { ...process.env, NO_COLOR: "1" },
     // gate.sh streams (inherits) its verify-heavy progress to stderr; capture

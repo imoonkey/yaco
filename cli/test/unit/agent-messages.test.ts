@@ -5,7 +5,7 @@
  *  timestamp extraction. The command-layer indexing/filters/rendering live in
  *  agent-messages-command.test.ts. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { claudeMessages, codexMessages } from "../../src/lib/core/agent/providers/messages.ts";
 
 const claude = claudeMessages().parseLine;

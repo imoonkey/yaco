@@ -5,13 +5,13 @@
  *  from outside. These tests verify the trap behavior end-to-end by execing
  *  the script in a sandbox with mock tmux.
  */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { execSync } from "child_process";
 
-const WRAPPER_PATH = resolve(import.meta.dir, "../scripts/agent-wrapper.sh");
+const WRAPPER_PATH = resolve(import.meta.dirname, "../scripts/agent-wrapper.sh");
 const WRAPPER_SCRIPT = readFileSync(WRAPPER_PATH, "utf-8");
 
 describe("agent-wrapper.sh content", () => {

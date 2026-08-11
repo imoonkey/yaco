@@ -14,13 +14,13 @@
  *  orphaned grandchild holds the stdio pipes open, and Bun reports neither the
  *  held pipe nor the resulting stall, so a cheap fixture cannot see it either.
  */
-import { describe, it, expect, afterAll } from "bun:test";
+import { describe, it, expect, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
+import { BUN_BIN, runCli } from "../../../helpers/cli-process.ts";
 const TMP: string[] = [];
 afterAll(() => {
   for (const dir of TMP) rmSync(dir, { recursive: true, force: true });
@@ -53,10 +53,7 @@ function runUsage(env: Record<string, string>): {
   ms: number;
 } {
   const started = Date.now();
-  const r = spawnSync("bun", ["run", BIN, "agent", "usage", "codex", "--json"], {
-    encoding: "utf-8",
-    env,
-  });
+  const r = runCli(["agent", "usage", "codex", "--json"], { env });
   return {
     status: r.status,
     stdout: r.stdout ?? "",
@@ -108,15 +105,14 @@ describe("codex app-server failures", () => {
   it("reports a missing codex binary as an environment failure", () => {
     const root = mkdtempSync(join(tmpdir(), "yaco-usage-nocodex-"));
     TMP.push(root);
-    const r = spawnSync("bun", ["run", BIN, "agent", "usage", "codex", "--json"], {
-      encoding: "utf-8",
+    const r = runCli(["agent", "usage", "codex", "--json"], {
       env: {
         ...process.env,
         NO_COLOR: "1",
         HOME: root,
         YACO_HOME: join(root, ".yaco"),
         // Only `codex` is missing — bun's own directory stays on PATH.
-        PATH: dirname(process.execPath),
+        PATH: dirname(BUN_BIN),
       },
     });
     expect(r.status).not.toBe(0);

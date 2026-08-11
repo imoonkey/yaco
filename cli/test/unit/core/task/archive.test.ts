@@ -1,6 +1,6 @@
 /** Unit tests for archive: subtree collection and workset marking. */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 
 import {
   archiveTask,

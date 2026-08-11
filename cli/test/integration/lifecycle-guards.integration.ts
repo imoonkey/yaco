@@ -12,7 +12,7 @@
 // Codex environment is available; in-process hook-event tests cover the Stop
 // idle state + final-message notice path deterministically.
 
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { execSync } from "child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "fs";
 import { homedir, tmpdir } from "os";
@@ -25,6 +25,7 @@ import { readState, deleteState } from "../../src/lib/core/agent/session-state.t
 import { isTmuxAvailable } from "../../src/lib/core/agent/tmux.ts";
 import { isIdle } from "../../src/lib/core/agent/providers.ts";
 import { PENDING_SESSION_ID } from "../../src/lib/core/agent/session-id.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // ---------------------------------------------------------------------------
 // Skip conditions
@@ -43,8 +44,8 @@ const tmux = isTmuxAvailable();
 const hasClaude = cliAvailable("claude");
 const hasCodex = cliAvailable("codex");
 
-const claudeIt = tmux && hasClaude ? it.serial : it.skip;
-const codexIt = tmux && hasCodex ? it.serial : it.skip;
+const claudeIt = tmux && hasClaude ? it.sequential : it.skip;
+const codexIt = tmux && hasCodex ? it.sequential : it.skip;
 
 // ---------------------------------------------------------------------------
 // Unique handle prefix + cleanup
@@ -92,7 +93,7 @@ async function waitFor(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
-    await Bun.sleep(500);
+    await sleep(500);
   }
   throw new Error(`Timed out after ${timeoutMs}ms`);
 }

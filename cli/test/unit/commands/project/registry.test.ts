@@ -8,16 +8,15 @@
  *   - --json envelope shapes via subprocess
  */
 
-import { afterAll, afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { handleProject } from "../../../../src/commands/project/index.ts";
 import { isOk } from "../../../../src/lib/core/result.ts";
+import { runCli } from "../../../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const TMP_ROOTS: string[] = [];
@@ -267,10 +266,7 @@ describe("yaco project — argument validation", () => {
 
 describe("yaco project — --json envelope (subprocess)", () => {
   function runYaco(args: string[], env: Record<string, string>) {
-    const r = spawnSync("bun", ["run", BIN, ...args], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", ...env },
-    });
+    const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...env } });
     return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? -1 };
   }
 

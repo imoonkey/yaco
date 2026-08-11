@@ -5,7 +5,7 @@
  *  otherwise. The render callback must never run on the JSON path.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { dual } from "../../../src/lib/core/render.ts";
 import { isOk } from "../../../src/lib/core/result.ts";
 

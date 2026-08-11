@@ -11,13 +11,12 @@
  *  The credential file still exists in both cases, so the cache's account
  *  binding has a real generation to compare against.
  */
-import { describe, it, expect, afterAll } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { describe, it, expect, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
-const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
+import { runCli } from "../../../helpers/cli-process.ts";
 const TMP: string[] = [];
 afterAll(() => {
   for (const dir of TMP) rmSync(dir, { recursive: true, force: true });
@@ -62,10 +61,7 @@ function seedCache(home: Home, entry: Record<string, unknown>): void {
 }
 
 function runUsage(home: Home): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync("bun", ["run", BIN, "agent", "usage", "claude", "--json"], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1", HOME: home.home, YACO_HOME: home.yacoHome },
-  });
+  const r = runCli(["agent", "usage", "claude", "--json"], { env: { ...process.env, NO_COLOR: "1", HOME: home.home, YACO_HOME: home.yacoHome } });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
@@ -115,10 +111,7 @@ describe("cache hits", () => {
   it("is bypassed by --fresh", () => {
     const home = makeHome({ credentials: true });
     seedCache(home, entryFor(home));
-    const r = spawnSync("bun", ["run", BIN, "agent", "usage", "claude", "--fresh", "--json"], {
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", HOME: home.home, YACO_HOME: home.yacoHome },
-    });
+    const r = runCli(["agent", "usage", "claude", "--fresh", "--json"], { env: { ...process.env, NO_COLOR: "1", HOME: home.home, YACO_HOME: home.yacoHome } });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("expired");
   });
