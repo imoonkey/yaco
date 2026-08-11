@@ -20,7 +20,9 @@ and a browser IDE to watch it all happen — from any device you own.**
 
 </div>
 
-<!-- TODO: hero screenshot / short GIF of the app goes here before release -->
+<p align="center">
+  <img src="doc/assets/hero.png" alt="The YACO app: file tree and git on the left, the task graph beside a live Claude Code session in the middle, the agent session tree on the right" width="100%">
+</p>
 
 YACO is an **orchestration layer, not an agent** — it never talks to a model.
 It starts, tracks, and attaches to the agent CLIs you already have:
@@ -138,6 +140,12 @@ multi-agent works here: your agents run these same commands to spawn and
 coordinate sub-agents, so every session an agent creates is one you can list,
 capture, and attach to. No hidden recursion, no privileged internal API.
 
+<img src="doc/assets/agent-tree.png" alt="yaco agent list and yaco agent status in a terminal, beside the app's session tree showing a parent orchestrator, its worktree worker, and that worker's Codex reviewer" width="100%">
+
+The same three sessions, from the CLI and from the app. `spawnedBy: agent` and
+`parentSession` are all the lineage there is — an orchestrator that started a
+worker, which started its own Codex reviewer.
+
 ## Layer 2 — skills and the workflow
 
 Twenty-two skills in
@@ -182,6 +190,19 @@ before it (scoping, product design, UX specs) is deliberately bring-your-own:
 drop your own skills into `~/.claude/skills` and they slot straight into the
 same loop.
 
+<table>
+<tr>
+<td width="62%"><img src="doc/assets/tasks.png" alt="The task graph: milestones with their tasks, dependency edges, and per-task state" width="100%"></td>
+<td width="38%"><img src="doc/assets/worktrees.png" alt="The file explorer's worktree picker listing main and two task branches" width="100%"></td>
+</tr>
+<tr>
+<td><b>The task graph is a file</b>, and the app renders it — states, worksets,
+real <code>depends</code> edges, and a Gantt view when you want dates.</td>
+<td><b>One task, one worktree.</b> Switch the whole workspace between
+<code>main</code> and any <code>task/&lt;slug&gt;</code> checkout.</td>
+</tr>
+</table>
+
 This layer is the least settled, on purpose: nobody — us included — knows the
 right way to work with coding agents yet. Treat these skills as a fork-and-edit
 starting point, not a doctrine.
@@ -201,6 +222,23 @@ a traditional IDE doesn't have:
 - **Skill-aware markdown.** Design docs are first-class, with editing built for
   the `/design` and `/discuss` review loops.
 - **The task graph, live.** The plan under `plan/tasks/` rendered as a graph.
+
+<img src="doc/assets/walkthrough.gif" alt="Opening the task graph, splitting the working area, and attaching to a running agent that is editing files" width="100%">
+
+<table>
+<tr>
+<td width="58%"><img src="doc/assets/notifications.png" alt="The notification panel: a task marked done, and four sessions waiting on a reply" width="100%"></td>
+<td width="42%"><img src="doc/assets/mobile.png" alt="The same agent session on a phone, with a terminal key bar" width="100%"></td>
+</tr>
+<tr>
+<td><b>It tells you when it's your turn.</b> Sessions and tasks raise their own
+notifications, routed to the one that needs you.</td>
+<td><b>And it's the same workspace on a phone</b> — terminal key bar, voice
+input, everything.</td>
+</tr>
+</table>
+
+More screenshots: [doc/main/app/tour.md](doc/main/app/tour.md).
 
 ## Customizing
 

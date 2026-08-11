@@ -32,6 +32,7 @@ The Hono backend serves the built React app from `<package-root>/ui` — `app/se
 
 | Section | Scope |
 |---------|-------|
+| [tour.md](tour.md) | Screenshots of the app in use |
 | [backend/](backend/) | Server setup, API routes, library modules |
 | [data-model/](data-model/) | Entity shapes, API contracts, persistence boundaries |
 | [frontend/](frontend/) | React components, hooks, state patterns |
