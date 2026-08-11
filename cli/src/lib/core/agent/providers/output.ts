@@ -337,6 +337,33 @@ async function* codexLogPaths(sessionId: string): AsyncGenerator<string> {
   }
 }
 
+/** Codex's rollout event stream carries an agent message in two envelopes: a
+ *  flat `agent_message` payload, and an `item_completed` payload wrapping an
+ *  `AgentMessage` item whose text is split into content blocks. They differ
+ *  only in where the same two facts sit, so both are read into one shape and
+ *  classified once. Anything else — a different payload type, a non-message
+ *  item, a message with no text — is not an agent message. */
+function codexAgentMessage(payload: unknown): { phase: unknown; text: string } | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as {
+    type?: unknown;
+    phase?: unknown;
+    message?: unknown;
+    item?: { type?: unknown; phase?: unknown; content?: unknown };
+  };
+
+  if (p.type === "agent_message") {
+    return typeof p.message === "string" ? { phase: p.phase, text: p.message } : null;
+  }
+  if (p.type !== "item_completed" || p.item?.type !== "AgentMessage") return null;
+  const blocks = Array.isArray(p.item.content) ? p.item.content : [];
+  const text = blocks
+    .map((b) => (b && typeof b === "object" ? (b as { text?: unknown }).text : undefined))
+    .filter((t): t is string => typeof t === "string")
+    .join("\n");
+  return { phase: p.item.phase, text };
+}
+
 function classifyCodex(line: string): AgentOutputEvent | null {
   let entry: unknown;
   try {
@@ -344,14 +371,14 @@ function classifyCodex(line: string): AgentOutputEvent | null {
   } catch {
     return null;
   }
-  const e = entry as { type?: string; payload?: { type?: string; phase?: string; message?: unknown } };
+  const e = entry as { type?: string; payload?: unknown };
   if (e.type !== "event_msg") return null;
-  const p = e.payload;
-  if (p?.type !== "agent_message" || typeof p.message !== "string") return null;
-  const text = p.message.trim();
+  const message = codexAgentMessage(e.payload);
+  if (!message) return null;
+  const text = message.text.trim();
   if (!text) return null;
-  if (p.phase === "final_answer") return { kind: "final", text };
-  if (p.phase === "commentary") return { kind: "interim", text };
+  if (message.phase === "final_answer") return { kind: "final", text };
+  if (message.phase === "commentary") return { kind: "interim", text };
   return null;
 }
 
