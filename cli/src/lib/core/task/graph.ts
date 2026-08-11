@@ -131,29 +131,24 @@ function childIndex(tasks: TaskGraph): Map<string, string[]> {
   return children;
 }
 
-/** Rebuild every milestone's state from its children.
- *
- *  A milestone owns no work of its own, so its state carries no information its
- *  children do not already have: it is derived, never authored (`validateState`
- *  refuses to set it). The value on disk is a projection, rebuilt here on every
- *  load by `loadTaskStore` — the one choke point every reader and writer passes
- *  through, so no command has to remember to derive — and by the mutation
- *  commands before they save a graph they have changed in memory.
- *
- *  Whole-graph rather than "the edited task's ancestors": reparenting changes
- *  *two* chains, and a walk that starts from the edited task can only find the
- *  new one. Deriving everything makes that a non-case rather than a case to
- *  remember, and costs less than the `checkCycles` pass `set` already runs.
+/** The state every milestone settles on — one entry per task that has children,
+ *  none for a leaf — computed children-before-parents and without touching the
+ *  graph, so both the writer ({@link deriveMilestoneStates}) and the reader
+ *  ({@link validateGraph}) get their answer from the same walk. Two walks would
+ *  agree at depth one and disagree below it, since a parent's answer depends on
+ *  what its child *settles on*, not on what the file records for it.
  *
  *  An explicit stack, and each task settled once: the tree is input, so its
  *  depth is too, and a recursive post-order overflows on a deep chain — the one
  *  shape that most needs to *reach* `validateGraph` and be reported. `open` is
  *  the cycle guard: a task already on the stack contributes its recorded state
  *  instead of recursing, so a hand-edited `parent` loop unwinds. */
-export function deriveMilestoneStates(tasks: TaskGraph): void {
+function settledMilestoneStates(tasks: TaskGraph): Map<string, State> {
   const children = childIndex(tasks);
+  const milestones = new Map<string, State>();
   const settled = new Set<string>();
   const open = new Set<string>();
+  const stateOf = (tid: string): State => milestones.get(tid) ?? tasks[tid]!.state;
 
   for (const start of children.keys()) {
     if (settled.has(start)) continue;
@@ -171,13 +166,31 @@ export function deriveMilestoneStates(tasks: TaskGraph): void {
         open.add(tid);
         for (const c of kids) if (!settled.has(c) && !open.has(c)) stack.push(c);
       } else {
-        tasks[tid]!.state = stateFromChildren(kids.map((c) => tasks[c]!.state));
+        milestones.set(tid, stateFromChildren(kids.map(stateOf)));
         settled.add(tid);
         open.delete(tid);
         stack.pop();
       }
     }
   }
+  return milestones;
+}
+
+/** Rebuild every milestone's state from its children.
+ *
+ *  A milestone owns no work of its own, so its state carries no information its
+ *  children do not already have: it is derived, never authored (`validateState`
+ *  refuses to set it). The value on disk is a projection, rebuilt here on every
+ *  load by `loadTaskStore` — the one choke point every reader and writer passes
+ *  through, so no command has to remember to derive — and by the mutation
+ *  commands before they save a graph they have changed in memory.
+ *
+ *  Whole-graph rather than "the edited task's ancestors": reparenting changes
+ *  *two* chains, and a walk that starts from the edited task can only find the
+ *  new one. Deriving everything makes that a non-case rather than a case to
+ *  remember, and costs less than the `checkCycles` pass `set` already runs. */
+export function deriveMilestoneStates(tasks: TaskGraph): void {
+  for (const [tid, state] of settledMilestoneStates(tasks)) tasks[tid]!.state = state;
 }
 
 export interface ValidationProblems {
@@ -208,7 +221,9 @@ export function validateGraph(
 ): ValidationReport {
   const ids = scope ? collectParentChain(tasks, scope.id) : Object.keys(tasks);
   const set = new Set(ids);
-  const children = childIndex(tasks);
+  // One entry per milestone, the same walk the derivation applies. A task
+  // missing from it is a leaf.
+  const milestones = settledMilestoneStates(tasks);
   const problems: ValidationProblems = {
     cycles: [],
     dangling: [],
@@ -240,26 +255,22 @@ export function validateGraph(
         problems.dangling.push({ id: tid, kind: "depends", ref: d });
       }
     }
-    const kids = children.get(tid);
-    if (!kids && isAcceptCriteriaBlank(t.acceptCriteria)) {
+    const implied = milestones.get(tid);
+    if (implied === undefined && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
     }
 
     // A milestone whose recorded state is not the one its children imply.
     // `loadTaskStore` derives, so nothing that comes through it can land here —
     // but `loadTasks` and `validateGraph` are both published, and that
-    // composition reaches this function with a graph nobody has derived. The
-    // check is the derivation rule itself, so the two cannot drift apart.
-    if (kids && isState(t.state)) {
-      const implied = stateFromChildren(kids.map((c) => tasks[c]!.state));
-      if (implied !== t.state) {
-        problems.milestoneRollup.push({
-          id: tid,
-          recordedState: t.state,
-          impliedState: implied,
-          reason: `milestone state '${t.state}' is not what its children imply ('${implied}')`,
-        });
-      }
+    // composition reaches this function with a graph nobody has derived.
+    if (implied !== undefined && isState(t.state) && implied !== t.state) {
+      problems.milestoneRollup.push({
+        id: tid,
+        recordedState: t.state,
+        impliedState: implied,
+        reason: `milestone state '${t.state}' is not what its children imply ('${implied}')`,
+      });
     }
   }
 

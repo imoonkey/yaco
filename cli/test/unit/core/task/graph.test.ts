@@ -370,6 +370,44 @@ describe("validateGraph", () => {
     expect(validateGraph(t).ok).toBe(true);
   });
 
+  describe("nested — the report has to agree with what the derivation would do", () => {
+    /** root -> mid -> leaf(done). Both milestones settle on `done`, but only
+     *  `mid` gets there from a *recorded* child state. */
+    function deep(rootState: string): TaskGraph {
+      return {
+        root: { parent: null, depends: [], state: rootState as "ready", title: "r", description: "d" },
+        mid: { parent: "root", depends: [], state: "ready", title: "m", description: "d" },
+        leaf: { parent: "mid", depends: [], state: "done", title: "l", description: "d", acceptCriteria: "ok" },
+      };
+    }
+
+    it("reports an ancestor left stale two levels up", () => {
+      const ids = validateGraph(deep("ready")).details!.milestoneRollup.map((m) => m.id).sort();
+      expect(ids).toEqual(["mid", "root"]);
+    });
+
+    it("does not report an ancestor the derivation would leave alone", () => {
+      // `root` is already `done`, which is what it settles on once `mid` does.
+      const report = validateGraph(deep("done")).details!.milestoneRollup;
+      expect(report.map((m) => m.id)).toEqual(["mid"]);
+    });
+
+    it("agrees with the derivation on every task, for both shapes", () => {
+      for (const rootState of ["ready", "done"]) {
+        const reported = new Map(
+          validateGraph(deep(rootState)).details!.milestoneRollup.map((m) => [m.id, m.impliedState]),
+        );
+        const derived = deep(rootState);
+        deriveMilestoneStates(derived);
+        for (const id of ["root", "mid", "leaf"]) {
+          const before = deep(rootState)[id]!.state;
+          const after = derived[id]!.state;
+          expect(reported.get(id)).toBe(after === before ? undefined : after);
+        }
+      }
+    });
+  });
+
   it("narrowing by id only reports problems on the parent chain", () => {
     const t = makeGraph();
     delete t["a"]!.acceptCriteria;

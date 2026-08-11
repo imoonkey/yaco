@@ -270,8 +270,10 @@ returns exit 1 `INVALID`):
 before anyone sees it, so `yaco task validate` and `yaco doctor` never report
 it. It is there for the other reachable composition: `loadTasks` and
 `validateGraph` are both published, and a consumer that pairs them hands this
-function a graph nobody has derived. The check *is* the derivation rule, so the
-two cannot drift apart.
+function a graph nobody has derived. The report and the derivation share one
+walk (`settledMilestoneStates`), so they cannot drift apart — and they would, at
+any depth past one, if the check compared a milestone against its children's
+*recorded* states instead of the states those children settle on.
 
 ### `list`
 

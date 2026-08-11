@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-11: a milestone's state is derived from its children, not stored
+
+**What changed:**
+- A task with children owns no work of its own, so its `state` carries no information its children do not already have. It was nonetheless a **stored** field kept in step by `rollup()`, a hook on one mutation path with exactly two transitions (all-terminal → `done`, and the demotion back out of `done`). `loadTaskStore` now rebuilds every milestone's state from its children, so the value on disk is a projection and the one choke point every reader and writer passes through applies the rule: **`ready` only while no child has moved, `done` once all of them have ended, `running` in between** — and `cancelled` when every child was cancelled, because a milestone whose children were all abandoned must not claim work was completed.
+- **The reported bug was not the bug.** The report was "all 17 children done, milestone still `ready`". Replaying the plan repo's own history showed the milestone never had a moment with zero open children — it was 17 done out of **18**. What was real is worse: there was no transition *into* `running`, so `cli-node-sdk` read `ready` for two days across 17 landed tasks, indistinguishable in `task list` from a milestone nobody had started. Six of 22 live milestones were in that state, and a seventh (`mattpocock-skills`, 15 children, every one cancelled) read **`done`**.
+- **Whole graph, not the edited task's ancestors** — found by the reviewer, and the reason the first implementation was wrong. A reparent moves a child between *two* chains and only the new one is reachable from the child, so the old parent kept a state its remaining children no longer implied; worse, `set` stamps `stateEnteredAt` by diffing a pre-mutation snapshot, so the later load-time correction never stamped it either — a `task_done` the app drops for want of a generation key. Deriving everything makes that a non-case rather than a case to remember, and costs less than the `checkCycles` pass `set` already runs. `rollup()` is gone; `set` and `rm` call `deriveMilestoneStates(tasks)`.
+- The traversal is an explicit-stack post-order that settles each task once. The recursive version the reviewer measured was quadratic (~2.9 s at 5,000 tasks) and overflowed the stack at 10,000 — on precisely the malformed shape that most needs to *reach* `validateGraph` and be reported, inside a loader that runs in `app/server`'s event loop. A 50,000-deep chain is now a test.
+- `validateGraph`'s `milestoneRollup` bucket was deleted and then restored: `loadTasks` and `validateGraph` are both published, and that composition hands the validator a graph nobody has derived. It is computed from the same rule the derivation applies, so the two cannot drift apart, and it stays unreachable through `loadTaskStore` — which is why `yaco doctor` still passes on a graph carrying seven of these.
+
+**Why:**
+- `validateState` already refused the manual correction with *"state derived from children"*. The field was a cache of a pure function, so every defect here was a cache-invalidation defect. Making the sentence true subtracts more than it adds.
+- A stricter *validator* was the tempting fix and would have been the wrong one: it fails `yaco doctor`, and `yaco install` throws on any failing doctor check, so it would have blocked installs on the operator's own repo over seven states the code could simply compute.
+
+**Key files:** `cli/src/lib/core/task/graph.ts`, `cli/src/lib/core/task/store.ts`, `cli/src/commands/task/{set,rm}.ts`, `cli/test/unit/core/task/{graph,store}.test.ts`, `cli/test/integration/task/task-cli.integration.ts`, `doc/main/cli/task.md`
+**Verification:** `scripts/verify.sh` green; golden matrix byte-identical; cross-provider Codex review (3 High, all resolved); QA over a copy of the live 492-task graph — exactly 7 states move, `doctor` and `validate` stay green, and `app/server`'s in-process read reflects the derivation. -> `plan/all/milestone-derived-state/`
+**Commit:** 5094677a..b14a35d3
+**Next:** none — `agent-config/global/skills/yaco-task/SKILL.md` already says milestone state is derived and needs no change.
+**Blockers:** None
+
 ## 2026-08-11: the history read moves in process — the fifth and last Phase-2 cutover
 
 **What changed:**
