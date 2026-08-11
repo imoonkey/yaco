@@ -457,6 +457,65 @@ assert_eq "no link was created outside the worktree" "absent" \
   "$(if [ -e "$repo/victim" ] || [ -L "$repo/victim" ]; then echo present; else echo absent; fi)"
 assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
 
+# --------------------------------------------------------------------------
+# 16. A name with more than one path segment stays lexically under the
+#     worktree's node_modules while its FIRST segment is, by then, a link to
+#     main's copy of that dependency — so the write follows it into the main
+#     install. Containment on the string is not containment on the path.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/node_modules/leftpad/lib/keep.js" 'main-owned'
+write "$repo/packages/through-dep/package.json" '{"name":"leftpad/lib/local","version":"1.0.0"}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm through-dep
+fp before "$repo/node_modules"
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a multi-segment package name is refused" 1 "$rc"
+assert_contains "and says it is not a package name" "not an npm package name" "$out"
+fp after "$repo/node_modules"
+assert_eq "main's tree is untouched by the attempt" "$before" "$after"
+
+# --------------------------------------------------------------------------
+# 17. `exports` may block an internal subpath with a null target. Probing that
+#     one would report a correctly provisioned worktree as broken, on nothing
+#     but the order of the keys.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/blocked/package.json" \
+  '{"name":"@fx/blocked","version":"1.0.0","exports":{"./internal":null,"./public":"./dist/public.js"}}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm blocked
+in_root "$repo/node_modules/@fx"
+ln -s ../../packages/blocked "$repo/node_modules/@fx/blocked"
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a blocked subpath before an exported one still provisions" 0 "$rc"
+assert_eq "and the exported subpath is what resolves" \
+  "$wt/packages/blocked/dist/public.js" "$(resolve_from "$wt/app/server" @fx/blocked/public)"
+
+# --------------------------------------------------------------------------
+# 18. Convergence is claimed for the whole tree, so it has to hold when a
+#     directory the mirror owns disappears from the source, not only when a
+#     single entry inside one does.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+wt="$(mk_wt "$repo")"
+provision "$wt" >/dev/null
+in_root "$repo/node_modules/.bin"
+mv "$repo/node_modules/.bin" "$repo/bin-removed"
+in_root "$repo/cli/node_modules"
+mv "$repo/cli/node_modules" "$repo/cli-nested-removed"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "refresh after whole directories disappeared exits 0" 0 "$rc"
+assert_eq "the .bin the mirror owned is gone" "absent" \
+  "$(if [ -e "$wt/node_modules/.bin" ]; then echo present; else echo absent; fi)"
+assert_eq "a workspace's emptied nested tree keeps no stale links" "" \
+  "$(readlink "$wt/cli/node_modules/@types" || true)"
+
 echo
 echo "passed=$pass failed=$fail"
 [ "$fail" = 0 ]

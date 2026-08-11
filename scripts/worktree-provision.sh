@@ -61,6 +61,7 @@ workspaces="$(node -e '
   const root = realpathSync(process.cwd());
   const modules = join(root, "node_modules");
   const inside = (p, base) => p === base || p.startsWith(base + sep);
+  const opaque = (v) => /[\u0000-\u001f\u007f]/.test(v);
 
   try {
     const globs = JSON.parse(readFileSync("package.json", "utf8")).workspaces ?? [];
@@ -77,32 +78,53 @@ workspaces="$(node -e '
         // Both writes these names drive — the link at node_modules/<name> and the
         // mirror of <dir>/node_modules — must land inside this worktree. They come
         // from a manifest and a glob, and nothing downstream re-checks them.
+        //
+        // Representable first: everything below reasons about the value the shell
+        // will hold, and the shell does not carry every byte through. It splits on
+        // the tab and the newline and drops NUL, so a value holding one arrives at
+        // a write different from the one checked here. Refused, not escaped, so
+        // there is one representation rather than two.
+        const carried = [pkg.name, dir].find(opaque);
+        if (carried !== undefined)
+          throw new Error(`workspace value ${JSON.stringify(carried)} contains a control character`);
+        //
+        // The name is held to the shape npm allows first, because lexical
+        // containment is not enough by itself: `leftpad/lib/local` resolves under
+        // the node_modules of this worktree, but `leftpad` is by then a link to
+        // the copy of that dependency in main, and the write would follow it into
+        // the main install. One segment, or @scope/name — every publishable name.
+        const segments = pkg.name.split("/");
+        const shaped =
+          (segments.length === 1 || (segments.length === 2 && segments[0].startsWith("@"))) &&
+          segments.every((s) => s !== "" && s !== "." && s !== ".." && !s.includes("\\"));
+        if (!shaped)
+          throw new Error(`workspace package name ${JSON.stringify(pkg.name)} is not an npm package name (one segment, or @scope/name)`);
         const abs = realpathSync(dir);
         if (!inside(abs, root))
           throw new Error(`workspace directory "${dir}" resolves to ${abs}, outside ${root}`);
         if (!inside(resolve(modules, pkg.name), modules))
           throw new Error(`workspace package name "${pkg.name}" escapes ${modules}`);
 
+        // A subpath the package actually exports. `exports` may block an internal
+        // path with a null target, and probing that one would report a correctly
+        // provisioned worktree as broken on nothing but key order.
+        const usable = (t) =>
+          typeof t === "string" ? true
+          : Array.isArray(t) ? t.some(usable)
+          : t !== null && typeof t === "object" ? Object.values(t).some(usable)
+          : false;
         const exp = pkg.exports;
         let spec = pkg.name;
         if (exp === undefined || exp === null) spec += "/package.json";
         else if (typeof exp === "object" && !Array.isArray(exp)) {
-          const sub = Object.keys(exp).find((k) => k.startsWith("./"));
-          if (sub) spec += sub.slice(1);
+          const sub = Object.entries(exp).find(([k, v]) => k.startsWith("./") && usable(v));
+          if (sub) spec += sub[0].slice(1);
         }
-        // These records cross into the shell, which does not carry every byte
-        // through: command substitution drops NUL, and `read` splits on the tab
-        // and the newline. A value holding one of those arrives at a write as a
-        // different name and directory than the two checks above just approved —
-        // `safe/..\0/../../victim` resolves inside node_modules with the NUL and
-        // outside it once the NUL is gone. Control characters are refused rather
-        // than escaped, so there is one representation and the values that reach
-        // a write are exactly the validated ones.
-        const record = [pkg.name, dir, spec];
-        const opaque = record.find((v) => /[\u0000-\u001f\u007f]/.test(v));
-        if (opaque !== undefined)
-          throw new Error(`workspace value ${JSON.stringify(opaque)} contains a control character`);
-        out.push(record.join("\t"));
+        // The specifier is derived from an `exports` key, which is manifest text
+        // like the rest and crosses the same boundary.
+        if (opaque(spec))
+          throw new Error(`workspace value ${JSON.stringify(spec)} contains a control character`);
+        out.push([pkg.name, dir, spec].join("\t"));
       }
     process.stdout.write(out.join("\n"));
   } catch (e) {
@@ -154,7 +176,7 @@ real_dir() {
 mirror() {
   local src="$1" dst="$2" entry base
   real_dir "$dst"
-  if [ "$(cd "$src" && pwd -P)" = "$(cd "$dst" && pwd -P)" ]; then
+  if [ -d "$src" ] && [ "$(cd "$src" && pwd -P)" = "$(cd "$dst" && pwd -P)" ]; then
     echo "worktree-provision: refusing to mirror $src onto itself" >&2
     exit 1
   fi
@@ -170,8 +192,15 @@ mirror() {
   done
   for entry in "$dst"/*; do
     base="${entry##*/}"
-    if [ -L "$entry" ] && [ ! -e "$src/$base" ] && [ ! -L "$src/$base" ]; then
+    if [ -e "$src/$base" ] || [ -L "$src/$base" ]; then continue; fi
+    if [ -L "$entry" ]; then
       rm -f "$entry"
+    elif [ -d "$entry" ] && [[ " $descend " == *" $base "* ]]; then
+      # A directory this mirror owns whose source is gone: empty it of the links
+      # it put there, and drop it if nothing worktree-owned remains. `rmdir`
+      # never recurses, so a leftover real entry keeps the directory alive.
+      mirror "$src/$base" "$entry"
+      rmdir "$entry" 2>/dev/null || true
     fi
   done
 }
@@ -187,8 +216,11 @@ if [ "${1:-}" != "--check" ]; then
   # The root tree, then each workspace's own nested tree (npm leaves the deps it
   # cannot hoist there).
   mirror "$main/node_modules" "$wt/node_modules"
+  # Each workspace's own nested tree (npm leaves the deps it cannot hoist there).
+  # Mirrored when EITHER side exists: once main re-hoists them away, the worktree
+  # copy still has to be emptied, or it goes on shadowing with links main dropped.
   while IFS="$(printf '\t')" read -r _ dir _; do
-    if [ -d "$main/$dir/node_modules" ]; then
+    if [ -d "$main/$dir/node_modules" ] || [ -d "$wt/$dir/node_modules" ]; then
       mirror "$main/$dir/node_modules" "$wt/$dir/node_modules"
     fi
   done <<<"$workspaces"
@@ -198,6 +230,17 @@ if [ "${1:-}" != "--check" ]; then
   # that exists only on this branch.
   while IFS="$(printf '\t')" read -r name dir _; do
     case "$name" in */*) real_dir "$wt/node_modules/${name%/*}" ;; esac
+    # Physical containment at the write seam, not just the lexical check the
+    # names already passed: whatever the ancestors turn out to be, the link lands
+    # under this worktree's node_modules or it does not get written.
+    parent="$(cd "$(dirname "$wt/node_modules/$name")" && pwd -P)"
+    case "$parent" in
+    "$wt/node_modules" | "$wt/node_modules"/*) ;;
+    *)
+      echo "worktree-provision: refusing to link $name — $parent is outside $wt/node_modules" >&2
+      exit 1
+      ;;
+    esac
     relink "$wt/$dir" "$wt/node_modules/$name"
   done <<<"$workspaces"
 
