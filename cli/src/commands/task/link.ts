@@ -12,6 +12,7 @@ import {
   mutateTaskAgentLink,
   type TaskAgentLinkOp,
 } from "../../lib/core/task/index.ts";
+import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface LinkOpts {
@@ -31,6 +32,7 @@ export async function runLink(
     taskId: id,
     sessionHandle: handle,
     op,
+    timeoutMs: taskLockTimeoutMs(),
   });
   return dual(
     opts.json,

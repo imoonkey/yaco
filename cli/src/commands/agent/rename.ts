@@ -10,6 +10,7 @@ import {
   resolveTasksPathForSessionPath,
   rewriteTaskAgentHandle,
 } from "../../lib/core/task/index.ts";
+import { taskLockTimeoutMs } from "../task/lock-timeout.ts";
 
 /** Outcome of `yaco agent rename`. The session-state/tmux rename is
  *  authoritative; the reference rewrites below are best-effort and never abort
@@ -76,7 +77,9 @@ export async function rename(oldName: string, newName: string): Promise<RenameOu
         `no task store resolved from sessionPath "${state.sessionPath}"; skipped task agents rewrite`,
       );
     } else {
-      tasks = (await rewriteTaskAgentHandle(tasksPath, oldName, newName)).tasks;
+      tasks = (
+        await rewriteTaskAgentHandle(tasksPath, oldName, newName, taskLockTimeoutMs())
+      ).tasks;
     }
   } catch (err) {
     warnings.push(`task agents rewrite failed: ${(err as Error).message}`);

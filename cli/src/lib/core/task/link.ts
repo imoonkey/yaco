@@ -30,6 +30,10 @@ export interface TaskAgentLinkMutation {
   taskId: string;
   sessionHandle: string;
   op: TaskAgentLinkOp;
+  /** Lock deadline in ms. Explicit because this closure is exported and must
+   *  not read one from the environment; omit for
+   *  `DEFAULT_TASK_LOCK_TIMEOUT_MS`. */
+  timeoutMs?: number;
 }
 
 export interface TaskAgentLinkResult {
@@ -92,7 +96,7 @@ export async function mutateTaskAgentLink(
       saveTasks(file, graph);
       return { taskId: m.taskId, agents: next };
     },
-    { command: `yaco task ${m.op} ${m.taskId}` },
+    { command: `yaco task ${m.op} ${m.taskId}`, timeoutMs: m.timeoutMs },
   );
 }
 
@@ -109,6 +113,7 @@ export async function rewriteTaskAgentHandle(
   tasksPath: string,
   oldHandle: string,
   newHandle: string,
+  timeoutMs?: number,
 ): Promise<{ tasks: string[] }> {
   return withLock(
     tasksPath,
@@ -140,6 +145,6 @@ export async function rewriteTaskAgentHandle(
       }
       return { tasks: affected.map((a) => a.id) };
     },
-    { command: `yaco agent rename ${oldHandle} ${newHandle}` },
+    { command: `yaco agent rename ${oldHandle} ${newHandle}`, timeoutMs },
   );
 }

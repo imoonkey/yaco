@@ -9,6 +9,7 @@ import {
   saveTaskStore,
   withLock,
 } from "../../lib/core/task/index.ts";
+import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface ArchiveOpts {
@@ -31,7 +32,7 @@ export async function runArchive(
       archivedCount = outcome.archivedIds.length;
       saveTaskStore(store);
     },
-    { command: `yaco task archive ${id}` },
+    { command: `yaco task archive ${id}`, timeoutMs: taskLockTimeoutMs() },
   );
 
   return dual(

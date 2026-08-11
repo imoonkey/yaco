@@ -15,6 +15,7 @@ import {
   saveTaskStore,
   withLock,
 } from "../../lib/core/task/index.ts";
+import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface RmOpts {
@@ -52,7 +53,7 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
       }
       saveTaskStore(store);
     },
-    { command: `yaco task rm ${id}` },
+    { command: `yaco task rm ${id}`, timeoutMs: taskLockTimeoutMs() },
   );
 
   return dual(opts.json, { id, removed: true, tasksPath: paths.tasksPath }, () => `removed task '${id}'\n`);

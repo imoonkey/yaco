@@ -33,6 +33,7 @@ import {
   type Task,
   type TaskGraph,
 } from "../../lib/core/task/index.ts";
+import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface SetOpts {
@@ -123,7 +124,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
         if (msg) warnings.push(msg);
       }
     },
-    { command: `yaco task set ${id}` },
+    { command: `yaco task set ${id}`, timeoutMs: taskLockTimeoutMs() },
   );
 
   if (!opts.json) {

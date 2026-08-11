@@ -2,7 +2,7 @@
 
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import { cleanupWorktree } from "../../lib/core/worktree/index.ts";
+import { cleanupWorktree } from "../../lib/core/worktree/cleanup.ts";
 
 export interface CleanupHandlerOpts {
   json: boolean;

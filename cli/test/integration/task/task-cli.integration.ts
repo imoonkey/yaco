@@ -18,7 +18,10 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { lockPathFor } from "../../../src/lib/core/task/index.ts";
+import {
+  DEFAULT_TASK_LOCK_TIMEOUT_MS,
+  lockPathFor,
+} from "../../../src/lib/core/task/index.ts";
 import { CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
 
@@ -620,6 +623,14 @@ describe("cross-host stale lock", () => {
 
     // set must FAIL with LOCK (exit 4) — never auto-broken. Use a short
     // timeout so the test doesn't pay the full 10s wait.
+    //
+    // The elapsed bound is what makes this an assertion about the override
+    // rather than about the default: `YACO_TASK_LOCK_TIMEOUT_MS` is read at the
+    // command edge and passed down explicitly, so a call site that forgets to
+    // pass it still fails with LOCK — just 10s later. Both `set` (which takes
+    // the lock itself) and `attach` (whose lock lives inside the exported
+    // `core/task` closure) are checked, because they thread it differently.
+    const started = Date.now();
     const setResult = runYaco(
       repo,
       [
@@ -635,6 +646,18 @@ describe("cross-host stale lock", () => {
     );
     expect(setResult.status).toBe(4);
     expect(parseJson(setResult.stderr).error!.code).toBe("LOCK");
+    expect(Date.now() - started).toBeLessThan(DEFAULT_TASK_LOCK_TIMEOUT_MS / 2);
+
+    const attachStarted = Date.now();
+    const attachResult = runYaco(
+      repo,
+      ["task", "attach", "x", "sess-1", "--json"],
+      undefined,
+      { YACO_TASK_LOCK_TIMEOUT_MS: "200" },
+    );
+    expect(attachResult.status).toBe(4);
+    expect(parseJson(attachResult.stderr).error!.code).toBe("LOCK");
+    expect(Date.now() - attachStarted).toBeLessThan(DEFAULT_TASK_LOCK_TIMEOUT_MS / 2);
 
     // Lock dir still owned by the foreign host — never auto-broken.
     expect(existsSync(lockDir)).toBe(true);
