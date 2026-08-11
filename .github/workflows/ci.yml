@@ -41,6 +41,10 @@ jobs:
         working-directory: cli
         run: npm run test
 
+      - name: cli pack smoke
+        working-directory: cli
+        run: npm run test:pack
+
       - name: app/server tests
         working-directory: app/server
         run: npm test
