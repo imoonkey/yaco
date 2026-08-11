@@ -48,18 +48,14 @@ if [ -z "${main:-}" ] || [ "$main" = "$wt" ]; then
   exit 0
 fi
 
-# Workspace packages of THIS worktree, one tab-separated
-# "<name>\t<dir>\t<probe specifier>" per line. The probe specifier is what the
-# self-check asks the resolver for, and it has to answer in an unbuilt checkout:
-# an `exports` map resolves a declared subpath without touching disk, while a
-# package without one is asked for its `package.json`, the one file it is
-# guaranteed to have.
+# Workspace packages of THIS worktree, one tab-separated "<name>\t<dir>" per
+# line. What to ask the resolver for is decided later, by the self-check, which
+# is the only place that can find out which subpaths this resolver answers.
 workspaces="$(node -e '
   const { globSync, readFileSync, realpathSync } = require("node:fs");
-  const { join, resolve, sep } = require("node:path");
+  const { join, sep } = require("node:path");
 
   const root = realpathSync(process.cwd());
-  const modules = join(root, "node_modules");
   const inside = (p, base) => p === base || p.startsWith(base + sep);
   const opaque = (v) => /[\u0000-\u001f\u007f]/.test(v);
 
@@ -99,32 +95,15 @@ workspaces="$(node -e '
           segments.every((s) => s !== "" && s !== "." && s !== ".." && !s.includes("\\"));
         if (!shaped)
           throw new Error(`workspace package name ${JSON.stringify(pkg.name)} is not an npm package name (one segment, or @scope/name)`);
+        // A glob can match a symlink, so the directory is checked physically.
+        // The name needs no containment check of its own: after the shape above,
+        // one segment or @scope/name cannot leave node_modules lexically, and
+        // what it can do through a symlinked ancestor is checked at the write.
         const abs = realpathSync(dir);
         if (!inside(abs, root))
           throw new Error(`workspace directory "${dir}" resolves to ${abs}, outside ${root}`);
-        if (!inside(resolve(modules, pkg.name), modules))
-          throw new Error(`workspace package name "${pkg.name}" escapes ${modules}`);
 
-        // A subpath the package actually exports. `exports` may block an internal
-        // path with a null target, and probing that one would report a correctly
-        // provisioned worktree as broken on nothing but key order.
-        const usable = (t) =>
-          typeof t === "string" ? true
-          : Array.isArray(t) ? t.some(usable)
-          : t !== null && typeof t === "object" ? Object.values(t).some(usable)
-          : false;
-        const exp = pkg.exports;
-        let spec = pkg.name;
-        if (exp === undefined || exp === null) spec += "/package.json";
-        else if (typeof exp === "object" && !Array.isArray(exp)) {
-          const sub = Object.entries(exp).find(([k, v]) => k.startsWith("./") && usable(v));
-          if (sub) spec += sub[0].slice(1);
-        }
-        // The specifier is derived from an `exports` key, which is manifest text
-        // like the rest and crosses the same boundary.
-        if (opaque(spec))
-          throw new Error(`workspace value ${JSON.stringify(spec)} contains a control character`);
-        out.push([pkg.name, dir, spec].join("\t"));
+        out.push([pkg.name, dir].join("\t"));
       }
     process.stdout.write(out.join("\n"));
   } catch (e) {
@@ -141,7 +120,7 @@ fi
 # Directories the mirror must descend into instead of sharing whole: `.bin` and
 # every scope that hosts a workspace package. Both hold workspace-owned links.
 descend=".bin"
-while IFS="$(printf '\t')" read -r name _ _; do
+while IFS="$(printf '\t')" read -r name _; do
   case "$name" in
   @*/*) case " $descend " in *" ${name%%/*} "*) ;; *) descend="$descend ${name%%/*}" ;; esac ;;
   esac
@@ -219,7 +198,7 @@ if [ "${1:-}" != "--check" ]; then
   # Each workspace's own nested tree (npm leaves the deps it cannot hoist there).
   # Mirrored when EITHER side exists: once main re-hoists them away, the worktree
   # copy still has to be emptied, or it goes on shadowing with links main dropped.
-  while IFS="$(printf '\t')" read -r _ dir _; do
+  while IFS="$(printf '\t')" read -r _ dir; do
     if [ -d "$main/$dir/node_modules" ] || [ -d "$wt/$dir/node_modules" ]; then
       mirror "$main/$dir/node_modules" "$wt/$dir/node_modules"
     fi
@@ -228,19 +207,22 @@ if [ "${1:-}" != "--check" ]; then
   # Point every workspace package at THIS worktree. The verbatim relative links
   # above already do this for the packages main knows about; this also covers one
   # that exists only on this branch.
-  while IFS="$(printf '\t')" read -r name dir _; do
-    case "$name" in */*) real_dir "$wt/node_modules/${name%/*}" ;; esac
-    # Physical containment at the write seam, not just the lexical check the
-    # names already passed: whatever the ancestors turn out to be, the link lands
-    # under this worktree's node_modules or it does not get written.
-    parent="$(cd "$(dirname "$wt/node_modules/$name")" && pwd -P)"
-    case "$parent" in
+  while IFS="$(printf '\t')" read -r name dir; do
+    # Physical containment before anything is created, independently of the shape
+    # the name was already held to. The parent may not exist yet and `mkdir -p`
+    # would follow a mirrored dependency link into the main install on its way to
+    # making it, so the deepest ancestor that DOES exist is the one canonicalized.
+    ancestor="$(dirname "$wt/node_modules/$name")"
+    while [ ! -d "$ancestor" ]; do ancestor="$(dirname "$ancestor")"; done
+    ancestor="$(cd "$ancestor" && pwd -P)"
+    case "$ancestor" in
     "$wt/node_modules" | "$wt/node_modules"/*) ;;
     *)
-      echo "worktree-provision: refusing to link $name — $parent is outside $wt/node_modules" >&2
+      echo "worktree-provision: refusing to link $name — $ancestor is outside $wt/node_modules" >&2
       exit 1
       ;;
     esac
+    case "$name" in */*) real_dir "$wt/node_modules/${name%/*}" ;; esac
     relink "$wt/$dir" "$wt/node_modules/$name"
   done <<<"$workspaces"
 
@@ -253,8 +235,8 @@ fi
 # which physical file an import would load, not which symlink it went through.
 # --------------------------------------------------------------------------
 resolve_js='
-  import { realpathSync } from "node:fs";
-  import { dirname } from "node:path";
+  import { readFileSync, realpathSync } from "node:fs";
+  import { dirname, join } from "node:path";
   import { fileURLToPath } from "node:url";
 
   // A path, not the URL the resolver hands back: a URL percent-encodes, and a
@@ -276,21 +258,46 @@ resolve_js='
     }
   };
 
+  // What to ask for. A package without `exports` answers to any path, and
+  // `package.json` is the one file it certainly has. With `exports`, only a
+  // declared subpath answers — and WHICH of them answer depends on the
+  // conditions this resolver applies and on targets that may be null, so rather
+  // than predict that, offer them in order and keep the first that resolves.
+  const candidates = (name, dir) => {
+    let pkg = {};
+    try { pkg = JSON.parse(readFileSync(join(process.env.WP_ROOT, dir, "package.json"), "utf8")); } catch {}
+    const exp = pkg.exports;
+    if (exp === undefined || exp === null) return [name + "/package.json"];
+    const subs = typeof exp === "object" && !Array.isArray(exp)
+      ? Object.keys(exp).filter((k) => k.startsWith("./")).map((k) => name + k.slice(1))
+      : [];
+    return [name, ...subs];
+  };
+
+  // The specifier is reported back through the shell; a control character in an
+  // `exports` key would otherwise re-split the line it is printed on.
+  const printable = (s) => s.replace(/[\u0000-\u001f\u007f]/g, "?");
+
   let out = "";
-  for (const spec of process.env.WP_SPECS.split("\n").filter(Boolean)) {
-    try { out += spec + "\t" + physical(import.meta.resolve(spec)) + "\n"; }
-    catch (e) { out += spec + "\tUNRESOLVED:" + (e.code ?? e.message) + "\n"; }
+  for (const line of process.env.WP_PKGS.split("\n").filter(Boolean)) {
+    const [name, dir] = line.split("\t");
+    let asked = name, answer = null, failure = "UNRESOLVED:NO_CANDIDATE";
+    for (const spec of candidates(name, dir)) {
+      asked = spec;
+      try { answer = physical(import.meta.resolve(spec)); break; }
+      catch (e) { failure = "UNRESOLVED:" + (e.code ?? e.message); }
+    }
+    out += printable(asked) + "\t" + (answer ?? failure) + "\n";
   }
   process.stdout.write(out);
 '
-specs="$(cut -f3 <<<"$workspaces")"
 bad=0
 
-# probe <dir> : report every workspace specifier that <dir> resolves outside $wt.
+# probe <dir> : report every workspace package that <dir> resolves outside $wt.
 probe() {
   local dir="$1" out spec resolved
   [ -d "$dir" ] || return 0
-  if ! out="$(cd "$dir" && WP_SPECS="$specs" node --input-type=module -e "$resolve_js")"; then
+  if ! out="$(cd "$dir" && WP_ROOT="$wt" WP_PKGS="$workspaces" node --input-type=module -e "$resolve_js")"; then
     echo "worktree-provision: ✗ resolution probe failed to run in ${dir#"$wt/"}" >&2
     bad=$((bad + 1))
     return 0
@@ -310,7 +317,7 @@ probe() {
 }
 
 probe "$wt"
-while IFS="$(printf '\t')" read -r _ dir _; do probe "$wt/$dir"; done <<<"$workspaces"
+while IFS="$(printf '\t')" read -r _ dir; do probe "$wt/$dir"; done <<<"$workspaces"
 
 if [ "$bad" -gt 0 ]; then
   echo "worktree-provision: FAILED — $bad workspace import(s) resolve outside $wt." >&2

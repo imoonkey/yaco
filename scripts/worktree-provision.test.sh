@@ -465,7 +465,9 @@ assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || 
 # --------------------------------------------------------------------------
 repo="$(mk_repo)"
 write "$repo/node_modules/leftpad/lib/keep.js" 'main-owned'
-write "$repo/packages/through-dep/package.json" '{"name":"leftpad/lib/local","version":"1.0.0"}'
+# `new-dir` does not exist in main: `mkdir -p` on the way to the link is itself
+# a write through the dependency link, so the seam guard has to run before it.
+write "$repo/packages/through-dep/package.json" '{"name":"leftpad/new-dir/local","version":"1.0.0"}'
 git -C "$repo" add -A
 git -C "$repo" commit -qm through-dep
 fp before "$repo/node_modules"
@@ -484,7 +486,7 @@ assert_eq "main's tree is untouched by the attempt" "$before" "$after"
 # --------------------------------------------------------------------------
 repo="$(mk_repo)"
 write "$repo/packages/blocked/package.json" \
-  '{"name":"@fx/blocked","version":"1.0.0","exports":{"./internal":null,"./public":"./dist/public.js"}}'
+  '{"name":"@fx/blocked","version":"1.0.0","exports":{"./internal":null,"./typed":{"types":"./t.d.ts","default":null},"./public":"./dist/public.js"}}'
 git -C "$repo" add -A
 git -C "$repo" commit -qm blocked
 in_root "$repo/node_modules/@fx"
@@ -492,7 +494,7 @@ ln -s ../../packages/blocked "$repo/node_modules/@fx/blocked"
 wt="$(mk_wt "$repo")"
 out="$(provision "$wt")"
 rc=$?
-assert_eq "a blocked subpath before an exported one still provisions" 0 "$rc"
+assert_eq "blocked subpaths before an exported one still provision" 0 "$rc"
 assert_eq "and the exported subpath is what resolves" \
   "$wt/packages/blocked/dist/public.js" "$(resolve_from "$wt/app/server" @fx/blocked/public)"
 
