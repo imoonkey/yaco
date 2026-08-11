@@ -25,8 +25,9 @@
  *  intentional output change may quietly move `$YACO_HOME` state. */
 
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PACKAGED_SKILLS_DIR } from "../../src/package-root.ts";
 import { CASES } from "./cases.ts";
 import type { CaseResult, GoldenMatrix } from "./capture.ts";
 
@@ -120,6 +121,14 @@ function remainingChecks(stdout: string, excused: readonly string[]): unknown {
 }
 interface CheckRecord { name: string; status: string; detail: string }
 
+/** The skills the package ships, in the order install plants them. */
+function shippedSkills(): string[] {
+  return readdirSync(PACKAGED_SKILLS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
 /** The exact before → after of every field given up whole. A waiver says "this
  *  may differ"; these say what it was and what it became, so the change that
  *  was claimed is the change that happened. */
@@ -150,11 +159,21 @@ const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseR
     expect(after.stderr).toBe("");
     const { ok, data } = JSON.parse(after.stdout) as { ok: boolean; data: { actions: string[] } };
     expect(ok).toBe(true);
-    // The whole point of the case now: a root that is not a checkout gets the
-    // plan, skills included, and is told what was skipped rather than registered.
-    expect(data.actions.filter((a) => a.startsWith("symlink skill ")).length).toBeGreaterThan(0);
-    expect(data.actions.some((a) => a.startsWith("skipped registry:"))).toBe(true);
-    expect(data.actions).toContain("run yaco doctor");
+    // The plan in full, in order. This case gives up its whole stdout, so it is
+    // the only thing standing between an unintended change and a recapture that
+    // swallows it — a loose "some skills were planned" would let 21 of 22 go
+    // missing, or an unrelated action appear, without a word. The skill names
+    // come from the package, so adding one needs a recapture and nothing else.
+    expect(data.actions).toEqual([
+      "write {SANDBOX}/yaco/agent-wrapper.sh",
+      "merge {SANDBOX}/home/.claude/settings.json hooks",
+      "merge {SANDBOX}/home/.codex/hooks.json hooks",
+      "create dir {SANDBOX}/home/.claude/skills",
+      ...shippedSkills().map((name) => `symlink skill ${name}`),
+      "symlink {SANDBOX}/home/.agents/skills -> {SANDBOX}/home/.claude/skills",
+      "skipped registry: {SANDBOX} is not a yaco checkout (`yaco project add` registers your own repos)",
+      "run yaco doctor",
+    ]);
   },
 };
 
