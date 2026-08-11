@@ -18,7 +18,7 @@ export interface TaskPaths {
 }
 
 export function resolveTaskPaths(repoFlag: string | boolean | undefined): TaskPaths {
-  const repoRoot = resolveRepoFlag(repoFlag);
+  const repoRoot = resolveRepoRoot(repoFlag);
   const rel = readYacoProjectPaths(repoRoot);
   const tasksPath = resolve(repoRoot, rel.tasks);
   return {
@@ -31,7 +31,11 @@ export function resolveTaskPaths(repoFlag: string | boolean | undefined): TaskPa
   };
 }
 
-function resolveRepoFlag(value: string | boolean | undefined): string {
+/** The `--repo` flag as an absolute root, defaulting to the working directory.
+ *
+ *  This is the command edge, and the only place the working directory is
+ *  consulted: the shared reads below take the resolved root as an argument. */
+export function resolveRepoRoot(value: string | boolean | undefined): string {
   if (value === undefined) return resolve(process.cwd());
   if (typeof value !== "string" || value.length === 0) {
     throw new CliError(ErrCode.USAGE, `--repo requires a value`);

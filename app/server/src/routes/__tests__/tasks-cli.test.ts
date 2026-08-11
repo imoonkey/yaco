@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync 
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-/** Tests for app/server's `yaco task <subcommand>` integration:
+/** Tests for app/server's task routes:
+ *
+ *  Mutations still spawn `yaco task <subcommand> --json`, so for those:
  *    - the `{ok,data}/{ok,error}` envelope is strict-parsed on success
  *    - CliError codes map to the right HTTP status (USAGE/INVALID→400,
  *      NOT_FOUND→404, CONFLICT/LOCK→409, INTERNAL/IO→500)
@@ -14,14 +16,23 @@ import { tmpdir } from 'os'
  *  the matching CLI exit code. This exercises the full spawn → stdout/
  *  stderr → envelope-parse → HTTP-map pipeline, which is exactly the
  *  surface that regressed during the multmux→yaco cutover.
+ *
+ *  The GET reads in process instead. Its cases therefore run against a real
+ *  task tree on disk and assert the same response bodies and statuses the
+ *  scripted envelopes used to produce — plus the thing that is now true and
+ *  was not before: the stub is never invoked at all.
  */
 
 let testProjectPath: string
+let otherProjectPath: string
 let stubScript: string
 let stubLog: string
 
 vi.mock('../../lib/projects', () => ({
-  loadProjects: () => Promise.resolve([{ name: 'test-project', path: testProjectPath }]),
+  loadProjects: () => Promise.resolve([
+    { name: 'test-project', path: testProjectPath },
+    { name: 'other-project', path: otherProjectPath },
+  ]),
 }))
 
 vi.mock('../../lib/notify', () => ({
@@ -62,12 +73,20 @@ exit ${exitCode}
   chmodSync(stubScript, 0o755)
 }
 
+/** Write a task graph into a project's default tasks tree. */
+function seedTasks(projectPath: string, graph: Record<string, unknown>, sub = ''): void {
+  const dir = join(projectPath, 'plan/tasks', sub)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'tasks.json'), JSON.stringify(graph, null, 2) + '\n')
+}
+
 beforeEach(() => {
   testProjectPath = mkdtempSync(join(tmpdir(), 'workflow-task-cli-test-'))
-  mkdirSync(join(testProjectPath, 'plan/tasks'), { recursive: true })
+  otherProjectPath = mkdtempSync(join(tmpdir(), 'workflow-task-cli-other-'))
   // Pre-seed tasks.json so GET paths work; mutations are stubbed so the
   // file is never actually written.
-  writeFileSync(join(testProjectPath, 'plan/tasks/tasks.json'), '{}')
+  seedTasks(testProjectPath, {})
+  seedTasks(otherProjectPath, {})
 
   const stubDir = mkdtempSync(join(tmpdir(), 'workflow-task-cli-stub-'))
   stubScript = join(stubDir, 'yaco')
@@ -77,25 +96,21 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(testProjectPath, { recursive: true, force: true })
+  rmSync(otherProjectPath, { recursive: true, force: true })
   if (stubScript) rmSync(join(stubScript, '..'), { recursive: true, force: true })
 })
 
-describe('GET /:project — CLI list boundary', () => {
-  it('calls yaco task list --workset all and returns every workset', async () => {
-    writeStub(
-      {
-        ok: true,
-        data: {
-          tasks: {
-            A1: { title: 'archived', state: 'done', workset: 'archive' },
-            B1: { title: 'backlog', state: 'ready', workset: 'backlog' },
-            D1: { title: 'active', state: 'ready', workset: 'active' },
-          },
-        },
-      },
-      0,
-      'stdout',
-    )
+/** Everything the stub was asked to run. Empty means nothing spawned. */
+const spawnedArgv = (): string => readFileSync(stubLog, 'utf-8').trim()
+
+describe('GET /:project — in-process task list', () => {
+  it('returns every workset, in the body the spawned list produced', async () => {
+    // Byte-for-byte the fixture the subprocess route was asserted against.
+    seedTasks(testProjectPath, {
+      A1: { title: 'archived', state: 'done', workset: 'archive' },
+      B1: { title: 'backlog', state: 'ready', workset: 'backlog' },
+      D1: { title: 'active', state: 'ready', workset: 'active' },
+    })
 
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(200)
@@ -106,14 +121,93 @@ describe('GET /:project — CLI list boundary', () => {
         D1: { title: 'active', state: 'ready', workset: 'active' },
       },
     })
-    expect(readFileSync(stubLog, 'utf-8').trim()).toBe('task list --workset all --json')
   })
 
-  it('maps task list CLI failures to HTTP errors', async () => {
-    writeStub({ ok: false, error: { code: 'INVALID', message: 'bad graph' } }, 1, 'stderr')
+  it('spawns nothing at all', async () => {
+    seedTasks(testProjectPath, { D1: { title: 'active', state: 'ready', workset: 'active' } })
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(200)
+    expect(spawnedArgv()).toBe('')
+  })
+
+  it('defaults a task with no workset to active, as the CLI loader does', async () => {
+    seedTasks(testProjectPath, { L1: { title: 'legacy', state: 'ready', agent: 'claude' } })
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(await res.json()).toEqual({
+      tasks: { L1: { title: 'legacy', state: 'ready', agents: ['claude'], workset: 'active' } },
+    })
+  })
+
+  it('reads nested bundle files, not just the root tasks.json', async () => {
+    seedTasks(testProjectPath, { root: { title: 'r', state: 'ready', workset: 'active' } })
+    seedTasks(testProjectPath, { nested: { title: 'n', state: 'ready', workset: 'active' } }, 'cli')
+    const body = await (await taskRoutes.request('/test-project', { method: 'GET' })).json()
+    expect(Object.keys(body.tasks).sort()).toEqual(['nested', 'root'])
+  })
+
+  it('maps a task-graph failure to the body the INVALID envelope produced', async () => {
+    const tasksFile = join(testProjectPath, 'plan/tasks/tasks.json')
+    writeFileSync(tasksFile, '{ not json')
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(400)
-    expect((await res.json()).error).toBe('bad graph')
+    // The whole body, not a substring: `fail(c, 400, message)` emits exactly
+    // `{error}` and the message is the CLI's, verbatim.
+    expect(await res.json()).toEqual({
+      error: `tasks file ${tasksFile} is not valid JSON: ` +
+        `Expected property name or '}' in JSON at position 2 (line 1 column 3)`,
+    })
+    expect(spawnedArgv()).toBe('')
+  })
+
+  it('maps a duplicate task id to the body the INVALID envelope produced', async () => {
+    const graph = { dup: { title: 'd', state: 'ready' } }
+    seedTasks(testProjectPath, graph)
+    seedTasks(testProjectPath, graph, 'other')
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: `duplicate task id 'dup' in ${join(testProjectPath, 'plan/tasks/other/tasks.json')} ` +
+        `and ${join(testProjectPath, 'plan/tasks/tasks.json')}`,
+    })
+  })
+
+  it('maps a rejected yaco.toml path to the body the ENV envelope produced', async () => {
+    writeFileSync(join(testProjectPath, 'yaco.toml'), '[paths]\ntasks = "/etc"\n')
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({
+      error: `yaco.toml: [paths].tasks must be repo-relative, got absolute path "/etc"`,
+    })
+  })
+
+  it('keeps concurrent reads of two repo roots isolated', async () => {
+    seedTasks(testProjectPath, { ONE: { title: 'one', state: 'ready', workset: 'active' } })
+    seedTasks(otherProjectPath, { TWO: { title: 'two', state: 'ready', workset: 'active' } })
+
+    // Interleaved, and repeated: a reader that leaned on cwd or on a shared
+    // module-level root would cross exactly here.
+    const responses = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        taskRoutes.request(i % 2 === 0 ? '/test-project' : '/other-project', { method: 'GET' }),
+      ),
+    )
+    const bodies = await Promise.all(responses.map(r => r.json()))
+    for (const [i, body] of bodies.entries()) {
+      expect(Object.keys(body.tasks)).toEqual([i % 2 === 0 ? 'ONE' : 'TWO'])
+    }
+  })
+
+  it("does not let one project's broken graph fail another's concurrent read", async () => {
+    writeFileSync(join(testProjectPath, 'plan/tasks/tasks.json'), '{ not json')
+    seedTasks(otherProjectPath, { TWO: { title: 'two', state: 'ready', workset: 'active' } })
+
+    const [broken, fine] = await Promise.all([
+      taskRoutes.request('/test-project', { method: 'GET' }),
+      taskRoutes.request('/other-project', { method: 'GET' }),
+    ])
+    expect(broken.status).toBe(400)
+    expect(fine.status).toBe(200)
+    expect(Object.keys((await fine.json()).tasks)).toEqual(['TWO'])
   })
 })
 

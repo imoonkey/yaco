@@ -76,11 +76,11 @@ export async function mutateTaskAgentLink(
 
   return withLock(
     m.tasksPath,
-    () => {
+    async () => {
       // The store gives us file resolution, duplicate-id safety, and the
       // canonicalized current handle list for the delta — but we do NOT save
       // it back, to avoid persisting normalization of unrelated fields.
-      const store = loadTaskStore(m.tasksPath);
+      const store = await loadTaskStore(m.tasksPath);
       const task = store.tasks[m.taskId];
       if (!task) {
         throw new CliError(ErrCode.NOT_FOUND, `task '${m.taskId}' not found`);
@@ -88,7 +88,7 @@ export async function mutateTaskAgentLink(
       const next = applyAgentLink(task.agents, handle, m.op);
 
       const file = sourceForTask(store, m.taskId);
-      const graph = loadTasks(file);
+      const graph = await loadTasks(file);
       const raw = graph[m.taskId] as Task & { agent?: unknown };
       delete raw.agent; // upgrade the target task's own legacy field, if any.
       if (next.length > 0) raw.agents = next;
@@ -117,8 +117,8 @@ export async function rewriteTaskAgentHandle(
 ): Promise<{ tasks: string[] }> {
   return withLock(
     tasksPath,
-    () => {
-      const store = loadTaskStore(tasksPath);
+    async () => {
+      const store = await loadTaskStore(tasksPath);
       const affected: { id: string; next: string[] }[] = [];
       for (const [id, task] of Object.entries(store.tasks)) {
         if (!task.agents?.includes(oldHandle)) continue;
@@ -135,7 +135,7 @@ export async function rewriteTaskAgentHandle(
         (byFile.get(file) ?? byFile.set(file, []).get(file)!).push(a);
       }
       for (const [file, items] of byFile) {
-        const graph = loadTasks(file);
+        const graph = await loadTasks(file);
         for (const { id, next } of items) {
           const raw = graph[id] as Task & { agent?: unknown };
           delete raw.agent;

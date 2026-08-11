@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-11: the app reads the task graph in process, and rule 5 owes nothing
+
+**What changed:**
+- `GET /api/tasks/:project` calls `@yaco/cli/core/task#readTaskList` instead of spawning `yaco task list --workset all --json`. **181.6 ms → 28.5 ms** median end to end on this repository's own 485-task graph, measured against a second server running the previous code; the two response bodies are deep-equal. Mutations still spawn.
+- New `cli/src/lib/core/task/read.ts`: `readTaskList({repoRoot, workset?, state?}) → Promise<Result<{tasks, tasksPath, tasksFile}>>`. Explicit repo root, one catch with `toErr`, and the workset/state filter `list.ts` and `get.ts` used to duplicate. `yaco task list` is an argv-and-render adapter over it, so there is one implementation rather than two.
+- `store.ts` reads through `fs/promises`. The tree walk is depth-first over name-sorted entries (one `readdir` per await) and the file set is read in chunks of `READ_CONCURRENCY = 8`, rethrown in item order via `allSettled` so which broken file a caller hears about does not depend on disk scheduling. Writers stay synchronous.
+- Every caller awaits: the six task commands, `doctor.ts` (`checkTaskGraph` → `runAllChecks`), `install.ts` (`runDoctor` → `runInstall`), `core/task/link.ts`, and `app/server/src/lib/attention-runtime.ts`.
+- `RULE_5_DEBT` in `cli/test/unit/export-audit.test.ts` is **empty**. The closure census gained `read.ts` and `node:fs/promises`.
+- `cli/test/fixtures/task-list-baseline.json` freezes the `task list --json` envelope the build at `4cbd97c5` produced for eight fixture trees × five invocations; `read-parity.integration.ts` holds both the in-process read and the current binary to it. `read-starvation.integration.ts` is the event-loop gate on a real-size and a ten-times tree.
+
+**Why:**
+- The design's Phase-2 cutover 1. `read-export-gate` shipped with exactly one accepted rule-5 violation on the explicit basis that this task discharges it, and the audit was written so that discharging it *fails the suite* until the debt list is emptied.
+- Rule 5 is why the reader is `fs/promises` rather than the old loader lifted: inside the app's event loop a synchronous walk stalls every queued request — measured 8–14 ms on this tree and 43–59 ms at ten times the size, against 1–3 ms chunked. Width 8 came from a 4/8/16/32/64/128 sweep where starvation climbs monotonically and wall time is flat to 16.
+- One implementation, not two: a sync loader parked in a sibling module would have passed the audit and failed the design.
+- Two review findings changed behaviour rather than style. A breadth-first walk named a different unreadable directory than the depth-first one it replaced, and that string is in the CLI envelope and the HTTP failure body — hence the frozen baseline, which is the only comparison that can catch a regression *inside* the new reader. And `statOrNull` had turned every filesystem error into an empty graph; only `ENOENT` means absent now, which is stricter than the `existsSync` it replaced.
+
+**Key files:** `cli/src/lib/core/task/{read,store,index,link}.ts`, `cli/src/commands/task/{list,get,paths,set,rm,archive,validate}.ts`, `cli/src/commands/{doctor,install}.ts`, `app/server/src/routes/tasks.ts`, `app/server/src/lib/attention-runtime.ts`, `cli/test/{fixtures/task-list-baseline.json,helpers/task-fixture.ts,integration/task/*}`, `cli/test/unit/export-audit.test.ts`, `doc/main/cli/{task,exports,doctor}.md`, `doc/main/app/backend/routes.md`
+**Verification:** `bash scripts/verify.sh` all 10 steps pass (1272 CLI unit tests, 831 app/server tests); 45 parity cases against the pre-cutover baseline; 17 CLI read surfaces byte-identical (stdout, stderr and exit code) to the base build, as are `doctor --json` and `install --dry-run --json`; two real servers compared end to end; every app mutation route re-exercised over HTTP. See `plan/all/cli-node-sdk/qa-task-read-cutover.md`.
+**Commit:** `32d1736b..HEAD`
+**Next:** Phase-2 cutovers 2-5 — session summaries, provider catalog, channel message reads, history.
+**Blockers:** None.
+
+
 ## 2026-08-11: the skills ship in `@yaco/cli`, and `yaco install` needs no checkout
 
 **What changed:**

@@ -30,12 +30,12 @@ function repoWith(tasks: Record<string, unknown>): string {
 }
 
 describe("yaco task list", () => {
-  it("text mode returns a `{text}` envelope with the byte-identical table", () => {
+  it("text mode returns a `{text}` envelope with the byte-identical table", async () => {
     const repo = repoWith({
       alpha: { parent: null, depends: [], state: "ready", title: "First task" },
       beta: { parent: null, depends: [], state: "done", title: "Second task" },
     });
-    const r = runList({ json: false, repo });
+    const r = await runList({ json: false, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       // Widest id is "alpha" (5); state padded to 9.
@@ -47,21 +47,21 @@ describe("yaco task list", () => {
     }
   });
 
-  it("text mode reports the empty-workset message for an empty graph", () => {
+  it("text mode reports the empty-workset message for an empty graph", async () => {
     const repo = repoWith({});
     const tasksPath = resolve(repo, "plan", "tasks");
-    const r = runList({ json: false, repo });
+    const r = await runList({ json: false, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       expect(r.value).toEqual({ text: `(no active tasks in ${tasksPath})\n` });
     }
   });
 
-  it("JSON mode returns the task graph and paths unchanged", () => {
+  it("JSON mode returns the task graph and paths unchanged", async () => {
     const repo = repoWith({
       alpha: { parent: null, depends: [], state: "ready", title: "First task" },
     });
-    const r = runList({ json: true, repo });
+    const r = await runList({ json: true, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       const v = r.value as { tasks: Record<string, unknown>; tasksPath: string };

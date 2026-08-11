@@ -78,8 +78,8 @@ afterEach(() => {
   rmSync(sandbox, { recursive: true, force: true });
 });
 
-function installPrereqs(): void {
-  runInstall({
+async function installPrereqs(): Promise<void> {
+  await runInstall({
     cliOnly: true,
     skipHooks: false,
     noRegistry: false,
@@ -92,15 +92,15 @@ function installPrereqs(): void {
 }
 
 describe("runAllChecks — required check surface", () => {
-  it("returns exactly the 11 required check names in stable order", () => {
-    installPrereqs();
-    const r = runAllChecks();
+  it("returns exactly the 11 required check names in stable order", async () => {
+    await installPrereqs();
+    const r = await runAllChecks();
     expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
   });
 
-  it("each check result has {name, status, detail}", () => {
-    installPrereqs();
-    const r = runAllChecks();
+  it("each check result has {name, status, detail}", async () => {
+    await installPrereqs();
+    const r = await runAllChecks();
     for (const c of r.checks) {
       expect(typeof c.name).toBe("string");
       expect(["pass", "fail", "skip"]).toContain(c.status);
@@ -108,16 +108,16 @@ describe("runAllChecks — required check surface", () => {
     }
   });
 
-  it("summary is {pass, fail} only (no extra keys)", () => {
-    installPrereqs();
-    const r = runAllChecks();
+  it("summary is {pass, fail} only (no extra keys)", async () => {
+    await installPrereqs();
+    const r = await runAllChecks();
     expect(Object.keys(r.summary).sort()).toEqual(["fail", "pass"]);
     expect(r.summary.pass + r.summary.fail).toBe(r.checks.length);
   });
 
-  it("after a fresh install + shimmed PATH, all 11 checks pass", () => {
-    installPrereqs();
-    const r = runAllChecks();
+  it("after a fresh install + shimmed PATH, all 11 checks pass", async () => {
+    await installPrereqs();
+    const r = await runAllChecks();
     if (r.summary.fail > 0) {
       const failed = r.checks.filter((c) => c.status === "fail");
       console.error("failed checks:", JSON.stringify(failed, null, 2));
@@ -130,10 +130,10 @@ describe("runAllChecks — required check surface", () => {
 describe("runAllChecks — task-graph zero state (fresh clone)", () => {
   const tasksDir = () => join(repoRoot, "plan", "tasks");
 
-  it("skips task-graph when the repo has no tasks tree, and the skip is not a failure", () => {
-    installPrereqs();
+  it("skips task-graph when the repo has no tasks tree, and the skip is not a failure", async () => {
+    await installPrereqs();
     rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("skip");
     // Actionable detail: the path that is absent + how a graph gets created.
@@ -146,8 +146,8 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
     expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
   });
 
-  it("still fails task-graph when the tree exists but the graph is invalid", () => {
-    installPrereqs();
+  it("still fails task-graph when the tree exists but the graph is invalid", async () => {
+    await installPrereqs();
     writeFileSync(
       join(tasksDir(), "tasks.json"),
       JSON.stringify({
@@ -160,16 +160,16 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
         },
       }) + "\n",
     );
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
     expect(r.summary.fail).toBe(1);
   });
 
-  it("still fails task-graph when the tasks file is malformed", () => {
-    installPrereqs();
+  it("still fails task-graph when the tasks file is malformed", async () => {
+    await installPrereqs();
     writeFileSync(join(tasksDir(), "tasks.json"), "not json\n");
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
   });
@@ -178,50 +178,50 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
   // but cannot be read is breakage and must not be laundered into a skip —
   // `plan/tasks` symlinked at an extracted task store is exactly how this repo
   // family keeps its plan out of the public tree.
-  it("fails task-graph when the tasks path is a dangling symlink", () => {
-    installPrereqs();
+  it("fails task-graph when the tasks path is a dangling symlink", async () => {
+    await installPrereqs();
     rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
     mkdirSync(join(repoRoot, "plan"), { recursive: true });
     symlinkSync(join(sandbox, "extracted-store-that-moved"), tasksDir());
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
     expect(tg?.detail).toContain("dangling symlink");
     expect(r.summary.fail).toBe(1);
   });
 
-  it("fails task-graph when a dangling symlink sits ABOVE the tasks path", () => {
+  it("fails task-graph when a dangling symlink sits ABOVE the tasks path", async () => {
     // `plan -> /moved/private-plan` breaks `plan/tasks` exactly as a link at
     // the final component does — and it is the likelier shape, since the plan
     // ROOT is what gets extracted out of a public tree.
-    installPrereqs();
+    await installPrereqs();
     rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
     symlinkSync(join(sandbox, "moved-private-plan"), join(repoRoot, "plan"));
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
     expect(tg?.detail).toContain(`dangling symlink at ${join(repoRoot, "plan")}`);
     expect(r.summary.fail).toBe(1);
   });
 
-  it("skips when a LIVE symlinked plan root simply has no tasks tree yet", () => {
-    installPrereqs();
+  it("skips when a LIVE symlinked plan root simply has no tasks tree yet", async () => {
+    await installPrereqs();
     rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
     const external = join(sandbox, "external-plan");
     mkdirSync(external, { recursive: true });
     symlinkSync(external, join(repoRoot, "plan"));
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("skip");
     expect(r.summary.fail).toBe(0);
   });
 
-  it("fails task-graph when the tasks path cannot be read", () => {
+  it("fails task-graph when the tasks path cannot be read", async () => {
     if (process.getuid?.() === 0) return; // root defeats the permission wall
-    installPrereqs();
+    await installPrereqs();
     chmodSync(join(repoRoot, "plan"), 0o000);
     try {
-      const r = runAllChecks();
+      const r = await runAllChecks();
       const tg = r.checks.find((c) => c.name === "task-graph");
       expect(tg?.status).toBe("fail");
       expect(tg?.detail).toContain("EACCES");
@@ -232,106 +232,106 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
 });
 
 describe("runAllChecks — individual failure modes", () => {
-  it("yaco-home check fails when ${YACO_HOME} is missing", () => {
+  it("yaco-home check fails when ${YACO_HOME} is missing", async () => {
     // No install — YACO_HOME does not exist.
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const home = r.checks.find((c) => c.name === "yaco-home");
     expect(home?.status).toBe("fail");
   });
 
-  it("registry check skips when projects.json is missing", () => {
+  it("registry check skips when projects.json is missing", async () => {
     // An absent registry is a zero state, not breakage: `yaco install` writes
     // the "yaco" entry only against a checkout, and an `npm i -g` user adds
     // their own repos with `yaco project add`. A skip counts in neither summary
     // bucket, which is what keeps that user's first install at exit 0.
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const reg = r.checks.find((c) => c.name === "registry");
     expect(reg?.status).toBe("skip");
   });
 
-  it("registry check fails on a malformed projects.json", () => {
+  it("registry check fails on a malformed projects.json", async () => {
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
     writeFileSync(join(process.env["YACO_HOME"]!, "projects.json"), "{not json[");
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const reg = r.checks.find((c) => c.name === "registry");
     expect(reg?.status).toBe("fail");
   });
 
-  it("skills-link check fails when the symlink is missing", () => {
-    const r = runAllChecks();
+  it("skills-link check fails when the symlink is missing", async () => {
+    const r = await runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
   });
 
-  it("skills-link fails on the legacy whole-dir symlink layout", () => {
-    installPrereqs();
+  it("skills-link fails on the legacy whole-dir symlink layout", async () => {
+    await installPrereqs();
     const container = join(process.env["HOME"]!, ".claude", "skills");
     rmSync(container, { recursive: true, force: true });
     symlinkSync(PACKAGED_SKILLS_DIR, container);
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
     expect(skills?.detail).toContain("legacy");
   });
 
-  it("skills-link fails when a shipped skill's link is missing, names it", () => {
-    installPrereqs();
+  it("skills-link fails when a shipped skill's link is missing, names it", async () => {
+    await installPrereqs();
     rmSync(join(process.env["HOME"]!, ".claude", "skills", SHIPPED_SKILL), { force: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
     expect(skills?.detail).toContain(SHIPPED_SKILL);
   });
 
-  it("skills-link passes with a user-override real dir at a shipped name", () => {
-    installPrereqs();
+  it("skills-link passes with a user-override real dir at a shipped name", async () => {
+    await installPrereqs();
     const link = join(process.env["HOME"]!, ".claude", "skills", SHIPPED_SKILL);
     rmSync(link, { force: true });
     mkdirSync(link, { recursive: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("pass");
   });
 
-  it("skills-link answers from the package, with no checkout in sight", () => {
+  it("skills-link answers from the package, with no checkout in sight", async () => {
     // The manifest is a package asset, so removing the checkout marker changes
     // nothing — the check that used to resolve it through the registry's `yaco`
     // entry could not have said anything here at all.
-    installPrereqs();
+    await installPrereqs();
     rmSync(join(repoRoot, "agent-config"), { recursive: true, force: true });
     rmSync(join(process.env["YACO_HOME"]!, "projects.json"), { force: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("pass");
     expect(skills?.detail).toContain(PACKAGED_SKILLS_DIR);
   });
 
-  it("agent-wrapper check fails when ${YACO_HOME}/agent-wrapper.sh is missing", () => {
+  it("agent-wrapper check fails when ${YACO_HOME}/agent-wrapper.sh is missing", async () => {
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const w = r.checks.find((c) => c.name === "agent-wrapper");
     expect(w?.status).toBe("fail");
   });
 
-  it("agent-hook-config check fails when neither claude nor codex config has yaco entries", () => {
-    const r = runAllChecks();
+  it("agent-hook-config check fails when neither claude nor codex config has yaco entries", async () => {
+    const r = await runAllChecks();
     const h = r.checks.find((c) => c.name === "agent-hook-config");
     expect(h?.status).toBe("fail");
   });
 
-  it("providers check fails when neither claude nor codex is on PATH", () => {
+  it("providers check fails when neither claude nor codex is on PATH", async () => {
     // Strip the shims entirely.
     process.env["PATH"] = "/nonexistent-yaco-test-bin";
-    const r = runAllChecks();
+    const r = await runAllChecks();
     const p = r.checks.find((c) => c.name === "providers");
     expect(p?.status).toBe("fail");
   });
 });
 
 describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
-  it("data.checks shape and data.summary {pass, fail} via subprocess", () => {
-    installPrereqs();
+  it("data.checks shape and data.summary {pass, fail} via subprocess", async () => {
+    await installPrereqs();
     const r = runCli(["doctor", "--json"], { env: { ...process.env } });
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
@@ -367,8 +367,8 @@ describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
 });
 
 describe("doctor --repo (HIGH 2 wire-through)", () => {
-  it("uses --repo for the task-graph check", () => {
-    installPrereqs();
+  it("uses --repo for the task-graph check", async () => {
+    await installPrereqs();
     // Point doctor at a repo whose graph is invalid — the failure detail
     // naming that repo proves the flag reached the task-graph check.
     const otherRepo = join(sandbox, "other-repo");
@@ -385,10 +385,10 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     expect(taskGraph.detail).toContain(otherRepo);
   });
 
-  it("fails (exit 1) when --repo points at a repo that does not exist", () => {
+  it("fails (exit 1) when --repo points at a repo that does not exist", async () => {
     // A missing repo is bad input, not an unplanned repo — it must not be
     // laundered into the zero-state skip.
-    installPrereqs();
+    await installPrereqs();
     const missing = join(sandbox, "no-such-repo");
     const r = runCli(
       ["doctor", "--repo", missing, "--json"],
@@ -401,8 +401,8 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     expect(taskGraph.detail).toContain(missing);
   });
 
-  it("exits 0 with a task-graph skip when --repo has no tasks tree", () => {
-    installPrereqs();
+  it("exits 0 with a task-graph skip when --repo has no tasks tree", async () => {
+    await installPrereqs();
     const r = runCli(
       ["doctor", "--repo", sandbox, "--json"],
       { env: { ...process.env } },

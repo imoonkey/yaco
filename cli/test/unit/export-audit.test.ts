@@ -152,10 +152,11 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/task/graph.ts",
       "src/lib/core/task/index.ts",
       "src/lib/core/task/model.ts",
+      "src/lib/core/task/read.ts",
       "src/lib/core/task/store.ts",
       "src/lib/core/task/validation.ts",
     ],
-    externals: ["node:fs", "node:os", "node:path"],
+    externals: ["node:fs", "node:fs/promises", "node:os", "node:path"],
     // No writer, no lock, no link mutation: task mutation is one authority and
     // it stays behind the CLI subprocess boundary.
     names: {
@@ -190,6 +191,14 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "Workset",
         "isState",
         "isWorkset",
+      ],
+      // The composed read `app/server` calls in process: explicit repo root
+      // in, `Result` out, and the same function `yaco task list` renders.
+      "src/lib/core/task/read.ts": [
+        "TaskListData",
+        "TaskListInput",
+        "TaskWorksetFilter",
+        "readTaskList",
       ],
       "src/lib/core/task/store.ts": [
         "TaskStore",
@@ -290,22 +299,19 @@ const EXPECTED: Record<string, ExpectedExport> = {
   },
 };
 
-/** Rule 5's one tracked debt, not a waiver.
+/** Rule 5 owes nothing.
  *
- *  `loadTaskStore` walks the task tree with a synchronous recursive `readdir`
- *  (`store.ts#walkTaskDir`), and `app/server` already calls it in process. The
- *  design's Phase-2 cutover 1 — task GET against an `fs/promises` chunked
- *  reader — is what retires it; that is the next task, not this one.
+ *  It owed exactly one thing: `loadTaskStore` walked the task tree with a
+ *  synchronous recursive `readdir` while `app/server` called it in process.
+ *  The design's Phase-2 cutover 1 retired it — `store.ts` reads through
+ *  `fs/promises` in bounded chunks now, and `readTaskList` is the composed read
+ *  both the CLI and the app go through.
  *
- *  The debt is pinned as the exact finding multiset, not as a file: waiving the
- *  file would hide every further synchronous traversal added to it, which is
- *  the difference between a tracked debt and a hole. A second traversal fails,
- *  and when the cutover lands this list must be emptied — the "still owes"
- *  check below is what forces that. */
-const RULE_5_DEBT = [
-  "src/lib/core/task/store.ts import readdirSync",
-  "src/lib/core/task/store.ts readdirSync()",
-];
+ *  The list stays, empty, because it is the shape of the check rather than a
+ *  waiver: a new synchronous traversal in any exported closure fails "still
+ *  owes exactly the tracked rule-5 debt", and admitting one means writing it
+ *  down here with the task that retires it. */
+const RULE_5_DEBT: string[] = [];
 
 /** The subsystems the design excludes by name. Each entry names real files, and
  *  their existence is asserted: a rename that empties one of these lists would

@@ -550,17 +550,17 @@ function installAppDeps(repoRoot: string, actions: string[], dryRun: boolean): v
  *  --json mode and the stderr stream must stay empty per the CLI contract).
  *  The returned report is always populated; callers fold it into their
  *  envelope when needed. */
-function runDoctor(
+async function runDoctor(
   repoRoot: string,
   actions: string[],
   dryRun: boolean,
   quiet: boolean,
-): DoctorReport | undefined {
+): Promise<DoctorReport | undefined> {
   if (dryRun) {
     actions.push(`run yaco doctor`);
     return undefined;
   }
-  const report = runAllChecks(repoRoot);
+  const report = await runAllChecks(repoRoot);
   if (!quiet) {
     for (const c of report.checks) {
       process.stderr.write(`doctor: ${c.status.toUpperCase().padEnd(4)} ${c.name} — ${c.detail}\n`);
@@ -578,7 +578,7 @@ function runDoctor(
 }
 
 /** Pure side-effect driver. Tests call this directly with an opts object. */
-export function runInstall(opts: InstallOptions): InstallReport {
+export async function runInstall(opts: InstallOptions): Promise<InstallReport> {
   const repoRoot = resolveRepoRoot(opts.repoRoot);
   const binDir = resolveBinDir(opts.binDir);
   const yacoHome = getYacoHome();
@@ -653,7 +653,7 @@ export function runInstall(opts: InstallOptions): InstallReport {
   if (!opts.skipDoctor) {
     // Quiet doctor in --json mode so stderr stays empty per the CLI contract;
     // the report is folded into the install envelope under `data.doctor`.
-    doctor = runDoctor(repoRoot, actions, opts.dryRun, opts.json);
+    doctor = await runDoctor(repoRoot, actions, opts.dryRun, opts.json);
   }
 
   return { repoRoot, binDir, yacoHome, dryRun: opts.dryRun, actions, doctor };
@@ -668,7 +668,7 @@ export async function handleInstall(
   }
   const opts = parseOpts(argv);
   opts.json = opts.json || outer.json;
-  const report = runInstall(opts);
+  const report = await runInstall(opts);
   return dual(opts.json, report, () => renderInstall(report));
 }
 

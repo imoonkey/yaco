@@ -39,9 +39,9 @@ async function readTasks(): Promise<LiveTask[]> {
     } catch {
       continue
     }
-    let store: ReturnType<typeof loadTaskStore>
+    let store: Awaited<ReturnType<typeof loadTaskStore>>
     try {
-      store = loadTaskStore(tasksPath)
+      store = await loadTaskStore(tasksPath)
     } catch {
       continue // missing/invalid task store — skip this project
     }

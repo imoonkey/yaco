@@ -238,11 +238,15 @@ flow).
 
 ### Tasks
 
-All task routes spawn `yaco task <sub> --json` (canonical CLI surface) and parse the `{ok,data}/{ok,error}` envelope. CliError codes map to HTTP statuses: `USAGE`/`INVALID` → 400 (with `details` preserved), `NOT_FOUND` → 404, `CONFLICT`/`LOCK` → 409, others → 500. The server execFile timeout is `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`) so a held lock surfaces as a structured 409 envelope instead of an opaque 500 timeout. GET uses `yaco task list --workset all --json`; path resolution and `yaco.toml [paths].tasks` handling stay owned by the CLI.
+The **GET reads in process** — `@yaco/cli/core/task#readTaskList({repoRoot, workset:'all'})`, the same function `yaco task list` renders — and every **mutation still spawns** `yaco task <sub> --json`. That split is the point: task mutation is one authority (lock + repository gate + write), and half of it inside this process is how two writers end up disagreeing about who owns the file. It is also what makes the read cutover independently reversible.
+
+Both halves share one error table. A spawned failure arrives as the `{ok:false,error}` envelope and the in-process read returns a `Result` `Err`; either way `code` → HTTP status is `USAGE`/`INVALID` → 400 (with `details` preserved), `NOT_FOUND` → 404, `CONFLICT`/`LOCK` → 409, others → 500, and the message reaches the client verbatim. The spawn timeout is `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`) so a held lock surfaces as a structured 409 instead of an opaque 500. Path resolution and `yaco.toml [paths].tasks` handling stay owned by the CLI on both paths.
+
+The read moved because it was the app's most expensive route: **181.6 ms → 28.5 ms** median on a 485-task graph, measured end to end against a server running the previous code. -> See: [../../cli/task.md](../../cli/task.md#reading)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/tasks/:project` | `yaco task list --workset all --json`. Returns **all worksets** (active, backlog, archive) — the workspace filters client-side. Response enriched with `worktreeStatus` for each task that has a `worktree` field (resolved via `getWorktreeStatuses`) |
+| GET | `/api/tasks/:project` | In process: `readTaskList({repoRoot: project.path, workset: 'all'})` — **no spawn**. Returns **all worksets** (active, backlog, archive); the workspace filters client-side. Response enriched with `worktreeStatus` for each task that has a `worktree` field (resolved via `getWorktreeStatuses`). Concurrent identical GETs coalesce on `tasksInflight`, keyed by effective project path |
 | PATCH | `/api/tasks/:project/:taskId` | Partial task update (`yaco task set <id> --data <json> --json`); returns the updated task body |
 | PUT | `/api/tasks/:project/:taskId` | Create task — requires `title`, `description`, `acceptCriteria`. Same `yaco task set` envelope as PATCH |
 | DELETE | `/api/tasks/:project/:taskId` | `yaco task rm <id> --json`; returns `{deleted: true}` |

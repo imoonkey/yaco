@@ -24,8 +24,8 @@ export async function runArchive(
 
   await withLock(
     paths.tasksPath,
-    () => {
-      const store = loadTaskStore(paths.tasksPath);
+    async () => {
+      const store = await loadTaskStore(paths.tasksPath);
       const outcome = archiveTask(store.tasks, id);
       archivedCount = outcome.archivedIds.length;
       saveTaskStore(store);

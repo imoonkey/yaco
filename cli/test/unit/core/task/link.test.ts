@@ -81,7 +81,7 @@ describe("mutateTaskAgentLink", () => {
       updated: "2026-01-01T00:00:00Z",
     });
     await mutateTaskAgentLink({ tasksPath, taskId: "t", sessionHandle: "claude", op: "attach" });
-    const t = loadTaskStore(tasksPath).tasks.t!;
+    const t = (await loadTaskStore(tasksPath)).tasks.t!;
     expect(t.state).toBe("running");
     expect(t.workset).toBe("backlog");
     expect(t.created).toBe("2026-01-01T00:00:00Z");

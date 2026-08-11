@@ -9,17 +9,18 @@
  *  the workset-only `runList`, keeping the state dimension self-contained.
  */
 
-import { type Result } from "../../lib/core/result.ts";
+import { isErr, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import {
   DEFAULT_WORKSET,
   loadTaskStore,
+  readTaskList,
   type State,
   type Task,
   type TaskGraph,
 } from "../../lib/core/task/index.ts";
-import { resolveTaskPaths } from "./paths.ts";
+import { resolveRepoRoot, resolveTaskPaths } from "./paths.ts";
 import type { TaskListWorkset } from "./list.ts";
 
 interface GetOpts {
@@ -27,9 +28,9 @@ interface GetOpts {
   repo?: string | boolean;
 }
 
-export function runGet(id: string, opts: GetOpts): Result<unknown> {
+export async function runGet(id: string, opts: GetOpts): Promise<Result<unknown>> {
   const paths = resolveTaskPaths(opts.repo);
-  const store = loadTaskStore(paths.tasksPath);
+  const store = await loadTaskStore(paths.tasksPath);
   const task = store.tasks[id];
   if (!task) {
     throw new CliError(ErrCode.NOT_FOUND, `no task '${id}' in ${paths.tasksPath}`);
@@ -91,23 +92,22 @@ interface ListStateOpts {
 
 /** `task list --state <s>` — list filtered by state, composing with workset.
  *  Pure read: no roll-up, no mutation. The `state` is pre-validated against the
- *  `STATES` enum by the dispatcher (invalid → USAGE before reaching here). */
-export function runListState(opts: ListStateOpts): Result<unknown> {
-  const paths = resolveTaskPaths(opts.repo);
-  const store = loadTaskStore(paths.tasksPath);
+ *  `STATES` enum by the dispatcher (invalid → USAGE before reaching here).
+ *  Same shared read as the workset-only list; only the table differs. */
+export async function runListState(opts: ListStateOpts): Promise<Result<unknown>> {
+  const result = await readTaskList({
+    repoRoot: resolveRepoRoot(opts.repo),
+    workset: opts.workset,
+    state: opts.state,
+  });
+  if (isErr(result)) return result;
+
+  const { tasks, tasksPath, tasksFile } = result.value;
   const workset = opts.workset ?? DEFAULT_WORKSET;
-  const tasks = filterTasks(store.tasks, workset, opts.state);
-
-  const data = { tasks, tasksPath: paths.tasksPath, tasksFile: store.defaultFile };
-  return dual(opts.json, data, () => renderTable(tasks, workset, opts.state, paths.tasksPath));
-}
-
-function filterTasks(tasks: TaskGraph, workset: TaskListWorkset, state: State): TaskGraph {
-  return Object.fromEntries(
-    Object.entries(tasks).filter(([, task]) => {
-      const inWorkset = workset === "all" || (task.workset ?? DEFAULT_WORKSET) === workset;
-      return inWorkset && task.state === state;
-    }),
+  return dual(
+    opts.json,
+    { tasks, tasksPath, tasksFile },
+    () => renderTable(tasks, workset, opts.state, tasksPath),
   );
 }
 
