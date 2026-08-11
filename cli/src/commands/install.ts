@@ -388,7 +388,7 @@ function installGlobalLinks(force: boolean, actions: string[], dryRun: boolean):
 }
 
 /** Whether a path is a yaco skills directory — the packaged one, or the
- *  `agent-config/global/skills` of a checkout an older install linked to.
+ *  `agent-config/global/skills` of a yaco checkout an older install linked to.
  *
  *  Every link this installer ever planted names one, so this is how an upgrade
  *  tells its own past output apart from a link the user chose. Without it, the
@@ -396,12 +396,18 @@ function installGlobalLinks(force: boolean, actions: string[], dryRun: boolean):
  *  and left pointing into a clone the user is free to delete — a silent no-op
  *  upgrade that only fails much later, when the clone goes.
  *
- *  Matching on the path's shape rather than on one expected checkout is what
- *  makes it hold when the links were planted from a different clone, a worktree,
- *  or a path this run has no way to know. */
+ *  Shape locates the candidate; identity decides. The layout is not ours alone —
+ *  a dotfiles repo or a forked skill source can carry the same three
+ *  directories — so the checkout it belongs to has to be a yaco checkout by the
+ *  same test {@link isYacoCheckout} applies. Taking the layout as proof would
+ *  disconnect that user's own skills, which is precisely what the additive
+ *  install promises never to do. Not knowing which clone planted the link is
+ *  what makes this a property of the target rather than of this run. */
 const SKILLS_DIR_SHAPE = join("agent-config", "global", "skills");
 function isYacoSkillsDir(path: string): boolean {
-  return path === SKILLS_DIR_SHAPE || path.endsWith(sep + SKILLS_DIR_SHAPE);
+  if (path === PACKAGED_SKILLS_DIR) return true;
+  if (!path.endsWith(sep + SKILLS_DIR_SHAPE)) return false;
+  return isYacoCheckout(path.slice(0, -(SKILLS_DIR_SHAPE.length + 1)));
 }
 
 /** Skill names = the child directories of agent-config/global/skills. */
@@ -446,7 +452,10 @@ function ensureSkillsContainer(
   }
   if (st.isSymbolicLink()) {
     const current = readlinkSync(path);
-    if (!isYacoSkillsDir(resolveLinkTarget(path, current)) && !force) {
+    // A dangling link serves nobody, whoever made it — the same rule
+    // plantSkillLink applies per skill.
+    const dangling = !existsSync(path);
+    if (!dangling && !isYacoSkillsDir(resolveLinkTarget(path, current)) && !force) {
       throw new CliError(
         ErrCode.CONFLICT,
         `${path} already points at ${current}; refusing to retarget to a per-skill directory (re-run with --force, or --skip-links to leave it alone)`,

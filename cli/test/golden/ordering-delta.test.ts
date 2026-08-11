@@ -13,13 +13,16 @@
  *  the original capture was not: it verifies the recorded artifacts, it does not
  *  re-run the pre-ordering code.
  *
- *  A case whose observable was later changed on purpose stays in the comparison;
- *  what {@link INTENTIONAL_DELTAS} exempts is the individual *fields* that
- *  changed, and nothing else. Dropping the whole case would be the easy version
- *  and it waives too much — every unrelated field of that case would stop being
- *  compared, and an unintended change captured in the same recapture would sail
- *  through both this file and the recapture test. `durable` is not exemptible at
- *  all: no intentional output change may quietly move `$YACO_HOME` state. */
+ *  A case whose observable was later changed on purpose stays in the comparison,
+ *  and {@link INTENTIONAL_DELTAS} gives up as little of it as the change costs.
+ *  `stdout` is a composite, so waiving the whole string is nearly as blunt as
+ *  waiving the case: `doctor-json` carries eleven check records, of which two
+ *  moved, and the other nine go on being compared here. Only where the two
+ *  matrices have no corresponding value left — `install-dry-run-json` turned an
+ *  error envelope into a success one — is a field given up whole, and then the
+ *  transformation itself is pinned by {@link ASSERTED_TRANSFORMATIONS} rather
+ *  than merely permitted. `durable` is exemptible by neither route: no
+ *  intentional output change may quietly move `$YACO_HOME` state. */
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -61,12 +64,17 @@ function orderFreeStdout(stdout: string): string {
   }
 }
 
-/** Fields a case is allowed to have changed for a reason other than ordering,
- *  and the change that earned it. `durable` is deliberately not in the union. */
+/** What a case is allowed to have changed for a reason other than ordering.
+ *  `checks` names doctor records to set aside while the rest of stdout is still
+ *  compared; `fields` gives up a whole observable and obliges an entry in
+ *  {@link ASSERTED_TRANSFORMATIONS}. `durable` is in neither. */
 type ExemptField = "stdout" | "stderr" | "exitCode";
-const INTENTIONAL_DELTAS: Record<string, { fields: readonly ExemptField[]; why: string }> = {
+const INTENTIONAL_DELTAS: Record<
+  string,
+  { fields?: readonly ExemptField[]; checks?: readonly string[]; why: string }
+> = {
   "doctor-json": {
-    fields: ["stdout"],
+    checks: ["registry", "skills-link"],
     why:
       "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
       "`skills-link` resolves the manifest from the package rather than through it",
@@ -75,7 +83,8 @@ const INTENTIONAL_DELTAS: Record<string, { fields: readonly ExemptField[]; why: 
     fields: ["stdout", "stderr", "exitCode"],
     why:
       "`install` no longer needs a checkout, so a root that is not one plans the " +
-      "install (exit 0) instead of refusing it (ENV, exit 3, message on stderr)",
+      "install (exit 0) instead of refusing it (ENV, exit 3, message on stderr) — " +
+      "an error envelope and a success envelope share no field to compare",
   },
 };
 
@@ -87,13 +96,67 @@ function pairs(): [CaseResult, CaseResult][] {
  *  the case was not granted, with stdout stripped of order when it reads a
  *  directory. */
 function comparable(c: CaseResult, orderFree: boolean): Record<string, unknown> {
-  const exempt = new Set<string>(INTENTIONAL_DELTAS[c.id]?.fields ?? []);
+  const delta = INTENTIONAL_DELTAS[c.id];
+  const exempt = new Set<string>(delta?.fields ?? []);
   const out: Record<string, unknown> = { durable: c.durable };
   if (!exempt.has("exitCode")) out["exitCode"] = c.exitCode;
   if (!exempt.has("stderr")) out["stderr"] = c.stderr;
-  if (!exempt.has("stdout")) out["stdout"] = orderFree ? orderFreeStdout(c.stdout) : c.stdout;
+  if (exempt.has("stdout")) return out;
+  out["stdout"] = delta?.checks
+    ? remainingChecks(c.stdout, delta.checks)
+    : orderFree ? orderFreeStdout(c.stdout) : c.stdout;
   return out;
 }
+
+/** A doctor report minus the named records: every other check, verbatim, plus
+ *  the full name sequence — so a check that quietly changed status, detail, or
+ *  position still fails the comparison the two named ones were excused from. */
+function remainingChecks(stdout: string, excused: readonly string[]): unknown {
+  const { checks } = (JSON.parse(stdout) as { data: { checks: CheckRecord[] } }).data;
+  return {
+    order: checks.map((c) => c.name),
+    kept: checks.filter((c) => !excused.includes(c.name)),
+  };
+}
+interface CheckRecord { name: string; status: string; detail: string }
+
+/** The exact before → after of every field given up whole. A waiver says "this
+ *  may differ"; these say what it was and what it became, so the change that
+ *  was claimed is the change that happened. */
+const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseResult) => void> = {
+  "doctor-json": (before, after) => {
+    const record = (c: CaseResult, name: string) =>
+      (JSON.parse(c.stdout) as { data: { checks: CheckRecord[] } }).data.checks
+        .find((k) => k.name === name)!;
+    expect(record(before, "registry")).toMatchObject({ status: "fail" });
+    expect(record(before, "registry").detail).toContain("no 'yaco' entry");
+    expect(record(after, "registry")).toMatchObject({ status: "pass" });
+    expect(record(after, "registry").detail).toContain("project(s)");
+    // skills-link failed before for want of a registry entry and fails now for
+    // the only reason left: the links are not there.
+    expect(record(before, "skills-link").detail).toContain("no 'yaco' registry entry");
+    expect(record(after, "skills-link").detail).toContain("missing");
+    const summary = (c: CaseResult) => (JSON.parse(c.stdout) as { data: { summary: unknown } }).data.summary;
+    expect(summary(before)).toEqual({ pass: 2, fail: 9 });
+    expect(summary(after)).toEqual({ pass: 3, fail: 8 });
+  },
+  "install-dry-run-json": (before, after) => {
+    expect(before.exitCode).toBe(3);
+    expect(before.stdout).toBe("");
+    expect(before.stderr).toContain('"code":"ENV"');
+    expect(before.stderr).toContain("not a YACO checkout");
+
+    expect(after.exitCode).toBe(0);
+    expect(after.stderr).toBe("");
+    const { ok, data } = JSON.parse(after.stdout) as { ok: boolean; data: { actions: string[] } };
+    expect(ok).toBe(true);
+    // The whole point of the case now: a root that is not a checkout gets the
+    // plan, skills included, and is told what was skipped rather than registered.
+    expect(data.actions.filter((a) => a.startsWith("symlink skill ")).length).toBeGreaterThan(0);
+    expect(data.actions.some((a) => a.startsWith("skipped registry:"))).toBe(true);
+    expect(data.actions).toContain("run yaco doctor");
+  },
+};
 
 describe("ordering delta: original Bun baseline → post-ordering baseline", () => {
   it("compares the same case list", () => {
@@ -128,16 +191,24 @@ describe("ordering delta: original Bun baseline → post-ordering baseline", () 
   });
 
   it("holds each exempted case to the exact change that was claimed", () => {
-    // The named field must actually have moved. An exemption for a field that
-    // did not change is a waiver nobody needs, left behind to cover the next one.
     for (const [before, after] of pairs()) {
       const delta = INTENTIONAL_DELTAS[before.id];
       if (!delta) continue;
-      for (const field of delta.fields) {
+      // A waived field that did not move is a waiver nobody needs, left behind
+      // to cover the next change silently.
+      for (const field of delta.fields ?? []) {
         expect({ [`${before.id}.${field}`]: after[field] }).not.toEqual({
           [`${before.id}.${field}`]: before[field],
         });
       }
+      ASSERTED_TRANSFORMATIONS[before.id]!(before, after);
+    }
+  });
+
+  it("asserts a transformation for every case that gave up a whole field", () => {
+    for (const [id, delta] of Object.entries(INTENTIONAL_DELTAS)) {
+      if (!delta.fields?.length) continue;
+      expect({ [id]: typeof ASSERTED_TRANSFORMATIONS[id] }).toEqual({ [id]: "function" });
     }
   });
 

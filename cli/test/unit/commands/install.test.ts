@@ -404,7 +404,8 @@ describe("runInstall — global-link safety", () => {
     // above protects is the user's own directory, not ours.
     const claudeDir = join(process.env["HOME"]!, ".claude");
     mkdirSync(claudeDir, { recursive: true });
-    const stalePath = join(sandbox, "worktrees", "slug", "agent-config", "global", "skills");
+    const worktree = stageCheckout(join(sandbox, "worktrees", "slug"));
+    const stalePath = join(worktree, "agent-config", "global", "skills");
     symlinkSync(stalePath, join(claudeDir, "skills"));
     runInstall(baseOpts());
     const container = join(claudeDir, "skills");
@@ -745,6 +746,46 @@ describe("runInstall — upgrading an install that predates the packaged manifes
     expect(r.actions.some((a) => a.startsWith("skip "))).toBe(false);
     // The checkout copy is left where it was; only the links moved.
     expect(existsSync(join(legacySkills, SKILL_A))).toBe(true);
+  });
+
+  it("leaves a live skills tree of the user's alone, per skill and whole-dir", () => {
+    // The layout is not ours alone: a dotfiles repo or a forked skill source can
+    // carry the same three directories. Only a *yaco* checkout's copy is this
+    // installer's own output, so the identity test — not the shape — decides,
+    // or the upgrade would disconnect the skills the user actually maintains.
+    const theirs = join(sandbox, "dotfiles", "agent-config", "global", "skills");
+    mkdirSync(join(theirs, SKILL_A), { recursive: true });
+    expect(existsSync(join(sandbox, "dotfiles", "cli", "package.json"))).toBe(false);
+
+    const container = join(process.env["HOME"]!, ".claude", "skills");
+    mkdirSync(container, { recursive: true });
+    symlinkSync(join(theirs, SKILL_A), join(container, SKILL_A));
+    const r = runInstall(baseOpts());
+    expect(readlinkSync(join(container, SKILL_A))).toBe(join(theirs, SKILL_A));
+    expect(r.actions.some((a) => a.includes(`skip ${SKILL_A}`))).toBe(true);
+
+    // And the whole-directory form of the same mistake: refused, not migrated.
+    rmSync(container, { recursive: true, force: true });
+    symlinkSync(theirs, container);
+    let code: string | undefined;
+    try {
+      runInstall(baseOpts());
+    } catch (e) {
+      code = (e as { code?: string }).code;
+    }
+    expect(code).toBe("CONFLICT");
+    expect(readlinkSync(container)).toBe(theirs);
+  });
+
+  it("replaces a whole-dir link whose target is gone, with no --force", () => {
+    // Dangling: it serves nobody, whoever made it.
+    const claudeDir = join(process.env["HOME"]!, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    symlinkSync(join(sandbox, "deleted-clone", "agent-config", "global", "skills"),
+      join(claudeDir, "skills"));
+    runInstall(baseOpts());
+    expect(lstatSync(join(claudeDir, "skills")).isSymbolicLink()).toBe(false);
+    expect(readlinkSync(join(claudeDir, "skills", SKILL_A))).toBe(shippedSkill(SKILL_A));
   });
 
   it("migrates the pre-v0.1 whole-dir symlink into a checkout, with no --force", () => {
