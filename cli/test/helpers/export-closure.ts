@@ -448,39 +448,59 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   return scan;
 }
 
-/** Statement and database methods that execute SQL over an unbounded row set.
- *  `get` is absent: a single-row read is the only shape rule 5 has judged. */
-const SQLITE_UNBOUNDED = new Set(["all", "run", "exec", "iterate"]);
+/** Members an admitted module may not name.
+ *
+ *  Two groups, and the second is why the first is enough. `all`/`run`/`exec`/
+ *  `iterate` *are* the unbounded operations. `call`/`bind`/`apply` are how a
+ *  method reaches a receiver it was not written against — the escape that makes
+ *  "which method is invoked" undecidable from the call site. */
+const SQLITE_FORBIDDEN_MEMBERS = new Set([
+  "all", "run", "exec", "iterate",
+  "call", "bind", "apply",
+]);
 
 export interface SqliteUse {
   /** Every SQL string the module prepares, in source order. A `prepare` whose
    *  argument is not a literal reports `null` — an audit that cannot read the
    *  query cannot bound it. */
   prepared: (string | null)[];
-  /** Every read of an unbounded execution method, and every member read the
-   *  scan cannot name. */
+  /** Every construct that would let an unaudited query or an unbounded
+   *  operation into the module. */
   unbounded: Finding[];
+  /** The module's import specifiers, so the admission can pin what it can reach.
+   *  A statement handed to a helper is executed where the scan is not looking. */
+  imports: string[];
 }
 
 /** What one module does with `node:sqlite`, for rule 5's judged admissions.
  *
- *  The rule is on **property access, not on calls**, and that is the whole
- *  lesson of getting it wrong twice. A text match missed
- *  `const s = db.prepare(q); s.all()`. Matching the *callee* name of a call
- *  caught that one and still missed `s.all.bind(s)()`, `s.all.call(s)`, and a
- *  local binding shadowing the `Promise` global the check exempted — three
- *  bypasses review found in one sitting. Reading the member is the one event
- *  every spelling has in common, so that is what fails.
+ *  This is an **allowlist on a deliberately tiny module**, and getting there
+ *  took three tries that each read as sufficient. A text match missed
+ *  `const s = db.prepare(q); s.all()`. Matching the *callee name* of a call
+ *  caught that and missed `s.all.bind(s)()`, `s.all.call(s)`, and a local
+ *  binding shadowing the `Promise` global it exempted. Matching *property
+ *  access* caught those and missed `const { all } = statement` and
+ *  `Reflect.get(statement, "all")` — a property read that is not a property
+ *  access node at all.
  *
- *  Consequently a computed member whose key is not a literal fails too: an audit
- *  that cannot see which member is read cannot bound it. That is only livable
- *  because an admitted module is small and single-purpose by construction — it
- *  cannot contain a `Promise.all`, which is exactly why the admitted query lives
- *  in a module of its own. */
+ *  Enumerating spellings loses that race by construction, so the module is
+ *  constrained instead of the expression:
+ *
+ *    - no destructuring, which is the property read with no member node;
+ *    - no `Reflect`, `eval` or `Function`, which are property reads and calls
+ *      with no name at all;
+ *    - no member named in `SQLITE_FORBIDDEN_MEMBERS`, and no computed member
+ *      whose key is not a literal;
+ *    - the module's imports are pinned by the admission, so a statement cannot
+ *      be handed to a helper the scan does not read.
+ *
+ *  Every one of those is livable only because an admitted module does one thing.
+ *  That is the point of `providers/codex-thread.ts` existing at all — the rule
+ *  and the module shape are one decision, not two. */
 export function scanSqliteUse(absPath: string, root: string = SRC_ROOT): SqliteUse {
   const { file } = parse(absPath);
   const path = relative(dirname(root), absPath);
-  const use: SqliteUse = { prepared: [], unbounded: [] };
+  const use: SqliteUse = { prepared: [], unbounded: [], imports: parse(absPath).specifiers };
   const at = (node: ts.Node): number =>
     file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
   const reject = (node: ts.Node, detail: string): void => {
@@ -497,12 +517,17 @@ export function scanSqliteUse(absPath: string, root: string = SRC_ROOT): SqliteU
           ? arg.text.replace(/\s+/g, " ").trim()
           : null,
       );
+    } else if (ts.isObjectBindingPattern(node)) {
+      // `const { all } = statement` reads the member without a member node.
+      reject(node, "destructuring");
+    } else if (ts.isIdentifier(node) && REFLECTIVE_GLOBALS.has(node.text)) {
+      reject(node, node.text);
     } else if (ts.isPropertyAccessExpression(node)) {
-      if (SQLITE_UNBOUNDED.has(node.name.text)) reject(node, `.${node.name.text}`);
+      if (SQLITE_FORBIDDEN_MEMBERS.has(node.name.text)) reject(node, `.${node.name.text}`);
     } else if (ts.isElementAccessExpression(node)) {
       const key = unwrap(node.argumentExpression);
       if (!ts.isStringLiteral(key)) reject(node, "[<computed member>]");
-      else if (SQLITE_UNBOUNDED.has(key.text)) reject(node, `["${key.text}"]`);
+      else if (SQLITE_FORBIDDEN_MEMBERS.has(key.text)) reject(node, `["${key.text}"]`);
     }
 
     ts.forEachChild(node, visit);
@@ -511,6 +536,9 @@ export function scanSqliteUse(absPath: string, root: string = SRC_ROOT): SqliteU
 
   return use;
 }
+
+/** Globals that read a property or run code without naming either. */
+const REFLECTIVE_GLOBALS = new Set(["Reflect", "eval", "Function", "Proxy"]);
 
 /** Rule 3's polling loop, in the two shapes that are decidable from syntax: a
  *  loop with no termination condition, and a loop that sleeps.

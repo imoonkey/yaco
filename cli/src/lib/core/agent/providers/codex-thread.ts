@@ -6,14 +6,20 @@
  *  prevent is a *different* query inheriting that measurement — `.all()` over
  *  the whole table costs nothing like a primary-key lookup.
  *
- *  Matching how the statement is *called* turned out not to be enough: review
- *  defeated that check three ways in one sitting (`statement.all.bind(…)`,
- *  `statement.all.call(…)`, and a local binding shadowing the `Promise` global
- *  the check exempted). So the rule is now on *property access* — reading
- *  `all`, `run`, `exec` or `iterate` off anything at all, however it is spelled,
- *  fails the audit — and this module is small enough to live under it. That is
- *  why the query does not simply sit in `summary-read.ts`: a reader that maps
- *  its inputs with `Promise.all` cannot.
+ *  Enumerating the dangerous spellings loses that race by construction — review
+ *  defeated three successive versions of the check, the last of them with
+ *  `const { all } = statement` and `Reflect.get(statement, "all")`, both of
+ *  which read a property without a property-access node. So the audit
+ *  constrains this module's *syntax* instead: no destructuring, no `Reflect` /
+ *  `eval` / `Function` / `Proxy`, no member named `all` / `run` / `exec` /
+ *  `iterate` / `call` / `bind` / `apply`, no computed member it cannot name, and
+ *  a pinned import list so a statement cannot be handed to a helper it does not
+ *  read.
+ *
+ *  A module doing anything else could not live under those rules — which is
+ *  exactly why the query does not simply sit in `summary-read.ts`, whose reader
+ *  maps its inputs with `Promise.all`. The rule and this file's existence are
+ *  one decision, not two.
  *
  *  -> See: `RULE_5_SQLITE` in `test/unit/export-audit.test.ts`,
  *  `test/bench/summary-stall.ts --sqlite-probe`. */

@@ -178,20 +178,28 @@ per admitted module:
 - that it never *reads the member* `all` / `run` / `exec` / `iterate` off
   anything, nor any member the scan cannot name.
 
-The second rule is on property access rather than on calls, and that is the
-whole lesson of getting it wrong twice. A text-matching first version was shown
-by review to pass `const s = db.prepare(q); s.all()` — it found no matches and
-compared the empty list with an empty list. Matching the *callee name* of a call
-caught that one and still fell to `s.all.bind(s)()`, `s.all.call(s)`, and a
-local binding shadowing the `Promise` global the check exempted. Reading the
-member is what all of them have in common.
+The second rule is an **allowlist on a deliberately tiny module**, and reaching
+it took three tries that each read as sufficient. A text match missed
+`const s = db.prepare(q); s.all()` — it found no methods and compared the empty
+list with the empty list. Matching the *callee name* of a call caught that and
+missed `s.all.bind(s)()`, `s.all.call(s)`, and a local binding shadowing the
+`Promise` global it exempted. Matching *property access* caught those and missed
+`const { all } = statement` and `Reflect.get(statement, "all")` — property reads
+with no member node at all, and the shape that lets a whole second unbounded
+query run while the audit reports exactly the admitted one.
 
-The price is that an admitted module cannot contain a `Promise.all` either —
-which is why the admitted query lives alone in
-`providers/codex-thread.ts` rather than inside the reader that uses it. An
-admitted module is now necessarily tiny, and that is the design, not a
-side effect: the rule is only fail-closed because there is nothing else in the
-file to trip over.
+Enumerating spellings loses that race by construction, so the module is
+constrained instead of the expression: no destructuring, no `Reflect` / `eval` /
+`Function` / `Proxy`, no member named `all` / `run` / `exec` / `iterate` /
+`call` / `bind` / `apply`, no computed member the scan cannot name, and a
+**pinned import list** so a statement cannot be handed to a helper the scan does
+not read.
+
+Nothing but a single-purpose module can live under that, which is why the
+admitted query sits alone in `providers/codex-thread.ts` rather than inside the
+reader that uses it — a reader that maps its inputs with `Promise.all` could
+not. **An admitted module is necessarily tiny, and the rule and that module's
+existence are one decision rather than two.**
 
 The measurement is reproducible rather than asserted:
 `node cli/test/bench/summary-stall.ts --sqlite-probe --home ~` prints the
