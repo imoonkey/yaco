@@ -197,10 +197,20 @@ unrelated already-queued request waits, not the route's own wall time. `--home`
 reads a real provider home; it is read-only, and needs `--project` plus a
 `YACO_HOME` holding that home's session state files.
 
+`history-stall.ts` builds its fixture in a child process, so no spawn baseline
+carries the heap of writing it. Its own routes still grow one, and the `retired`
+control most of all — on the 10x fixture `spawn-noop` p95 measured 99.3 ms in a
+full run and 33.2 ms under the third command above, same fixture and machine. So
+read the **acceptance comparison** off a full run, where every route pays the
+same baseline and that is the question being asked, and read a **spawn cost** off
+a narrowed one.
+
 ```bash
 node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
-node cli/test/bench/history-stall.ts [--scale 1|10] [--chunks 1,2,4,8,16]
+node cli/test/bench/history-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
+node cli/test/bench/history-stall.ts --sqlite-probe --home ~   # the windowed query's own cost + plan
+node cli/test/bench/history-stall.ts --scale 10 --routes spawn-noop,subprocess,in-process
 node cli/test/bench/message-read-bench.mjs        # needs `npm run build` — it spawns bin/yaco.mjs
 ```
 

@@ -2,7 +2,7 @@
 
 > What `@yaco/cli` may publish for in-process use, and the audit that decides it.
 
-Last updated: 2026-08-11 (summary-read-cutover: `core/agent/summaries`, the provider catalog, and rule 5's first judged `node:sqlite` admission) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
+Last updated: 2026-08-11 (history-read-land: `readProjectHistory` joins the `core/agent` barrel, and rule 5 judges a second `node:sqlite` query) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
 
 `app/server` imports all eight exported subpaths in process today —
 `core/paths`, `core/task`, `core/agent`, `core/agent/messages`,
@@ -16,8 +16,9 @@ from the `cli-node-sdk` design; the audit enforces them over each export's
 Eligibility is necessary and not sufficient. A route also has to be a read
 rather than a mutation, and it has to measure a starvation bound against the
 subprocess route it replaces. The history read is the case that separates the
-two: it was measured, the shipped reader failed the bound, and it stays a
-subprocess — so it is not exported and this audit does not cover it.
+two: measured as it stood, the reader **failed** the bound, and only a rewritten
+one — every provider scan capped at the window, every fan-out chunked — passed
+it and was exported. The rule was never widened to admit the first answer.
 -> See: [read-path.md](read-path.md)
 
 ```mermaid
@@ -126,12 +127,33 @@ the message read reaches `output.ts` for provider log paths. The tailer is now
   which is a mutation module: the sessions are explicit inputs.
   -> See: [providers.md](providers.md#session-summaries)
 
-- **`core/agent`** gained the provider catalog and nothing else. It is the only
-  part of the provider registry an in-process caller may hold — the adapters
-  reach tmux, hook installation and the lifecycle — so the identity lives in
-  `provider-catalog.ts` and the adapters spread it. The audit asserts both halves
-  of "static metadata" directly: the module reaches **no specifier at all**, so
-  it can call no filesystem API, and it reads no environment name.
+- **`core/agent`** publishes the pure session projection, the provider catalog,
+  and one read. The catalog is the only part of the provider registry an
+  in-process caller may hold — the adapters reach tmux, hook installation and the
+  lifecycle — so the identity lives in `provider-catalog.ts` and the adapters
+  spread it. The audit asserts both halves of "static metadata" directly: the
+  module reaches **no specifier at all**, so it can call no filesystem API, and
+  it reads no environment name.
+
+  `readProjectHistory` is what put a filesystem and a database into this barrel,
+  and its closure is the cost: `providers/history.ts` for the merge and the two
+  bounded provider scans, `codex-thread-window.ts` for the judged query,
+  `origin-read.ts` for the window's origin lookup, plus `prompt-label.ts` and
+  `provider-home.ts` already shared with the summary read. It reaches neither
+  `session-state.ts` — the live sessions are an explicit input — nor
+  `providers/index.ts`, the TUI registry; the history readers keep their own
+  two-entry lookup and a test fails closed when a registered provider is missing
+  from it, the same shape `readMessageRows` and `readSessionSummaries` use.
+
+  **The per-provider scans are deliberately not published.** Each takes its cap
+  as an argument, so a published one would hand a server consumer a way to scan a
+  whole provider home; the cap is an invariant of the composed read, not a
+  parameter. `historyReaderForProvider` stays a module export for the
+  completeness test and the benchmark control, and the barrel's pinned name list
+  is what asserts it does not escape. Review caught it there, in the first round,
+  after it had already passed the closure audit — an eligible file closure and an
+  eligible *interface* are two different questions.
+  -> See: [read-path.md](read-path.md#5--history-tab--readprojecthistory)
 
 `core/paths` still publishes its registry writers (`addProject`,
 `removeProject`, `writeProjects`) on purpose: the app server is the CLI's peer
@@ -163,17 +185,35 @@ one means writing it down there with the task that retires it.
 ## The queries rule 5 has judged
 
 Rule 5 admits a `node:sqlite` query only against a measured stall bound, because
-`node:sqlite` is synchronous. Two have been put to that test. The first was
-refused; the second is the list's only entry.
+`node:sqlite` is synchronous. Two have been put to that test, and both are now
+admitted — but not on the same terms: the history query was **refused as first
+written** and admitted only after the reader around it was rewritten, which is
+the point of measuring at all.
 
 ### The admission, and its shape
 
 `RULE_5_SQLITE` in the audit is the **opposite of `RULE_5_DEBT`**: a debt is owed
 and has a task that retires it, an admission is permanent and has a measurement.
-Today it holds one site — Codex's per-session
-`SELECT title, first_user_message FROM threads WHERE id = ?`, which the summary
-read cannot drop (on the reference home `first_user_message` is empty for most
-recent threads, and `title` is the last-resort label).
+It holds two sites, and each carries its own `bench` field, because the two were
+measured by two different harnesses and an admission nobody can re-run is a
+waiver wearing its clothes:
+
+| site | query | bound |
+|---|---|---|
+| `providers/codex-thread.ts` | `SELECT title, first_user_message FROM threads WHERE id = ?` — the summary read's per-session lookup, which it cannot drop (on the reference home `first_user_message` is empty for most recent threads, and `title` is the last-resort label) | 0.3 ms p50 **and** max, 40 warm samples, 11.1 MB / 2 297 rows |
+| `providers/codex-thread-window.ts` | the history window's `… FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?` | 3.0 ms p50, 5.4 p95, 8.3 max, 40 warm samples, 11.1 MB / 2 301 rows, 587 matching |
+
+**The second one's `LIMIT` bounds what crosses into JavaScript, not what SQLite
+examines**, and the probe is what settled that: Codex's composite `cwd` indexes
+order by its *millisecond* columns while the read orders by the
+second-resolution `updated_at`, whose own index carries neither `archived` nor
+`cwd`. So the plan is a `SEARCH … USING INDEX idx_threads_archived_cwd_recency_at_ms`
+followed by `USE TEMP B-TREE FOR ORDER BY`. What the cap buys is the fan-out it
+feeds — one rollout tail-read per returned row, 587 down to 201 — and the bound
+above is on the whole statement either way. The synthetic fixture had the
+opposite belief compiled into it, an index named `…_updated_at_ms` that indexed
+`updated_at`, and so measured a plan production does not run; it now carries
+Codex's real columns and index set.
 
 What is admitted is **the code that was measured**. Adding `DatabaseSync` to
 the walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table
@@ -219,18 +259,23 @@ normalizes exactly the right things: comments and type annotations are gone, and
 the formatting is the emitter's rather than the source's. The fixture is 22
 lines of ordinary JavaScript, which is also what makes a change to it legible.
 
-Nothing but a single-purpose module can live under that, which is why the
-admitted query sits alone in `providers/codex-thread.ts` rather than inside the
-reader that uses it. **An admitted module is necessarily tiny, and that module's
-existence and the shape of the rule are one decision rather than two.**
+Nothing but a single-purpose module can live under that, which is why each
+admitted query sits alone — `providers/codex-thread.ts` and
+`providers/codex-thread-window.ts` — rather than inside the reader that uses it.
+**An admitted module is necessarily tiny, and that module's existence and the
+shape of the rule are one decision rather than two.** It is also why the two
+queries did not merge into one module when the second arrived: any edit to
+either would then be a re-judgement of both.
 
-The measurement is reproducible rather than asserted:
-`node cli/test/bench/summary-stall.ts --sqlite-probe --home ~` prints the
-database, the plan (`SEARCH threads USING INDEX sqlite_autoindex_threads_1
-(id=?)`) and the open/get/close distribution — 0.3 ms at the p50 and the maximum
-over 40 warm samples, on an 11.1 MB, 2 297-row database.
+Each measurement is reproducible rather than asserted, and each prints the plan
+it measured, which is the part worth reading:
 
-### The query that was refused
+```bash
+node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the point lookup
+node cli/test/bench/history-stall.ts --sqlite-probe --home ~   # the window
+```
+
+### The query that was refused, and what it took to admit it
 
 The history read (`yaco agent history`) was the first put to the test, and the
 answer was not about the database.
@@ -238,44 +283,39 @@ answer was not about the database.
 `cli/test/bench/history-stall.ts` is the harness. It asks the design's question
 — how long an *already-queued* piece of work waits because of a route — by
 re-queuing a timer for as long as the route runs and taking the worst delay,
-once per invocation, under concurrent background load. Run it against a real
-provider home or against the synthetic fixtures in `history-fixture.ts`:
-
-```bash
-node cli/test/bench/history-stall.ts --home ~ --project /abs/repo   # real
-node cli/test/bench/history-stall.ts --scale 10                     # 10x synthetic
-```
-
-On a real provider home (11.6 MB `state_5.sqlite`, 2,275 Codex threads, 81
-Claude logs), p95 starvation of an already-queued timer against route wall time:
+once per invocation, under concurrent background load. On a real provider home,
+p95 starvation of an already-queued timer against route wall time:
 
 | Route | p95 starvation | wall p50 |
 |---|---:|---:|
-| a child that prints an empty envelope — the spawn alone | 37.6 ms | 64 ms |
-| subprocess — the route today | 42.3 ms | 344 ms |
-| the shipped reader called in process | 79.2 ms | 142 ms |
-| a bounded, chunked prototype of it | 12.8 ms | 103 ms |
+| a child that prints an empty envelope — the spawn alone | 33.2 ms | 72 ms |
+| subprocess — the retired route | 32.3 ms | 215 ms |
+| the reader as it stood — **refused** | 81.5 ms | 126 ms |
+| the reader that ships | **13.0 ms** | 116 ms |
 
-Three things follow, and they are what a future rule-5 candidate should copy:
+Four things follow, and they are what a future rule-5 candidate should copy:
 
-- **The database is not the cost.** The `threads` query is 4–9 ms. The cost is
-  the per-row provider work it feeds — a 64 KB rollout tail per Codex row, a
-  16 KB head plus 64 KB tail per Claude log, ~22 MB of parsing a request. Measure
-  the whole read, not the query.
-- **`spawn()` is not free either.** A child that reads nothing accounts for 37.6
-  of the subprocess route's 42.3 ms, and still costs 15.9 ms with the app's
-  `ssh-add` discovery removed — `fork` with a loaded heap. "Keep the subprocess"
-  is not automatically the safe side of a starvation comparison. (Read that
-  decomposition off the real home or `--scale 1`, not `--scale 10`: the harness
-  builds the 550 MB fixture in the process it then measures.)
-- **What fails the bound is the unbounded fan-out, not being in process.** The
-  shipped reader reads every row a provider holds before the window is applied.
-  `history-bounded-prototype.ts` caps each provider at the window and yields
-  between chunks, and comes in under the bound at every chunk size from 1 to 16.
-
-So the path is admitted — but only in that bounded form, and nothing is exported
-yet: the shared read, its `core/agent` entry, an asynchronous origin lookup and
-the audit pins land together in the follow-up cutover.
+- **The database is not the cost.** The `threads` query is 3.0 ms at the p50. The
+  cost is the per-row provider work it feeds — a 64 KB rollout tail per Codex
+  row, a 16 KB head plus 64 KB tail per Claude log, ~22 MB of parsing a request.
+  Measure the whole read, not the query.
+- **`spawn()` is not free either.** A child that reads nothing accounts for
+  essentially all of the subprocess route's starvation, and still costs 15.9 ms
+  with the app's `ssh-add` discovery removed — `fork` with a loaded heap. "Keep
+  the subprocess" is not automatically the safe side of a starvation comparison.
+  Read that decomposition off `--routes spawn-noop,subprocess,in-process`: this
+  harness's own in-process routes grow the heap that its spawns are then measured
+  against, and on the 10x fixture that is the difference between 33.2 and 99.3 ms.
+- **What failed the bound was the unbounded fan-out, not being in process.** The
+  refused reader read every row a provider holds before applying the window. The
+  one that ships caps each provider at the window and yields between chunks.
+- **The two changes are not interchangeable, and only the control says which did
+  what.** A control that removed *only* the cap starves less than what ships —
+  a bigger scan yields more often — so the chunked yield is what bought the
+  bound and the cap bought wall time, until ten times scale, where the cap buys
+  both. The harness therefore carries the *previous reader* as its control
+  (`history-retired-control.ts`, checked in verbatim) and keeps the cap-removed
+  route beside it as a second, narrower question.
 
 The session-summary read repeated the lesson from the other side.
 `summary-stall.ts` carries a `whole-file` control route — the previous reader's
