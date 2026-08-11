@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-11: a worktree now tests its own CLI, and says so out loud when it can't
+
+**What changed:**
+- `scripts/worktree-provision.sh` no longer symlinks `<worktree>/node_modules` at the main checkout. npm writes the workspace self-links inside that tree **relative** (`@yaco/cli -> ../../cli`), and a relative symlink resolves against its physical location, so the share made every worktree resolve `@yaco/*` to **main's source, on a different branch**. A branch's CLI change was invisible to its own `app/server` suite and a branch's app change was validated against a stale CLI — green, silently, in both directions.
+- The tree is **mirrored** instead: a real `node_modules` directory of links into main's, with `.bin` and the workspace scope directories rebuilt one level down. Each link is recreated with its **target copied verbatim**, and that single rule settles both classes without a per-package case — a relative target re-anchors inside the worktree (`@yaco/cli -> ../../cli` → the worktree's `cli`, `.bin/yaco` with it) while every third-party hop lands back on a link to main (`.bin/vitest -> ../vitest/vitest.mjs`). `node_modules/.package-lock.json` mirrors as a link to main's, which is the tree it describes. The 608 MB stays shared; the cost is ~550 symlinks and no copied bytes. The script never runs `rm -r` — it only unlinks symlinks — and the hermetic test asserts main's tree is byte-identical afterwards.
+- **Wrong resolution is now loud in three places.** The script self-checks with the real Node resolver from every workspace directory and exits non-zero naming the package and where it wrongly landed; `--check` audits an existing worktree without repairing it; and `app/server/test/workspace-resolution.test.ts` asserts the same property through vite's resolver for every `@yaco/*` specifier `app/server` imports, reading them off its own source rather than a list that would go stale. It also **self-heals**: run in a worktree left by the old layout, it repairs in place.
+- The self-check canonicalizes the deepest *existing* ancestor of what it resolves. Node follows symlinks only when the target file exists, and a fresh worktree has nothing built — so an unbuilt `dist/` would have reported the local `node_modules` path and passed a naive prefix test while pointing at another checkout. That false pass was found by the test, not by review.
+- **A second face of the same bug surfaced during the demonstration.** `app/server`'s `whatsapp/lazy-load` tests spawn a plain `node --import tsx` child, which resolves `@yaco/cli/*` to `cli/dist/` — so under the old share they were loading **main's compiled CLI**. With resolution corrected they need this checkout's `cli/dist`, which `scripts/verify.sh` already builds ahead of `server test`; a bare `npm test` in `app/server` does not. Documented rather than papered over.
+
+**Why:**
+- The most expensive thing the defect did was not the lost hours across three `cli-node-sdk` workers — it was producing a *confident wrong conclusion* that reached a shipped artifact: `manifest.test.ts` was recorded as a pre-existing failure on main, justified by stash-testing the whole diff. A stash varies the diff while holding the environment fixed, so it cannot separate a pre-existing bug from an environment bug. A silent wrong resolution costs more than a loud failure, which is why the fix ships with three guards rather than one.
+
+**Verification:** `scripts/verify.sh` green end to end — and this is the first run in this worktree that validated *this branch's* CLI. `scripts/worktree-provision.test.sh`: 44 assertions, hermetic. End-to-end proof in a worktree made by `yaco worktree create` (which ran main's still-old script, so it arrived broken): a branch-local `cli/src` export was `undefined` to the branch's own `app/server` test, then correct after re-provisioning; full `app/server` unit suite 54 files / 873 tests green there. Main's `node_modules` fingerprinted unchanged across every provisioning run and the worktree cleanup.
+
+**Key files:** `scripts/{worktree-provision.sh,worktree-provision.test.sh,verify.sh}`, `app/server/test/workspace-resolution.test.ts`, `doc/dev/README.md`, `agent-config/global/skills/yaco-worktree/SKILL.md`
+**Next:** the hermetic provisioning test is not in `.github/workflows/ci.yml`, which runs component commands rather than `verify.sh`.
+**Blockers:** None.
+
+
 ## 2026-08-11: the history read moves in process — the fifth and last Phase-2 cutover
 
 **What changed:**
