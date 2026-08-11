@@ -222,6 +222,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/index.ts",
       "src/lib/core/agent/model.ts",
       "src/lib/core/agent/projection.ts",
+      "src/lib/core/agent/provider-catalog.ts",
       "src/lib/core/agent/words.ts",
       "src/lib/core/errors.ts",
       "src/lib/core/result.ts",
@@ -231,6 +232,12 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/model.ts": [
         "NOTICE_MAX",
         "clampNotice",
+      ],
+      // Provider identity only. The registry that owns behaviour reaches tmux,
+      // hook installation and the session lifecycle, and is not exportable.
+      "src/lib/core/agent/provider-catalog.ts": [
+        "ProviderCatalogEntry",
+        "providerCatalog",
       ],
       "src/lib/core/agent/projection.ts": [
         "AgentSessionRow",
@@ -464,6 +471,25 @@ describe("closure census", () => {
       expect(exportedNames(entry.source)).toEqual(expected.names);
     });
   }
+});
+
+describe("provider catalog — static metadata, no I/O, no ambient state", () => {
+  // The design admits the catalog "before start" only as static metadata. Both
+  // halves of that are decidable here: a module that reaches no specifier at
+  // all cannot call `node:fs`, and the scan reads its environment surface.
+  const entry = "src/lib/core/agent/provider-catalog.ts";
+
+  it("reaches nothing but itself, so it can call no filesystem API", () => {
+    const closure = closureOf(entry);
+    expect(closure.files.map((f) => f.path)).toEqual([entry]);
+    expect(closure.externals).toEqual([]);
+  });
+
+  it("reads no environment name and owns nothing about the process", () => {
+    const scan = scanFile(resolve(CLI_ROOT, entry));
+    expect(scan.envReads).toEqual([]);
+    expect(scan.violations).toEqual([]);
+  });
 });
 
 describe("no excluded subsystem is reachable from any export", () => {

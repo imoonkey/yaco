@@ -9,6 +9,7 @@ import { codexOutput } from "./output.ts";
 import { codexMessages } from "./messages.ts";
 import { codexProjectMove } from "./project-move.ts";
 import { codexHooksAllYacoOwned } from "../lifecycle.ts";
+import { CODEX_IDENTITY } from "../provider-catalog.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -36,9 +37,7 @@ function envPrefix(env: Record<string, string>): string[] {
 }
 
 export const codexProvider: TuiProvider = {
-  id: "codex",
-  label: "Codex",
-  executable: "codex",
+  ...CODEX_IDENTITY,
 
   command: {
     permissionFlags: PERMISSION_FLAGS,

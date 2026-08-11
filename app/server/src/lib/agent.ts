@@ -5,6 +5,7 @@ import { join } from 'path'
 import {
   isPathDescendantOrEqual,
   normalizeProjectPath,
+  providerCatalog,
   resolveProjectForPath,
   toSessionRow,
   type AgentSessionRow,
@@ -51,15 +52,6 @@ export interface AgentSession {
   parentSession?: string
   /** Transient line-2 content for the current attention state (CLI-captured). */
   notice?: string
-}
-
-/** Entry of the `yaco agent providers --json` catalog — the CLI is the
- *  authoritative source of startable agent providers. `shell` is not a CLI
- *  agent provider and never appears here. */
-export interface ProviderCatalogEntry {
-  id: string
-  label: string
-  executable: string
 }
 
 /** Raw history row from `yaco agent history --path <p> --json`. The CLI owns
@@ -305,20 +297,6 @@ export async function inspectSessionMessages(handle: string, args: string[]): Pr
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
 
-/** Fetch the startable agent provider catalog from `yaco agent providers --json`.
- *  This is the authoritative boundary: the CLI registry, not app-side name
- *  heuristics, decides which providers exist. `shell` is intentionally absent —
- *  it is an app-owned session type, not a CLI agent provider. */
-export async function fetchProviderCatalog(): Promise<ProviderCatalogEntry[]> {
-  // execSync.*'yaco agent providers --json'
-  const data = await runYacoAgentJson(
-    ['agent', 'providers', '--json'],
-    YACO_AGENT_COMMAND_TIMEOUT_MS,
-    'agent providers',
-  )
-  return Array.isArray(data) ? (data as ProviderCatalogEntry[]) : []
-}
-
 /** Fetch project session history rows from `yaco agent history --path <p> --json`.
  *  Provider-home resolution and parsing live in the CLI provider adapters; the
  *  app only maps field names and applies its own live-session marker. */
@@ -350,8 +328,8 @@ export async function fetchSessionSummaries(projectPath: string): Promise<CliSes
 
 /** Reject a start request for a provider the CLI catalog does not know.
  *  Shell never reaches here — callers route shell through its own start path. */
-async function assertKnownAgentProvider(provider: string): Promise<void> {
-  const catalog = await fetchProviderCatalog()
+function assertKnownAgentProvider(provider: string): void {
+  const catalog = providerCatalog()
   if (catalog.some(p => p.id === provider)) return
   const known = catalog.map(p => p.id).join(', ')
   throw new Error(`unknown agent provider: ${provider}${known ? ` (known: ${known})` : ''}`)
@@ -373,7 +351,7 @@ export async function startAgentSession(
   resumeId?: string,
 ): Promise<{ handle: string; sessionId: string }> {
   if (name) validateSessionName(name)
-  await assertKnownAgentProvider(provider)
+  assertKnownAgentProvider(provider)
   // execSync.*'yaco agent start <provider> [yaco-flags] [passthrough...]'
   const args: string[] = ['agent', 'start', provider, '--json']
   if (resumeId) {
