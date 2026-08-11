@@ -8,3 +8,7 @@
 export { saveTasks as loadTasks } from "../../src/lib/core/task/store.ts";
 
 export class ConfigError extends Error {}
+
+/** The heritage clause never spells `Error`; the type still derives from it. */
+const Base = Error;
+export class ConfigFault extends Base {}

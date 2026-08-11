@@ -22,9 +22,11 @@ export interface ParsedTomlSections {
  *  Export eligibility rule 6 admits one vocabulary, and an in-process caller
  *  that has to learn a second error type is how a second one spreads —
  *  `app/server` imports this parser directly. The message and the `ENV` code
- *  are unchanged, so the CLI envelope is byte-identical. */
+ *  are exactly what `readYacoProjectPaths` used to translate the class into,
+ *  and no `details` is attached, so the CLI envelope is byte-identical — the
+ *  line number stays where it always was, in the message. */
 const parseError = (message: string, line: number): CliError =>
-  new CliError(ErrCode.ENV, `yaco.toml:${line}: ${message}`, { line });
+  new CliError(ErrCode.ENV, `yaco.toml:${line}: ${message}`);
 
 const SECTION_RE = /^\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$/;
 const KEY_RE = /^([A-Za-z0-9_-]+)\s*=\s*(.*)$/;

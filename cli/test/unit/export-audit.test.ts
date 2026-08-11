@@ -54,10 +54,12 @@ interface ExpectedExport {
   /** Every specifier the walk could not follow into first-party source. A new
    *  package dependency inside an export closure is a distribution decision. */
   externals: string[];
-  /** Every name the entry publishes. This is what keeps a mutation out of a
-   *  barrel: the file census cannot see it, because the module is already in
-   *  the closure for its read half. */
-  names: string[];
+  /** Every name the entry publishes, grouped by the file it comes from. This
+   *  is what keeps a mutation out of a barrel: the file census cannot see it,
+   *  because the module is already in the closure for its read half — and the
+   *  published name alone cannot either, since a same-named writer added to an
+   *  already-reachable file would leave both intact. */
+  names: Record<string, string[]>;
 }
 
 const EXPECTED: Record<string, ExpectedExport> = {
@@ -75,25 +77,68 @@ const EXPECTED: Record<string, ExpectedExport> = {
     // The project registry's writers are exported deliberately: the app server
     // is the CLI's peer on that file, not a reader of it, and the design keeps
     // one implementation of the on-disk shape rather than two.
-    names: [
-      "DEFAULT_PROJECT_PATHS", "ParsedTomlSections", "Project", "ProjectRecord",
-      "YacoProjectPaths", "addProject", "agentWrapperPath",
-      "channelScopeDir", "channelsDir", "ensureYacoHome", "getYacoHome",
-      "originsDir", "parseScopedToml", "projectEventsFile", "projectsFile",
-      "projectsRegistryPath", "readProjects", "readYacoProjectPaths",
-      "removeProject", "sessionsDir", "shellSessionsDir", "uiStateDir",
-      "writeProjects",
-    ],
+    names: {
+      "src/lib/core/paths/project-registry.ts": [
+        "Project",
+        "ProjectRecord",
+        "addProject",
+        "ensureYacoHome",
+        "projectsRegistryPath",
+        "readProjects",
+        "removeProject",
+        "writeProjects",
+      ],
+      "src/lib/core/paths/toml.ts": [
+        "ParsedTomlSections",
+        "parseScopedToml",
+      ],
+      "src/lib/core/paths/yaco-home.ts": [
+        "agentWrapperPath",
+        "channelScopeDir",
+        "channelsDir",
+        "getYacoHome",
+        "originsDir",
+        "projectEventsFile",
+        "projectsFile",
+        "sessionsDir",
+        "shellSessionsDir",
+        "uiStateDir",
+      ],
+      "src/lib/core/paths/yaco-paths.ts": [
+        "DEFAULT_PROJECT_PATHS",
+        "YacoProjectPaths",
+        "readYacoProjectPaths",
+      ],
+    },
   },
   "./core/result": {
     files: ["src/lib/core/result.ts"],
     externals: [],
-    names: ["Err", "Ok", "Result", "err", "isErr", "isOk", "map", "ok", "unwrap"],
+    names: {
+      "src/lib/core/result.ts": [
+        "Err",
+        "Ok",
+        "Result",
+        "err",
+        "isErr",
+        "isOk",
+        "map",
+        "ok",
+        "unwrap",
+      ],
+    },
   },
   "./core/errors": {
     files: ["src/lib/core/errors.ts", "src/lib/core/result.ts"],
     externals: [],
-    names: ["CliError", "ErrCode", "exitCodeFor", "toErr"],
+    names: {
+      "src/lib/core/errors.ts": [
+        "CliError",
+        "ErrCode",
+        "exitCodeFor",
+        "toErr",
+      ],
+    },
   },
   "./core/task": {
     files: [
@@ -113,18 +158,55 @@ const EXPECTED: Record<string, ExpectedExport> = {
     externals: ["node:fs", "node:os", "node:path"],
     // No writer, no lock, no link mutation: task mutation is one authority and
     // it stays behind the CLI subprocess boundary.
-    names: [
-      "BLOCK_REASONS", "BlockReason", "DEFAULT_TASK_LOCK_TIMEOUT_MS",
-      "DEFAULT_WORKSET", "ESTIMATES", "Estimate", "PRIORITIES", "Priority",
-      "SLUG_RE", "STATES", "State", "TERMINAL", "Task", "TaskGraph",
-      "TaskStore", "ValidationProblems", "ValidationReport", "WORKSETS",
-      "Workset", "checkCycles", "childrenOf", "collectParentChain",
-      "defaultTaskFileFor", "defaultTaskFileForId", "formatJson", "hasChildren",
-      "isAcceptCriteriaBlank", "isState", "isWorkset", "loadTaskStore",
-      "loadTasks", "resolveTasksPathForSessionPath", "rollup",
-      "sourceForNewTask", "sourceForTask", "validateGraph", "validateRefs",
-      "validateState", "validateTypes",
-    ],
+    names: {
+      "src/lib/core/task/graph.ts": [
+        "ValidationProblems",
+        "ValidationReport",
+        "checkCycles",
+        "childrenOf",
+        "collectParentChain",
+        "hasChildren",
+        "rollup",
+        "validateGraph",
+        "validateRefs",
+        "validateState",
+      ],
+      "src/lib/core/task/model.ts": [
+        "BLOCK_REASONS",
+        "BlockReason",
+        "DEFAULT_TASK_LOCK_TIMEOUT_MS",
+        "DEFAULT_WORKSET",
+        "ESTIMATES",
+        "Estimate",
+        "PRIORITIES",
+        "Priority",
+        "SLUG_RE",
+        "STATES",
+        "State",
+        "TERMINAL",
+        "Task",
+        "TaskGraph",
+        "WORKSETS",
+        "Workset",
+        "isState",
+        "isWorkset",
+      ],
+      "src/lib/core/task/store.ts": [
+        "TaskStore",
+        "defaultTaskFileFor",
+        "defaultTaskFileForId",
+        "formatJson",
+        "loadTaskStore",
+        "loadTasks",
+        "resolveTasksPathForSessionPath",
+        "sourceForNewTask",
+        "sourceForTask",
+      ],
+      "src/lib/core/task/validation.ts": [
+        "isAcceptCriteriaBlank",
+        "validateTypes",
+      ],
+    },
   },
   "./core/agent": {
     files: [
@@ -136,11 +218,21 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/result.ts",
     ],
     externals: ["node:crypto", "node:path"],
-    names: [
-      "AgentSessionRow", "NOTICE_MAX", "ProjectRef", "ProjectableSessionState",
-      "clampNotice", "isPathDescendantOrEqual", "normalizeProjectPath",
-      "resolveProjectForPath", "toSessionRow",
-    ],
+    names: {
+      "src/lib/core/agent/model.ts": [
+        "NOTICE_MAX",
+        "clampNotice",
+      ],
+      "src/lib/core/agent/projection.ts": [
+        "AgentSessionRow",
+        "ProjectRef",
+        "ProjectableSessionState",
+        "isPathDescendantOrEqual",
+        "normalizeProjectPath",
+        "resolveProjectForPath",
+        "toSessionRow",
+      ],
+    },
   },
   "./core/worktree": {
     files: [
@@ -151,7 +243,15 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/worktree/slug.ts",
     ],
     externals: ["node:path"],
-    names: ["validateSlug", "worktreeBranch", "worktreePath"],
+    names: {
+      "src/lib/core/worktree/convention.ts": [
+        "worktreeBranch",
+        "worktreePath",
+      ],
+      "src/lib/core/worktree/slug.ts": [
+        "validateSlug",
+      ],
+    },
   },
 };
 
@@ -320,7 +420,7 @@ describe("closure census", () => {
 
     it(`publishes exactly the reviewed names from ${subpath}`, () => {
       const entry = packageExports().find((e) => e.subpath === subpath)!;
-      expect(exportedNames(entry.source)).toEqual([...expected.names].sort());
+      expect(exportedNames(entry.source)).toEqual(expected.names);
     });
   }
 });
@@ -481,12 +581,18 @@ describe("the audit itself", () => {
         `export const b = () => stdout.write("x");\n` +
         `const runtime = process;\n` +
         `export const c = () => runtime.exit(1);\n` +
+        `const viaGlobal = globalThis.process;\n` +
+        `export const e = () => viaGlobal.exit(1);\n` +
+        `const viaKey = globalThis["process"];\n` +
+        `export const f = () => viaKey.exit(1);\n` +
         `const which = "std" + "err";\n` +
         `export const d = () => process[which];\n`,
     });
     try {
       expect(detailsOf(root)).toEqual([
         "2:process.exit",
+        "2:process referenced outside a member access",
+        "2:process referenced outside a member access",
         "2:process referenced outside a member access",
         "2:process referenced outside a member access",
         "2:process[<computed member>]",
@@ -502,6 +608,13 @@ describe("the audit itself", () => {
         `export const poll = async (probe: () => Promise<boolean>) => {\n` +
         `  while (true) { if (await probe()) return; }\n` +
         `};\n` +
+        // The same loop spelled to dodge a `true` check.
+        `export const poll1 = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (1) { if (await probe()) return; }\n` +
+        `};\n` +
+        `export const pollDo = async (probe: () => Promise<boolean>) => {\n` +
+        `  do { if (await probe()) return; } while (true);\n` +
+        `};\n` +
         `export const backoff = async (probe: () => Promise<boolean>) => {\n` +
         `  for (let i = 0; i < 5; i++) {\n` +
         `    if (await probe()) return;\n` +
@@ -516,7 +629,12 @@ describe("the audit itself", () => {
         `};\n`,
     });
     try {
-      expect(detailsOf(root)).toEqual(["3:polling loop", "3:polling loop"]);
+      expect(detailsOf(root)).toEqual([
+        "3:polling loop",
+        "3:polling loop",
+        "3:polling loop",
+        "3:polling loop",
+      ]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
@@ -524,15 +642,18 @@ describe("the audit itself", () => {
 
   it("sees a writer republished under a reader's name", () => {
     // Name and file census both stay intact; only the origin changes.
-    expect(exportedNames("test/fixtures/alias-export.ts")).toEqual([
-      "ConfigError",
-      "loadTasks=saveTasks",
-    ]);
+    expect(exportedNames("test/fixtures/alias-export.ts")).toEqual({
+      "src/lib/core/task/store.ts": ["loadTasks=saveTasks"],
+      "test/fixtures/alias-export.ts": ["ConfigError", "ConfigFault"],
+    });
   });
 
   it("sees an error type other than CliError", () => {
+    // ConfigFault's heritage clause never spells `Error`; the type system says
+    // it derives from it anyway.
     expect(exportedErrorClasses("test/fixtures/alias-export.ts")).toEqual([
       "ConfigError",
+      "ConfigFault",
     ]);
   });
 

@@ -234,52 +234,61 @@ function moduleExports(entrySource: string): {
 const origin = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
   symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
 
-/** The names one export entry publishes, each resolved through its re-export
- *  chain to the declaration it actually names.
+/** What one export entry publishes, grouped by the file each name actually
+ *  comes from and resolved through its re-export chain.
  *
- *  Pinning these is what keeps a mutation from re-entering a barrel unnoticed;
+ *  Pinning this is what keeps a mutation from re-entering a barrel unnoticed;
  *  the file census cannot, since the module is already in the closure for its
- *  read half. The published name alone is not enough either — `export {
- *  saveTasks as loadTasks }` keeps both the name and the census intact — so an
- *  entry whose origin differs is reported as `public=origin`. The origin's
- *  *file* needs no pinning: the census already fixes which files a closure may
- *  contain, so an origin name inside that set is the function it says it is. */
-export function exportedNames(entrySource: string): string[] {
+ *  read half. Neither the published name nor the origin name alone is enough:
+ *  `export { saveTasks as loadTasks }` keeps the name, and a same-named writer
+ *  added to an already-reachable module keeps both. The origin *file* is what
+ *  closes that, so it is the grouping key, and a rename inside a file shows up
+ *  as `public=origin`. */
+export function exportedNames(entrySource: string): Record<string, string[]> {
   const { checker, symbols } = moduleExports(entrySource);
-  return symbols
-    .map((s) => {
-      const name = s.getName();
-      const from = origin(checker, s).getName();
-      return from === name ? name : `${name}=${from}`;
-    })
-    .sort();
+  const byFile: Record<string, string[]> = {};
+
+  for (const symbol of symbols) {
+    const from = origin(checker, symbol);
+    const declaration = from.getDeclarations()?.[0];
+    const file = declaration
+      ? relative(CLI_ROOT, declaration.getSourceFile().fileName)
+      : "<no declaration>";
+    const name = symbol.getName();
+    const label = from.getName() === name ? name : `${name}=${from.getName()}`;
+    (byFile[file] ??= []).push(label);
+  }
+
+  for (const names of Object.values(byFile)) names.sort();
+  return Object.fromEntries(Object.entries(byFile).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-/** Every exported symbol that declares a class extending `Error` — rule 6's
- *  one static tripwire. A second error type is how an in-process caller learns
- *  a second failure vocabulary; `CliError` is the only admitted one. */
+/** Every exported symbol whose declaration derives from the global `Error` —
+ *  rule 6's one static tripwire. A second error type is how an in-process
+ *  caller learns a second failure vocabulary; `CliError` is the only admitted
+ *  one.
+ *
+ *  Derivation is asked of the type system, not of the heritage clause's
+ *  spelling: `const Base = Error; class Fault extends Base {}` is an error
+ *  class no matter what the clause reads. */
 export function exportedErrorClasses(entrySource: string): string[] {
   const { checker, symbols } = moduleExports(entrySource);
   return symbols
-    .filter((s) =>
-      origin(checker, s)
-        .getDeclarations()
-        ?.some((d) => ts.isClassDeclaration(d) && extendsError(d)),
-    )
+    .filter((s) => {
+      const from = origin(checker, s);
+      if (!from.getDeclarations()?.some(ts.isClassDeclaration)) return false;
+      return derivesFromError(checker.getDeclaredTypeOfSymbol(from));
+    })
     .map((s) => s.getName())
     .sort();
 }
 
-function extendsError(node: ts.ClassDeclaration): boolean {
-  return (
-    node.heritageClauses?.some(
-      (clause) =>
-        clause.token === ts.SyntaxKind.ExtendsKeyword &&
-        clause.types.some(
-          (t) => ts.isIdentifier(t.expression) && t.expression.text.endsWith("Error"),
-        ),
-    ) ?? false
-  );
+function derivesFromError(type: ts.Type, seen = new Set<ts.Type>()): boolean {
+  if (seen.has(type)) return false;
+  seen.add(type);
+  if (type.getSymbol()?.getName() === "Error") return true;
+  if (!type.isClassOrInterface()) return false;
+  return (type.getBaseTypes() ?? []).some((base) => derivesFromError(base, seen));
 }
 
 export interface Finding {
@@ -434,16 +443,37 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
  *  to walk a file set with bounded concurrency, which is a loop of awaits and
  *  is not a poll. */
 function isPollingLoop(node: ts.Node): boolean {
-  if (ts.isWhileStatement(node)) {
-    return node.expression.kind === ts.SyntaxKind.TrueKeyword || sleepsInside(node.statement);
+  if (ts.isWhileStatement(node) || ts.isDoStatement(node)) {
+    return alwaysTrue(node.expression) || sleepsInside(node.statement);
   }
   if (ts.isForStatement(node)) {
-    return !node.condition || sleepsInside(node.statement);
+    return !node.condition || alwaysTrue(node.condition) || sleepsInside(node.statement);
   }
-  if (ts.isDoStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+  if (ts.isForOfStatement(node) || ts.isForInStatement(node)) {
     return sleepsInside(node.statement);
   }
   return false;
+}
+
+/** A loop condition that never ends the loop — `true`, `1`, `"go"`, `!0`. */
+function alwaysTrue(expr: ts.Expression): boolean {
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (ts.isNumericLiteral(expr)) return Number(expr.text) !== 0;
+  if (ts.isStringLiteral(expr)) return expr.text.length > 0;
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
+    return isFalsyLiteral(expr.operand);
+  }
+  if (ts.isParenthesizedExpression(expr)) return alwaysTrue(expr.expression);
+  return false;
+}
+
+function isFalsyLiteral(expr: ts.Expression): boolean {
+  return (
+    expr.kind === ts.SyntaxKind.FalseKeyword ||
+    expr.kind === ts.SyntaxKind.NullKeyword ||
+    (ts.isNumericLiteral(expr) && Number(expr.text) === 0) ||
+    (ts.isStringLiteral(expr) && expr.text.length === 0)
+  );
 }
 
 const SLEEPS = new Set(["setTimeout", "setInterval", "sleep", "sleepSync", "delay"]);
@@ -504,7 +534,9 @@ const isGlobalThis = (expr: ts.Expression): boolean =>
  *  of those hands the banned members a name this scan cannot follow, so the
  *  reference is rejected instead of chased. */
 function isLooseProcessReference(node: ts.Node): boolean {
-  if (!ts.isIdentifier(node) || node.text !== "process") return false;
+  // Every spelling `isProcess` accepts, not just the bare identifier —
+  // `const runtime = globalThis.process` is the same escape by a longer route.
+  if (!ts.isExpression(node) || !isProcess(node)) return false;
   const parent = node.parent;
 
   // Positions where the identifier names something rather than reading the

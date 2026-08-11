@@ -99,7 +99,10 @@ active = "p/active"`;
     } catch (e) {
       expect(e).toBeInstanceOf(CliError);
       expect((e as CliError).code).toBe(ErrCode.ENV);
-      expect((e as CliError).details).toEqual({ line: 3 });
+      // No `details`: the envelope is byte-identical to what the deleted
+      // TomlParseError translation produced, line number and all.
+      expect((e as CliError).details).toBeUndefined();
+      expect((e as Error).message).toContain("yaco.toml:3");
       expect((e as Error).message).toMatch(/duplicate key "tasks"/);
     }
   });
@@ -111,7 +114,7 @@ active = "p/active"`;
     } catch (e) {
       expect(e).toBeInstanceOf(CliError);
       expect((e as CliError).code).toBe(ErrCode.ENV);
-      expect((e as CliError).details).toEqual({ line: 3 });
+      expect((e as CliError).details).toBeUndefined();
       expect((e as Error).message).toContain("yaco.toml:3");
     }
   });
