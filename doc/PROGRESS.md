@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-08-10: README screenshots + a visual tour page
+
+**What changed:**
+- `doc/assets/` holds 8 stills plus a 15s walkthrough GIF, all captured from this repo's own running instance (Playwright against `localhost:3001`, dark theme, 1440×900 @2x). The hero is a composed image: the app screenshot over three aligned legend columns naming the left / middle / right regions.
+- README's hero placeholder became the real hero; layer 1 gained the CLI-plus-session-tree shot, layer 2 a task-graph + worktree-picker pair, layer 3 the GIF and a notifications + phone pair.
+- New `doc/main/app/tour.md` — the full gallery with captions (layout, sessions, task graph, Gantt, worktrees, markdown split, notifications, walkthrough, mobile) — linked from the app doc map and from the README.
+
+**Why:**
+- Per the README research note, a hero screenshot is the single strongest device in this class of README and ours was the one missing piece. The layout image also answers "what am I looking at" before any prose does.
+
+**Key files:** `README.md`, `doc/main/app/tour.md`, `doc/main/app/README.md`, `doc/assets/*`
+**Verification:** every referenced asset path resolves; capture content restricted to the yaco repo and English (other projects hidden in-page, non-yaco notification rows removed before the shot).
+**Next:** the app renders mermaid on a white card in dark theme — visible in a dark-theme markdown preview, so no diagram shot is in the set.
+**Blockers:** None.
+
 ## 2026-08-10: per-skill skills links + the shipped set shrinks to 22 yaco-coupled skills
 
 **What changed:**

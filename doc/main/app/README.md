@@ -32,6 +32,7 @@ The Hono backend serves the built React app from `ui/dist`, so the app shell, AP
 
 | Section | Scope |
 |---------|-------|
+| [tour.md](tour.md) | Screenshots of the app in use |
 | [backend/](backend/) | Server setup, API routes, library modules |
 | [data-model/](data-model/) | Entity shapes, API contracts, persistence boundaries |
 | [frontend/](frontend/) | React components, hooks, state patterns |
