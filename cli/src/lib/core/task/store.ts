@@ -27,10 +27,12 @@ import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
 /** Items read per await.
  *
- *  Swept over 4/8/16/32/64/128 against this repository's task tree and a
- *  ten-times synthetic one: starvation climbs steadily with width (1.4 ms at 8,
- *  5.6 ms at 64 on the real tree) while wall time is flat within noise from 4
- *  to 16 and worsens above it. 8 sits at the bottom of both curves. */
+ *  Swept over 2/4/8/16/32/64/128 against this repository's task tree and a
+ *  ten-times copy of it, measuring the worst event-loop gap per call. Above 16
+ *  starvation grows with width (3 ms at 8, 12 ms at 64 on the real tree);
+ *  below 4 wall time grows without buying any. Wall time is flat within noise
+ *  across 4-32, so anything in the 4-8 band is equivalent and 8 is one of them.
+ *  -> See: `plan/all/cli-node-sdk/qa-task-read-cutover.md` for the table. */
 const READ_CONCURRENCY = 8;
 
 /** Map `items` through `fn`, `READ_CONCURRENCY` at a time, yielding to the
@@ -132,16 +134,28 @@ export function resolveTasksPathForSessionPath(sessionPath: string): string | nu
   return null;
 }
 
+/** One file's tasks, canonicalized.
+ *
+ *  Normalization happens here, inside the awaited per-file step, rather than in
+ *  a second pass over every graph: it rebuilds each task object, and doing that
+ *  for a whole large tree in one synchronous loop is a stall of exactly the
+ *  kind the chunked read exists to avoid. Spread across the file reads it is
+ *  invisible; the merge below is then only assignment. */
+async function loadNormalizedTasks(file: string): Promise<[string, Task][]> {
+  const graph = await loadTasks(file);
+  return Object.entries(graph).map(([id, task]) => [id, normalizeLoadedTask(task)]);
+}
+
 export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
   const defaultFile = defaultTaskFileFor(tasksPath);
   const files = await discoverTaskFiles(tasksPath);
-  const graphs = await mapChunked(files, loadTasks);
+  const loaded = await mapChunked(files, loadNormalizedTasks);
   const tasks: TaskGraph = {};
   const sources = new Map<string, string>();
 
-  for (const [index, graph] of graphs.entries()) {
+  for (const [index, entries] of loaded.entries()) {
     const file = files[index]!;
-    for (const [id, task] of Object.entries(graph)) {
+    for (const [id, task] of entries) {
       const existing = sources.get(id);
       if (existing) {
         throw new CliError(
@@ -149,7 +163,7 @@ export async function loadTaskStore(tasksPath: string): Promise<TaskStore> {
           `duplicate task id '${id}' in ${existing} and ${file}`,
         );
       }
-      tasks[id] = normalizeLoadedTask(task);
+      tasks[id] = task;
       sources.set(id, file);
     }
   }

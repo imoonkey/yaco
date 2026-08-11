@@ -53,8 +53,10 @@ export interface TaskListData {
 export async function readTaskList(input: TaskListInput): Promise<Result<TaskListData>> {
   try {
     // A published entry point is a runtime interface, not only a typed one.
-    // An unrecognized filter must not read as "the graph is empty".
-    const workset = input.workset ?? DEFAULT_WORKSET;
+    // An unrecognized filter must not read as "the graph is empty" — and
+    // `?? DEFAULT_WORKSET` would have let `null` mean "omitted", which is a
+    // caller's mistake reinterpreted as a default.
+    const workset = input.workset === undefined ? DEFAULT_WORKSET : input.workset;
     if (workset !== "all" && !isWorkset(workset)) {
       throw new CliError(
         ErrCode.USAGE,

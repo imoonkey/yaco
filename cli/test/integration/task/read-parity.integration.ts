@@ -147,15 +147,32 @@ describe("readTaskList — behaviour the baseline does not reach", () => {
   });
 
   it("rejects a filter the type system did not stop", async () => {
-    // A published entry point is reachable from plain JavaScript.
+    // A published entry point is reachable from plain JavaScript. `null` is
+    // listed on purpose: a `??` default would have read it as "omitted" and
+    // answered the active workset to a caller who asked for something else.
     const root = fixture("graph");
     for (const bad of [
-      { workset: "typo" as "all" },
-      { state: "unknown" as "done" },
-    ]) {
+      { workset: "typo" },
+      { workset: null },
+      { workset: "" },
+      { workset: false },
+      { state: "unknown" },
+      { state: null },
+      { state: "" },
+    ] as unknown as { workset?: "all"; state?: "done" }[]) {
       const result = await readTaskList({ repoRoot: root, ...bad });
-      expect(isErr(result)).toBe(true);
-      if (isErr(result)) expect(result.code).toBe("USAGE");
+      expect(isErr(result), JSON.stringify(bad)).toBe(true);
+      if (isErr(result)) expect(result.code, JSON.stringify(bad)).toBe("USAGE");
+    }
+  });
+
+  it("still defaults an omitted filter", async () => {
+    // Absent is not the same as wrong: `undefined` (and an object that simply
+    // lacks the key) must keep meaning "the active workset".
+    const root = fixture("graph");
+    for (const input of [{}, { workset: undefined }, { state: undefined }]) {
+      const result = await readTaskList({ repoRoot: root, ...input });
+      expect(isErr(result), JSON.stringify(input)).toBe(false);
     }
   });
 
