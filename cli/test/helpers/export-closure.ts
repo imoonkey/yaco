@@ -409,6 +409,12 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   const visit = (node: ts.Node): void => {
     // A type node is erased whole. Nothing inside one runs, so `type Exit =
     // typeof process.exit` is not a read of anything.
+    //
+    // The exception is a heritage clause: `class A extends <expr>` is an
+    // `ExpressionWithTypeArguments`, which TypeScript classifies as a type node
+    // even though `<expr>` is evaluated at module initialization. Its type
+    // arguments really are erased, so only the expression is descended into.
+    if (ts.isExpressionWithTypeArguments(node)) return visit(node.expression);
     if (ts.isTypeNode(node)) return;
     const member = memberOn(node, isProcess);
     const consoleMember = memberOn(node, isConsole);

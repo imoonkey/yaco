@@ -582,7 +582,9 @@ describe("the audit itself", () => {
         `export const d = process.env!.YACO_AGENT_SESSIONS_DIR;\n` +
         // Erased declarations name members without reading them.
         `export type Exit = typeof process.exit;\n` +
-        `export type Log = typeof console.log;\n`,
+        `export type Log = typeof console.log;\n` +
+        // A heritage clause is not erased: it runs at module initialization.
+        `export class A extends (console.log("x"), Object) {}\n`,
     });
     try {
       const scan = scanFile(join(root, "index.ts"), root);
@@ -592,7 +594,7 @@ describe("the audit itself", () => {
         "HOME",
         "YACO_AGENT_SESSIONS_DIR",
       ]);
-      expect(scan.violations).toEqual([]);
+      expect(scan.violations.map((v) => v.detail)).toEqual(["console.log"]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
