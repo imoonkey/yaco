@@ -6,20 +6,20 @@
  *  prevent is a *different* query inheriting that measurement — `.all()` over
  *  the whole table costs nothing like a primary-key lookup.
  *
- *  Enumerating the dangerous spellings loses that race by construction — review
- *  defeated three successive versions of the check, the last of them with
- *  `const { all } = statement` and `Reflect.get(statement, "all")`, both of
- *  which read a property without a property-access node. So the audit
- *  constrains this module's *syntax* instead: no destructuring, no `Reflect` /
- *  `eval` / `Function` / `Proxy`, no member named `all` / `run` / `exec` /
- *  `iterate` / `call` / `bind` / `apply`, no computed member it cannot name, and
- *  a pinned import list so a statement cannot be handed to a helper it does not
- *  read.
+ *  Enumerating the dangerous spellings loses that race by construction. Review
+ *  defeated four successive versions of the check, ending with
+ *  `(() => {}).constructor("… .all()")` — `Function` reached without naming it,
+ *  running a query the parser never sees because it lives in a string. No set
+ *  of banned names closes that.
  *
- *  A module doing anything else could not live under those rules — which is
- *  exactly why the query does not simply sit in `summary-read.ts`, whose reader
- *  maps its inputs with `Promise.all`. The rule and this file's existence are
- *  one decision, not two.
+ *  So the audit pins **this module's whole executable syntax**, and asserts the
+ *  file still is it. Any edit at all fails, including the escapes nobody has
+ *  thought of, and failing means "re-judge and re-measure" — which is what
+ *  should happen when the code carrying a measured stall bound changes.
+ *
+ *  That is only livable for a module that does one thing, which is exactly why
+ *  the query does not simply sit in `summary-read.ts`. This file's existence
+ *  and the shape of that rule are one decision, not two.
  *
  *  -> See: `RULE_5_SQLITE` in `test/unit/export-audit.test.ts`,
  *  `test/bench/summary-stall.ts --sqlite-probe`. */

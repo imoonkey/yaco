@@ -1,0 +1,103 @@
+ImportDeclaration
+  ImportClause
+    NamedImports
+      ImportSpecifier
+        Identifier existsSync
+  StringLiteral node:fs
+ImportDeclaration
+  ImportClause
+    NamedImports
+      ImportSpecifier
+        Identifier DatabaseSync
+  StringLiteral node:sqlite
+ImportDeclaration
+  ImportClause
+    NamedImports
+      ImportSpecifier
+        Identifier codexDbPath
+  StringLiteral ./provider-home.ts
+InterfaceDeclaration
+  ExportKeyword
+  Identifier CodexThreadRow
+  PropertySignature
+    Identifier title
+  PropertySignature
+    Identifier first
+FunctionDeclaration
+  ExportKeyword
+  Identifier codexThreadRow
+  Parameter
+    Identifier sessionId
+  Block
+    IfStatement
+      PrefixUnaryExpression
+        CallExpression
+          Identifier existsSync
+          CallExpression
+            Identifier codexDbPath
+      ReturnStatement
+        NullKeyword
+    TryStatement
+      Block
+        FirstStatement
+          VariableDeclarationList
+            VariableDeclaration
+              Identifier db
+              NewExpression
+                Identifier DatabaseSync
+                CallExpression
+                  Identifier codexDbPath
+                ObjectLiteralExpression
+                  PropertyAssignment
+                    Identifier readOnly
+                    TrueKeyword
+        TryStatement
+          Block
+            FirstStatement
+              VariableDeclarationList
+                VariableDeclaration
+                  Identifier row
+                  AsExpression
+                    CallExpression
+                      PropertyAccessExpression
+                        CallExpression
+                          PropertyAccessExpression
+                            Identifier db
+                            Identifier prepare
+                          StringLiteral SELECT title, first_user_message FROM threads WHERE id = ?
+                        Identifier get
+                      Identifier sessionId
+            ReturnStatement
+              ConditionalExpression
+                Identifier row
+                QuestionToken
+                ObjectLiteralExpression
+                  PropertyAssignment
+                    Identifier title
+                    BinaryExpression
+                      PropertyAccessExpression
+                        Identifier row
+                        Identifier title
+                      QuestionQuestionToken
+                      NullKeyword
+                  PropertyAssignment
+                    Identifier first
+                    BinaryExpression
+                      PropertyAccessExpression
+                        Identifier row
+                        Identifier first_user_message
+                      QuestionQuestionToken
+                      NullKeyword
+                ColonToken
+                NullKeyword
+          Block
+            ExpressionStatement
+              CallExpression
+                PropertyAccessExpression
+                  Identifier db
+                  Identifier close
+      CatchClause
+        Block
+          ReturnStatement
+            NullKeyword
+EndOfFileToken

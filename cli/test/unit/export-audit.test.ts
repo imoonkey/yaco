@@ -31,7 +31,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -379,12 +379,13 @@ const RULE_5_DEBT: string[] = [];
 interface SqliteAdmission {
   /** The measurement, and the command that reproduces it. */
   bound: string;
-  /** Every SQL string the admitted module may prepare, whitespace-normalized. */
+  /** Every SQL string the admitted module prepares, whitespace-normalized —
+   *  the human-legible half, so a reader can see what the bound is a bound on. */
   prepares: string[];
-  /** Everything the admitted module may import. Pinned because a statement
-   *  handed to a helper is executed where `scanSqliteUse` is not looking, and
-   *  because an admitted module earns its rule by staying small. */
-  imports: string[];
+  /** The checked-in normalized syntax of the module that was measured. This is
+   *  the pin that closes the escapes an enumeration cannot: an admission says
+   *  "*this code* costs 0.3 ms", and that sentence is only true of this code. */
+  shape: string;
 }
 
 const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
@@ -395,7 +396,7 @@ const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
       "0.3 ms p50 and max over 40 warm samples, open and close included. " +
       "Reproduce with `node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
     prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
-    imports: ["node:fs", "node:sqlite", "./provider-home.ts"],
+    shape: "test/fixtures/rule5-sqlite/codex-thread.shape.txt",
   },
 };
 
@@ -539,10 +540,13 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
       const file = site.slice(0, site.indexOf(" "));
       const use = scanSqliteUse(resolve(CLI_ROOT, file));
       expect(use.prepared, `${file}: prepared SQL`).toEqual(admission.prepares);
-      expect(use.unbounded.map((f) => `${f.path}:${f.line} ${f.detail}`), file).toEqual([]);
-      // A statement handed to a helper runs where this scan is not looking, and
-      // an admitted module earns its allowlist by staying small.
-      expect(use.imports, `${file}: imports`).toEqual(admission.imports);
+      // The admission is of *this code*, so this is the pin that means it. A
+      // failure here is not a test to update — it is a re-judgement and a
+      // re-measurement, because the module carrying a measured stall bound has
+      // changed. Regenerate the fixture only after re-running `--sqlite-probe`.
+      expect(use.shape.join("\n") + "\n", `${file}: syntax`).toBe(
+        readFileSync(resolve(CLI_ROOT, admission.shape), "utf-8"),
+      );
     }
   });
 });
@@ -910,99 +914,80 @@ describe("the audit itself", () => {
     }
   });
 
-  it("sees an unbounded query however the statement's method is reached", () => {
-    // Every line here was a live bypass of some earlier version of this check:
-    // a text match, then a check on the callee name of a call (which a local
-    // `Promise` binding shadowed), then a check on property access (which
-    // destructuring and `Reflect.get` walk straight past — a property read that
-    // is not a property-access node). Enumerating spellings loses that race, so
-    // the module's *syntax* is constrained instead.
-    const { root } = plant({
-      "index.ts":
-        `import { DatabaseSync } from "node:sqlite";\n` +
-        `const db = new DatabaseSync("x", { readOnly: true });\n` +
-        `const statement = db.prepare("SELECT title FROM threads WHERE id = ?");\n` +
-        `export const a = () => statement.all();\n` +
-        `export const b = () => statement.all.bind(statement)();\n` +
-        `export const c = () => statement["all"]();\n` +
-        `const key = "a" + "ll";\n` +
-        `export const d = () => statement[key]();\n` +
-        `const Promise = db.prepare("SELECT * FROM threads");\n` +
-        `export const e = () => Promise.all();\n` +
-        `const { all: execute } = statement;\n` +
-        `export const f = () => execute();\n` +
-        `export const g = () => Reflect.get(statement, "all")();\n` +
-        `export const ok = () => statement.get("id");\n`,
+  describe("the rule-5 SQLite admission", () => {
+    // The admission pins the syntax of the module that was measured, so what has
+    // to be demonstrated is not that the scan recognizes each escape — it is
+    // that *no* edit to that module survives. Each of these is a real bypass of
+    // some earlier version of the check, planted into the admitted module
+    // itself; the last of them is the reason the pin exists at all, because no
+    // denylist can see code that lives inside a string.
+    const ADMITTED = "src/lib/core/agent/providers/codex-thread.ts";
+    const baseline = scanSqliteUse(resolve(CLI_ROOT, ADMITTED)).shape;
+
+    /** The admitted module with `edit` applied, scanned in place of it. */
+    const edited = (edit: (source: string) => string): string[] => {
+      const source = readFileSync(resolve(CLI_ROOT, ADMITTED), "utf-8");
+      const dir = mkdtempSync(join(tmpdir(), "yaco-rule5-"));
+      try {
+        const file = join(dir, "codex-thread.ts");
+        writeFileSync(file, edit(source));
+        return scanSqliteUse(file, dir).shape;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    /** Insert `code` just above the `db.close()` the query is wrapped in. */
+    const inject = (code: string) => (source: string): string =>
+      source.replace("    } finally {\n      db.close();", `      ${code}\n    } finally {\n      db.close();`);
+
+    const UNBOUNDED = "SELECT * FROM threads";
+    const BYPASSES: [name: string, edit: (source: string) => string][] = [
+      ["a direct unbounded call", inject(`db.prepare("${UNBOUNDED}").all();`)],
+      ["an aliased statement", inject(`const s = db.prepare("${UNBOUNDED}"); s.all();`)],
+      ["a rebound method", inject(`const s = db.prepare("${UNBOUNDED}"); s.all.bind(s)();`)],
+      ["a string-keyed member", inject(`db.prepare("${UNBOUNDED}")["all"]();`)],
+      ["destructuring", inject(`const { all } = db.prepare("${UNBOUNDED}"); all.call(db);`)],
+      ["reflection", inject(`Reflect.get(db, "exec").call(db, "${UNBOUNDED}");`)],
+      // The escape that defeated every denylist: `Function` reached without
+      // naming it, running a query the parser never sees because it is a string.
+      ["the Function constructor", inject(
+        `const run = (() => {}).constructor("return arguments[0].prepare('${UNBOUNDED}').all()"); run(db);`,
+      )],
+      ["an extra import", (source) =>
+        `import { readFile } from "node:fs/promises";\n${source}\nexport const leak = readFile;`],
+      ["an edited query", (source) =>
+        source.replace("SELECT title, first_user_message FROM threads WHERE id = ?", UNBOUNDED)],
+      ["a query it cannot read", (source) =>
+        source.replace(
+          '"SELECT title, first_user_message FROM threads WHERE id = ?"',
+          "`SELECT ${column} FROM threads WHERE id = ?`",
+        )],
+    ];
+
+    it("matches the checked-in shape of the module as it stands", () => {
+      const admission = RULE_5_SQLITE[`${ADMITTED} import DatabaseSync`]!;
+      expect(baseline.join("\n") + "\n").toBe(
+        readFileSync(resolve(CLI_ROOT, admission.shape), "utf-8"),
+      );
     });
-    try {
-      const use = scanSqliteUse(join(root, "index.ts"), root);
-      expect(use.prepared).toEqual([
-        "SELECT title FROM threads WHERE id = ?",
-        "SELECT * FROM threads",
-      ]);
-      // Source order, outermost node first — `s.all.bind(s)` reports the
-      // `.bind` it is, then the `.all` it is reaching for.
-      expect(use.unbounded.map((f) => f.detail)).toEqual([
-        ".all",
-        ".bind",
-        ".all",
-        '["all"]',
-        "[<computed member>]",
-        ".all",
-        "destructuring",
-        "Reflect",
-      ]);
-    } finally {
-      rmSync(dirname(root), { recursive: true, force: true });
+
+    for (const [name, edit] of BYPASSES) {
+      it(`fails on ${name}`, () => {
+        // Every edit changes the shape — which is the whole claim, and it holds
+        // for the escapes no rule was ever written against as much as for the
+        // rest, because none of them is a shape the pin has to recognize.
+        expect(edited(edit), name).not.toEqual(baseline);
+      });
     }
+
+    it("is not disturbed by an edit that changes nothing executable", () => {
+      // A pin that fires on a comment gets regenerated without being read.
+      expect(edited((source) => source.replace("import { existsSync }", "// a note\nimport { existsSync }")))
+        .toEqual(baseline);
+    });
   });
 
-  it("sees a second query smuggled past the admission through destructuring", () => {
-    // The escape that matters most: the admitted SQL still appears verbatim, so
-    // `prepared` matches the admission exactly, while a whole second unbounded
-    // query executes through names the scan never reads as members.
-    const { root } = plant({
-      "index.ts":
-        `import { DatabaseSync } from "node:sqlite";\n` +
-        `const ADMITTED = "SELECT title, first_user_message FROM threads WHERE id = ?";\n` +
-        `export const one = (db: DatabaseSync, id: string) => db.prepare(ADMITTED).get(id);\n` +
-        `export const two = (db: DatabaseSync) => {\n` +
-        `  const { prepare } = db;\n` +
-        `  const statement = prepare.call(db, "SELECT * FROM threads");\n` +
-        `  const { all } = statement;\n` +
-        `  return all.call(statement);\n` +
-        `};\n`,
-    });
-    try {
-      const use = scanSqliteUse(join(root, "index.ts"), root);
-      // `prepare(ADMITTED)` is not a literal argument, so it is unauditable
-      // rather than admitted — and the smuggled query is caught besides.
-      expect(use.prepared).toEqual([null]);
-      expect(use.unbounded.map((f) => f.detail)).toEqual([
-        "destructuring",
-        ".call",
-        "destructuring",
-        ".call",
-      ]);
-    } finally {
-      rmSync(dirname(root), { recursive: true, force: true });
-    }
-  });
-
-  it("reads a query it cannot see as unauditable rather than as the admitted one", () => {
-    const { root } = plant({
-      "index.ts":
-        `import { DatabaseSync } from "node:sqlite";\n` +
-        `const table = "threads";\n` +
-        `export const q = (db: DatabaseSync, id: string) =>\n` +
-        `  db.prepare(\`SELECT title FROM \${table} WHERE id = ?\`).get(id);\n`,
-    });
-    try {
-      expect(scanSqliteUse(join(root, "index.ts"), root).prepared).toEqual([null]);
-    } finally {
-      rmSync(dirname(root), { recursive: true, force: true });
-    }
-  });
 
   it("flags synchronous directory enumeration as the rule-5 half it can see", () => {
     const { root } = plant({

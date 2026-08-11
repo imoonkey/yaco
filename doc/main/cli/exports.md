@@ -167,39 +167,38 @@ Today it holds one site — Codex's per-session
 read cannot drop (on the reference home `first_user_message` is empty for most
 recent threads, and `title` is the last-resort label).
 
-What is admitted is **the query, not the import**. Adding `DatabaseSync` to the
-walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table,
-anywhere, invisibly. `scanSqliteUse` walks the AST instead and pins two things
-per admitted module:
+What is admitted is **the code that was measured**. Adding `DatabaseSync` to
+the walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table
+anywhere, invisibly — but so, it turned out, would any list of forbidden
+spellings. Four versions of this check were written and four were defeated in
+review:
 
-- the exact SQL strings it prepares, so a second or edited query is a failing
-  diff, and a non-literal `prepare(...)` fails outright — an audit that cannot
-  read the query cannot bound it;
-- that it never *reads the member* `all` / `run` / `exec` / `iterate` off
-  anything, nor any member the scan cannot name.
+| version | matched | walked past |
+|---|---|---|
+| a text match | `.prepare(…).all()` | `const s = db.prepare(q); s.all()` |
+| the callee name of a call | that | `s.all.bind(s)()`, a local binding shadowing `Promise` |
+| property access | those | `const { all } = s`, `Reflect.get(s, "all")` |
+| that plus a pinned import list | those | `(() => {}).constructor("… .all()")` |
 
-The second rule is an **allowlist on a deliberately tiny module**, and reaching
-it took three tries that each read as sufficient. A text match missed
-`const s = db.prepare(q); s.all()` — it found no methods and compared the empty
-list with the empty list. Matching the *callee name* of a call caught that and
-missed `s.all.bind(s)()`, `s.all.call(s)`, and a local binding shadowing the
-`Promise` global it exempted. Matching *property access* caught those and missed
-`const { all } = statement` and `Reflect.get(statement, "all")` — property reads
-with no member node at all, and the shape that lets a whole second unbounded
-query run while the audit reports exactly the admitted one.
+The last one is the proof the game is unwinnable as posed: every function
+exposes `Function` through `.constructor`, and code inside a string is not in
+the AST at all. Each of those bypasses ran a second, unbounded query while the
+audit reported exactly the admitted one.
 
-Enumerating spellings loses that race by construction, so the module is
-constrained instead of the expression: no destructuring, no `Reflect` / `eval` /
-`Function` / `Proxy`, no member named `all` / `run` / `exec` / `iterate` /
-`call` / `bind` / `apply`, no computed member the scan cannot name, and a
-**pinned import list** so a statement cannot be handed to a helper the scan does
-not read.
+So the admission carries two pins. `prepares` is the human-legible half — the
+SQL a reader can hold against the measured bound. **`shape` is the one that
+means it: the module's whole executable syntax, normalized, checked in.** The
+audit asserts the file still *is* that, so any edit fails — the escapes above
+and the ones nobody has thought of alike, because none of them is a shape the
+check has to recognize. Failing means re-judge and re-measure, which is what
+should happen when the code carrying a measured stall bound changes. Comments,
+formatting and type annotations are normalized out, so a pin that fires is
+always about something that runs.
 
 Nothing but a single-purpose module can live under that, which is why the
 admitted query sits alone in `providers/codex-thread.ts` rather than inside the
-reader that uses it — a reader that maps its inputs with `Promise.all` could
-not. **An admitted module is necessarily tiny, and the rule and that module's
-existence are one decision rather than two.**
+reader that uses it. **An admitted module is necessarily tiny, and that module's
+existence and the shape of the rule are one decision rather than two.**
 
 The measurement is reproducible rather than asserted:
 `node cli/test/bench/summary-stall.ts --sqlite-probe --home ~` prints the
