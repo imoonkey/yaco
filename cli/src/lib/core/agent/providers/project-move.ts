@@ -218,12 +218,13 @@ function maxJsonlTimestamp(raw: string): Date | null {
 /** Every `rollout-*.jsonl` under `root`, ascending by full path — the order the
  *  codex section of a move plan reports them in.
  *
- *  Sorted once at the end rather than at each read, because no traversal order
- *  is path order: a directory and a file can share a prefix (`rollout-a/` next
- *  to `rollout-a.jsonl`), and the directory sorts first as an entry name while
- *  its children sort *after* the file as paths. Sorting the result is what makes
- *  the contract the one word "ascending" — and it leaves the walk itself free to
- *  stay iterative, which owes nothing to how deep the tree turns out to be. */
+ *  The order comes from sorting the collected paths. Ordering the reads cannot
+ *  produce it — no traversal order is path order: a directory and a file can
+ *  share a prefix (`rollout-a/` next to `rollout-a.jsonl`), and the directory
+ *  sorts first as an *entry name* while its children sort after the file as
+ *  *paths*. Sorting the result is what makes the contract the one word
+ *  "ascending", and it leaves the walk itself free to stay iterative, which owes
+ *  nothing to how deep the tree turns out to be. */
 function rolloutFiles(root: string): string[] {
   const files: string[] = [];
   const stack: string[] = [root];
