@@ -5,7 +5,7 @@ Root map for YACO development guides.
 | Area | Guide | Scope |
 |------|-------|-------|
 | Workflow app | [app/workflow.md](app/workflow.md) | Server/UI run, build, services, tests |
-| CLI | [cli/workflow.md](cli/workflow.md) | Bun CLI build, install, unit/integration tests |
+| CLI | [cli/workflow.md](cli/workflow.md) | CLI dual-artifact build, install, unit/pack/integration tests |
 | Agent config | [agent-config/workflow.md](agent-config/workflow.md) | Skill maintenance and global config workflow |
 
 Run root commands from the monorepo root unless a guide explicitly changes
@@ -18,7 +18,7 @@ convention as `scripts/worktree-provision.sh`):
 
 | Script | Purpose |
 |--------|---------|
-| [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs `cli` bun test → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. |
+| [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs `cli` typecheck → build → test → pack smoke → `codex-transcribe` → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. The CLI's four steps are separate because `npm run test` passes on code that neither type-checks nor builds. |
 | [`scripts/gate.sh <base>`](../../scripts/gate.sh) | Floor-from-diff aggregator. Computes `git diff <base>..HEAD`, maps touched paths to the checks they owe (code→`verify`+`review`, `app/ui`→`qa`, any change→`doc`), runs every owed check, and prints a one-line JSON summary `{verify,doc,review,qa: pass\|fail\|skip}` as the **last stdout line**. Any `fail` → non-zero exit. |
 
 ## Continuous integration
@@ -28,7 +28,10 @@ and on every pull request. One `ubuntu-latest` job, Linux only:
 
 | Step | Command |
 |------|---------|
-| cli tests | `cd cli && bun run test` |
+| cli typecheck | `cd cli && npm run typecheck` |
+| cli build | `cd cli && npm run build` |
+| cli tests | `cd cli && npm run test` |
+| cli pack smoke | `cd cli && npm run test:pack` |
 | app/server tests | `cd app/server && npm test` |
 | app/ui typecheck | `cd app/ui && npx tsc -b` |
 | app/ui lint | `cd app/ui && npm run lint` |

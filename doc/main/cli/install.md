@@ -1,25 +1,27 @@
 # Install Subcommand
 
-> Last updated: 2026-08-10 (node:sqlite hop)
-
-> **`tools/install.sh` does not currently succeed.** Its last step runs the
-> binary it just built, and that binary is `bun build --compile` — which since
-> `cli-sqlite-hop` cannot load the CLI's `node:sqlite` import and exits before
-> `main`. Everything up to and including the build still behaves as described
-> below. `cli-dual-artifact-package` replaces the compiled binary with
-> `bin/yaco.mjs` over a Node bundle and is what makes this page true again.
+> Last updated: 2026-08-11 (dual-artifact npm package)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
 
 1. **`tools/install.sh`** is the ONLY entry point for first-time install or
-   recovery from a missing / broken yaco binary. It resolves `REPO_ROOT` and
-   `BIN_DIR`, installs the CLI's runtime dependencies when they are absent
-   (below), builds `bun build cli/src/main.ts --compile --outfile
-   $BIN_DIR/yaco`, codesigns on macOS when `codesign` is available, then
+   recovery from a missing / broken yaco binary. It requires `node` and `npm`,
+   rejects a Node below `engines.node` before building anything, resolves
+   `REPO_ROOT` and `BIN_DIR`, packs `@yaco/cli` into a tarball, installs that
+   tarball with `npm install --global --prefix <dirname $BIN_DIR>`, then
    `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR "$BIN_DIR/yaco" install
    "$@"`. The exec is absolute-path — `grep -E '^[[:space:]]*yaco install'
    tools/install.sh` returns no matches.
+
+   **It installs the tarball, never a link into the checkout.** What lands on
+   `$PATH` is byte-for-byte what an `npm install -g @yaco/cli` delivers, so a
+   packaging mistake fails in the bootstrap rather than on a user's machine.
+
+   **`$YACO_BIN_DIR` must end in `/bin`** (exit 2 otherwise). `npm --global`
+   writes executables to `<prefix>/bin` and nowhere else, so any other layout
+   would install somewhere the caller did not ask for — and the hook command
+   would then name a yaco that is not the one just installed.
 
 2. **`yaco install`** (this command, `cli/src/commands/install.ts`) does the
    rest: writes `${YACO_HOME}/agent-wrapper.sh`, merges yaco-owned entries
@@ -59,13 +61,20 @@ user overrides of any shape.
 
 ## Installed Binary Boundary
 
-`bun build cli/src/main.ts --compile --outfile cli/yaco` is only a local build
-artifact. Provider hooks never call it; installed hook commands point at
-`$BIN_DIR/yaco agent hook-event <Event>` (default `$HOME/.local/bin/yaco`).
-Therefore any change to hook handling, provider adapters, tmux lifecycle, or
-wrapper behavior must be installed with `tools/install.sh --cli-only` before
-running live Claude/Codex checks. `cli/package.json#test:integration` enforces
-this by running `bun run reinstall` before the tmux-backed integration suite.
+`cli/dist/` is a local build artifact. Provider hooks never call it; installed
+hook commands point at `$BIN_DIR/yaco agent hook-event <Event>` (default
+`$HOME/.local/bin/yaco`). Therefore any change to hook handling, provider
+adapters, tmux lifecycle, or wrapper behavior must be installed with
+`tools/install.sh --cli-only` before running live Claude/Codex checks.
+`cli/package.json#test:integration` enforces this by running `npm run reinstall`
+before the tmux-backed integration suite.
+
+The installed executable is `<prefix>/bin/yaco`, an npm symlink to the package's
+`bin/yaco.mjs`, whose shebang is `#!/usr/bin/env node`. **`node` therefore has to
+be on `$PATH` wherever a hook fires** — the property the previous
+single-file compiled binary did not need. This is the ordinary npm global-bin
+contract, and it is the one distribution cost of the Bun-to-Node port that is
+visible to users rather than to the build.
 
 ## CLI surface
 
@@ -92,42 +101,40 @@ yaco install [--cli-only] [--skip-hooks] [--no-registry] [--skip-links]
 
 The CLI has one runtime dependency, `smol-toml`: Node ships no TOML parser, and
 the Codex trust gate has to enumerate inline `[hooks]` tables in
-`.codex/config.toml` fail-closed. `bun build` resolves it from `node_modules`.
+`.codex/config.toml` fail-closed. Its build additionally needs `esbuild` and
+`typescript`, both devDependencies. `typescript` is deliberately **not** a peer
+dependency: npm auto-installs peers, so every `npm i -g @yaco/cli` would drag in
+23 MB of compiler the CLI never runs.
 
-Two clone shapes have to bootstrap: a full `git clone` of this repo, and the
-published subset (`tools`, `cli`, `agent-config` — the public tree ships no
-`plan/`). One mechanism serves both, and installing in place is not it: inside a
-full clone's `cli/`, Bun walks up to the monorepo workspace through the root
-manifest, tries to migrate `package-lock.json`, and exits non-zero under
-`--frozen-lockfile`. So `tools/install.sh` installs from an **isolated copy of
-`cli/package.json` + `cli/bun.lock`** in a temp directory — no root above it to
-walk up to, so it behaves the same in both shapes — and copies the result into
-`cli/node_modules`. (The subset could install in place; doing so would just mean
-a second code path.) It copies rather than replaces: the bootstrap does not
-delete what it did not put there.
+**Readiness is decided by the pack**, not by inspecting `node_modules`. `npm pack
+--workspace @yaco/cli` runs `prepack`, which is a clean build, so a pack that
+succeeds has resolved the whole import graph, emitted both artifacts, and
+written the file list. Every cheaper check tried before (a `node_modules`
+directory existing; each dependency's own manifest existing) mistook a partially
+installed tree for a usable one.
 
-**Readiness is decided by the bundler**, not by inspecting `node_modules`:
-`bun build --target=bun cli/src/main.ts` is the same resolution the compile
-performs, over the whole import graph, so it is the only signal that cannot
-mistake a partial or damaged package — or a missing transitive dependency — for
-a usable one. Both cheaper checks tried first (a `node_modules` directory
-existing; each dependency's own manifest existing) did exactly that. A healthy
-checkout therefore installs nothing, at the cost of one ~40 ms bundle.
+When the pack fails, the remedy depends on what is already there:
 
-The probe cannot say *why* the bundle failed, so a source error selects the
-install branch too. Its diagnostic is kept and printed if the install then fails
-— on a machine that cannot reach a registry the install's own error is a red
+| `node_modules` at the repo root | Behavior |
+|---|---|
+| absent | `npm ci --workspace cli --include-workspace-root --omit=optional`, then pack again. About 3 s and 74 MB — the CLI's workspace only, no `node-pty` or `better-sqlite3` compile. |
+| present | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
+
+The second row is not timidity. `npm ci --workspace` **prunes every workspace it
+was not asked about**: run against a developer's full tree it would delete the
+app's dependencies — minutes of native compilation — to fix a problem it cannot
+even diagnose. The bootstrap install exists for a clone that has never been
+installed; anything else is the caller's to repair.
+
+The probe cannot say *why* the pack failed, so a source error selects the
+dependency branch too. Its log is kept and printed if the install then fails —
+on a machine that cannot reach a registry the install's own error is a red
 herring, and the cause has to survive.
 
-That makes `cli/bun.lock` load-bearing — a dependency added to
-`cli/package.json` and not to it breaks the README's first-run command for
-everyone outside this repo, and `--frozen-lockfile` is what turns that into a
-loud failure. `cli/test/integration/install.test.ts` bootstraps real `git
-archive` clones of **both** shapes, plus the two interrupted-install residues
-(an empty `node_modules`, and a package whose manifest arrived without its entry
-point). A trimmed archive cannot stand in for the full clone: with the other
-workspace members absent, the root stops being a workspace and the discovery
-this design works around never happens.
+`cli/test/integration/install.test.ts` bootstraps a real `git archive` clone for
+each of these paths, and `cli/test/integration/pack.test.ts` takes the tarball
+the rest of the way: into a clean prefix, then used from a directory with no
+checkout above it.
 
 ## Bootstrap → canonical handoff
 
@@ -138,10 +145,11 @@ exec, because:
   `process.cwd()`. Without the env, an `install.sh` invoked from `/tmp` would
   install `/tmp` into projects.json and point the global skills symlink at the
   wrong tree.
-- `lifecycle.ts#hookBinary()` chains `$YACO_BIN_DIR/yaco` →
-  `process.execPath` when this process is itself the yaco executable →
-  `which yaco` → literal `"yaco"`. Without the env, hook commands written to
-  provider configs would point at a fallback path that may not exist.
+- `package-root.ts#yacoExecutable()` chains `$YACO_PATH` → `$YACO_BIN_DIR/yaco`
+  → this package's own `bin/yaco.mjs`. Without the env, hook commands would name
+  the launcher deep inside `<prefix>/lib/node_modules/@yaco/cli` rather than the
+  executable on `$PATH`. Both work; only one survives the user moving their
+  global prefix.
 
 `install.ts` also exports `YACO_BIN_DIR` to `process.env` before merging hooks
 so the lifecycle resolver picks up the canonical bin dir even when install was
@@ -157,13 +165,17 @@ Hook configs written by `yaco install` use the canonical form:
 
 - Absolute path; never a runtime plus a source path, because neither the
   runtime nor the checkout is guaranteed to be reachable when the hook fires.
-- Resolution order (`lifecycle.ts#resolveYacoBinary`): `$YACO_BIN_DIR/yaco` →
-  `process.execPath` when this process *is* the yaco executable
-  (`package-root.ts#selfExecutablePath`) → `which yaco` → the literal `"yaco"`.
-  The second rung is what a compiled artifact has: `process.argv[0]` is the bare
-  string `"bun"` there, not a path, so the old rung keyed on it never fired and
-  an installed binary that was neither on PATH nor named by `$YACO_BIN_DIR`
-  wrote `"yaco"` and every hook fire failed silently.
+- Resolution order (`package-root.ts#yacoExecutable`): `$YACO_PATH` →
+  `$YACO_BIN_DIR/yaco` → `<package-root>/bin/yaco.mjs`. Three rungs, and the last
+  one always exists — which is the point of resolving from the package root. It
+  used to have five, ending in `which yaco` and then the literal `"yaco"`,
+  because a Bun-compiled binary served its modules from a virtual filesystem and
+  the package could not name itself. Both of those could resolve to a *different*
+  installation than the one running, and the literal wrote a command that failed
+  silently at every hook fire.
+- The result is not cached. `runInstall` sets `$YACO_BIN_DIR` mid-process
+  precisely so the merge names the prefix it just installed into, and a cache is
+  how that gets missed.
 - `main.ts` branches on `argv[0:2] === ['agent','hook-event']` for the hook
   *contract* — read stdin, update state, suppress every failure, exit 0 — not
   for load time. The dispatcher statically imports the handler either way.
@@ -205,24 +217,19 @@ older installs migrate in place).
 
 ## Agent-wrapper write
 
-`installAgentWrapper(repoRoot, ...)` writes `${YACO_HOME}/agent-wrapper.sh`
-from one of two sources, in order:
+`installAgentWrapper` writes `${YACO_HOME}/agent-wrapper.sh` from exactly one
+source: `readAgentWrapperScript()`, which reads
+`<package-root>/scripts/agent-wrapper.sh` or throws `INTERNAL`. Runtime
+`ensureAgentWrapperScript` refreshes the managed copy from the same place.
 
-1. `readAgentWrapperScript()` — resolves via `import.meta.url` to
-   `cli/scripts/agent-wrapper.sh`. Works under `bun run src/main.ts ...`.
-2. Fallback: `${repoRoot}/cli/scripts/agent-wrapper.sh`. Used when running
-   from the bun-compiled binary whose VFS does not expose script siblings of
-   `import.meta.url`.
-
-Both point at the same on-disk file at install time; the fallback is the
-mechanism that makes the compiled binary path work for `tools/install.sh`'s
-exec handoff.
-
-Runtime `ensureHooks` uses the same source-discovery idea as a refresh path,
-but compiled `yaco` starts are allowed to proceed from non-YACO project cwd
-when source discovery fails: the already-installed `${YACO_HOME}/agent-wrapper.sh`
-is treated as the deployable artifact, validated as an executable file, and
-reused.
+There is no fallback chain. There used to be one — explicit `repoRoot`, then
+`$YACO_REPO_ROOT`, then `git rev-parse --show-toplevel`, then cwd — for the same
+reason the executable chain was long: a compiled binary's package root was a
+virtual filesystem, so the packaged path named a file that existed nowhere and
+only a nearby checkout could supply the wrapper. Every layout the package now
+ships in has a real package root, so each rung was a way to read a *different*
+checkout's wrapper than the one being run. A missing packaged asset is a broken
+install and says so.
 
 ## Registry safety (HIGH 5 from review pass 1)
 

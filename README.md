@@ -11,7 +11,7 @@ one CLI to orchestrate them, a skill library that encodes how you work,
 and a browser IDE to watch it all happen — from any device you own.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Runtime: Bun](https://img.shields.io/badge/CLI-bun-black)](https://bun.sh)
+[![Runtime: Node 24.15+](https://img.shields.io/badge/CLI-node%2024.15%2B-5FA04E)](https://nodejs.org)
 [![Agents: BYO](https://img.shields.io/badge/agents-bring_your_own-8A2BE2)](#prerequisites)
 
 [Quickstart](#quickstart) · [The agent CLI](#layer-1--the-agent-cli) ·
@@ -48,8 +48,10 @@ Linux or macOS, with:
   [Codex](https://developers.openai.com/codex/cli) (`codex`) on your `PATH`.**
   YACO ships no agent; without a provider the install's final `yaco doctor`
   check fails and the bootstrap exits non-zero.
-- **[Bun](https://bun.sh)** (compiles the CLI), **Node.js ≥ 22.13 + npm** (the
-  app), **tmux**, **git**.
+- **Node.js ≥ 24.15 + npm**, **tmux**, **git**. The CLI declares that floor in
+  `engines.node` and its launcher rejects anything below it — `node:sqlite` is
+  silent from 24.15 and warns on stderr before it, and empty stderr is an
+  asserted contract.
 - Linux only: `make`, `python3`, and a C/C++ compiler — `node-pty`, which backs
   every terminal, compiles from source on Linux
   (`sudo apt install make python3 build-essential`).
@@ -62,21 +64,19 @@ cd yaco
 tools/install.sh
 ```
 
-> **`main` is mid-migration and this does not currently work.** The CLI now
-> imports `node:sqlite`, which Bun cannot load, so the binary `tools/install.sh`
-> compiles exits before it starts. The Node artifact that replaces it is the next
-> step of the migration; until it lands, run the CLI from source with
-> `node cli/src/main.ts <area> <command>`.
+This packs `@yaco/cli` and installs that tarball into
+`${YACO_BIN_DIR:-~/.local/bin}`'s prefix (make sure the bin dir is on your
+`PATH`), wires hooks and skills into `~/.claude` and `~/.codex`, npm-installs
+the app, registers this repo, and finishes with `yaco doctor` — which you can
+re-run any time something looks wrong. The steps are not transactional: if one
+fails, the earlier ones already ran, so read the error and re-run. The same
+command updates an existing install after `git pull` (`--cli-only` skips the
+app's npm installs).
 
-This compiles the `yaco` binary into `${YACO_BIN_DIR:-~/.local/bin}` (make sure
-that's on your `PATH`), wires hooks and skills into `~/.claude` and `~/.codex`,
-npm-installs the app, registers this repo, and finishes with `yaco doctor` —
-which you can re-run any time something looks wrong. The steps are not
-transactional: if one fails, the earlier ones already ran, so read the error and
-re-run. The same command updates an existing install after `git pull`
-(`--cli-only` skips the app's npm installs). v0.1 installs from source only —
-the CLI's real artifact is a Bun-compiled binary, so there is deliberately no
-npm package.
+It installs the tarball rather than linking the checkout deliberately: what
+lands on your `PATH` is byte-for-byte the artifact npm would deliver. A clone
+that has never been installed bootstraps the CLI workspace's dependencies first
+— a few seconds, no native compilation.
 
 ### First session
 
