@@ -1,13 +1,14 @@
 # Install Subcommand
 
-> Last updated: 2026-08-10 (skill-separate)
+> Last updated: 2026-08-11 (portable runtime)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
 
 1. **`tools/install.sh`** is the ONLY entry point for first-time install or
    recovery from a missing / broken yaco binary. It resolves `REPO_ROOT` and
-   `BIN_DIR`, builds `bun build cli/src/main.ts --compile --outfile
+   `BIN_DIR`, installs the CLI's runtime dependencies when they are absent
+   (below), builds `bun build cli/src/main.ts --compile --outfile
    $BIN_DIR/yaco`, codesigns on macOS when `codesign` is available, then
    `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR "$BIN_DIR/yaco" install
    "$@"`. The exec is absolute-path — `grep -E '^[[:space:]]*yaco install'
@@ -80,6 +81,24 @@ yaco install [--cli-only] [--skip-hooks] [--no-registry] [--skip-links]
 | `--bin-dir <path>` | Override the bin dir for legacy symlink cleanup AND for resolving the canonical hook command (default: `$YACO_BIN_DIR`, fall back to `$HOME/.local/bin`) |
 | `--json` | Emit the `{ok,data}/{ok,error}` envelope on stdout; stderr stays empty |
 
+## Bootstrap dependencies
+
+The CLI has one runtime dependency, `smol-toml`: Node ships no TOML parser, and
+the Codex trust gate has to enumerate inline `[hooks]` tables in
+`.codex/config.toml` fail-closed. `bun build` resolves it from `node_modules`.
+
+The monorepo checkout installs it at its own root. The subset a user clones
+(`tools`, `cli`, `agent-config` — the public tree ships no `plan/`) has no root
+manifest and nothing installed anywhere, so `tools/install.sh` installs under
+`cli/` in exactly that case, from `cli/bun.lock`. The absence of any
+`node_modules` is the signal deliberately: a full checkout must never have its
+workspace reinstalled on every bootstrap.
+
+That makes `cli/bun.lock` load-bearing — a dependency added to
+`cli/package.json` and not to it breaks the README's first-run command for
+everyone outside this repo. `cli/test/integration/install.test.ts` bootstraps a
+real `git archive` of the public subset for exactly that reason.
+
 ## Bootstrap → canonical handoff
 
 `tools/install.sh` MUST pass `YACO_REPO_ROOT` and `YACO_BIN_DIR` through the
@@ -89,10 +108,10 @@ exec, because:
   `process.cwd()`. Without the env, an `install.sh` invoked from `/tmp` would
   install `/tmp` into projects.json and point the global skills symlink at the
   wrong tree.
-- `lifecycle.ts#hookBinary()` chains `$YACO_BIN_DIR/yaco` → `process.argv[0]`
-  (if it ends with `/yaco`) → `which yaco` → literal `"yaco"`. Without the
-  env, hook commands written to provider configs would point at a fallback
-  path that may not exist.
+- `lifecycle.ts#hookBinary()` chains `$YACO_BIN_DIR/yaco` →
+  `process.execPath` when this process is itself the yaco executable →
+  `which yaco` → literal `"yaco"`. Without the env, hook commands written to
+  provider configs would point at a fallback path that may not exist.
 
 `install.ts` also exports `YACO_BIN_DIR` to `process.env` before merging hooks
 so the lifecycle resolver picks up the canonical bin dir even when install was
@@ -106,18 +125,22 @@ Hook configs written by `yaco install` use the canonical form:
 "$BIN_DIR/yaco" agent hook-event <Event>
 ```
 
-- Absolute path; no `bun`; no repo-local source ref. The pre-yc-install-doctor
-  form (`bun .../cli/src/hook-event-bin.ts <Event>`) broke the moment yaco was
-  installed without a checkout.
-- `main.ts` has a fast-path: when `argv[0:2] === ['agent','hook-event']`, only
-  `commands/agent/hook-event.ts` is lazy-imported, skipping the full command
-  tree. This preserves the per-event cold-start budget that `hook-event-bin.ts`
-  used to provide.
-- `hook-event-bin.ts` is retained as an internal test convenience but is NOT
-  what install writes into `~/.claude/settings.json` or `~/.codex/hooks.json`.
-- `isYacoHookCommand` accepts both shapes (`hook-event-bin.ts` OR `agent
-  hook-event`), so the marker-or-shape ownership check survives upgrades from
-  a pre-yc-install-doctor footprint.
+- Absolute path; never a runtime plus a source path, because neither the
+  runtime nor the checkout is guaranteed to be reachable when the hook fires.
+- Resolution order (`lifecycle.ts#resolveYacoBinary`): `$YACO_BIN_DIR/yaco` →
+  `process.execPath` when this process *is* the yaco executable
+  (`package-root.ts#selfExecutablePath`) → `which yaco` → the literal `"yaco"`.
+  The second rung is what a compiled artifact has: `process.argv[0]` is the bare
+  string `"bun"` there, not a path, so the old rung keyed on it never fired and
+  an installed binary that was neither on PATH nor named by `$YACO_BIN_DIR`
+  wrote `"yaco"` and every hook fire failed silently.
+- `main.ts` branches on `argv[0:2] === ['agent','hook-event']` for the hook
+  *contract* — read stdin, update state, suppress every failure, exit 0 — not
+  for load time. The dispatcher statically imports the handler either way.
+- Ownership (`isYacoHookCommand`, `providers/hooks.ts#hasInstalledHook`) is one
+  vocabulary: a command containing `agent hook-event`. The `yaco-agent-hook`
+  marker is still recognized so marker-owned groups from older installs are
+  migrated in place.
 
 ## Hook merge
 

@@ -138,7 +138,7 @@ sequenceDiagram
     participant M as yaco agent start
     participant T as tmux
     participant A as Claude
-    participant H as hook-event-bin.ts
+    participant H as yaco agent hook-event
     participant S as state file
 
     U->>M: start("claude", args)

@@ -62,9 +62,11 @@ does **not** update live Claude/Codex hook behavior.
 tools/install.sh --cli-only
 ```
 
-`tools/install.sh` is a thin bootstrap: it builds `bun build cli/src/main.ts
---compile --outfile $BIN_DIR/yaco`, codesigns on macOS if `codesign` is
-available, then `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR
+`tools/install.sh` is a thin bootstrap: it installs the CLI's runtime
+dependencies when nothing has been installed anywhere (a clone of the
+published subset — see [install.md](../../main/cli/install.md#bootstrap-dependencies)),
+builds `bun build cli/src/main.ts --compile --outfile $BIN_DIR/yaco`,
+codesigns on macOS if `codesign` is available, then `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR
 "$BIN_DIR/yaco" install "$@"`. The canonical installer is `yaco install`
 itself (`cli/src/commands/install.ts`) — it merges yaco hooks into
 `~/.claude/settings.json` + `~/.codex/hooks.json` (canonical command
@@ -223,8 +225,8 @@ shape should re-run those too.
 
 ```
 src/
-  main.ts                   # dispatcher; fast-path for `agent hook-event` lazy-imports just the hook handler
-  hook-event-bin.ts         # legacy slim Bun entry; retained for tests, NOT what install writes into provider configs
+  main.ts                   # dispatcher; early `agent hook-event` branch (the hook contract, not a code split)
+  package-root.ts           # the one package-relative expression: shipped assets + "am I the executable"
   commands/                 # per-area handlers (paths/, agent/, task/, worktree/, align/, init.ts, install.ts, doctor.ts)
   lib/core/                 # shared core primitives
     result.ts, errors.ts, json.ts, args.ts
@@ -244,7 +246,7 @@ doc/progress/cli.md         # Imported CLI history
 
 ## Conventions
 
-- **Runtime**: Bun (TypeScript), no npm dependencies
+- **Runtime**: Bun (TypeScript). One runtime dependency, `smol-toml` — Node has no built-in TOML parser and the Codex trust gate has to read `config.toml`. Adding a second is a distribution decision, not a convenience: see [doc/main/cli/install.md](../../main/cli/install.md#bootstrap-dependencies).
 - **Commits**: conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
 - **Max 400 lines/file** — extract when larger
 - **No hardcoded secrets** — env vars for sensitive data

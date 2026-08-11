@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-11: the CLI's production code stops depending on Bun
+
+**What changed:**
+- `Bun.sleepSync` → `cli/src/lib/core/sleep.ts` (`Atomics.wait` on a lock nobody notifies), `Bun.TOML.parse` → `smol-toml`, and `Bun.spawn`/`Bun.spawnSync` → `node:child_process` in the codex app-server quota probe. `cli/src/` now contains no `Bun.` reference; the test suite still runs on Bun, which the Vitest cohorts task takes over.
+- New `cli/src/package-root.ts` owns the single package-relative expression and the "is this process the yaco executable" test. The agent wrapper and `doctor`'s manifest resolve through it; `hook-event-bin.ts`, two unreferenced path helpers, and legacy `hook-event-bin.ts` recognition in both hook-ownership matchers are deleted.
+- `tools/install.sh` installs the CLI's dependencies when nothing has been installed anywhere, and `cli/bun.lock` lists them.
+
+**Why:**
+- Two self-invocation rungs keyed on `process.argv[0]` ending in `/yaco` could never fire: in a compiled artifact `argv[0]` is the bare string `"bun"`. An installed binary that was neither on `$PATH` nor named by `$YACO_BIN_DIR` therefore wrote the literal `"yaco"` into provider hook configs and every hook fire failed silently. `process.execPath` is the live signal, gated on the package root being unreadable — which is the same fact the asset lookups already depend on, so the two cannot disagree.
+- Node reports a missing binary and a broken input pipe asynchronously where Bun raised them in place; unobserved, either is an uncaught exception that replaces a diagnosable quota failure with a crash (measured on Node 24). Teardown waits on the child's `exit`, not its `close`: an orphaned grandchild holds the stdio pipes, and `close` waits for those too — the command hung instead of reporting.
+- The first runtime dependency broke the README's first-run command, because `bun build` resolves from `node_modules` and the published subset a user clones has none. Caught by the fresh-clone integration test, not by review.
+- The wrapper's checkout fallback chain is deliberately kept: a compiled artifact's package root is Bun's virtual filesystem, so the corrected resolver only becomes correct for the artifact once `dist/yaco.mjs` exists. Deleting the chain now would break the installed binary.
+
+**Key files:** `cli/src/{package-root,main}.ts`, `cli/src/lib/core/sleep.ts`, `cli/src/lib/core/agent/{lifecycle,tmux,hook-event}.ts`, `cli/src/lib/core/agent/providers/{usage,hooks}.ts`, `cli/src/commands/{doctor,agent/start}.ts`, `tools/install.sh`, `cli/bun.lock`, `package-lock.json`
+**Verification:** `scripts/verify.sh` all steps passed; `npx tsc --noEmit -p .` clean in `cli/`; `bun run test` 1187 pass / 0 fail with `cli/test/golden/matrix.json` recaptured byte for byte; the integration suite green including a real `tools/install.sh` bootstrap of a dependency-free `git archive` clone; cross-provider review (Codex) and QA in `plan/all/cli-node-sdk/`.
+**Commit:** 28552acf..HEAD
+**Next:** `cli-vitest-cohorts` — port the tests off `bun:test` in green cohorts.
+**Blockers:** None
+
 ## 2026-08-10: CLI read ordering is defined, and a golden matrix pins it
 
 **What changed:**
