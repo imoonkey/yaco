@@ -8,6 +8,7 @@ import {
 import { isIdle } from "../src/lib/core/agent/providers/idle.ts";
 import { isInputEmpty } from "../src/lib/core/agent/providers/idle.ts";
 import { PROVIDERS, getProvider as getLegacyProvider } from "../src/lib/core/agent/providers.ts";
+import { providerCatalog } from "../src/lib/core/agent/provider-catalog.ts";
 import { PENDING_SESSION_ID } from "../src/lib/core/agent/model.ts";
 
 /** Mirror the runtime start flow: resume-normalize, name-normalize, assemble. */
@@ -158,6 +159,24 @@ describe("registry", () => {
       expect(() => getProvider(key)).toThrow("Unknown provider");
       expect(hasProvider(key)).toBe(false);
     }
+  });
+});
+
+describe("provider catalog", () => {
+  it("is the identity of every registered adapter, in registration order", () => {
+    // The adapters spread their identity out of the catalog, so this can only
+    // fail for a third adapter that declared its own literals instead — which
+    // is exactly the drift `app/server` would then validate starts against.
+    expect(providerCatalog()).toEqual(
+      listProviders().map((p) => ({ id: p.id, label: p.label, executable: p.executable })),
+    );
+  });
+
+  it("hands out records a caller cannot use to edit the registry", () => {
+    const first = providerCatalog();
+    first[0]!.label = "Tampered";
+    expect(providerCatalog()[0]!.label).toBe("Claude");
+    expect(getProvider("claude").label).toBe("Claude");
   });
 });
 

@@ -31,7 +31,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -44,6 +44,7 @@ import {
   exportedNames,
   packageExports,
   scanFile,
+  scanSqliteUse,
   type ClosureFile,
 } from "../helpers/export-closure.ts";
 
@@ -222,6 +223,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/index.ts",
       "src/lib/core/agent/model.ts",
       "src/lib/core/agent/projection.ts",
+      "src/lib/core/agent/provider-catalog.ts",
       "src/lib/core/agent/words.ts",
       "src/lib/core/errors.ts",
       "src/lib/core/result.ts",
@@ -231,6 +233,12 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/model.ts": [
         "NOTICE_MAX",
         "clampNotice",
+      ],
+      // Provider identity only. The registry that owns behaviour reaches tmux,
+      // hook installation and the session lifecycle, and is not exportable.
+      "src/lib/core/agent/provider-catalog.ts": [
+        "ProviderCatalogEntry",
+        "providerCatalog",
       ],
       "src/lib/core/agent/projection.ts": [
         "AgentSessionRow",
@@ -253,6 +261,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/providers/message-read.ts",
       "src/lib/core/agent/providers/messages.ts",
       "src/lib/core/agent/providers/output.ts",
+      "src/lib/core/agent/providers/provider-home.ts",
       "src/lib/core/agent/words.ts",
       "src/lib/core/errors.ts",
       "src/lib/core/project/encode.ts",
@@ -275,6 +284,44 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/agent/providers/types.ts": [
         "MessageFull",
         "MessageRole",
+      ],
+    },
+  },
+  // The one session-summary read. Its closure reaches the provider log-path
+  // half of `providers/output.ts` and the label-collapsing rules it shares with
+  // the history list; it reaches neither `history.ts` (whose provider scans are
+  // unbounded) nor `session-state.ts` (a mutation module) — the sessions are
+  // explicit inputs, so it never enumerates them.
+  "./core/agent/summaries": {
+    files: [
+      "src/lib/core/agent/model.ts",
+      "src/lib/core/agent/providers/codex-thread.ts",
+      "src/lib/core/agent/providers/output.ts",
+      "src/lib/core/agent/providers/prompt-label.ts",
+      "src/lib/core/agent/providers/provider-home.ts",
+      "src/lib/core/agent/providers/summary-read.ts",
+      "src/lib/core/agent/words.ts",
+      "src/lib/core/errors.ts",
+      "src/lib/core/project/encode.ts",
+      "src/lib/core/result.ts",
+    ],
+    externals: [
+      "node:crypto",
+      "node:fs",
+      "node:fs/promises",
+      "node:os",
+      "node:path",
+      // The judged synchronous admission — see RULE_5_SQLITE below.
+      "node:sqlite",
+    ],
+    // One read verb plus the shape of its input and rows, and the summarizer
+    // registry as the only answer to which reader a provider uses.
+    names: {
+      "src/lib/core/agent/providers/summary-read.ts": [
+        "SessionSummary",
+        "SummaryTarget",
+        "readSessionSummaries",
+        "summarizerForProvider",
       ],
     },
   },
@@ -312,6 +359,49 @@ const EXPECTED: Record<string, ExpectedExport> = {
  *  owes exactly the tracked rule-5 debt", and admitting one means writing it
  *  down here with the task that retires it. */
 const RULE_5_DEBT: string[] = [];
+
+/** Rule 5's judged synchronous admissions — the opposite of a debt.
+ *
+ *  A debt is owed and has a task that retires it. These are permanent, and each
+ *  one is here because rule 5 admits it *against a measurement*: "`node:sqlite`
+ *  has no asynchronous interface, so a query is admitted only with a measured
+ *  stall bound on a realistically large database."
+ *
+ *  Keyed by exact site rather than by adding `DatabaseSync` to the walker's
+ *  bounded-name list, because the name is a database handle and not an
+ *  operation: `BOUNDED_SYNC` would admit `.all()` over a whole table, anywhere,
+ *  invisibly. What is admitted is not the import — it is `prepares`, the exact
+ *  queries measured, checked against the module's AST, with every *read* of an
+ *  unbounded execution member in that module rejected. Changing the SQL, adding
+ *  a second query, or reaching `all` through a variable, a `.bind`, a `.call` or
+ *  a computed key all fail. Rejecting the member read rather than the call is
+ *  what makes an admitted module necessarily tiny — see `codex-thread.ts`. */
+interface SqliteAdmission {
+  /** The measurement, and the command that reproduces it. */
+  bound: string;
+  /** Every SQL string the admitted module prepares, whitespace-normalized —
+   *  the human-legible half, so a reader can see what the bound is a bound on. */
+  prepares: string[];
+  /** The checked-in JavaScript the measured module compiles to. This is the pin
+   *  an enumeration of forbidden constructs cannot be: an admission says "*this
+   *  code* costs 0.3 ms", and that sentence is only true of this code. */
+  emitted: string;
+}
+
+const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
+  "src/lib/core/agent/providers/codex-thread.ts import DatabaseSync": {
+    bound:
+      "point lookup on the `threads` primary key (SEARCH threads USING INDEX " +
+      "sqlite_autoindex_threads_1 (id=?)) on an 11.1 MB, 2 297-row database: " +
+      "0.3 ms p50 and max over 40 warm samples, open and close included. " +
+      "Reproduce with `node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
+    prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
+    emitted: "test/fixtures/rule5-sqlite/codex-thread.emit.js",
+  },
+};
+
+/** The evidence every entry of `RULE_5_SQLITE` is reproducible from. */
+const RULE_5_SQLITE_BENCH = "test/bench/summary-stall.ts";
 
 /** The subsystems the design excludes by name. Each entry names real files, and
  *  their existence is asserted: a rename that empties one of these lists would
@@ -417,19 +507,57 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
 
   it("has no violation in any exported closure", () => {
     const offenders = allViolations()
-      .filter((v) => !(v.rule === 5 && RULE_5_DEBT.includes(v.key)))
+      .filter((v) => !(v.rule === 5 && (RULE_5_DEBT.includes(v.key) || v.key in RULE_5_SQLITE)))
       .map((v) => v.report);
     expect(offenders, offenders.join("\n")).toEqual([]);
   });
 
-  it("still owes exactly the tracked rule-5 debt", () => {
-    // When the task-read cutover lands its asynchronous reader, this fails and
-    // the debt list is emptied — the audit will not let it linger unnoticed.
-    const owing = allViolations()
+  it("owes exactly the tracked rule-5 debt and admits exactly the judged sites", () => {
+    // Both lists at once, because what the scan reports is one set: a new
+    // synchronous traversal has to be written down as one or the other, and a
+    // site that disappears has to be struck off.
+    const found = allViolations()
       .filter((v) => v.rule === 5)
       .map((v) => v.key)
       .sort();
-    expect(owing).toEqual(RULE_5_DEBT);
+    expect(found).toEqual([...RULE_5_DEBT, ...Object.keys(RULE_5_SQLITE)].sort());
+  });
+
+  it("admits exactly the queries that were measured, and no unbounded one", () => {
+    const sites = Object.entries(RULE_5_SQLITE);
+    if (sites.length === 0) return;
+
+    // Anti-vacuity: an admission is a measurement, and a measurement nobody can
+    // re-run is a waiver wearing its clothes.
+    expect(existsSync(resolve(CLI_ROOT, RULE_5_SQLITE_BENCH)), RULE_5_SQLITE_BENCH).toBe(true);
+
+    for (const [site, admission] of sites) {
+      expect(admission.bound, site).toMatch(/\d/);
+      // What was measured is a point query. A second query, an edited one, or an
+      // unbounded execution anywhere in the module is a different cost that the
+      // file census cannot see — the module is already in the closure for the
+      // query that *was* judged.
+      const file = site.slice(0, site.indexOf(" "));
+      const use = scanSqliteUse(resolve(CLI_ROOT, file));
+      expect(use.prepared, `${file}: prepared SQL`).toEqual(admission.prepares);
+      // The admission is of *this code*, so this is the pin that means it: the
+      // JavaScript Node runs. A failure here is not a test to update — it is a
+      // re-judgement and a re-measurement, because the module carrying a
+      // measured stall bound has changed. Regenerate the fixture only after
+      // re-running `--sqlite-probe`.
+      expect(use.emitted.join("\n") + "\n", `${file}: emitted JavaScript`).toBe(
+        readFileSync(resolve(CLI_ROOT, admission.emitted), "utf-8"),
+      );
+      // Proof the emit came from `tsconfig.build.json` rather than the typecheck
+      // config: only the build rewrites a relative specifier's extension. Without
+      // this, a change confined to the build config could alter what ships while
+      // the pin above stayed green — the emit it compares would be one nobody
+      // runs.
+      expect(
+        use.emitted.filter((line) => line.includes("./provider-home")),
+        `${file}: emit must be the build's, with relative specifiers rewritten`,
+      ).toEqual(['import { codexDbPath } from "./provider-home.js";']);
+    }
   });
 });
 
@@ -464,6 +592,25 @@ describe("closure census", () => {
       expect(exportedNames(entry.source)).toEqual(expected.names);
     });
   }
+});
+
+describe("provider catalog — static metadata, no I/O, no ambient state", () => {
+  // The design admits the catalog "before start" only as static metadata. Both
+  // halves of that are decidable here: a module that reaches no specifier at
+  // all cannot call `node:fs`, and the scan reads its environment surface.
+  const entry = "src/lib/core/agent/provider-catalog.ts";
+
+  it("reaches nothing but itself, so it can call no filesystem API", () => {
+    const closure = closureOf(entry);
+    expect(closure.files.map((f) => f.path)).toEqual([entry]);
+    expect(closure.externals).toEqual([]);
+  });
+
+  it("reads no environment name and owns nothing about the process", () => {
+    const scan = scanFile(resolve(CLI_ROOT, entry));
+    expect(scan.envReads).toEqual([]);
+    expect(scan.violations).toEqual([]);
+  });
 });
 
 describe("no excluded subsystem is reachable from any export", () => {
@@ -776,6 +923,95 @@ describe("the audit itself", () => {
       rmSync(dirname(root), { recursive: true, force: true });
     }
   });
+
+  describe("the rule-5 SQLite admission", () => {
+    // The admission pins the JavaScript the measured module compiles to, so what
+    // has to be demonstrated is not that the scan recognizes each construct — it
+    // is that *no* edit to that module survives. Each case below is one an
+    // earlier version of the check did not detect, applied to a copy of the
+    // admitted module. The last two are the reasons this pin exists: code inside
+    // a string is invisible to any name-based rule, and a declaration's
+    // `const`/`using` mode is invisible to a syntax-tree walk.
+    const ADMITTED = "src/lib/core/agent/providers/codex-thread.ts";
+    const baseline = scanSqliteUse(resolve(CLI_ROOT, ADMITTED)).emitted;
+
+    /** The admitted module with `edit` applied, scanned in place of it. */
+    const edited = (edit: (source: string) => string): string[] => {
+      const source = readFileSync(resolve(CLI_ROOT, ADMITTED), "utf-8");
+      const dir = mkdtempSync(join(tmpdir(), "yaco-rule5-"));
+      try {
+        const file = join(dir, "codex-thread.ts");
+        writeFileSync(file, edit(source));
+        return scanSqliteUse(file, dir).emitted;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    /** Insert `code` just above the `db.close()` the query is wrapped in. */
+    const inject = (code: string) => (source: string): string =>
+      source.replace("    } finally {\n      db.close();", `      ${code}\n    } finally {\n      db.close();`);
+
+    const UNBOUNDED = "SELECT * FROM threads";
+    const BYPASSES: [name: string, edit: (source: string) => string][] = [
+      ["a direct unbounded call", inject(`db.prepare("${UNBOUNDED}").all();`)],
+      ["an aliased statement", inject(`const s = db.prepare("${UNBOUNDED}"); s.all();`)],
+      ["a rebound method", inject(`const s = db.prepare("${UNBOUNDED}"); s.all.bind(s)();`)],
+      ["a string-keyed member", inject(`db.prepare("${UNBOUNDED}")["all"]();`)],
+      ["destructuring", inject(`const { all } = db.prepare("${UNBOUNDED}"); all.call(db);`)],
+      ["reflection", inject(`Reflect.get(db, "exec").call(db, "${UNBOUNDED}");`)],
+      // The escape that defeated every denylist: `Function` reached without
+      // naming it, running a query the parser never sees because it is a string.
+      ["the Function constructor", inject(
+        `const run = (() => {}).constructor("return arguments[0].prepare('${UNBOUNDED}').all()"); run(db);`,
+      )],
+      ["an extra import", (source) =>
+        `import { readFile } from "node:fs/promises";\n${source}\nexport const leak = readFile;`],
+      ["an edited query", (source) =>
+        source.replace("SELECT title, first_user_message FROM threads WHERE id = ?", UNBOUNDED)],
+      ["a query it cannot read", (source) =>
+        source.replace(
+          '"SELECT title, first_user_message FROM threads WHERE id = ?"',
+          "`SELECT ${column} FROM threads WHERE id = ?`",
+        )],
+      // `const` / `let` / `using` / `await using` live in a declaration list's
+      // `flags`, not in a child token, so a syntax-tree walk cannot see this at
+      // all — the two forms summarized identically while emitting different
+      // programs. `using` on a plain row throws at runtime, and this module's
+      // outer catch would turn that into "no row", silently costing the summary
+      // read its database inputs.
+      ["a using declaration in place of const", (source) =>
+        source
+          .replace("      const row = db", "      using row = db")
+          .replace(
+            "        .get(sessionId) as { title: string | null; first_user_message: string | null } | undefined;",
+            "        .get(sessionId) as any;",
+          )],
+    ];
+
+    it("matches the checked-in emit of the module as it stands", () => {
+      const admission = RULE_5_SQLITE[`${ADMITTED} import DatabaseSync`]!;
+      expect(baseline.join("\n") + "\n").toBe(
+        readFileSync(resolve(CLI_ROOT, admission.emitted), "utf-8"),
+      );
+    });
+
+    for (const [name, edit] of BYPASSES) {
+      it(`fails on ${name}`, () => {
+        // Every edit changes the emit — which is the whole claim, and it holds
+        // for the constructs no rule was ever written against as much as for
+        // the rest, because none of them is something the pin has to recognize.
+        expect(edited(edit), name).not.toEqual(baseline);
+      });
+    }
+
+    it("is not disturbed by an edit that changes nothing executable", () => {
+      // A pin that fires on a comment gets regenerated without being read.
+      expect(edited((source) => source.replace("import { existsSync }", "// a note\nimport { existsSync }")))
+        .toEqual(baseline);
+    });
+  });
+
 
   it("flags synchronous directory enumeration as the rule-5 half it can see", () => {
     const { root } = plant({

@@ -6,8 +6,8 @@ import { hasNameFlag, hasPermissionFlag, extractResume, stripResume } from "./ar
 import { claudeHooks } from "./hooks.ts";
 import { claudeHistory } from "./history.ts";
 import { claudeOutput } from "./output.ts";
-import { claudeMessages } from "./messages.ts";
 import { claudeProjectMove } from "./project-move.ts";
+import { CLAUDE_IDENTITY } from "../provider-catalog.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -22,9 +22,7 @@ const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
 const INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN = /^❯/m;
 
 export const claudeProvider: TuiProvider = {
-  id: "claude",
-  label: "Claude",
-  executable: "claude",
+  ...CLAUDE_IDENTITY,
 
   command: {
     permissionFlags: PERMISSION_FLAGS,
@@ -89,8 +87,6 @@ export const claudeProvider: TuiProvider = {
   history: claudeHistory(),
 
   output: claudeOutput(),
-
-  messages: claudeMessages(),
 
   projectMove: claudeProjectMove(),
 };

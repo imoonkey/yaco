@@ -14,19 +14,18 @@
 
 import { open, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
+import { userHome } from "./provider-home.ts";
 import type { AgentOutputEvent, OutputCursor, ProviderOutput } from "./types.ts";
 
-/** Honor $HOME at call time so provider paths track test home overrides. */
-function userHome(): string {
-  const env = process.env["HOME"];
-  return env && env.length > 0 ? env : homedir();
-}
+/** What a provider log path is derived from. Spelled structurally rather than
+ *  as the whole session because the summary read passes an explicit target that
+ *  carries only these fields; a `SessionState` satisfies it unchanged. */
+type LogTarget = Pick<SessionState, "sessionId" | "sessionPath">;
 
-function hasResolvedId(session: SessionState): boolean {
+function hasResolvedId(session: Pick<SessionState, "sessionId">): boolean {
   return Boolean(session.sessionId) && session.sessionId !== PENDING_SESSION_ID;
 }
 
@@ -90,7 +89,7 @@ async function cursorForPath(
 
 // -- Claude output --
 
-function claudeLogPath(session: SessionState): string {
+function claudeLogPath(session: LogTarget): string {
   return join(
     userHome(),
     ".claude",
@@ -301,33 +300,41 @@ function codexSessionsRoot(): string {
   return join(userHome(), ".codex", "sessions");
 }
 
-/** Walk ~/.codex/sessions/YYYY/MM/DD newest-first for the rollout file whose
- *  name embeds this session id. */
-async function codexLogPath(sessionId: string): Promise<string | null> {
+/** Walk ~/.codex/sessions/YYYY/MM/DD from the newest day back, yielding **one**
+ *  rollout per day: the first by name among that day's files naming this session.
+ *
+ *  Lazy on purpose. A caller that wants "the session's rollout" takes the first
+ *  value and the walk stops there, paying exactly what a return-on-first-hit
+ *  search paid and choosing exactly the file it chose. A caller that has to
+ *  *judge* each candidate — the summary read, which keeps looking when a rollout
+ *  yields no label — resumes the same walk instead of reimplementing it.
+ *
+ *  One per day rather than all of them, deliberately: the days are descending
+ *  but a day's filenames sort ascending, so yielding every match would hand a
+ *  later same-day file precedence over an earlier one *and* over every older
+ *  day. One-per-day is the selection this walk has always made; only the
+ *  continuation past a day is new. */
+async function* codexLogPaths(sessionId: string): AsyncGenerator<string> {
   const root = codexSessionsRoot();
-  if (!existsSync(root)) return null;
+  if (!existsSync(root)) return;
+  const descending = async (dir: string, pattern: RegExp): Promise<string[]> =>
+    (await readdir(dir)).filter((s) => pattern.test(s)).sort().reverse();
   try {
-    const years = (await readdir(root)).filter((s) => /^\d{4}$/.test(s)).sort().reverse();
-    for (const year of years) {
+    for (const year of await descending(root, /^\d{4}$/)) {
       const yearDir = join(root, year);
-      const months = (await readdir(yearDir)).filter((s) => /^\d{2}$/.test(s)).sort().reverse();
-      for (const month of months) {
+      for (const month of await descending(yearDir, /^\d{2}$/)) {
         const monthDir = join(yearDir, month);
-        const days = (await readdir(monthDir)).filter((s) => /^\d{2}$/.test(s)).sort().reverse();
-        for (const day of days) {
+        for (const day of await descending(monthDir, /^\d{2}$/)) {
           const dayDir = join(monthDir, day);
-          // Sorted like the year/month/day walk above, so "the first file naming
-          // this session" is a defined choice when a day holds more than one.
           const files = (await readdir(dayDir)).sort();
           const hit = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
-          if (hit) return join(dayDir, hit);
+          if (hit) yield join(dayDir, hit);
         }
       }
     }
   } catch {
-    /* fall through */
+    /* an unreadable directory ends the walk, as it always has */
   }
-  return null;
 }
 
 function classifyCodex(line: string): AgentOutputEvent | null {
@@ -352,14 +359,14 @@ export function codexOutput(): ProviderOutput {
   return {
     async resolveCursor(session) {
       if (!hasResolvedId(session)) return null;
-      const path = await codexLogPath(session.sessionId);
+      const path = await resolveCodexLogPath(session);
       return path ? cursorForPath("codex", session.sessionId, path) : null;
     },
     async logExists(session) {
       // A rollout file is only created once the first prompt is sent; a pending
       // (awaiting-first-prompt) session genuinely has none yet.
       if (!session.sessionId || session.sessionId === PENDING_SESSION_ID) return false;
-      return (await codexLogPath(session.sessionId)) !== null;
+      return (await resolveCodexLogPath(session)) !== null;
     },
     classifyLine: classifyCodex,
   };
@@ -370,14 +377,27 @@ export function codexOutput(): ProviderOutput {
 /** Resolve the Claude message-log path for a session, or null until its id
  *  resolves. The same file the output cursor reads — exposed so the message
  *  inventory reader reuses one provider-path source and the pending guard. */
-export function resolveClaudeLogPath(session: SessionState): string | null {
+export function resolveClaudeLogPath(session: LogTarget): string | null {
   return hasResolvedId(session) ? claudeLogPath(session) : null;
 }
 
 /** Resolve the Codex rollout path for a session, or null until its id resolves
  *  and a rollout file exists. */
-export async function resolveCodexLogPath(session: SessionState): Promise<string | null> {
-  return hasResolvedId(session) ? codexLogPath(session.sessionId) : null;
+export async function resolveCodexLogPath(
+  session: Pick<SessionState, "sessionId">,
+): Promise<string | null> {
+  for await (const path of resolveCodexLogPaths(session)) return path;
+  return null;
+}
+
+/** Every Codex rollout naming this session, newest first, for a caller that has
+ *  to judge each one rather than take the newest. Yields nothing until the id
+ *  resolves. */
+export async function* resolveCodexLogPaths(
+  session: Pick<SessionState, "sessionId">,
+): AsyncGenerator<string> {
+  if (!hasResolvedId(session)) return;
+  yield* codexLogPaths(session.sessionId);
 }
 
 function parseCodexTurnLine(line: string): TranscriptTurnState | null {

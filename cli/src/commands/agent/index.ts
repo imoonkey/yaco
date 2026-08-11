@@ -33,7 +33,7 @@ import { rename } from "./rename.ts";
 import { status, list } from "./status.ts";
 import { whoami } from "./whoami.ts";
 import { HISTORY_USAGE, parseHistoryArgs, runHistory, renderHistory } from "./history.ts";
-import { runSummaries, renderSummaries } from "./summaries.ts";
+import { runSummaries } from "./summaries.ts";
 import { runProviders, renderProviders } from "./providers.ts";
 import { parseUsageArgs, runUsage, renderUsage, USAGE_USAGE } from "./usage.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
@@ -508,8 +508,7 @@ export async function handleAgent(
       }
       const parsed = parseSubArgs(rest);
       const projectPath = parsed.options.path ?? process.cwd();
-      const summaries = await runSummaries(projectPath);
-      return dual(parsed.options.json || opts.json, summaries, () => renderSummaries(summaries));
+      return runSummaries(projectPath, parsed.options.json || opts.json);
     }
 
     case "messages": {

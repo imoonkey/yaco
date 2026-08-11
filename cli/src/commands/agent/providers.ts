@@ -1,20 +1,13 @@
 /** `yaco agent providers --json` — registered CLI agent provider catalog.
  *
- *  The downstream app validates startable providers against this list (every
- *  entry is a CLI agent provider; `shell` is not a CLI provider and is added by
- *  app/ui, not here). */
+ *  A thin adapter over the shared catalog `app/server` reads in process, so the
+ *  command and the app cannot answer "which providers exist" differently. */
 
-import { listProviders } from "../../lib/core/agent/providers/index.ts";
+import { providerCatalog, type ProviderCatalogEntry } from "../../lib/core/agent/provider-catalog.ts";
 
-export interface ProviderCatalogEntry {
-  id: string;
-  label: string;
-  executable: string;
-}
+export type { ProviderCatalogEntry };
 
-export function runProviders(): ProviderCatalogEntry[] {
-  return listProviders().map((p) => ({ id: p.id, label: p.label, executable: p.executable }));
-}
+export const runProviders = providerCatalog;
 
 /** Concise text rendering: one `id  label (executable)` line per provider. */
 export function renderProviders(catalog: ProviderCatalogEntry[]): string {

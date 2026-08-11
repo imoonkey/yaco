@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock the CLI transport: session-summary resolves labels via the CLI surface,
-// not by reading provider homes, so the test drives fetchSessionSummaries.
-const { fetchSessionSummaries } = vi.hoisted(() => ({ fetchSessionSummaries: vi.fn() }))
-vi.mock('../agent', () => ({ fetchSessionSummaries }))
+// Mock the shared read: session-summary owns the cache and the refresh edge,
+// not the provider I/O, so the test drives `readSessionSummaries`.
+const { readSessionSummaries } = vi.hoisted(() => ({ readSessionSummaries: vi.fn() }))
+vi.mock('@yaco/cli/core/agent/summaries', () => ({ readSessionSummaries }))
 
 import { resolveSessionSummaries, invalidateSummaryCache } from '../session-summary'
 import type { AgentSession } from '../agent'
-import type { CliSessionSummary } from '../agent'
+
+interface SessionSummary {
+  handle: string
+  sessionId: string
+  provider: string
+  label: string
+}
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -22,7 +28,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   }
 }
 
-function summary(overrides: Partial<CliSessionSummary> = {}): CliSessionSummary {
+function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     handle: 'test-session',
     sessionId: 'valid-session-id',
@@ -32,41 +38,49 @@ function summary(overrides: Partial<CliSessionSummary> = {}): CliSessionSummary 
   }
 }
 
+/** The read's `Result` envelope. */
+const rows = (value: SessionSummary[]) => ({ ok: true as const, value })
+
 describe('resolveSessionSummaries', () => {
   beforeEach(() => {
-    fetchSessionSummaries.mockReset()
+    readSessionSummaries.mockReset()
     invalidateSummaryCache()
   })
 
-  it('returns empty map for empty sessions without calling the CLI', async () => {
+  it('returns empty map for empty sessions without reading anything', async () => {
     const result = await resolveSessionSummaries([])
     expect(result.size).toBe(0)
-    expect(fetchSessionSummaries).not.toHaveBeenCalled()
+    expect(readSessionSummaries).not.toHaveBeenCalled()
   })
 
   it('skips sentinel sessionId (pending:awaiting-first-prompt)', async () => {
     const session = makeSession({ sessionId: 'pending:awaiting-first-prompt' })
     const result = await resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
-    expect(fetchSessionSummaries).not.toHaveBeenCalled()
+    expect(readSessionSummaries).not.toHaveBeenCalled()
   })
 
-  it('skips empty sessionId without calling the CLI', async () => {
+  it('skips empty sessionId without reading anything', async () => {
     const session = makeSession({ sessionId: '' })
     const result = await resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
-    expect(fetchSessionSummaries).not.toHaveBeenCalled()
+    expect(readSessionSummaries).not.toHaveBeenCalled()
   })
 
-  it('resolves a summary from the CLI keyed by handle', async () => {
-    fetchSessionSummaries.mockResolvedValue([summary({ handle: 'test-session', label: 'Build the API' })])
+  it('resolves a summary keyed by handle', async () => {
+    readSessionSummaries.mockResolvedValue(rows([summary({ handle: 'test-session', label: 'Build the API' })]))
     const result = await resolveSessionSummaries([makeSession()])
     expect(result.get('test-session')).toBe('Build the API')
-    expect(fetchSessionSummaries).toHaveBeenCalledWith('/tmp/test-project')
+    expect(readSessionSummaries).toHaveBeenCalledWith([{
+      handle: 'test-session',
+      provider: 'claude',
+      sessionId: 'valid-session-id',
+      sessionPath: '/tmp/test-project',
+    }])
   })
 
-  it('caches per (provider, sessionId, sessionPath): a second resolve does not re-call the CLI', async () => {
-    fetchSessionSummaries.mockResolvedValue([summary({ label: 'cached label' })])
+  it('caches per (provider, sessionId, sessionPath): a second resolve does not re-read', async () => {
+    readSessionSummaries.mockResolvedValue(rows([summary({ label: 'cached label' })]))
     const session = makeSession()
 
     const first = await resolveSessionSummaries([session])
@@ -74,19 +88,18 @@ describe('resolveSessionSummaries', () => {
 
     const second = await resolveSessionSummaries([session])
     expect(second.get('test-session')).toBe('cached label')
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(1)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(1)
   })
 
-  it('calls the CLI once per distinct project path with a miss', async () => {
-    fetchSessionSummaries.mockImplementation(async (path: string) => {
-      if (path === '/tmp/p1') {
-        return [
-          summary({ handle: 's1', sessionId: 'id1', label: 'one' }),
-          summary({ handle: 's2', sessionId: 'id2', label: 'two' }),
-        ]
-      }
-      return [summary({ handle: 's3', sessionId: 'id3', label: 'three' })]
-    })
+  it('reads once for all misses, across any number of project paths', async () => {
+    // The per-path grouping this replaced existed to coalesce spawns; with the
+    // sessions passed explicitly there is no spawn left to coalesce, so every
+    // miss — from however many projects — is one call carrying exactly them.
+    readSessionSummaries.mockResolvedValue(rows([
+      summary({ handle: 's1', sessionId: 'id1', label: 'one' }),
+      summary({ handle: 's2', sessionId: 'id2', label: 'two' }),
+      summary({ handle: 's3', sessionId: 'id3', label: 'three' }),
+    ]))
 
     const result = await resolveSessionSummaries([
       makeSession({ name: 's1', sessionId: 'id1', sessionPath: '/tmp/p1' }),
@@ -97,12 +110,26 @@ describe('resolveSessionSummaries', () => {
     expect(result.get('s1')).toBe('one')
     expect(result.get('s2')).toBe('two')
     expect(result.get('s3')).toBe('three')
-    // Two distinct paths → exactly two CLI calls (not one per session).
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(1)
+    expect(readSessionSummaries.mock.calls[0][0].map((t: { sessionPath: string }) => t.sessionPath))
+      .toEqual(['/tmp/p1', '/tmp/p1', '/tmp/p2'])
   })
 
-  it('does not cache sessions the CLI has no label for (still a miss next time)', async () => {
-    fetchSessionSummaries.mockResolvedValue([])
+  it('passes only the misses, never a session already cached', async () => {
+    readSessionSummaries.mockResolvedValue(rows([summary({ handle: 's1', sessionId: 'id1', label: 'one' })]))
+    const cached = makeSession({ name: 's1', sessionId: 'id1' })
+    await resolveSessionSummaries([cached])
+
+    readSessionSummaries.mockResolvedValue(rows([summary({ handle: 's2', sessionId: 'id2', label: 'two' })]))
+    const result = await resolveSessionSummaries([cached, makeSession({ name: 's2', sessionId: 'id2' })])
+
+    expect(result.get('s1')).toBe('one')
+    expect(result.get('s2')).toBe('two')
+    expect(readSessionSummaries.mock.calls[1][0].map((t: { handle: string }) => t.handle)).toEqual(['s2'])
+  })
+
+  it('does not cache sessions with no label (still a miss next time)', async () => {
+    readSessionSummaries.mockResolvedValue(rows([]))
     const session = makeSession({ provider: 'gemini' })
 
     const first = await resolveSessionSummaries([session])
@@ -110,63 +137,66 @@ describe('resolveSessionSummaries', () => {
 
     const second = await resolveSessionSummaries([session])
     expect(second.get('test-session')).toBeUndefined()
-    // No label cached → both resolves re-query the CLI.
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+    // No label cached → both resolves re-read.
+    expect(readSessionSummaries).toHaveBeenCalledTimes(2)
   })
 
   it('re-resolves a label when a session settles from processing to idle', async () => {
-    fetchSessionSummaries
-      .mockResolvedValueOnce([summary({ label: 'first title' })])
-      .mockResolvedValueOnce([summary({ label: 'updated title' })])
+    readSessionSummaries
+      .mockResolvedValueOnce(rows([summary({ label: 'first title' })]))
+      .mockResolvedValueOnce(rows([summary({ label: 'updated title' })]))
 
     const processing = makeSession({ status: 'processing' })
     const firstRun = await resolveSessionSummaries([processing])
     expect(firstRun.get('test-session')).toBe('first title')
 
-    // Same session now idle — the cached label is dropped and re-fetched.
+    // Same session now idle — the cached label is dropped and re-read.
     const idle = makeSession({ status: 'idle' })
     const secondRun = await resolveSessionSummaries([idle])
     expect(secondRun.get('test-session')).toBe('updated title')
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(2)
   })
 
   it('re-resolves a label across processing→blocked→idle (blocked counts as active)', async () => {
-    fetchSessionSummaries
-      .mockResolvedValueOnce([summary({ label: 'first title' })])
-      .mockResolvedValueOnce([summary({ label: 'updated title' })])
+    readSessionSummaries
+      .mockResolvedValueOnce(rows([summary({ label: 'first title' })]))
+      .mockResolvedValueOnce(rows([summary({ label: 'updated title' })]))
 
     const processing = makeSession({ status: 'processing' })
     const first = await resolveSessionSummaries([processing])
     expect(first.get('test-session')).toBe('first title')
 
-    // Pass through blocked: must NOT re-query (still active) but must keep the
+    // Pass through blocked: must NOT re-read (still active) but must keep the
     // active marker so the later idle still drops the cached label.
     const blocked = makeSession({ status: 'blocked', blockReason: 'question' })
     const blockedRun = await resolveSessionSummaries([blocked])
     expect(blockedRun.get('test-session')).toBe('first title')
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(1)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(1)
 
-    // Settles to idle — cached label dropped and re-fetched.
+    // Settles to idle — cached label dropped and re-read.
     const idle = makeSession({ status: 'idle' })
     const idleRun = await resolveSessionSummaries([idle])
     expect(idleRun.get('test-session')).toBe('updated title')
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(2)
   })
 
-  it('invalidateSummaryCache forces a fresh CLI call', async () => {
-    fetchSessionSummaries.mockResolvedValue([summary({ label: 'label' })])
+  it('invalidateSummaryCache forces a fresh read', async () => {
+    readSessionSummaries.mockResolvedValue(rows([summary({ label: 'label' })]))
     const session = makeSession()
 
     await resolveSessionSummaries([session])
     invalidateSummaryCache()
     await resolveSessionSummaries([session])
 
-    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+    expect(readSessionSummaries).toHaveBeenCalledTimes(2)
   })
 
-  it('survives a CLI error without throwing', async () => {
-    fetchSessionSummaries.mockRejectedValue(new Error('cli exploded'))
+  it('survives a failed read without throwing, and caches nothing', async () => {
+    readSessionSummaries.mockResolvedValue({ ok: false, code: 'IO', message: 'provider home unreadable' })
     const result = await resolveSessionSummaries([makeSession()])
     expect(result.get('test-session')).toBeUndefined()
+
+    readSessionSummaries.mockResolvedValue(rows([summary({ label: 'later' })]))
+    expect((await resolveSessionSummaries([makeSession()])).get('test-session')).toBe('later')
   })
 })

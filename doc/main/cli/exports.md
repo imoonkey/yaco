@@ -2,17 +2,16 @@
 
 > What `@yaco/cli` may publish for in-process use, and the audit that decides it.
 
-Last updated: 2026-08-11 (task-read-cutover: rule 5 owes nothing) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/history-stall.ts` · Parent: [README.md](README.md)
+Last updated: 2026-08-11 (summary-read-cutover: `core/agent/summaries`, the provider catalog, and rule 5's first judged `node:sqlite` admission) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
 
-`app/server` imports all seven exported subpaths in process today —
-`core/paths`, `core/task`, `core/agent`, `core/agent/messages`, `core/worktree`,
-and, since the channel message read went in process, the `core/result` /
-`core/errors` failure vocabulary that shared reads answer in. Each import is a
-piece of the CLI running inside the app's event loop, under the app's lifetime —
-so what an export may *contain* is a contract, not a preference. The six rules
-below come from the `cli-node-sdk` design; the audit enforces them over each
-export's **transitive production import closure**, and nothing is
-grandfathered.
+`app/server` imports all eight exported subpaths in process today —
+`core/paths`, `core/task`, `core/agent`, `core/agent/messages`,
+`core/agent/summaries`, `core/worktree`, and the `core/result` / `core/errors`
+failure vocabulary that shared reads answer in. Each import is a piece of the
+CLI running inside the app's event loop, under the app's lifetime — so what an
+export may *contain* is a contract, not a preference. The six rules below come
+from the `cli-node-sdk` design; the audit enforces them over each export's
+**transitive production import closure**, and nothing is grandfathered.
 
 ```mermaid
 flowchart LR
@@ -96,15 +95,35 @@ asserted. A gate nobody has watched fail is not known to work.
   export rather than a widening of the `core/agent` barrel, because the barrel's
   pinned census is a file two other Phase-2 cutovers also have to edit. It
   publishes `messagesForProvider` as the *only* answer to which reader a provider
-  uses: `getProvider(id).messages` reaches tmux and the session lifecycle, so the
-  read side keeps its own two-entry lookup and a test fails closed if the two
-  disagree. `validateName` rides along because an in-process caller resolves the
-  handle itself and must reject exactly what `agent messages` rejects.
+  uses: the TUI registry reaches tmux and the session lifecycle, so the read side
+  keeps its own two-entry lookup and a test fails closed when a registered
+  provider is missing from it. (`TuiProvider.messages` was that check's original
+  subject and is now deleted — it was a shadow of this registry, and a provider
+  that simply omitted the flag slipped past.) `validateName` rides along because
+  an in-process caller resolves the handle itself and must reject exactly what
+  `agent messages` rejects.
   -> See: [providers.md](providers.md#message-inventory)
 
 Getting there cost `providers/output.ts` its follower: `followOutput` polls, and
 the message read reaches `output.ts` for provider log paths. The tailer is now
 `providers/follow.ts`, which no export reaches.
+
+- **`core/agent/summaries`** publishes `readSessionSummaries` and the
+  `summarizerForProvider` registry, on the same terms and for the same reason.
+  Its closure is the shared provider-log path resolver, the label-collapsing
+  rules (`providers/prompt-label.ts`, extracted so the history list and the
+  summary read cannot drift), and `providers/provider-home.ts` — one definition
+  of `$HOME`-at-call-time, which retired three copies. It reaches neither
+  `history.ts`, whose provider scans are unbounded, nor `session-state.ts`,
+  which is a mutation module: the sessions are explicit inputs.
+  -> See: [providers.md](providers.md#session-summaries)
+
+- **`core/agent`** gained the provider catalog and nothing else. It is the only
+  part of the provider registry an in-process caller may hold — the adapters
+  reach tmux, hook installation and the lifecycle — so the identity lives in
+  `provider-catalog.ts` and the adapters spread it. The audit asserts both halves
+  of "static metadata" directly: the module reaches **no specifier at all**, so
+  it can call no filesystem API, and it reads no environment name.
 
 `core/paths` still publishes its registry writers (`addProject`,
 `removeProject`, `writeProjects`) on purpose: the app server is the CLI's peer
@@ -133,11 +152,80 @@ The empty list stays, because it is the shape of the check and not a waiver: a
 new synchronous traversal in an exported closure fails the audit, and admitting
 one means writing it down there with the task that retires it.
 
-## The one query rule 5 has judged
+## The queries rule 5 has judged
 
 Rule 5 admits a `node:sqlite` query only against a measured stall bound, because
-`node:sqlite` is synchronous. The history read (`yaco agent history`) is the
-first query put to that test, and the answer was not about the database.
+`node:sqlite` is synchronous. Two have been put to that test. The first was
+refused; the second is the list's only entry.
+
+### The admission, and its shape
+
+`RULE_5_SQLITE` in the audit is the **opposite of `RULE_5_DEBT`**: a debt is owed
+and has a task that retires it, an admission is permanent and has a measurement.
+Today it holds one site — Codex's per-session
+`SELECT title, first_user_message FROM threads WHERE id = ?`, which the summary
+read cannot drop (on the reference home `first_user_message` is empty for most
+recent threads, and `title` is the last-resort label).
+
+What is admitted is **the code that was measured**. Adding `DatabaseSync` to
+the walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table
+anywhere, invisibly — but so, it turned out, would any list of forbidden
+constructs. Four versions of this check were written, and review found each one
+incomplete:
+
+| version | detects | does not detect |
+|---|---|---|
+| a text match | `.prepare(…).all()` | `const s = db.prepare(q); s.all()` |
+| the callee name of a call | that | `s.all.bind(s)()`, a local binding shadowing `Promise` |
+| property access | those | `const { all } = s`, `Reflect.get(s, "all")` |
+| that plus a pinned import list | those | `(() => {}).constructor("… .all()")` |
+
+The last row is why the approach was replaced rather than extended: every
+function reaches `Function` through `.constructor`, and code inside a string is
+not in the AST at all, so no list of names can be complete. In each case a
+second, unbounded query ran while the audit reported exactly the admitted one.
+
+So the admission carries two pins. `prepares` is the human-legible half — the
+SQL a reader can hold against the measured bound. **`emitted` is the one that
+means it: the JavaScript the module compiles to, checked in.** The audit asserts
+the file still compiles to that, so any edit fails — the cases above and the
+ones nobody has thought of alike, because none of them is something the check
+has to recognize. Failing means re-judge and re-measure, which is what should
+happen when the code carrying a measured stall bound changes.
+
+It is the **build** config's emit — `tsc -p tsconfig.build.json`, the compilation
+that produces `dist/**.js` — because that is the JavaScript an installed consumer
+loads, with relative specifiers rewritten to `.js`. Compiling with the typecheck
+config instead would leave a change confined to `tsconfig.build.json` free to
+alter the shipped program while the pin stayed green, and the audit asserts the
+rewritten specifier so the emit is provably the build's.
+
+Pinning the emit rather than a summary of the syntax tree is a correctness
+decision. A tree summary has to enumerate which node properties matter, and
+review found one a `forEachChild` walk cannot reach at all: `const` / `let` /
+`using` / `await using` live in `VariableDeclarationList.flags` rather than in a
+child token, so `const row = …` and `using row = …` summarized identically while
+emitting different programs — the second throwing at runtime and costing the
+read its database inputs. The compiler's own output has no such gap, and it
+normalizes exactly the right things: comments and type annotations are gone, and
+the formatting is the emitter's rather than the source's. The fixture is 22
+lines of ordinary JavaScript, which is also what makes a change to it legible.
+
+Nothing but a single-purpose module can live under that, which is why the
+admitted query sits alone in `providers/codex-thread.ts` rather than inside the
+reader that uses it. **An admitted module is necessarily tiny, and that module's
+existence and the shape of the rule are one decision rather than two.**
+
+The measurement is reproducible rather than asserted:
+`node cli/test/bench/summary-stall.ts --sqlite-probe --home ~` prints the
+database, the plan (`SEARCH threads USING INDEX sqlite_autoindex_threads_1
+(id=?)`) and the open/get/close distribution — 0.3 ms at the p50 and the maximum
+over 40 warm samples, on an 11.1 MB, 2 297-row database.
+
+### The query that was refused
+
+The history read (`yaco agent history`) was the first put to the test, and the
+answer was not about the database.
 
 `cli/test/bench/history-stall.ts` is the harness. It asks the design's question
 — how long an *already-queued* piece of work waits because of a route — by
@@ -180,6 +268,16 @@ Three things follow, and they are what a future rule-5 candidate should copy:
 So the path is admitted — but only in that bounded form, and nothing is exported
 yet: the shared read, its `core/agent` entry, an asynchronous origin lookup and
 the audit pins land together in the follow-up cutover.
+
+The session-summary read repeated the lesson from the other side.
+`summary-stall.ts` carries a `whole-file` control route — the previous reader's
+shape through the same call mechanism — and it is what makes the harness
+falsifiable: bounded 13–22 ms p95 against unbounded 174–590 ms and a subprocess
+route at 27–39 ms. Had the two measured alike, no figure the harness printed
+about the in-process route would have meant anything. Review then found the one
+thing chunking does *not* bound — a single input-sized record, whose decode and
+parse are one uninterruptible unit — so the reader caps a record at 4 MiB and
+`--long-record` is the fixture that holds it to the same bound.
 
 ## Invariants
 

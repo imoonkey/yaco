@@ -151,15 +151,8 @@ export interface HistoryWindow {
   oldestUpdatedAt: string | null;
 }
 
-/** A per-live-session display label. */
-export interface SummaryResult {
-  sessionId: string;
-  label: string;
-}
-
 export interface ProviderHistory {
   list(projectPath: string, liveSessions: readonly SessionState[]): Promise<HistorySession[]>;
-  summarize(session: SessionState): Promise<SummaryResult | null>;
 }
 
 /** Opaque cursor into a provider's persisted turn log. `token` is opaque to
@@ -262,7 +255,13 @@ export interface MessagesSummary {
 /** Full-inventory reader over a session's provider log. Parallel to
  *  `ProviderOutput` (turn-completion only): this exposes every message with
  *  stable indices. Inclusion is keyed on a coarse, frozen discriminator so
- *  enriching reconstruction never shifts historical indices. */
+ *  enriching reconstruction never shifts historical indices.
+ *
+ *  Not a `TuiProvider` capability: the readers are registered in
+ *  `message-read.ts`, which `app/server` calls in process and which therefore
+ *  may not reach the TUI adapters. A `messages` field here would only be a
+ *  shadow of that registry — `test/agent-messages-parity.test.ts` instead
+ *  asserts every registered provider id has a reader. */
 export interface ProviderMessages {
   /** Resolve the session's message-log path, or null when no log exists yet
    *  (e.g. a pending session). Shares the provider log-path + pending guard. */
@@ -327,7 +326,6 @@ export interface TuiProvider {
   terminal?: ProviderTerminal;
   history?: ProviderHistory;
   output?: ProviderOutput;
-  messages?: ProviderMessages;
   projectMove?: ProviderProjectMove;
 }
 

@@ -77,10 +77,15 @@ interface Parsed {
   specifiers: string[];
 }
 
-const compilerOptions = loadCompilerOptions();
+const compilerOptions = loadCompilerOptions("tsconfig.json");
+/** The options the package is *built* with. They differ from the typecheck
+ *  config's in ways that change the emitted program — `module: esnext` and
+ *  `rewriteRelativeImportExtensions`, today — so anything asserting about what
+ *  ships has to read these. */
+const buildCompilerOptions = loadCompilerOptions("tsconfig.build.json");
 
-function loadCompilerOptions(): ts.CompilerOptions {
-  const configPath = join(CLI_ROOT, "tsconfig.json");
+function loadCompilerOptions(file: string): ts.CompilerOptions {
+  const configPath = join(CLI_ROOT, file);
   const { config, error } = ts.readConfigFile(configPath, (p) =>
     readFileSync(p, "utf-8"),
   );
@@ -446,6 +451,95 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   ts.forEachChild(file, visit);
 
   return scan;
+}
+
+export interface SqliteUse {
+  /** Every SQL string the module prepares, in source order. A `prepare` whose
+   *  argument is not a literal reports `null` — an audit that cannot read the
+   *  query cannot bound it. */
+  prepared: (string | null)[];
+  /** The JavaScript the module compiles to — what Node actually runs, with
+   *  comments and types gone and formatting the emitter's own. */
+  emitted: string[];
+}
+
+/** What one module does with `node:sqlite`, for rule 5's judged admissions.
+ *
+ *  **The admission pins the code that was measured, not a set of forbidden
+ *  spellings.** Four earlier versions listed the constructs a module may not
+ *  contain, and review found each list incomplete:
+ *
+ *  | version | detects | does not detect |
+ *  |---|---|---|
+ *  | text | `.prepare(…).all()` | `const s = db.prepare(q); s.all()` |
+ *  | callee name of a call | that | `s.all.bind(s)()`, a local `Promise` binding |
+ *  | property access | those | `const { all } = s`, `Reflect.get(s, "all")` |
+ *  | that plus pinned imports | those | `(() => {}).constructor("… .all()")` |
+ *
+ *  The last row is why the approach was replaced rather than extended: every
+ *  function reaches `Function` through `.constructor`, and code inside a string
+ *  is not in the AST at all, so no list of names can be complete.
+ *
+ *  So `emitted` is **the JavaScript the module compiles to** — what Node
+ *  actually runs — and the audit asserts the file still compiles to it.
+ *  Anything that changes what the module executes fails, and failing means
+ *  "re-judge and re-measure", which is what should happen when code carrying a
+ *  measured stall bound changes.
+ *
+ *  Emitting rather than summarizing the syntax tree is a correctness decision.
+ *  A tree summary has to enumerate which node properties matter, and review
+ *  found one a `forEachChild` walk cannot reach at all: `const` / `let` /
+ *  `using` / `await using` live in `VariableDeclarationList.flags` rather than
+ *  in a child token, so `const row = …` and `using row = …` summarized
+ *  identically while emitting different programs — the second throwing at
+ *  runtime and costing the read its database inputs. The compiler's own output
+ *  has no such gap by construction, and it normalizes exactly the right things:
+ *  comments and type annotations are gone, and the formatting is the emitter's
+ *  rather than the source's.
+ *
+ *  It is the **build** config's emit, because that is the JavaScript an
+ *  installed consumer loads — `dist/**.js`, with relative specifiers rewritten
+ *  to `.js`. Compiling with the typecheck config instead would leave a change
+ *  confined to `tsconfig.build.json` free to alter the shipped program while
+ *  this pin stayed green.
+ *
+ *  This is only livable because an admitted module does one thing. That is the
+ *  point of `providers/codex-thread.ts` existing at all: the rule and the module
+ *  are one decision, not two. */
+export function scanSqliteUse(absPath: string, _root: string = SRC_ROOT): SqliteUse {
+  const { file } = parse(absPath);
+  const use: SqliteUse = { prepared: [], emitted: [] };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && calleeName(node.expression) === "prepare") {
+      const arg = node.arguments[0] && unwrap(node.arguments[0]);
+      use.prepared.push(
+        arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))
+          ? arg.text.replace(/\s+/g, " ").trim()
+          : null,
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(file, visit);
+
+  use.emitted = ts.transpileModule(file.getFullText(), {
+    fileName: absPath,
+    // `tsconfig.build.json`, not the typecheck config: the build overrides
+    // options that change the emitted program (`module`,
+    // `rewriteRelativeImportExtensions`), so pinning the typecheck emit would
+    // leave a build-config change free to alter what ships while this stayed
+    // green. Only non-semantic output controls are overridden on top.
+    compilerOptions: {
+      ...buildCompilerOptions,
+      removeComments: true,
+      sourceMap: false,
+      inlineSourceMap: false,
+      declaration: false,
+    },
+  }).outputText.trimEnd().split("\n");
+
+  return use;
 }
 
 /** Rule 3's polling loop, in the two shapes that are decidable from syntax: a
