@@ -95,7 +95,8 @@ findings belong with the rule itself:
 Absolute milliseconds drift with machine load; the deltas are the evidence. The
 artifacts holding each run are named below the table, and
 [the dev workflow](../../dev/cli/workflow.md#re-running-the-read-path-measurements)
-has the commands that reproduce them.
+has the commands that reproduce them — except cutover 3's, which is a one-off
+bound rather than a harness, and says so below.
 
 | # | Path | Route wall (before → after) | p95 starvation of a queued request (before → after) |
 |---:|---|---|---|
