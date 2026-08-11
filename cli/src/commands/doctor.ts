@@ -5,9 +5,9 @@
  *    agent-hook-config, agent-wrapper, tmux, git, providers, task-graph
  *
  *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }. `skip`
- *  means "nothing to check here" (a legitimate zero state, e.g. a repo that
- *  has no task graph yet) and is counted in neither summary bucket, so it
- *  never trips the exit code.
+ *  means "nothing to check here" (a legitimate zero state: a repo with no task
+ *  graph yet, a machine with no agent CLI installed yet) and is counted in
+ *  neither summary bucket, so it never trips the exit code.
  *  --json envelope is ALWAYS `{ok:true,data:{checks,summary}}` on stdout —
  *  doctor is a STATUS command, so the schema stays stable even when checks
  *  fail. The exit code reflects summary.fail > 0 (exit 1) vs 0 (exit 0), so
@@ -296,8 +296,19 @@ function checkGit(): CheckResult {
 }
 
 /** `providers` (stable check name): pass when at least one provider executable
- *  is on $PATH. Detail is registry-driven — each registered provider's
- *  `executable` is probed via `which`. */
+ *  is on $PATH, skip when none is. Detail is registry-driven — each registered
+ *  provider's `executable` is probed via `which`.
+ *
+ *  YACO ships no agent, so a machine with none installed yet is a legitimate
+ *  zero state — the same shape as `registry` and `task-graph` — and the remedy
+ *  is outside everything `yaco install` owns: it cannot install `claude` for
+ *  you. Failing here would throw the documented first command of anyone who
+ *  installed this package before an agent CLI. That is what separates it from
+ *  the package-scoped checks, which stay fail-closed because a missing packaged
+ *  asset IS something this package owns.
+ *
+ *  The skip still says so: it names every provider that is missing and what to
+ *  do about it, and skips print in text mode and in install's own check lines. */
 function checkProviders(): CheckResult {
   const found: string[] = [];
   const missing: string[] = [];
@@ -307,7 +318,10 @@ function checkProviders(): CheckResult {
     else missing.push(provider.id);
   }
   if (found.length === 0) {
-    return fail("providers", `no provider executable on $PATH (${missing.join(", ")})`);
+    return skip(
+      "providers",
+      `no provider executable on $PATH (${missing.join(", ")}) — install one before starting agents`,
+    );
   }
   const detail = missing.length > 0
     ? `${found.join("; ")}; ${missing.join(", ")} missing`

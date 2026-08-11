@@ -23,6 +23,7 @@ import {
   readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,7 +80,7 @@ beforeAll(() => {
   sandbox = mkdtempSync(join(tmpdir(), "yaco-pack-"));
   prefix = join(sandbox, "prefix");
   home = join(sandbox, "home");
-  for (const d of ["stage", "home", "nowhere", "prefix"]) {
+  for (const d of ["stage", "home", "home-no-agent", "nowhere", "prefix"]) {
     mkdirSync(join(sandbox, d), { recursive: true });
   }
   // A bare directory to name as a session cwd. Deliberately not a checkout:
@@ -283,6 +284,89 @@ describe("an installed tarball, with no checkout above it", () => {
     );
     expect(r.status).toBe(0);
   });
+});
+
+describe("the install a stranger runs before they have an agent CLI", () => {
+  /** A `$PATH` with genuinely no provider on it: the prefix's bin, and one
+   *  synthetic directory holding exactly what the install needs — `node` for
+   *  the launcher's `#!/usr/bin/env node`, `which` for doctor's probe, and
+   *  shims for `tmux` and `git`.
+   *
+   *  Built up rather than subtracted from: `dirname(process.execPath)` is the
+   *  obvious way to supply `node` and it is wrong here — on the machine this
+   *  was written on it carries a `codex` next to the `node` — and any inherited
+   *  directory can do the same. A `$PATH` that quietly still has a provider on
+   *  it would make the exit code below a statement about this machine. */
+  function pathWithNoProvider(): string {
+    const bin = join(sandbox, "bin-no-agent");
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(process.execPath, join(bin, "node"));
+    const whichPath = spawnSync("which", ["which"], { encoding: "utf-8" }).stdout.trim();
+    expect(whichPath.length).toBeGreaterThan(0);
+    symlinkSync(whichPath, join(bin, "which"));
+    for (const command of ["tmux", "git"]) {
+      const path = join(bin, command);
+      writeFileSync(path, "#!/bin/sh\nexit 0\n");
+      chmodSync(path, 0o755);
+    }
+    return [join(prefix, "bin"), bin].join(":");
+  }
+
+  /** The documented first command, run the documented way — the tarball npm
+   *  ships, installed into a prefix, invoked through the launcher on its bin. */
+  function runStrangerInstall(args: string[], path: string) {
+    const env = { ...process.env };
+    delete env["YACO_PATH"];
+    delete env["YACO_BIN_DIR"];
+    delete env["YACO_REPO_ROOT"];
+    return spawnSync(join(prefix, "bin", "yaco"), args, {
+      cwd: join(sandbox, "nowhere"),
+      encoding: "utf-8",
+      env: {
+        ...env,
+        HOME: join(sandbox, "home-no-agent"),
+        YACO_HOME: join(sandbox, "yaco-no-agent"),
+        PATH: path,
+      },
+      timeout: 60_000,
+    });
+  }
+
+  it("exits 0, and says which agent CLI is missing", () => {
+    const path = pathWithNoProvider();
+    // The premise, asserted rather than assumed. If either of these resolves,
+    // everything below proves nothing.
+    for (const provider of ["claude", "codex"]) {
+      const probe = spawnSync("/bin/sh", ["-c", `command -v ${provider}`], {
+        encoding: "utf-8",
+        env: { PATH: path },
+      });
+      expect(probe.stdout.trim()).toBe("");
+      expect(probe.status).not.toBe(0);
+    }
+
+    // Text mode first, because it is what the stranger actually reads: install
+    // prints every doctor line, and the missing provider has to be among them.
+    const text = runStrangerInstall(["install", "--cli-only"], path);
+    expect(text.status).toBe(0);
+    expect(text.stderr).toContain("doctor: SKIP providers");
+    expect(text.stderr).toContain("claude");
+    expect(text.stderr).toContain("codex");
+
+    const r = runStrangerInstall(["install", "--cli-only", "--json"], path);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+
+    const doctor = JSON.parse(r.stdout).data.doctor;
+    const providers = doctor.checks.find((c: { name: string }) => c.name === "providers");
+    expect(providers.status).toBe("skip");
+    expect(providers.detail).toContain("claude");
+    expect(providers.detail).toContain("codex");
+    expect(providers.detail).toContain("install one before starting agents");
+    // Nothing else failed either — the whole documented first command works on
+    // a machine that has no agent on it yet.
+    expect(doctor.summary.fail).toBe(0);
+  }, 120_000);
 });
 
 describe("installing the tarball has no side effects", () => {

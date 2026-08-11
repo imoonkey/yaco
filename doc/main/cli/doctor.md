@@ -1,6 +1,7 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-11 (registry skips; skills-link resolves from the package)
+> Last updated: 2026-08-11 (providers skips when no agent CLI is installed;
+> registry skips; skills-link resolves from the package)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -38,7 +39,7 @@ yaco doctor [--repo <path>] [--json]
 | 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
 | 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
-| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
+| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) — **skips** when none is | which providers resolve | — (never fails; see below) |
 | 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
 
 `skills-link` mirrors the installer's additive-merge tolerance: a user override
@@ -103,6 +104,33 @@ to the nearest component that exists on disk rather than testing the leaf alone 
 `plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
 does, and the extracted *root* is the likelier shape.
 
+## `providers` skip — the machine with no agent CLI yet
+
+YACO ships no agent. A machine with neither `claude` nor `codex` installed is a
+legitimate starting point — the documented first commands are `npm i -g
+@yaco/cli` then `yaco install`, and nothing says an agent CLI has to come first:
+
+```
+SKIP  providers  no provider executable on $PATH (claude, codex) — install one before starting agents
+```
+
+`yaco install` throws when any check fails, so a fail here would throw the
+documented install of anyone who had not installed an agent yet — and there is
+nothing install could do about it, because installing `claude` is not something
+it owns. That is the line between this check and the package-scoped ones:
+`skills-link` stays fail-closed because a missing packaged asset *is* this
+package's doing. Same rule as [`registry`](#required-checks-stable-contract) and
+`task-graph`, applied to a machine rather than a repo.
+
+The condition stays visible rather than being dropped: the detail names every
+provider that is missing and what to do about it, `SKIP` prints in text mode,
+and `yaco install` prints its doctor lines including the skips. What is gone is
+only the exception. `README.md` states the prerequisite up front.
+
+**One provider is enough, and the partial case is a pass, not a skip.** With
+`claude` present and `codex` absent the check passes and names the missing one in
+its detail (`claude=/path/to/claude; codex missing`) — unchanged.
+
 The `providers` and `agent-hook-config` checks keep their fixed names but build
 their detail by iterating the provider registry (`listProviders()` from
 `lib/core/agent/providers`): `providers` probes each adapter's `executable`,
@@ -165,7 +193,10 @@ task store can still have a lock `yaco task validate` would reject.
   detail}` per-check shape; the `{pass, fail}`-only summary; the all-pass
   case after a fresh install; per-check failure modes (yaco-home missing,
   registry missing, skills link missing, agent-wrapper missing, no hook
-  entries, no providers on PATH); every row of the store-state table above
+  entries); the providers zero state (no agent CLI on a `$PATH` built from
+  shims, so no inherited directory can supply one → `skip`, both names and the
+  remedy in the detail, `summary.fail` 0; one provider present → `pass`, still
+  naming the missing one); every row of the store-state table above
   (absent → `skip` with the name list unchanged; malformed, invalid, dangling
   at the leaf, dangling at the plan root, permission-walled, missing `--repo`
   → `fail`; live symlinked plan root with no tasks tree → `skip`); the `--json`
@@ -180,3 +211,8 @@ task store can still have a lock `yaco task validate` would reject.
   doctor **enabled**, asserting exit 0 and the skip line. The older bootstrap
   case runs `--skip-doctor` against this checkout, which has a `plan/`, so it
   cannot cover this.
+- `cli/test/integration/pack.test.ts` — the stranger's machine end to end: the
+  real `npm pack` tarball, installed into a temp prefix, then `yaco install` on
+  a `$PATH` carrying only the prefix, `node`, `which` and shims — asserting
+  first that neither provider resolves under it, then exit 0, the `SKIP
+  providers` line in install's own output, and `summary.fail` 0.

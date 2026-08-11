@@ -5,6 +5,7 @@
  *  tmux/git/claude/codex are hermetic.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -124,6 +125,56 @@ describe("runAllChecks — required check surface", () => {
     }
     expect(r.summary.fail).toBe(0);
     expect(r.summary.pass).toBe(REQUIRED_CHECKS.length);
+  });
+});
+
+describe("runAllChecks — providers zero state (no agent CLI installed)", () => {
+  /** A $PATH that holds exactly what `yaco install` needs and no agent CLI.
+   *  Built from shims rather than by subtracting from the operator's $PATH:
+   *  one inherited directory that happens to carry a `claude` would make every
+   *  assertion below a statement about this machine instead of about the check.
+   *  `which` is on it because doctor's probe spawns it. */
+  function pathWithoutAgentCli(): string {
+    const bin = join(sandbox, "no-agent-bin");
+    mkdirSync(bin, { recursive: true });
+    for (const c of ["yaco", "tmux", "git"]) makeShim(join(bin, c));
+    const whichPath = spawnSync("which", ["which"], { encoding: "utf-8" }).stdout.trim();
+    expect(whichPath.length).toBeGreaterThan(0);
+    symlinkSync(whichPath, join(bin, "which"));
+    return bin;
+  }
+
+  it("skips providers, and nothing fails, when only the agent CLI is missing", async () => {
+    // The stranger's machine: `npm i -g @yaco/cli` before `claude` or `codex`.
+    // `yaco install` throws on any failing check, so a fail here would be a
+    // throw from the documented first command — and there is nothing install
+    // could have done about it, because YACO ships no agent.
+    await installPrereqs();
+    process.env["PATH"] = pathWithoutAgentCli();
+    const r = await runAllChecks();
+    const p = r.checks.find((c) => c.name === "providers");
+    expect(p?.status).toBe("skip");
+    // Still visible: which providers are missing, and what to do about it.
+    expect(p?.detail).toContain("claude");
+    expect(p?.detail).toContain("codex");
+    expect(p?.detail).toContain("install one before starting agents");
+    // Skips count in neither bucket, so install completes.
+    expect(r.summary.fail).toBe(0);
+    expect(r.summary.pass).toBe(REQUIRED_CHECKS.length - 1);
+    expect(r.checks.map((c) => c.name)).toEqual([...REQUIRED_CHECKS]);
+  });
+
+  it("still passes, naming the one that is missing, when a single provider resolves", async () => {
+    // The partial case is untouched: one provider is enough, and the detail
+    // still reports the other as missing.
+    await installPrereqs();
+    const bin = pathWithoutAgentCli();
+    makeShim(join(bin, "claude"));
+    process.env["PATH"] = bin;
+    const r = await runAllChecks();
+    const p = r.checks.find((c) => c.name === "providers");
+    expect(p?.status).toBe("pass");
+    expect(p?.detail).toBe(`claude=${join(bin, "claude")}; codex missing`);
   });
 });
 
@@ -320,13 +371,6 @@ describe("runAllChecks — individual failure modes", () => {
     expect(h?.status).toBe("fail");
   });
 
-  it("providers check fails when neither claude nor codex is on PATH", async () => {
-    // Strip the shims entirely.
-    process.env["PATH"] = "/nonexistent-yaco-test-bin";
-    const r = await runAllChecks();
-    const p = r.checks.find((c) => c.name === "providers");
-    expect(p?.status).toBe("fail");
-  });
 });
 
 describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
