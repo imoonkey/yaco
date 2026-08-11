@@ -21,8 +21,9 @@
 #
 # The mirror is a snapshot: a package installed into main AFTER a worktree exists
 # is missing from it. That fails loudly (`Cannot find module`) — re-run this
-# script in the worktree to refresh it. It is idempotent, and it never runs
-# `rm -r`: it only ever unlinks symlinks, so it cannot damage the shared tree.
+# script in the worktree to refresh it, which converges (links to entries main no
+# longer has are dropped) rather than accumulating. It never runs `rm -r`: every
+# removal is guarded to a symlink, so it cannot reach into the shared tree.
 #
 #   worktree-provision.sh [<worktree path>]   provision, then self-check
 #   worktree-provision.sh --check             self-check an existing worktree only
@@ -34,39 +35,68 @@
 set -euo pipefail
 shopt -s nullglob dotglob
 
-# Main checkout = the first entry of `git worktree list`.
-main="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
-if [ -z "${main:-}" ] || [ "$main" = "$PWD" ]; then
+# Main checkout = the first entry of `git worktree list`. Both sides are
+# canonicalized before they are compared: reached through a symlinked alias, a
+# logical cwd would not match git's physical path, the guard below would not
+# fire, and the mirror would run with the main install as both source and
+# destination.
+main="$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -1)"
+[ -n "${main:-}" ] && main="$(cd "$main" && pwd -P)"
+wt="$(pwd -P)"
+if [ -z "${main:-}" ] || [ "$main" = "$wt" ]; then
   echo "worktree-provision: could not resolve main checkout; skipping" >&2
   exit 0
 fi
-wt="$(pwd -P)"
 
-# Workspace packages of THIS worktree, one "<name> <dir> <probe specifier>" per
-# line. The probe specifier is what the self-check asks the resolver for, and it
-# has to answer in an unbuilt checkout: an `exports` map resolves a declared
-# subpath without touching disk, while a package without one is asked for its
-# `package.json`, the one file it is guaranteed to have.
+# Workspace packages of THIS worktree, one tab-separated
+# "<name>\t<dir>\t<probe specifier>" per line. The probe specifier is what the
+# self-check asks the resolver for, and it has to answer in an unbuilt checkout:
+# an `exports` map resolves a declared subpath without touching disk, while a
+# package without one is asked for its `package.json`, the one file it is
+# guaranteed to have.
 workspaces="$(node -e '
-  const { globSync, readFileSync } = require("node:fs");
-  const globs = JSON.parse(readFileSync("package.json", "utf8")).workspaces ?? [];
-  const seen = new Set();
-  for (const glob of globs)
-    for (const dir of globSync(glob).sort()) {
-      if (seen.has(dir)) continue;
-      seen.add(dir);
-      let pkg;
-      try { pkg = JSON.parse(readFileSync(dir + "/package.json", "utf8")); } catch { continue; }
-      if (!pkg.name) continue;
-      const exp = pkg.exports;
-      let spec = pkg.name;
-      if (exp === undefined || exp === null) spec += "/package.json";
-      else if (typeof exp === "object" && !Array.isArray(exp)) {
-        const sub = Object.keys(exp).find((k) => k.startsWith("./"));
-        if (sub) spec += sub.slice(1);
+  const { globSync, readFileSync, realpathSync } = require("node:fs");
+  const { join, resolve, sep } = require("node:path");
+
+  const root = realpathSync(process.cwd());
+  const modules = join(root, "node_modules");
+  const inside = (p, base) => p === base || p.startsWith(base + sep);
+
+  try {
+    const globs = JSON.parse(readFileSync("package.json", "utf8")).workspaces ?? [];
+    const seen = new Set();
+    const out = [];
+    for (const glob of globs)
+      for (const dir of globSync(glob).sort()) {
+        if (seen.has(dir)) continue;
+        seen.add(dir);
+        let pkg;
+        try { pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); } catch { continue; }
+        if (!pkg.name) continue;
+
+        // Both writes these names drive — the link at node_modules/<name> and the
+        // mirror of <dir>/node_modules — must land inside this worktree. They come
+        // from a manifest and a glob, and nothing downstream re-checks them.
+        const abs = realpathSync(dir);
+        if (!inside(abs, root))
+          throw new Error(`workspace directory "${dir}" resolves to ${abs}, outside ${root}`);
+        if (!inside(resolve(modules, pkg.name), modules))
+          throw new Error(`workspace package name "${pkg.name}" escapes ${modules}`);
+
+        const exp = pkg.exports;
+        let spec = pkg.name;
+        if (exp === undefined || exp === null) spec += "/package.json";
+        else if (typeof exp === "object" && !Array.isArray(exp)) {
+          const sub = Object.keys(exp).find((k) => k.startsWith("./"));
+          if (sub) spec += sub.slice(1);
+        }
+        out.push([pkg.name, dir, spec].join("\t"));
       }
-      console.log([pkg.name, dir, spec].join(" "));
-    }
+    process.stdout.write(out.join("\n"));
+  } catch (e) {
+    process.stderr.write("worktree-provision: " + e.message + "\n");
+    process.exit(1);
+  }
 ')"
 if [ -z "$workspaces" ]; then
   echo "worktree-provision: WARNING no workspace packages declared in $wt/package.json;" >&2
@@ -77,7 +107,7 @@ fi
 # Directories the mirror must descend into instead of sharing whole: `.bin` and
 # every scope that hosts a workspace package. Both hold workspace-owned links.
 descend=".bin"
-while read -r name _ _; do
+while IFS="$(printf '\t')" read -r name _ _; do
   case "$name" in
   @*/*) case " $descend " in *" ${name%%/*} "*) ;; *) descend="$descend ${name%%/*}" ;; esac ;;
   esac
@@ -103,13 +133,19 @@ real_dir() {
   mkdir -p "$1"
 }
 
-# mirror <src node_modules> <dst node_modules> : reproduce every entry of <src>
-# under <dst>. A symlink is recreated with its target copied verbatim; anything
+# mirror <src node_modules> <dst node_modules> : make <dst> hold exactly what
+# <src> holds. A symlink is recreated with its target copied verbatim; anything
 # else is linked at main's copy, except the `$descend` names, which are rebuilt
-# as real directories and mirrored one level down.
+# as real directories and mirrored one level down. Links to entries <src> no
+# longer has are dropped, so a refresh converges on the current install instead
+# of accumulating; a real entry in <dst> is worktree-owned and is never touched.
 mirror() {
   local src="$1" dst="$2" entry base
   real_dir "$dst"
+  if [ "$(cd "$src" && pwd -P)" = "$(cd "$dst" && pwd -P)" ]; then
+    echo "worktree-provision: refusing to mirror $src onto itself" >&2
+    exit 1
+  fi
   for entry in "$src"/*; do
     base="${entry##*/}"
     if [ -d "$entry" ] && [ ! -L "$entry" ] && [[ " $descend " == *" $base "* ]]; then
@@ -118,6 +154,12 @@ mirror() {
       relink "$(readlink "$entry")" "$dst/$base"
     else
       relink "$entry" "$dst/$base"
+    fi
+  done
+  for entry in "$dst"/*; do
+    base="${entry##*/}"
+    if [ -L "$entry" ] && [ ! -e "$src/$base" ] && [ ! -L "$src/$base" ]; then
+      rm -f "$entry"
     fi
   done
 }
@@ -133,7 +175,7 @@ if [ "${1:-}" != "--check" ]; then
   # The root tree, then each workspace's own nested tree (npm leaves the deps it
   # cannot hoist there).
   mirror "$main/node_modules" "$wt/node_modules"
-  while read -r _ dir _; do
+  while IFS="$(printf '\t')" read -r _ dir _; do
     if [ -d "$main/$dir/node_modules" ]; then
       mirror "$main/$dir/node_modules" "$wt/$dir/node_modules"
     fi
@@ -142,10 +184,9 @@ if [ "${1:-}" != "--check" ]; then
   # Point every workspace package at THIS worktree. The verbatim relative links
   # above already do this for the packages main knows about; this also covers one
   # that exists only on this branch.
-  while read -r name dir _; do
+  while IFS="$(printf '\t')" read -r name dir _; do
     case "$name" in */*) real_dir "$wt/node_modules/${name%/*}" ;; esac
-    rm -f "$wt/node_modules/$name"
-    ln -s "$wt/$dir" "$wt/node_modules/$name"
+    relink "$wt/$dir" "$wt/node_modules/$name"
   done <<<"$workspaces"
 
   echo "worktree-provision: mirrored $main/node_modules -> $wt/node_modules (workspace packages local)"
@@ -159,8 +200,12 @@ fi
 resolve_js='
   import { realpathSync } from "node:fs";
   import { dirname } from "node:path";
-  import { fileURLToPath, pathToFileURL } from "node:url";
+  import { fileURLToPath } from "node:url";
 
+  // A path, not the URL the resolver hands back: a URL percent-encodes, and a
+  // checkout under a directory with a space in it would then never match the
+  // prefix it is being compared against.
+  //
   // The resolver canonicalizes symlinks only when the target file exists, and a
   // fresh worktree has nothing built — an unresolved `dist/` would leave the
   // answer sitting on the node_modules link and look local while pointing away.
@@ -168,9 +213,9 @@ resolve_js='
   const physical = (url) => {
     let p = fileURLToPath(url), tail = "";
     for (;;) {
-      try { return pathToFileURL(realpathSync(p)).href + tail; } catch {}
+      try { return realpathSync(p) + tail; } catch {}
       const up = dirname(p);
-      if (up === p) return url;
+      if (up === p) return p + tail;
       tail = p.slice(up.length) + tail;
       p = up;
     }
@@ -178,12 +223,12 @@ resolve_js='
 
   let out = "";
   for (const spec of process.env.WP_SPECS.split("\n").filter(Boolean)) {
-    try { out += spec + " " + physical(import.meta.resolve(spec)) + "\n"; }
-    catch (e) { out += spec + " UNRESOLVED:" + (e.code ?? e.message) + "\n"; }
+    try { out += spec + "\t" + physical(import.meta.resolve(spec)) + "\n"; }
+    catch (e) { out += spec + "\tUNRESOLVED:" + (e.code ?? e.message) + "\n"; }
   }
   process.stdout.write(out);
 '
-specs="$(awk '{print $3}' <<<"$workspaces")"
+specs="$(cut -f3 <<<"$workspaces")"
 bad=0
 
 # probe <dir> : report every workspace specifier that <dir> resolves outside $wt.
@@ -195,10 +240,10 @@ probe() {
     bad=$((bad + 1))
     return 0
   fi
-  while read -r spec resolved; do
+  while IFS="$(printf '\t')" read -r spec resolved; do
     [ -n "$spec" ] || continue
     case "$resolved" in
-    "file://$wt/"*) ;;
+    "$wt/"*) ;;
     *)
       echo "worktree-provision: ✗ $spec does not resolve inside this worktree" >&2
       echo "worktree-provision:     imported from  ${dir#"$wt"/}" >&2
@@ -210,7 +255,7 @@ probe() {
 }
 
 probe "$wt"
-while read -r _ dir _; do probe "$wt/$dir"; done <<<"$workspaces"
+while IFS="$(printf '\t')" read -r _ dir _; do probe "$wt/$dir"; done <<<"$workspaces"
 
 if [ "$bad" -gt 0 ]; then
   echo "worktree-provision: FAILED — $bad workspace import(s) resolve outside $wt." >&2

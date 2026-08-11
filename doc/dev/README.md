@@ -50,7 +50,7 @@ tree it describes. Cost: ~550 symlinks, no copied bytes.
 | Situation | What to do |
 |---|---|
 | Audit a worktree without changing it | `bash scripts/worktree-provision.sh --check` — exits non-zero naming each package and where it wrongly resolved |
-| A worktree provisioned before this change, or `Cannot find module` after main installed a new dependency | `bash scripts/worktree-provision.sh` from the worktree root — idempotent, repairs in place, never runs `rm -r` |
+| A worktree provisioned before this change, or `Cannot find module` after main installed a new dependency | `bash scripts/worktree-provision.sh` from the worktree root — repairs in place and converges on main's current install (links to entries main no longer has are dropped). Every removal it makes is guarded to a symlink; it never runs `rm -r` |
 | `yaco worktree create` still produced the old layout | The hook runs from the **main checkout's** copy of the script, so a change to it only reaches new worktrees once it lands on `main`. Repair the worktree by hand as above |
 
 Two guards keep it honest, both wired into `scripts/verify.sh`: the script's own

@@ -134,20 +134,54 @@ phys() {
 }
 
 # resolve_from <dir> <specifier> : which physical file the real Node resolver
-# would load for <specifier> when imported from <dir>.
+# would load for <specifier> when imported from <dir>, as a path — the resolver
+# answers with a URL, which percent-encodes anything a path may legally contain.
 resolve_from() {
-  local url
-  url="$(cd "$1" && WP_S="$2" node --input-type=module -e \
-    'try{process.stdout.write(import.meta.resolve(process.env.WP_S))}catch(e){process.stdout.write("ERR:"+(e.code??e.message))}')"
-  case "$url" in
-  file://*) printf 'file://%s' "$(phys "${url#file://}")" ;;
-  *) printf '%s' "$url" ;;
+  local answer
+  answer="$(cd "$1" && WP_S="$2" node --input-type=module -e \
+    'import{fileURLToPath}from"node:url";
+     try{const u=import.meta.resolve(process.env.WP_S);
+       process.stdout.write(u.startsWith("file:")?fileURLToPath(u):u)}
+     catch(e){process.stdout.write("ERR:"+(e.code??e.message))}')"
+  case "$answer" in
+  /*) phys "$answer" ;;
+  *) printf '%s' "$answer" ;;
   esac
 }
 
-# fingerprint <dir> : the shape of a node_modules tree, for a no-damage assertion.
-fingerprint() {
-  (cd "$1" && find . -maxdepth 3 -printf '%y %p %l\n' 2>/dev/null | LC_ALL=C sort)
+# fp <var> <dir> : capture the shape of a tree — entry kind, path, link target —
+# into <var>, for the no-damage and idempotency assertions. Node rather than
+# `find -printf`, which is GNU-only: under a BSD find this printed nothing, and
+# the two assertions that compare a tree before and after compared one empty
+# string to another and reported themselves as passing. A fingerprint that
+# cannot be taken aborts the run instead of quietly agreeing with itself.
+fp() {
+  local out
+  out="$(FP_DIR="$2" node -e '
+    const { readdirSync, lstatSync, readlinkSync } = require("node:fs");
+    const { join, relative } = require("node:path");
+    const root = process.env.FP_DIR;
+    const rows = [];
+    const walk = (dir, depth) => {
+      for (const e of readdirSync(dir).sort()) {
+        const full = join(dir, e);
+        const st = lstatSync(full);
+        const kind = st.isSymbolicLink() ? "l" : st.isDirectory() ? "d" : "f";
+        rows.push([kind, relative(root, full), kind === "l" ? readlinkSync(full) : ""].join(" "));
+        if (kind === "d" && depth > 1) walk(full, depth - 1);
+      }
+    };
+    walk(root, 3);
+    process.stdout.write(rows.join("\n"));
+  ')" || {
+    echo "FATAL test bug: could not fingerprint '$2' — aborting" >&2
+    exit 98
+  }
+  [ -n "$out" ] || {
+    echo "FATAL test bug: fingerprint of '$2' is empty — aborting" >&2
+    exit 98
+  }
+  printf -v "$1" '%s' "$out"
 }
 
 # --------------------------------------------------------------------------
@@ -186,7 +220,7 @@ assert_contains() { # <label> <needle> <haystack>
 # --------------------------------------------------------------------------
 repo="$(mk_repo)"
 wt="$(mk_wt "$repo")"
-before="$(fingerprint "$repo/node_modules")"
+fp before "$repo/node_modules"
 out="$(provision "$wt")"
 rc=$?
 assert_eq "provision exits 0" 0 "$rc"
@@ -195,22 +229,22 @@ assert_contains "provision reports the self-check passed" "every workspace packa
 for probe in . cli app/server packages/tr; do
   for spec in @fx/cli/core @fx/app/package.json @fx/tr/package.json; do
     assert_prefix "$spec from $probe resolves inside the worktree" \
-      "file://$wt/" "$(resolve_from "$wt/$probe" "$spec")"
+      "$wt/" "$(resolve_from "$wt/$probe" "$spec")"
   done
 done
 
 # The unbuilt cases: an `exports` subpath whose dist/ does not exist yet, and a
 # package with no entry point at all. Both are how a fresh worktree really looks.
 assert_eq "@fx/cli/core resolves to the worktree's own cli" \
-  "file://$wt/cli/dist/core.js" "$(resolve_from "$wt/app/server" @fx/cli/core)"
+  "$wt/cli/dist/core.js" "$(resolve_from "$wt/app/server" @fx/cli/core)"
 assert_eq "an entry-pointless workspace resolves to the worktree's own copy" \
-  "file://$wt/app/server/package.json" "$(resolve_from "$wt/cli" @fx/app/package.json)"
+  "$wt/app/server/package.json" "$(resolve_from "$wt/cli" @fx/app/package.json)"
 assert_eq "a workspace with an unbuilt main resolves to the worktree's own copy" \
-  "file://$wt/packages/tr/package.json" "$(resolve_from "$wt/app/server" @fx/tr/package.json)"
+  "$wt/packages/tr/package.json" "$(resolve_from "$wt/app/server" @fx/tr/package.json)"
 assert_eq "third-party stays shared with the main checkout" \
-  "file://$repo/node_modules/leftpad/index.js" "$(resolve_from "$wt/app/server" leftpad)"
+  "$repo/node_modules/leftpad/index.js" "$(resolve_from "$wt/app/server" leftpad)"
 assert_eq "third-party inside a workspace scope stays shared" \
-  "file://$repo/node_modules/@fx/vendor/index.js" "$(resolve_from "$wt/app/server" @fx/vendor)"
+  "$repo/node_modules/@fx/vendor/index.js" "$(resolve_from "$wt/app/server" @fx/vendor)"
 
 # --------------------------------------------------------------------------
 # 2. .bin coherence — a workspace-owned shim points into the worktree, a
@@ -240,16 +274,18 @@ assert_eq "a workspace's own nested tree is mirrored too" \
 # 4. The main checkout's tree is not modified. The script unlinks symlinks in a
 #    directory whose every entry points into a real 600 MB install.
 # --------------------------------------------------------------------------
-assert_eq "main's node_modules is byte-for-byte unchanged" "$before" "$(fingerprint "$repo/node_modules")"
+fp after "$repo/node_modules"
+assert_eq "main's node_modules is byte-for-byte unchanged" "$before" "$after"
 
 # --------------------------------------------------------------------------
 # 5. Idempotent: re-running changes nothing and still passes.
 # --------------------------------------------------------------------------
-snapshot="$(fingerprint "$wt/node_modules")"
+fp snapshot "$wt/node_modules"
 out="$(provision "$wt")"
 rc=$?
 assert_eq "second run exits 0" 0 "$rc"
-assert_eq "second run leaves the mirror unchanged" "$snapshot" "$(fingerprint "$wt/node_modules")"
+fp snapshot2 "$wt/node_modules"
+assert_eq "second run leaves the mirror unchanged" "$snapshot" "$snapshot2"
 
 # --------------------------------------------------------------------------
 # 6. Self-heals a worktree provisioned by the old whole-tree symlink.
@@ -259,12 +295,12 @@ wt="$(mk_wt "$repo")"
 in_root "$wt"
 ln -s "$repo/node_modules" "$wt/node_modules"
 assert_prefix "old layout resolves to the MAIN checkout (the defect)" \
-  "file://$repo/" "$(resolve_from "$wt/app/server" @fx/cli/core)"
+  "$repo/" "$(resolve_from "$wt/app/server" @fx/cli/core)"
 out="$(provision "$wt")"
 rc=$?
 assert_eq "re-provisioning an old-layout worktree exits 0" 0 "$rc"
 assert_prefix "old layout is repaired in place" \
-  "file://$wt/" "$(resolve_from "$wt/app/server" @fx/cli/core)"
+  "$wt/" "$(resolve_from "$wt/app/server" @fx/cli/core)"
 
 # --------------------------------------------------------------------------
 # 7. --check fails loudly, naming the package and where it wrongly resolved.
@@ -278,10 +314,10 @@ rc=$?
 assert_eq "--check on a wrongly linked worktree exits non-zero" 1 "$rc"
 assert_contains "--check names the exports-mapped package" "@fx/cli/core" "$out"
 assert_contains "--check names the entry-pointless package" "@fx/app/package.json" "$out"
-assert_contains "--check names where it resolved" "file://$repo/cli/dist/core.js" "$out"
+assert_contains "--check names where it resolved" "$repo/cli/dist/core.js" "$out"
 assert_contains "--check says what that costs" "would validate another checkout" "$out"
 assert_eq "--check does not repair" \
-  "file://$repo/cli/dist/core.js" "$(resolve_from "$wt/app/server" @fx/cli/core)"
+  "$repo/cli/dist/core.js" "$(resolve_from "$wt/app/server" @fx/cli/core)"
 
 # --------------------------------------------------------------------------
 # 8. Nothing to share -> warn loudly, exit 0. A missing install in the main
@@ -299,12 +335,83 @@ assert_contains "no main node_modules -> says how to fix it" "npm install" "$out
 # 9. Run from the main checkout itself -> skip, do not mirror onto itself.
 # --------------------------------------------------------------------------
 repo="$(mk_repo)"
-before="$(fingerprint "$repo/node_modules")"
+fp before "$repo/node_modules"
 out="$(cd "$repo" && bash scripts/worktree-provision.sh "$repo" 2>&1)"
 rc=$?
 assert_eq "run in the main checkout exits 0" 0 "$rc"
 assert_contains "run in the main checkout skips" "skipping" "$out"
-assert_eq "run in the main checkout changes nothing" "$before" "$(fingerprint "$repo/node_modules")"
+fp after "$repo/node_modules"
+assert_eq "run in the main checkout changes nothing" "$before" "$after"
+
+# --------------------------------------------------------------------------
+# 10. Reached through a symlinked alias of the main checkout, the same guard has
+#     to hold — a logical cwd that does not match git's physical path would
+#     otherwise mirror the main install onto itself, unlinking as it went.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+in_root "$root/main-alias"
+ln -s "$repo" "$root/main-alias"
+fp before "$repo/node_modules"
+out="$(cd "$root/main-alias" && bash scripts/worktree-provision.sh 2>&1)"
+rc=$?
+assert_eq "run through an alias of the main checkout exits 0" 0 "$rc"
+assert_contains "run through an alias skips" "skipping" "$out"
+fp after "$repo/node_modules"
+assert_eq "run through an alias changes nothing" "$before" "$after"
+
+# --------------------------------------------------------------------------
+# 11. A refresh is a mirror, not an accumulation: a dependency main no longer
+#     has must not survive in the worktree, where it would go on being imported.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+wt="$(mk_wt "$repo")"
+provision "$wt" >/dev/null
+in_root "$repo/node_modules/leftpad"
+mv "$repo/node_modules/leftpad" "$repo/leftpad-removed"
+rm -f "$repo/node_modules/.bin/leftpad"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "refresh after a dependency was removed exits 0" 0 "$rc"
+assert_eq "the removed dependency is gone from the worktree" "" \
+  "$(readlink "$wt/node_modules/leftpad" || true)"
+assert_eq "its .bin shim is gone too" "" "$(readlink "$wt/node_modules/.bin/leftpad" || true)"
+assert_prefix "a dependency main still has is untouched" \
+  "$repo/node_modules/@fx/vendor" "$(resolve_from "$wt/app/server" @fx/vendor)"
+
+# --------------------------------------------------------------------------
+# 12. A workspace directory containing a space is one workspace, not two.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/two words/package.json" '{"name":"@fx/spaced","version":"1.0.0"}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm spaced
+in_root "$repo/node_modules/@fx"
+ln -s "../../packages/two words" "$repo/node_modules/@fx/spaced"
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a workspace path with a space provisions cleanly" 0 "$rc"
+assert_eq "and resolves to its own directory, unsplit" \
+  "$wt/packages/two words/package.json" \
+  "$(resolve_from "$wt/app/server" @fx/spaced/package.json)"
+
+# --------------------------------------------------------------------------
+# 13. A workspace package name is a path fragment this script writes with. One
+#     that points out of node_modules must be refused before the first write,
+#     not caught by the audit after the main checkout has already been changed.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/escape/package.json" '{"name":"../../node_modules/sentinel","version":"1.0.0"}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm escape
+write "$repo/node_modules/sentinel" 'must survive'
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "an escaping workspace name is refused" 1 "$rc"
+assert_contains "and says which name" "../../node_modules/sentinel" "$out"
+assert_eq "the file it pointed at is untouched" "must survive" "$(cat "$repo/node_modules/sentinel")"
+assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
 
 echo
 echo "passed=$pass failed=$fail"
