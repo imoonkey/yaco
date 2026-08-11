@@ -10,16 +10,24 @@
  *    the history window instead of every thread in the project (587 → 200 on
  *    the reference machine, 5,870 → 200 at ten times the size). The merged
  *    top-`n` is a subset of the union of the per-provider top-`n`, so capping
- *    each provider at the window cannot change the result;
+ *    each provider at the window cannot change the result — but note that the
+ *    command's `--since` filter runs *after* the merge, so a shipped reader has
+ *    to cap at the window past the cutoff, not before it. This prototype takes
+ *    no `since` and so does not have to;
  *  - Claude sorts by `mtime` first and reads only the newest `n` logs;
- *  - every fan-out runs in chunks of 8 with a macrotask yield between chunks,
- *    so a queued request is never behind more than one chunk of parsing;
+ *  - every fan-out runs in chunks with a macrotask yield between them, so a
+ *    queued request is never behind more than one chunk of parsing;
  *  - the origin side index is read with `fs/promises` in the same chunks, not
  *    with the synchronous per-row `readFileSync` the shipped merge uses.
  *
- *  It is a prototype and not a shipped path: it exists to establish an upper
- *  bound on how well the in-process route can behave. If this loses to the
- *  subprocess route, no simpler in-process form wins. */
+ *  It is a prototype and not a shipped path: it exists to establish how well the
+ *  in-process route *can* behave, separately from how the shipped reader does
+ *  behave. It comes in under the bound at every chunk size the benchmark
+ *  sweeps, which is what admits the cutover — so before those numbers are
+ *  claimed for a real reader, the semantics this drops have to come back: the
+ *  `sessions-index.json` enrichment, the Claude first-user-message summary, the
+ *  Codex thread-name index, sidechain filtering, and live tagging. Each adds
+ *  work, and none of it is measured here. */
 
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -29,9 +37,12 @@ import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
 import { originPathForSessionId } from "../../src/lib/core/agent/origin.ts";
 import type { HistorySession } from "../../src/lib/core/agent/providers/types.ts";
 
-/** Files read at once before the loop is handed back. Eight keeps a chunk's
- *  parsing near a millisecond while still overlapping the reads. */
-const CHUNK = 8;
+/** Default files read at once before the loop is handed back. It is the
+ *  prototype's only tuning knob and it trades wall time against how long one
+ *  uninterrupted run of parsing lasts, so the benchmark sweeps it rather than
+ *  fixing it — a verdict about *every* bounded reader cannot rest on one
+ *  arbitrary constant. */
+export const DEFAULT_CHUNK = 8;
 const HEAD_BYTES = 16384;
 const TAIL_BYTES = 65536;
 
@@ -40,12 +51,12 @@ function userHome(): string {
   return env && env.length > 0 ? env : homedir();
 }
 
-/** Run `worker` over `items` `CHUNK` at a time, yielding the loop between
+/** Run `worker` over `items` `chunk` at a time, yielding the loop between
  *  chunks so an already-queued timer or socket is served. */
-async function chunked<T, R>(items: readonly T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+async function chunked<T, R>(items: readonly T[], worker: (item: T) => Promise<R>, chunk: number): Promise<R[]> {
   const out: R[] = [];
-  for (let i = 0; i < items.length; i += CHUNK) {
-    out.push(...await Promise.all(items.slice(i, i + CHUNK).map(worker)));
+  for (let i = 0; i < items.length; i += chunk) {
+    out.push(...await Promise.all(items.slice(i, i + chunk).map(worker)));
     await new Promise((resolve) => setImmediate(resolve));
   }
   return out;
@@ -98,7 +109,7 @@ async function tailTokens(path: string | null): Promise<number | null> {
   } catch { return null; }
 }
 
-export async function boundedCodexList(projectPath: string, limit: number): Promise<HistorySession[]> {
+export async function boundedCodexList(projectPath: string, limit: number, chunk: number): Promise<HistorySession[]> {
   const cwd = projectPath.replace(/\/+$/, "");
   const dbPath = join(userHome(), ".codex", "state_5.sqlite");
   let rows: CodexRow[];
@@ -124,7 +135,7 @@ export async function boundedCodexList(projectPath: string, limit: number): Prom
     updatedAt: epochToISO(row.updated_at),
     tokens: await tailTokens(row.rollout_path),
     gitBranch: row.git_branch ?? null,
-  }));
+  }), chunk);
 }
 
 // -- Claude --
@@ -159,7 +170,7 @@ function parseLastClaudeTokens(text: string): number | null {
   return null;
 }
 
-export async function boundedClaudeList(projectPath: string, limit: number): Promise<HistorySession[]> {
+export async function boundedClaudeList(projectPath: string, limit: number, chunk: number): Promise<HistorySession[]> {
   const dir = join(userHome(), ".claude", "projects", encodeClaudeCwd(projectPath));
   let files: string[];
   try {
@@ -173,7 +184,7 @@ export async function boundedClaudeList(projectPath: string, limit: number): Pro
       const st = await stat(join(dir, file));
       return { file, mtime: st.mtime.getTime(), size: st.size, birth: (st.birthtime ?? st.ctime).toISOString() };
     } catch { return null; }
-  });
+  }, chunk);
   const window = stats
     .filter((s): s is NonNullable<typeof s> => s !== null)
     .sort((a, b) => b.mtime - a.mtime || (a.file < b.file ? -1 : 1))
@@ -212,14 +223,14 @@ export async function boundedClaudeList(projectPath: string, limit: number): Pro
       tokens,
       gitBranch: null,
     } satisfies HistorySession;
-  });
+  }, chunk);
 }
 
 // -- merge --
 
 /** Origin lookup for the window, asynchronous and chunked — the shipped merge
  *  does this with `existsSync` + `readFileSync` once per row. */
-async function readOrigins(sessionIds: readonly string[]): Promise<Map<string, unknown>> {
+async function readOrigins(sessionIds: readonly string[], chunk: number): Promise<Map<string, unknown>> {
   const found = new Map<string, unknown>();
   await chunked(sessionIds, async (sessionId) => {
     const path = originPathForSessionId(sessionId);
@@ -227,14 +238,18 @@ async function readOrigins(sessionIds: readonly string[]): Promise<Map<string, u
     try {
       found.set(sessionId, JSON.parse(await readFile(path, "utf-8")));
     } catch { /* no origin record */ }
-  });
+  }, chunk);
   return found;
 }
 
-export async function boundedHistory(projectPath: string, limit: number): Promise<HistorySession[]> {
+export async function boundedHistory(
+  projectPath: string,
+  limit: number,
+  chunk: number = DEFAULT_CHUNK,
+): Promise<HistorySession[]> {
   const perProvider = await Promise.all([
-    boundedClaudeList(projectPath, limit),
-    boundedCodexList(projectPath, limit),
+    boundedClaudeList(projectPath, limit, chunk),
+    boundedCodexList(projectPath, limit, chunk),
   ]);
   const sorted = perProvider.flat().sort((a, b) => {
     const at = new Date(a.updatedAt).getTime();
@@ -242,6 +257,6 @@ export async function boundedHistory(projectPath: string, limit: number): Promis
     if (at !== bt) return bt - at;
     return a.sessionId < b.sessionId ? -1 : 1;
   }).slice(0, limit);
-  await readOrigins(sorted.map((r) => r.sessionId));
+  await readOrigins(sorted.map((r) => r.sessionId), chunk);
   return sorted;
 }

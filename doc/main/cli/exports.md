@@ -112,14 +112,13 @@ emptied.
 ## The one query rule 5 has judged
 
 Rule 5 admits a `node:sqlite` query only against a measured stall bound, because
-`node:sqlite` is synchronous. The history read (`yaco agent history`) was put to
-that test and **failed it, so it stays a subprocess** — `app/server` keeps
-spawning the CLI for the History tab and no history module is exported.
+`node:sqlite` is synchronous. The history read (`yaco agent history`) is the
+first query put to that test, and the answer was not about the database.
 
-`cli/test/bench/history-stall.ts` is the harness. It serves real HTTP requests
-from the benchmarking process and reports the latency of the requests that
-overlapped each route, so the number is the design's question — how long an
-unrelated request waits — not how fast the read is. Run it against a real
+`cli/test/bench/history-stall.ts` is the harness. It asks the design's question
+— how long an *already-queued* piece of work waits because of a route — by
+re-queuing a timer for as long as the route runs and taking the worst delay,
+once per invocation, under concurrent background load. Run it against a real
 provider home or against the synthetic fixtures in `history-fixture.ts`:
 
 ```bash
@@ -127,23 +126,34 @@ node cli/test/bench/history-stall.ts --home ~ --project /abs/repo   # real
 node cli/test/bench/history-stall.ts --scale 10                     # 10x synthetic
 ```
 
-The baseline is the *complete* route: the app pays a synchronous
-`spawnSync("ssh-add","-l")` inside `buildChildProcessEnv()` before every spawn,
-so the harness pays it too.
+On a real provider home (11.6 MB `state_5.sqlite`, 2,275 Codex threads, 81
+Claude logs), p95 starvation of an already-queued timer against route wall time:
 
-| Route | p95 of a concurrent request, real provider home |
-|---|---:|
-| subprocess (today) | 2.3 ms |
-| the read called in process | 203.9 ms |
-| a bounded, chunked prototype of it | 6.6 ms |
+| Route | p95 starvation | wall p50 |
+|---|---:|---:|
+| a child that prints an empty envelope — the spawn alone | 37.6 ms | 64 ms |
+| subprocess — the route today | 42.3 ms | 344 ms |
+| the shipped reader called in process | 79.2 ms | 142 ms |
+| a bounded, chunked prototype of it | 12.8 ms | 103 ms |
 
-The database was never the problem — the `threads` query costs 4–9 ms on a
-11.6 MB `state_5.sqlite`. The cost is the per-row provider work it feeds: a
-64 KB rollout tail per Codex row, a 16 KB head plus 64 KB tail per Claude log,
-22 MB of parsing per request. `history-bounded-prototype.ts` is kept alongside
-the harness because it is the evidence that no simpler in-process form wins: it
-caps every scan at the window and yields between chunks, and is still 3–4× over
-the bound.
+Three things follow, and they are what a future rule-5 candidate should copy:
+
+- **The database is not the cost.** The `threads` query is 4–9 ms. The cost is
+  the per-row provider work it feeds — a 64 KB rollout tail per Codex row, a
+  16 KB head plus 64 KB tail per Claude log, ~22 MB of parsing a request. Measure
+  the whole read, not the query.
+- **`spawn()` is not free either.** A child that reads nothing accounts for 37.6
+  of the subprocess route's 42.3 ms, and still costs 15.9 ms with the app's
+  `ssh-add` discovery removed — `fork` with a loaded heap. "Keep the subprocess"
+  is not automatically the safe side of a starvation comparison.
+- **What fails the bound is the unbounded fan-out, not being in process.** The
+  shipped reader reads every row a provider holds before the window is applied.
+  `history-bounded-prototype.ts` caps each provider at the window and yields
+  between chunks, and comes in under the bound at every chunk size from 1 to 16.
+
+So the path is admitted — but only in that bounded form, and nothing is exported
+yet: the shared read, its `core/agent` entry, an asynchronous origin lookup and
+the audit pins land together in the follow-up cutover.
 
 ## Invariants
 
