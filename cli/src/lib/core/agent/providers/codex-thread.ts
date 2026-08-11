@@ -9,7 +9,8 @@
  *  Listing the constructs a module may not contain cannot be made complete.
  *  Review found four successive versions of the check incomplete, the last
  *  because `(() => {}).constructor("… .all()")` reaches `Function` without
- *  naming it and runs a query the compiler never parses, since it is a string.
+ *  naming it, and the JavaScript inside that string — which is what runs the
+ *  unbounded query — is not in the AST at all.
  *
  *  So the audit pins **the JavaScript this module compiles to** — what Node
  *  actually runs — and asserts the file still compiles to it. Any edit that

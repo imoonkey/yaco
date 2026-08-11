@@ -961,8 +961,8 @@ describe("the audit itself", () => {
       ["destructuring", inject(`const { all } = db.prepare("${UNBOUNDED}"); all.call(db);`)],
       ["reflection", inject(`Reflect.get(db, "exec").call(db, "${UNBOUNDED}");`)],
       // The case no list of names could cover: `Function` reached without
-      // naming it, running a query the compiler never parses because it is a
-      // string.
+      // naming it, and the JavaScript that runs the unbounded query is inside a
+      // string, so it is not in the AST at all.
       ["the Function constructor", inject(
         `const run = (() => {}).constructor("return arguments[0].prepare('${UNBOUNDED}').all()"); run(db);`,
       )],
