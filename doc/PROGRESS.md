@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-08-11: the rule-5 checks are described by what they assert
+
+**What changed:**
+- The prose around the export audit — the `codex-thread.ts` header, the `export-audit.test.ts` header and its case comments, `export-closure.ts`, and one paragraph of `doc/main/cli/exports.md` — now states the property each check establishes rather than narrating what it withstands. "The fixture pins the JavaScript the module compiles to, so an edit that changes the emitted program fails the audit and has to be re-judged" carries the same facts as the old phrasing without reading as an account of an attack. Every fact is kept: the five successive check designs, each found incomplete in review, are load-bearing for whoever maintains the audit.
+- **A correction the re-wording surfaced.** Both the code comments and the entry below said the `Function` constructor case "runs a query the parser never sees, since it lives in a string." That names the wrong thing. The SQL is a string literal in the admitted direct call too; what the string hides is the **JavaScript**, which is absent from the module AST and is what runs the unbounded query. `doc/main/cli/exports.md` had it right; the comments now agree with it. The entry below is left as written — PROGRESS is append-only, and this is where the correction lives.
+- **`summary-read-cutover`'s round-7 Low is closed.** "Any edit at all fails" was wrong as written: the pin normalizes comments and type annotations away, so those edits deliberately do not move it. Both sites now say "any edit that changes that JavaScript".
+- The prepared one-shot `plan/all/cli-node-sdk/followup-summary-read-cutover-wording.py` was applied by hand — 8 of its 9 patterns still matched, the ninth having landed with `read-sdk-docs` — and then deleted. It clears the Blockers line on the entry below.
+
+**Why:**
+- Earlier in this milestone a Codex reviewer's session was lost to a provider content refusal because its brief described a static check in the vocabulary of attacks. Re-wording mid-session does not recover it — the refusal is evaluated against the whole conversation — so the session has to be killed and restarted. The same vocabulary sat in shipped prose, which is what the next reviewer reads. This removes the hazard rather than reacting to an outage; `read-sdk-docs`' reviewer read those files and did not refuse.
+
+**Key files:** `cli/src/lib/core/agent/providers/codex-thread.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/unit/export-audit.test.ts`, `doc/main/cli/exports.md`
+**Verification:** `bash scripts/verify.sh` all steps passed. No behaviour change, proven rather than asserted: every changed line in the diff is a comment or an `it()` title, and `cli/test/fixtures/rule5-sqlite/codex-thread.emit.js` — the checked-in JavaScript `codex-thread.ts` compiles to, with comments and type annotations normalized away — is byte-identical to base at SHA-256 `2c540836…`, independently confirmed by the reviewer. QA additionally injected a real unbounded query on disk and watched the audit fail, then restored the file.
+**Commit:** `bee2c253..f7b74a80`
+**Next:** `history-read-land`.
+**Blockers:** None. Reported, not fixed, and left for the orchestrator: `BYPASSES`, a local const in `export-audit.test.ts`, and the `YACO_SNEAK_ROOT` fixture name — an identifier and test input data, not prose, and renaming either would have forfeited the mechanical no-behaviour-change proof. `doc/main/cli/read-path.md` was checked and carries none of this vocabulary.
+
 ## 2026-08-11: the read/lifecycle split has one document
 
 **What changed:**
