@@ -618,6 +618,16 @@ describe("the audit itself", () => {
         `export const pollNeg = async (probe: () => Promise<boolean>) => {\n` +
         `  while (-1) { if (await probe()) return; }\n` +
         `};\n` +
+        // Erased wrappers: every one of these still runs `while (truthy)`.
+        `export const pollAs = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (true as boolean) { if (await probe()) return; }\n` +
+        `};\n` +
+        `export const pollSatisfies = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (1 satisfies number) { if (await probe()) return; }\n` +
+        `};\n` +
+        `export const pollBang = async (probe: () => Promise<boolean>) => {\n` +
+        `  while (1!) { if (await probe()) return; }\n` +
+        `};\n` +
         `export const backoff = async (probe: () => Promise<boolean>) => {\n` +
         `  for (let i = 0; i < 5; i++) {\n` +
         `    if (await probe()) return;\n` +
@@ -632,7 +642,7 @@ describe("the audit itself", () => {
         `};\n`,
     });
     try {
-      expect(detailsOf(root)).toEqual(Array(5).fill("3:polling loop"));
+      expect(detailsOf(root)).toEqual(Array(8).fill("3:polling loop"));
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
@@ -666,10 +676,15 @@ describe("the audit itself", () => {
         `import { spawnSync as run } from "node:child_process";\n` +
         `import * as cp from "node:child_process";\n` +
         `export const a = () => run("git", ["status"]);\n` +
-        `export const b = () => cp["execSync"]("git status");\n`,
+        `export const b = () => cp["execSync"]("git status");\n` +
+        `export const c = () => (cp as typeof cp)["execSync"]("git status");\n`,
     });
     try {
-      expect(detailsOf(root)).toEqual(["3:import spawnSync", "3:execSync()"]);
+      expect(detailsOf(root)).toEqual([
+        "3:import spawnSync",
+        "3:execSync()",
+        "3:execSync()",
+      ]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }

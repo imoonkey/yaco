@@ -467,8 +467,8 @@ const alwaysTrue = (expr: ts.Expression): boolean => Boolean(constantValue(expr)
 /** The value of a condition built only from literals and unary operators, or
  *  `undefined` when it depends on anything at runtime. Small on purpose: its
  *  job is to deny the rewrites of `while (true)`, not to be an interpreter. */
-function constantValue(expr: ts.Expression): string | number | boolean | null | undefined {
-  if (ts.isParenthesizedExpression(expr)) return constantValue(expr.expression);
+function constantValue(node: ts.Expression): string | number | boolean | null | undefined {
+  const expr = unwrap(node);
   if (expr.kind === ts.SyntaxKind.TrueKeyword) return true;
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return false;
   if (expr.kind === ts.SyntaxKind.NullKeyword) return null;
@@ -512,6 +512,20 @@ function sleepsInside(body: ts.Node): boolean {
   return found;
 }
 
+/** Strip the wrappers that erase at emit — parentheses, `as`, `satisfies`, an
+ *  angle-bracket assertion, `!`. Every one of them leaves the expression
+ *  underneath running unchanged, so a scan that stops at them reads a
+ *  different program from the one Node executes. */
+function unwrap(expr: ts.Expression): ts.Expression {
+  return ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isSatisfiesExpression(expr) ||
+    ts.isTypeAssertionExpression(expr) ||
+    ts.isNonNullExpression(expr)
+    ? unwrap(expr.expression)
+    : expr;
+}
+
 /** The member name this node reads off `process`: a string for a literal one,
  *  `null` for a computed one, `undefined` when the node is not a process
  *  member access at all. Property and element access are both handled — the
@@ -522,20 +536,21 @@ function memberOnProcess(node: ts.Node): string | null | undefined {
   }
   if (ts.isElementAccessExpression(node)) {
     if (!isProcess(node.expression)) return undefined;
-    const key = node.argumentExpression;
+    const key = unwrap(node.argumentExpression);
     return ts.isStringLiteral(key) ? key.text : null;
   }
   return undefined;
 }
 
 /** `process`, bare or reached through `globalThis`. */
-function isProcess(expr: ts.Expression): boolean {
+function isProcess(node: ts.Expression): boolean {
+  const expr = unwrap(node);
   if (ts.isIdentifier(expr)) return expr.text === "process";
   if (ts.isPropertyAccessExpression(expr)) {
     return expr.name.text === "process" && isGlobalThis(expr.expression);
   }
   if (ts.isElementAccessExpression(expr)) {
-    const key = expr.argumentExpression;
+    const key = unwrap(expr.argumentExpression);
     return (
       ts.isStringLiteral(key) && key.text === "process" && isGlobalThis(expr.expression)
     );
@@ -543,8 +558,10 @@ function isProcess(expr: ts.Expression): boolean {
   return false;
 }
 
-const isGlobalThis = (expr: ts.Expression): boolean =>
-  ts.isIdentifier(expr) && expr.text === "globalThis";
+const isGlobalThis = (node: ts.Expression): boolean => {
+  const expr = unwrap(node);
+  return ts.isIdentifier(expr) && expr.text === "globalThis";
+};
 
 /** `process` used as a value rather than as the target of a member access —
  *  assigned to a binding, destructured, spread, or passed to a call. Every one
@@ -619,20 +636,23 @@ function collectEnvNames(
 /** The name being called, through a bare identifier, a namespace member, or a
  *  string-keyed member — `cp["spawnSync"]()` must not read differently from
  *  `cp.spawnSync()`. */
-function calleeName(expr: ts.Expression): string | null {
+function calleeName(node: ts.Expression): string | null {
+  const expr = unwrap(node);
   if (ts.isIdentifier(expr)) return expr.text;
   if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
   if (ts.isElementAccessExpression(expr)) {
-    const key = expr.argumentExpression;
+    const key = unwrap(expr.argumentExpression);
     return ts.isStringLiteral(key) ? key.text : null;
   }
   return null;
 }
 
-function isNamespacedCall(expr: ts.Expression, namespace: string): boolean {
-  const target = ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)
-    ? expr.expression
-    : null;
+function isNamespacedCall(node: ts.Expression, namespace: string): boolean {
+  const expr = unwrap(node);
+  const target =
+    ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)
+      ? unwrap(expr.expression)
+      : null;
   return !!target && ts.isIdentifier(target) && target.text === namespace;
 }
 
