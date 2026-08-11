@@ -108,7 +108,16 @@ Future emit sites (owned by `orchestrate`, which runs outside the server process
 
 - `dispatched`, `verified`, `verification_failed`, `human_review_requested` — to be appended by the `orchestrate` flow when it transitions task state, per design.md §Dispatch And Completion. Schema is in place; the writer module (`server/src/lib/eventsLog.ts#appendEvent`) is available for the orchestrate runner to call directly. Tracked separately from `yc-events-jsonl`.
 
-Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `yacoHome.projectEventsFile(projectId)`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
+Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `projectEventsFile(projectId)` from `@yaco/cli/core/paths`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
+
+**A malformed line is skipped, never fatal.** `readEvents` parses line by line and drops
+one that fails `JSON.parse`, so a single bad write cannot poison the stream — the events
+on either side are still returned. Each skip warns once with the 1-based line number and a
+snippet capped at 120 characters, with control bytes rendered as U+FFFD. The bound is
+deliberate: the attention engine re-reads the log on every recompute, so anything
+unbounded per skip (a stack trace, a whole line) is multiplied by the read rate. The
+corruption this has actually been seen from is foreign bytes prepended to a valid event —
+a terminal OSC reply — which is why the snippet never emits raw control bytes.
 
 ### `${YACO_HOME}/ui-state/pinned-sessions.json`
 
