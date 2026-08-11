@@ -4,10 +4,10 @@
  *  provider fires hook event X". The CLI entry point (commands/agent/hook-event.ts)
  *  wires stdin / live tmux into this function — everything testable lives here.
  */
-import { execSync } from "child_process";
 import { isResolvedSessionId, recordOriginIfResolved } from "./origin.ts";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
+import { resolveWhoamiMatch } from "./whoami.ts";
 import { sleepSync } from "../sleep.ts";
 import { clampNotice, PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
 import {
@@ -98,20 +98,6 @@ function fillNotice(next: SessionState, raw: string | undefined): void {
   if (!raw) return;
   const notice = clampNotice(raw);
   if (notice) next.notice = notice;
-}
-
-/** Derive handle from live tmux session name. */
-export function deriveHandle(): string | null {
-  try {
-    const sn = execSync("tmux display-message -p '#{session_name}'", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 5000,
-    }).trim();
-    return sn || null;
-  } catch {
-    return null;
-  }
 }
 
 /** Apply a hook event to a session state. Returns the next state, or null when
@@ -319,9 +305,19 @@ async function idleFinalMessage(next: SessionState, input: HookInput): Promise<s
 }
 
 /** End-to-end: parse stdin JSON, look up the live handle, apply the event,
- *  write the state if anything changed. Used by `yaco agent hook-event`. */
+ *  write the state if anything changed. Used by `yaco agent hook-event`.
+ *
+ *  Identity comes from `resolveWhoamiMatch` — the same resolver `agent whoami`
+ *  uses — because the hook config is installed GLOBALLY and therefore runs for
+ *  every provider process on the machine, not only the yaco-managed ones. It
+ *  keys on the calling process's own pane, then its provider session-id env,
+ *  then its ancestor pids, and returns a handle only when that handle owns a
+ *  live state file. Asking tmux for "the current session" with no target does
+ *  not have that property: outside tmux it answers with the server's
+ *  most-recently-active session, so a foreign process's event would be applied
+ *  to an unrelated live agent. */
 export async function runHookEvent(eventName: string, input: HookInput): Promise<void> {
-  const handle = deriveHandle();
-  if (!handle) return;
-  await runHookEventForHandle(handle, eventName, input);
+  const match = resolveWhoamiMatch();
+  if (!match) return;
+  await runHookEventForHandle(match.handle, eventName, input);
 }
