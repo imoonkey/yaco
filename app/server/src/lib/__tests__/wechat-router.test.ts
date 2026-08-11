@@ -325,7 +325,7 @@ describe('dispatch', () => {
     vi.doUnmock('../channels/pty-tap')
   })
 
-  it('/last and /messages read the active session via yaco agent messages (mocked)', async () => {
+  it('/last reads the log in process and /messages forwards to the CLI (mocked)', async () => {
     vi.resetModules()
     vi.doMock('../channels/pty-tap', async (orig) => {
       const actual = await orig<typeof import('../channels/pty-tap')>()
@@ -335,13 +335,18 @@ describe('dispatch', () => {
       const actual = await orig<typeof import('../agent')>()
       return {
         ...actual,
-        lastAssistantMessages: vi.fn(async () => [{ index: 7, text: 'the final answer' }]),
         inspectSessionMessages: vi.fn(async (handle: string, args: string[]) => `SUMMARY for ${handle} ${args.join(' ')}`),
       }
     })
+    // Two mocks because there are two mechanisms now: `/last` reads the provider
+    // log in process, `/messages` still forwards to the CLI for its rendering.
+    vi.doMock('../channels/agent-messages', () => ({
+      lastAssistantMessages: vi.fn(async () => [{ index: 7, text: 'the final answer' }]),
+    }))
 
     const { dispatch: d, _resetRouterState: reset } = await import('../wechat/router')
-    const { lastAssistantMessages, inspectSessionMessages } = await import('../agent')
+    const { inspectSessionMessages } = await import('../agent')
+    const { lastAssistantMessages } = await import('../channels/agent-messages')
     reset()
     const conv = 'wx-msgs'
     await d({ conversationId: conv }, { name: 'use', args: ['alpha'] })
@@ -356,6 +361,7 @@ describe('dispatch', () => {
     expect(inspectSessionMessages).toHaveBeenCalledWith('claude-1', ['--summary'])
 
     vi.doUnmock('../agent')
+    vi.doUnmock('../channels/agent-messages')
     vi.doUnmock('../channels/pty-tap')
   })
 })

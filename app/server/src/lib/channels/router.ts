@@ -6,10 +6,10 @@ import {
   sendToSession,
   startAgentSession,
   captureSession,
-  lastAssistantMessages,
   inspectSessionMessages,
   type AgentSession,
 } from '../agent'
+import { lastAssistantMessages } from './agent-messages'
 import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, hasTap } from './pty-tap'
 import { startTurn, streamAgentReply, queueHandleStream } from './agent-output'
