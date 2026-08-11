@@ -3,12 +3,10 @@
 
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import {
-  archiveTask,
-  loadTaskStore,
-  saveTaskStore,
-  withLock,
-} from "../../lib/core/task/index.ts";
+import { loadTaskStore } from "../../lib/core/task/index.ts";
+import { archiveTask } from "../../lib/core/task/archive.ts";
+import { withLock } from "../../lib/core/task/lock.ts";
+import { saveTaskStore } from "../../lib/core/task/store.ts";
 import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 

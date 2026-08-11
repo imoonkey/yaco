@@ -1,10 +1,20 @@
-/** Public surface for @yaco/cli/core/task — types + pure helpers. */
+/** Public surface for @yaco/cli/core/task — the model, pure graph analysis, and
+ *  the read half of the task store.
+ *
+ *  Nothing that writes the graph or takes the tasks-file lock is exported.
+ *  Task mutation stays behind the CLI subprocess boundary: the lock, the
+ *  repository gate, and the write authority are one thing, and an in-process
+ *  consumer holding half of it is how two writers end up disagreeing about who
+ *  owns the file. `store.ts`'s writers, `archive.ts`, `lock.ts` and `link.ts`
+ *  are imported directly by `cli/src/commands/task` and nowhere else.
+ */
 
 export {
   STATES,
   WORKSETS,
   TERMINAL,
   DEFAULT_WORKSET,
+  DEFAULT_TASK_LOCK_TIMEOUT_MS,
   PRIORITIES,
   ESTIMATES,
   BLOCK_REASONS,
@@ -37,9 +47,7 @@ export {
 
 export {
   loadTasks,
-  saveTasks,
   loadTaskStore,
-  saveTaskStore,
   sourceForTask,
   sourceForNewTask,
   defaultTaskFileFor,
@@ -48,30 +56,3 @@ export {
   formatJson,
   type TaskStore,
 } from "./store.ts";
-
-export {
-  collectDescendants,
-  archiveTask,
-  type ArchiveOutcome,
-} from "./archive.ts";
-
-export {
-  acquireLock,
-  withLock,
-  describeLock,
-  lockPathFor,
-  DEFAULT_TASK_LOCK_TIMEOUT_MS,
-  type LockHandle,
-  type LockOwner,
-  type LockStatus,
-  type AcquireOptions,
-} from "./lock.ts";
-
-export {
-  applyAgentLink,
-  mutateTaskAgentLink,
-  rewriteTaskAgentHandle,
-  type TaskAgentLinkOp,
-  type TaskAgentLinkMutation,
-  type TaskAgentLinkResult,
-} from "./link.ts";

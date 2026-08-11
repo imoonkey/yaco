@@ -5,13 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import {
-  formatJson,
-  loadTaskStore,
-  loadTasks,
-  saveTaskStore,
-  saveTasks,
-} from "../../../../src/lib/core/task/index.ts";
+import { formatJson, loadTaskStore, loadTasks } from "../../../../src/lib/core/task/index.ts";
+import { saveTaskStore, saveTasks } from "../../../../src/lib/core/task/store.ts";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "task-store-"));

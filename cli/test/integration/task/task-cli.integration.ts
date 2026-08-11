@@ -18,10 +18,8 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import {
-  DEFAULT_TASK_LOCK_TIMEOUT_MS,
-  lockPathFor,
-} from "../../../src/lib/core/task/index.ts";
+import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from "../../../src/lib/core/task/index.ts";
+import { lockPathFor } from "../../../src/lib/core/task/lock.ts";
 import { CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
 

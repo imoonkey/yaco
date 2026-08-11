@@ -9,12 +9,9 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import {
-  loadTaskStore,
-  rollup,
-  saveTaskStore,
-  withLock,
-} from "../../lib/core/task/index.ts";
+import { loadTaskStore, rollup } from "../../lib/core/task/index.ts";
+import { withLock } from "../../lib/core/task/lock.ts";
+import { saveTaskStore } from "../../lib/core/task/store.ts";
 import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 

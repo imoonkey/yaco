@@ -5,6 +5,20 @@
  *  serialized, matching the Python implementation's behaviour.
  */
 
+/** Default ms `acquireLock` waits for the tasks-file lock before raising LOCK.
+ *
+ *  It lives here, not in `lock.ts`, because out-of-process callers need the
+ *  number without the lock: `app/server` sets its `yaco task` spawn timeouts
+ *  strictly above it so the CLI gets to emit its structured LOCK envelope on
+ *  contention. Re-exporting it from `lock.ts` would pull that module — a
+ *  polling loop and the tasks-file mutation authority — into the exported
+ *  closure for the sake of one integer.
+ *
+ *  Override per call with `AcquireOptions.timeoutMs`; the deadline is always an
+ *  explicit argument, never an ambient read (see
+ *  `cli/src/commands/task/lock-timeout.ts`). */
+export const DEFAULT_TASK_LOCK_TIMEOUT_MS = 10_000;
+
 export const STATES = ["ready", "running", "done", "blocked", "cancelled"] as const;
 export type State = (typeof STATES)[number];
 export const TERMINAL: ReadonlySet<State> = new Set(["done", "cancelled"]);

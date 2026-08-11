@@ -64,6 +64,14 @@ export interface ClosureFile {
   via: string[];
 }
 
+export interface Closure {
+  files: ClosureFile[];
+  /** Every specifier the walk could not follow into first-party source: Node
+   *  builtins and package dependencies. Reported rather than dropped — a module
+   *  the walker silently treats as a leaf is a module nothing audits. */
+  externals: string[];
+}
+
 interface Parsed {
   file: ts.SourceFile;
   specifiers: string[];
@@ -135,6 +143,19 @@ function runtimeSpecifiers(file: ts.SourceFile): string[] {
   return out;
 }
 
+/** `@yaco/cli/core/task` -> the source file the audit knows that name by.
+ *
+ *  A self-import resolves through the package map to `dist/**.d.ts`, which is
+ *  outside the source root and would otherwise be dropped as if it were a
+ *  third-party leaf — even though shipped Node loads the corresponding JS. */
+function resolveSelfImport(spec: string): string | null {
+  if (!spec.startsWith("@yaco/cli/")) return null;
+  const subpath = `.${spec.slice("@yaco/cli".length)}`;
+  const entry = packageExports().find((e) => e.subpath === subpath);
+  if (!entry) throw new Error(`self-import of an undeclared subpath: ${spec}`);
+  return resolve(CLI_ROOT, entry.source);
+}
+
 /** Resolve one specifier to a source file under `root`, or null for a Node
  *  builtin, a package dependency, or an unresolvable specifier. */
 function resolveUnderRoot(
@@ -142,6 +163,9 @@ function resolveUnderRoot(
   containingFile: string,
   root: string,
 ): string | null {
+  const self = resolveSelfImport(spec);
+  if (self) return self;
+
   const { resolvedModule } = ts.resolveModuleName(
     spec,
     containingFile,
@@ -159,12 +183,13 @@ function resolveUnderRoot(
  *  `root` bounds the walk to first-party source and is also what reported paths
  *  are made relative to (via its parent), so the audit's own self-test can run
  *  the identical walker over a temporary fixture tree. */
-export function closureOf(entrySource: string, root: string = SRC_ROOT): ClosureFile[] {
+export function closureOf(entrySource: string, root: string = SRC_ROOT): Closure {
   const base = dirname(root);
   const entry = resolve(base, entrySource);
   if (!existsSync(entry)) throw new Error(`export entry not found: ${entrySource}`);
 
   const seen = new Map<string, ClosureFile>();
+  const externals = new Set<string>();
   const queue: { abs: string; via: string[] }[] = [
     { abs: entry, via: [relative(base, entry)] },
   ];
@@ -177,13 +202,37 @@ export function closureOf(entrySource: string, root: string = SRC_ROOT): Closure
 
     for (const spec of parse(abs).specifiers) {
       const next = resolveUnderRoot(spec, abs, root);
-      if (!next) continue;
+      if (!next) {
+        externals.add(spec);
+        continue;
+      }
       if (seen.has(relative(base, next))) continue;
       queue.push({ abs: next, via: [...via, relative(base, next)] });
     }
   }
 
-  return [...seen.values()].sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    files: [...seen.values()].sort((a, b) => a.path.localeCompare(b.path)),
+    externals: [...externals].sort(),
+  };
+}
+
+/** The names one export entry actually publishes, resolved by the compiler so
+ *  a re-export chain is followed to its origin. Pinning these is what keeps a
+ *  mutation from re-entering a barrel unnoticed; the file census cannot, since
+ *  the module is already in the closure for its read half. */
+export function exportedNames(entrySource: string): string[] {
+  const entry = resolve(CLI_ROOT, entrySource);
+  const program = ts.createProgram([entry], compilerOptions);
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(entry);
+  if (!source) throw new Error(`export entry not in program: ${entrySource}`);
+  const symbol = checker.getSymbolAtLocation(source);
+  if (!symbol) throw new Error(`export entry has no module symbol: ${entrySource}`);
+  return checker
+    .getExportsOfModule(symbol)
+    .map((s) => s.getName())
+    .sort();
 }
 
 export interface Finding {
@@ -217,13 +266,30 @@ export const AMBIENT_ENV_ALLOWLIST = [
   "YACO_AGENT_SESSIONS_DIR",
 ] as const;
 
-/** Rule 3 — synchronous process and sleep primitives, by callee name. */
+/** Rule 3 — synchronous process and sleep primitives. Matched both where they
+ *  are imported (so an alias cannot hide one) and where they are called (so a
+ *  namespace import cannot either). */
 const SYNC_CALLS = new Set([
   "execSync",
   "execFileSync",
   "spawnSync",
   "sleepSync",
 ]);
+
+/** Rule 5's grep-checkable half — synchronous directory enumeration, which is
+ *  input-sized by definition. `readFileSync` is deliberately absent: rule 5
+ *  admits single bounded reads of a known file. */
+const SYNC_ENUMERATION = new Set(["readdirSync", "globSync", "cpSync"]);
+
+/** Rule 2 — members whose use means the module owns the process. */
+const PROCESS_OWNERSHIP: Record<string, number> = {
+  exit: 2,
+  exitCode: 2,
+  stdout: 2,
+  stderr: 2,
+  // Rule 1: the repo root of a request is an argument, not an ambient read.
+  cwd: 1,
+};
 
 /** Every rule-1..3 finding in one file. Rules 4-6 are behavioural and are
  *  covered by the interface and concurrency tests, not by this scan. */
@@ -247,14 +313,32 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
     scan.envReads.push({ path, line: at(node), name });
   };
 
+  // An alias is the cheapest way to defeat a name-matching scan, so the
+  // forbidden primitives are caught where they enter the module.
+  for (const stmt of file.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue;
+    const bindings = stmt.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      const original = (element.propertyName ?? element.name).text;
+      if (SYNC_CALLS.has(original)) violate(element, 3, `import ${original}`);
+      if (SYNC_ENUMERATION.has(original)) violate(element, 5, `import ${original}`);
+    }
+  }
+
   const visit = (node: ts.Node): void => {
-    if (isProcessMember(node, "env")) collectEnvNames(node, envRead);
-    else if (isProcessMember(node, "exit")) violate(node, 2, "process.exit");
-    else if (isProcessMember(node, "exitCode")) violate(node, 2, "process.exitCode");
-    else if (isProcessMember(node, "stdout")) violate(node, 2, "process.stdout");
-    else if (isProcessMember(node, "stderr")) violate(node, 2, "process.stderr");
-    else if (isProcessMember(node, "cwd")) violate(node, 1, "process.cwd()");
-    else if (
+    const member = memberOnProcess(node);
+    if (member !== undefined) {
+      if (member === null) violate(node, 2, "process[<computed member>]");
+      else if (member === "env") collectEnvNames(node, envRead);
+      else {
+        const rule = PROCESS_OWNERSHIP[member];
+        if (rule) violate(node, rule, `process.${member}`);
+      }
+    } else if (isDestructuredProcess(node)) {
+      // `const { stdout } = process` hands the banned member a local name.
+      violate(node, 2, "process destructured");
+    } else if (
       ts.isPropertyAccessExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "console"
@@ -263,7 +347,8 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
     } else if (ts.isCallExpression(node)) {
       const name = calleeName(node.expression);
       if (name && SYNC_CALLS.has(name)) violate(node, 3, `${name}()`);
-      if (name === "wait" && isAtomicsWait(node.expression)) {
+      if (name && SYNC_ENUMERATION.has(name)) violate(node, 5, `${name}()`);
+      if (name === "wait" && isNamespacedCall(node.expression, "Atomics")) {
         violate(node, 3, "Atomics.wait()");
       }
     }
@@ -274,16 +359,46 @@ export function scanFile(absPath: string, root: string = SRC_ROOT): FileScan {
   return scan;
 }
 
-/** `process.<member>`, whether written bare or via `globalThis`. */
-function isProcessMember(node: ts.Node, member: string): boolean {
-  if (!ts.isPropertyAccessExpression(node) || node.name.text !== member) return false;
-  const target = node.expression;
-  if (ts.isIdentifier(target)) return target.text === "process";
+/** The member name this node reads off `process`: a string for a literal one,
+ *  `null` for a computed one, `undefined` when the node is not a process
+ *  member access at all. Property and element access are both handled — the
+ *  latter is what makes `process["exit"]` no cheaper than `process.exit`. */
+function memberOnProcess(node: ts.Node): string | null | undefined {
+  if (ts.isPropertyAccessExpression(node)) {
+    return isProcess(node.expression) ? node.name.text : undefined;
+  }
+  if (ts.isElementAccessExpression(node)) {
+    if (!isProcess(node.expression)) return undefined;
+    const key = node.argumentExpression;
+    return ts.isStringLiteral(key) ? key.text : null;
+  }
+  return undefined;
+}
+
+/** `process`, bare or reached through `globalThis`. */
+function isProcess(expr: ts.Expression): boolean {
+  if (ts.isIdentifier(expr)) return expr.text === "process";
+  if (ts.isPropertyAccessExpression(expr)) {
+    return expr.name.text === "process" && isGlobalThis(expr.expression);
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    const key = expr.argumentExpression;
+    return (
+      ts.isStringLiteral(key) && key.text === "process" && isGlobalThis(expr.expression)
+    );
+  }
+  return false;
+}
+
+const isGlobalThis = (expr: ts.Expression): boolean =>
+  ts.isIdentifier(expr) && expr.text === "globalThis";
+
+function isDestructuredProcess(node: ts.Node): boolean {
   return (
-    ts.isPropertyAccessExpression(target) &&
-    target.name.text === "process" &&
-    ts.isIdentifier(target.expression) &&
-    target.expression.text === "globalThis"
+    ts.isVariableDeclaration(node) &&
+    !!node.initializer &&
+    isProcess(node.initializer) &&
+    ts.isObjectBindingPattern(node.name)
   );
 }
 
@@ -325,18 +440,24 @@ function collectEnvNames(
   emit(node, null);
 }
 
+/** The name being called, through a bare identifier, a namespace member, or a
+ *  string-keyed member — `cp["spawnSync"]()` must not read differently from
+ *  `cp.spawnSync()`. */
 function calleeName(expr: ts.Expression): string | null {
   if (ts.isIdentifier(expr)) return expr.text;
   if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  if (ts.isElementAccessExpression(expr)) {
+    const key = expr.argumentExpression;
+    return ts.isStringLiteral(key) ? key.text : null;
+  }
   return null;
 }
 
-function isAtomicsWait(expr: ts.Expression): boolean {
-  return (
-    ts.isPropertyAccessExpression(expr) &&
-    ts.isIdentifier(expr.expression) &&
-    expr.expression.text === "Atomics"
-  );
+function isNamespacedCall(expr: ts.Expression, namespace: string): boolean {
+  const target = ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)
+    ? expr.expression
+    : null;
+  return !!target && ts.isIdentifier(target) && target.text === namespace;
 }
 
 /** Source path -> emitted path, by the build's `rootDir: src` / `outDir: dist`

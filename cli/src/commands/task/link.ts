@@ -11,7 +11,7 @@ import { dual } from "../../lib/core/render.ts";
 import {
   mutateTaskAgentLink,
   type TaskAgentLinkOp,
-} from "../../lib/core/task/index.ts";
+} from "../../lib/core/task/link.ts";
 import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 

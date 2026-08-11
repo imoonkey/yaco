@@ -16,11 +16,8 @@ import {
   readState,
   type SessionState,
 } from "../../../../src/lib/core/agent/session-state.ts";
-import {
-  loadTaskStore,
-  saveTasks,
-  type TaskGraph,
-} from "../../../../src/lib/core/task/index.ts";
+import { loadTaskStore, type TaskGraph } from "../../../../src/lib/core/task/index.ts";
+import { saveTasks } from "../../../../src/lib/core/task/store.ts";
 
 let sessionsDir: string;
 let prevDir: string | undefined;

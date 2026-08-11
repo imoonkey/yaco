@@ -6,10 +6,8 @@ import {
   rewriteChildParentSessions,
 } from "../../lib/core/agent/session-state.ts";
 import { validateName } from "../../lib/core/agent/model.ts";
-import {
-  resolveTasksPathForSessionPath,
-  rewriteTaskAgentHandle,
-} from "../../lib/core/task/index.ts";
+import { resolveTasksPathForSessionPath } from "../../lib/core/task/index.ts";
+import { rewriteTaskAgentHandle } from "../../lib/core/task/link.ts";
 import { taskLockTimeoutMs } from "../task/lock-timeout.ts";
 
 /** Outcome of `yaco agent rename`. The session-state/tmux rename is

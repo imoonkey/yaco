@@ -19,15 +19,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
-
-/** Default ms to wait for the tasks-file lock before raising LOCK.
- *  Exported so out-of-process callers (e.g. app/server's task route
- *  spawn timeouts) can stay strictly above this and let the CLI emit
- *  its structured LOCK envelope on contention. Override per-call with
- *  AcquireOptions.timeoutMs — the deadline is always an explicit
- *  argument here, never an ambient read (see cli/src/commands/task/
- *  lock-timeout.ts for where the environment override is admitted). */
-export const DEFAULT_TASK_LOCK_TIMEOUT_MS = 10_000;
+import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from "./model.ts";
 
 export interface LockOwner {
   pid: number;

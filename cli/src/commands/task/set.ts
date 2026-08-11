@@ -22,17 +22,17 @@ import {
   isAcceptCriteriaBlank,
   loadTaskStore,
   rollup,
-  saveTaskStore,
   sourceForNewTask,
   sourceForTask,
   validateRefs,
   validateState,
   validateTypes,
-  withLock,
   type State,
   type Task,
   type TaskGraph,
 } from "../../lib/core/task/index.ts";
+import { withLock } from "../../lib/core/task/lock.ts";
+import { saveTaskStore } from "../../lib/core/task/store.ts";
 import { taskLockTimeoutMs } from "./lock-timeout.ts";
 import { resolveTaskPaths } from "./paths.ts";
 

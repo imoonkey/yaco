@@ -10,10 +10,10 @@ import { join } from "node:path";
 import {
   loadTaskStore,
   resolveTasksPathForSessionPath,
-  rewriteTaskAgentHandle,
-  saveTasks,
   type TaskGraph,
 } from "../../../../src/lib/core/task/index.ts";
+import { rewriteTaskAgentHandle } from "../../../../src/lib/core/task/link.ts";
+import { saveTasks } from "../../../../src/lib/core/task/store.ts";
 
 function projectRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "rename-task-"));
