@@ -177,23 +177,23 @@ const quantile = (values: number[], q: number): number => {
 
 interface Measured { starvationP95: number; medianWall: number }
 
-async function measure(route: () => Promise<void>, rounds: number): Promise<Measured> {
-  await route() // warm: the first call pays module load and page cache
-  const gaps: number[] = []
-  const walls: number[] = []
-  for (let i = 0; i < rounds; i++) {
-    const r = await invoke(route)
-    gaps.push(r.worstGap)
-    walls.push(r.wall)
-  }
-  return { starvationP95: quantile(gaps, 0.95), medianWall: quantile(walls, 0.5) }
-}
+const summarize = (samples: { worstGap: number; wall: number }[]): Measured => ({
+  starvationP95: quantile(samples.map(s => s.worstGap), 0.95),
+  medianWall: quantile(samples.map(s => s.wall), 0.5),
+})
 
 let bodies: string[]
 let source: 'repository' | 'synthetic'
 
-/** Seed one fixture, measure both routes over it, and print the row that the
- *  QA artifact's tables are made of. */
+/** Seed one fixture, measure both routes over it **interleaved**, and print the
+ *  row the QA artifact's tables are made of.
+ *
+ *  Interleaved because the design says so, and for a reason this suite has
+ *  already been bitten by: run every sample of one route and then every sample
+ *  of the other, and each route's numbers belong to a different slice of the
+ *  host's day. On a box running other workers that difference is larger than
+ *  the effect being measured. Pairs alternate order too (AB, BA, AB…), so
+ *  neither route is always the one running on a cache the other just warmed. */
 async function compareRoutes(
   topology: Topology,
   factor: number,
@@ -201,11 +201,26 @@ async function compareRoutes(
   label: string,
 ): Promise<{ subprocess: Measured; inProcess: Measured; tasks: number }> {
   const { root, tasks, files } = seedProject(bodies, factor, topology)
-  const subprocess = await measure(() => subprocessRoute(root), rounds)
-  const inProcess = await measure(() => inProcessRoute(root), rounds)
+  const routes = {
+    subprocess: () => subprocessRoute(root),
+    inProcess: () => inProcessRoute(root),
+  }
+  // Warm both: the first call of each pays module load and page cache.
+  await routes.subprocess()
+  await routes.inProcess()
+
+  const samples = { subprocess: [] as { worstGap: number; wall: number }[], inProcess: [] as { worstGap: number; wall: number }[] }
+  for (let i = 0; i < rounds; i++) {
+    const order: (keyof typeof routes)[] =
+      i % 2 === 0 ? ['subprocess', 'inProcess'] : ['inProcess', 'subprocess']
+    for (const which of order) samples[which].push(await invoke(routes[which]))
+  }
+
+  const subprocess = summarize(samples.subprocess)
+  const inProcess = summarize(samples.inProcess)
   // eslint-disable-next-line no-console
   console.log(
-    `[read-cutover] ${label} — ${files} file(s), ${tasks} tasks (${source} source)\n` +
+    `[read-cutover] ${label} — ${files} file(s), ${tasks} tasks (${source} source), ${rounds} interleaved pairs\n` +
       `  before  subprocess  starvation p95=${subprocess.starvationP95.toFixed(2)}ms  median wall=${subprocess.medianWall.toFixed(1)}ms\n` +
       `  after   in process  starvation p95=${inProcess.starvationP95.toFixed(2)}ms  median wall=${inProcess.medianWall.toFixed(1)}ms`,
   )
@@ -239,28 +254,28 @@ describe.skipIf(!cliBuilt)('GET /:project — in process vs the complete subproc
     })
   }
 
-  /** The one topology where the design's condition is NOT met.
+  /** The one topology where the design's condition is NOT met, recorded rather
+   *  than asserted.
    *
    *  A single multi-megabyte `tasks.json` is one `JSON.parse` of the whole
    *  graph — 28-65 ms for 7.5 MB — and no chunking divides it. The subprocess
    *  route's parent parses the same graph too, but from the CLI's *compact*
-   *  envelope rather than the pretty-printed file, so it is doing strictly less
-   *  work: repeated runs land within noise of each other and either can win.
+   *  envelope rather than the pretty-printed file, so it does strictly less
+   *  work. The two land within noise of each other and either can win.
    *
-   *  This is deliberately not asserted as the design's gate. Calling a relaxed
-   *  bound "no longer than" would let a real regression through under a name
-   *  that says it cannot. What is asserted is what is true and still worth
-   *  gating: the route is faster, and the stall is bounded well below what a
-   *  return to a blocking read would cost. The unmet condition is recorded in
-   *  `plan/all/cli-node-sdk/qa-task-read-cutover.md` and is a design decision,
-   *  not a test-tuning one. */
-  it('does not beat the subprocess route on a ten-times single-file store, and says so', async () => {
+   *  Nothing about the stall is asserted, and that is deliberate. On this
+   *  topology a fully synchronous reader measures in the same range as both
+   *  routes, so no threshold separates a regression from the noise: a bound
+   *  here would pass without proving anything. What is asserted is what the
+   *  numbers do separate — the route is several times faster — and the stall is
+   *  printed above so the parity is on the record rather than implied.
+   *
+   *  Resolving the unmet condition is a design decision, written up in
+   *  `plan/all/cli-node-sdk/qa-task-read-cutover.md` §2. */
+  it('is faster on a ten-times single-file store, where the stalls are at parity', async () => {
     const label = 'a ten-times single file store'
     const { subprocess, inProcess } = await compareRoutes('single file', 10, 4, label)
 
-    // Not `<= subprocess.starvationP95`: see above. A blocking read costs 3x or
-    // more, which this catches; parity, which is what it measures, it allows.
-    expect(inProcess.starvationP95).toBeLessThanOrEqual(subprocess.starvationP95 * 2)
     expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
   })
 })
