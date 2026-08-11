@@ -329,7 +329,7 @@ Gated by the `wechat` switch in `${YACO_HOME:-~/.yaco}/channels/enabled.json` (s
 
 ### WhatsApp
 
-Gated by the `whatsapp` switch in `${YACO_HOME:-~/.yaco}/channels/enabled.json` (see [libs.md § channels/enabled.ts](libs.md#channelsenabledts)); off means no puppeteer boot. Optional env: `WHATSAPP_CHAT_JID` (lock to a single chat, overrides TOFU) and `WHATSAPP_CONVERSATION_WHITELIST` (comma-separated alternative).
+Gated by the `whatsapp` switch in `${YACO_HOME:-~/.yaco}/channels/enabled.json` (see [libs.md § channels/enabled.ts](libs.md#channelsenabledts)); off means the `whatsapp-web.js`/puppeteer module graph is never even loaded, not merely not booted (see [libs.md § whatsapp/](libs.md#whatsapp-gated-by-the-whatsapp-switch)). Optional env: `WHATSAPP_CHAT_JID` (lock to a single chat, overrides TOFU) and `WHATSAPP_CONVERSATION_WHITELIST` (comma-separated alternative).
 
 The bot uses the user's own WhatsApp account via puppeteer-driven WhatsApp Web (no separate bot identity exists in WhatsApp). To prevent auto-replying to all the user's contacts, the listener filters `message_create` events down to **self-chat only** — TOFU binds the first chat the user types in (typically "Message yourself"); other chats are silently dropped.
 

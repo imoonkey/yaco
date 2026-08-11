@@ -1,5 +1,4 @@
-import wweb from 'whatsapp-web.js'
-import type { Message } from 'whatsapp-web.js'
+import type { Client, Message } from 'whatsapp-web.js'
 import { spawnSync } from 'node:child_process'
 import { readlinkSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,9 +6,8 @@ import { createRouter, type ChannelReply } from '../channels/router'
 import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
+import { loadWweb, type WwebModule } from './load'
 import { channelScopeDir } from '@yaco/cli/core/paths'
-
-const { Client, LocalAuth, MessageMedia } = wweb
 
 const SESSION_DIR = join(channelScopeDir('whatsapp'), 'session')
 // LocalAuth nests another "session" directory inside SESSION_DIR for the
@@ -79,6 +77,17 @@ export interface WhatsAppLoginState {
 let client: Client | null = null
 let state: WhatsAppLoginState = { phase: 'idle', ready: false, discoveryMode: false }
 let initInflight: Promise<void> | null = null
+/** Bumped by every endSession(). `client` cannot be published until the optional
+ *  module has loaded, so a stop landing in that window finds nothing to destroy
+ *  and returns clean; a start must therefore be able to recognise that it has
+ *  been superseded rather than go on to launch a browser nobody asked for. */
+let stopGeneration = 0
+/** Physical release of what a session held: the browser, its profile directory
+ *  and the taps. Ownership flips synchronously in endSession() so a restart
+ *  wins the race, but the resources are not actually free until this settles —
+ *  and the next session reuses the very same profile directory. Every start
+ *  therefore waits on it, and every teardown queues behind the last. */
+let teardown: Promise<void> = Promise.resolve()
 let myJid: string | null = null
 const router = createRouter(whatsappStore)
 
@@ -209,6 +218,7 @@ async function handleMessage(msg: Message): Promise<void> {
     }
     // file attachment
     try {
+      const { MessageMedia } = await loadWweb()
       const media = MessageMedia.fromFilePath(reply.path)
       media.filename = reply.filename
       // Caption (if any) becomes a separate message.body — also dedup it.
@@ -241,13 +251,60 @@ async function handleMessage(msg: Message): Promise<void> {
 export function initWhatsApp(): Promise<void> {
   if (initInflight) return initInflight
   // If a prior init failed or the client got disconnected, the `client` ref
-  // may still be set but is unusable. Destroy it and re-init from scratch.
+  // may still be set but is unusable. End that session and re-init from scratch.
   if (client && (state.phase === 'failed' || state.phase === 'disconnected')) {
-    const stale = client
-    client = null
-    void stale.destroy().catch(() => { /* best-effort */ })
+    const stale = endSession()
+    void releaseSession(async () => {
+      try { await stale?.destroy() } catch { /* best-effort */ }
+    })
   }
   if (client) return Promise.resolve()
+
+  // Published synchronously so a caller that returns getLoginState() right
+  // after firing this off already sees the transition.
+  setState({
+    phase: 'awaiting-qr',
+    startedAt: new Date().toISOString(),
+    qrAscii: undefined,
+    qrRaw: undefined,
+    error: undefined,
+    ready: false,
+    boundChat: BOUND_CHAT_JID ?? undefined,
+    discoveryMode: false,
+  })
+
+  // Only clear the slot if it is still ours: a stop plus a restart can install
+  // a newer start before this one unwinds (same guard as serialize() above).
+  const started: Promise<void> = startClient()
+    .finally(() => { if (initInflight === started) initInflight = null })
+  initInflight = started
+  return started
+}
+
+async function startClient(): Promise<void> {
+  const generation = stopGeneration
+  const superseded = (): boolean => generation !== stopGeneration
+
+  // First, before any side effect: whatsapp-web.js is optional, so its absence
+  // is a normal outcome that must surface as a legible phase, not a crash.
+  let wweb: WwebModule
+  try {
+    wweb = await loadWweb()
+  } catch (err) {
+    if (superseded()) return
+    const message = (err as Error).message
+    setState({ phase: 'failed', error: message, ready: false })
+    console.error(`[whatsapp] ${message}`)
+    return
+  }
+  // A previous session may still be handing back the browser profile this one
+  // is about to open, and logout's `rm -rf` of it runs in there too.
+  await teardown
+  if (superseded()) return
+
+  // From here to `client = wa` there is no await, so a stop can no longer slip
+  // between the decision to start and the client becoming visible to it.
+  const { Client, LocalAuth } = wweb
 
   // Belt-and-suspenders: if any Chrome from a prior unclean exit still
   // holds our profile's SingletonLock, kill it now so puppeteer can take
@@ -262,17 +319,6 @@ export function initWhatsApp(): Promise<void> {
     setState({ boundChat: BOUND_CHAT_JID ?? getAuthSnapshot().tofuBound ?? undefined })
   })
 
-  setState({
-    phase: 'awaiting-qr',
-    startedAt: new Date().toISOString(),
-    qrAscii: undefined,
-    qrRaw: undefined,
-    error: undefined,
-    ready: false,
-    boundChat: BOUND_CHAT_JID ?? undefined,
-    discoveryMode: false,
-  })
-
   if (!BOUND_CHAT_JID) {
     const tofuBound = getAuthSnapshot().tofuBound
     if (tofuBound) {
@@ -284,30 +330,40 @@ export function initWhatsApp(): Promise<void> {
     console.log(`[whatsapp] strict mode (env override): bot will only respond in chat ${BOUND_CHAT_JID}`)
   }
 
-  client = new Client({
+  const wa = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
   })
+  client = wa
 
-  client.on('qr', (qrRaw: string) => {
+  // A superseded client is a ghost: a stop has already taken it out of service
+  // but destroy() is asynchronous, so it keeps emitting for a while. Its events
+  // must not touch state the stop (or a restart behind it) now owns.
+  wa.on('qr', (qrRaw: string) => {
+    if (superseded()) return
     setState({ phase: 'awaiting-qr', qrRaw, ready: false })
-    void renderQrAscii(qrRaw).then((ascii) => setState({ qrAscii: ascii })).catch(() => undefined)
+    void renderQrAscii(qrRaw)
+      .then((ascii) => { if (!superseded()) setState({ qrAscii: ascii }) })
+      .catch(() => undefined)
   })
 
-  client.on('authenticated', () => {
+  wa.on('authenticated', () => {
+    if (superseded()) return
     setState({ phase: 'authenticating', qrAscii: undefined, qrRaw: undefined })
   })
 
-  client.on('auth_failure', (msg) => {
+  wa.on('auth_failure', (msg) => {
+    if (superseded()) return
     setState({ phase: 'failed', error: `auth_failure: ${msg}`, ready: false })
   })
 
-  client.on('ready', () => {
+  wa.on('ready', () => {
+    if (superseded()) return
     try {
-      myJid = client?.info.wid._serialized ?? null
+      myJid = wa.info.wid._serialized
     } catch (e) {
       console.warn('[whatsapp] could not read own JID:', e)
     }
@@ -315,49 +371,79 @@ export function initWhatsApp(): Promise<void> {
     console.log(`[whatsapp] client ready (jid=${myJid ?? 'unknown'})`)
   })
 
-  client.on('disconnected', (reason) => {
+  wa.on('disconnected', (reason) => {
+    if (superseded()) return
     setState({ phase: 'disconnected', ready: false, error: `disconnected: ${reason}` })
     myJid = null
     console.warn('[whatsapp] disconnected:', reason)
   })
 
-  client.on('message_create', (msg) => {
-    if (!myJid) return
+  wa.on('message_create', (msg) => {
+    if (superseded() || !myJid) return
     void handleMessage(msg)
   })
 
-  initInflight = client.initialize()
-    .catch((err) => {
-      setState({ phase: 'failed', error: (err as Error).message, ready: false })
-      console.error('[whatsapp] initialize failed:', err)
-    })
-    .finally(() => { initInflight = null })
-
-  return initInflight
+  await wa.initialize().catch((err) => {
+    // A stop tears the client down mid-initialize; the resulting rejection is
+    // the stop working, not a failure to report over the state it left.
+    if (superseded()) return
+    setState({ phase: 'failed', error: (err as Error).message, ready: false })
+    console.error('[whatsapp] initialize failed:', err)
+  })
 }
 
 export async function logoutWhatsApp(): Promise<void> {
-  if (!client) {
-    spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
-    setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined })
-    return
-  }
-  try { await client.logout() } catch (e) {
-    console.warn('[whatsapp] logout call failed:', e)
-  }
-  try { await client.destroy() } catch (e) {
-    console.warn('[whatsapp] destroy failed:', e)
-  }
-  client = null
-  spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
+  const stale = endSession()
   setState({ phase: 'idle', ready: false, qrAscii: undefined, qrRaw: undefined, error: undefined })
+  await releaseSession(async () => {
+    if (stale) {
+      try { await stale.logout() } catch (e) {
+        console.warn('[whatsapp] logout call failed:', e)
+      }
+      try { await stale.destroy() } catch (e) {
+        console.warn('[whatsapp] destroy failed:', e)
+      }
+    }
+    // Inside the release, so it lands after the browser lets the directory go
+    // and before any replacement session starts using it again.
+    spawnSync('rm', ['-rf', SESSION_DIR], { stdio: 'ignore' })
+  })
+}
+
+/** Takes the channel out of service and hands back the client to tear down.
+ *
+ *  Every shared-state mutation a stop performs happens here, synchronously,
+ *  before the caller awaits any teardown I/O — so a restart racing that I/O
+ *  starts cleanly and is not clobbered when the teardown finally unwinds.
+ *  Supersedes any start (including one still loading, hence invisible as a
+ *  `client`), and drops the inflight slot so the next initWhatsApp() begins a
+ *  fresh start rather than handing back the one this call just cancelled. */
+function endSession(): Client | null {
+  stopGeneration += 1
+  initInflight = null
+  // myJid doubles as the message listener's readiness token, and it belongs to
+  // the session being ended: left behind, it tells the *next* client's
+  // message_create that it is ready before that client has said so.
+  myJid = null
+  const stale = client
+  client = null
+  return stale
+}
+
+/** Queues one session's physical release onto the teardown chain. */
+function releaseSession(work: () => Promise<void>): Promise<void> {
+  const done = teardown.then(work, work)
+  teardown = done.catch(() => undefined)
+  return done
 }
 
 export async function shutdownWhatsApp(): Promise<void> {
-  if (client) {
-    try { await client.destroy() } catch { /* noop */ }
-    client = null
-  }
+  const stale = endSession()
   setState({ phase: 'idle', ready: false })
-  await shutdownAllTaps()
+  await releaseSession(async () => {
+    if (stale) {
+      try { await stale.destroy() } catch { /* noop */ }
+    }
+    await shutdownAllTaps()
+  })
 }
