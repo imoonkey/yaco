@@ -5,7 +5,7 @@
  *    2. acquire the file lock
  *    3. read tasks, capture old state
  *    4. merge (existing) or build (new), respecting created/updated semantics
- *    5. enforce leaf acceptCriteria, then refs / state / cycles / rollup
+ *    5. enforce leaf acceptCriteria, then refs / state / cycles / derivation
  *    6. save
  *    7. emit advisory if the worktree slug crosses repos
  */
@@ -21,7 +21,7 @@ import {
   hasChildren,
   isAcceptCriteriaBlank,
   loadTaskStore,
-  rollup,
+  deriveMilestoneStates,
   sourceForNewTask,
   sourceForTask,
   validateRefs,
@@ -69,7 +69,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       const existed = id in tasks;
       const oldState: State | undefined = tasks[id]?.state;
       // Snapshot every task's state BEFORE the whole mutation so stateEnteredAt
-      // can be stamped on the edited task AND any rollup-flipped parent (R5).
+      // can be stamped on the edited task AND any re-derived milestone (R5).
       const beforeStates = new Map<string, State | undefined>();
       for (const [tid, t] of Object.entries(tasks)) beforeStates.set(tid, t.state);
 
@@ -102,16 +102,16 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       validateRefs(tasks, id, tasks[id]!);
       validateState(tasks, id, oldState, tasks[id]!.state as string);
       checkCycles(tasks);
-      rollup(tasks, id);
+      deriveMilestoneStates(tasks);
       // Stamp stateEnteredAt for every task whose state changed across the whole
-      // mutation — the edited task and any parent rollup() flipped (R5).
+      // mutation — the edited task and any milestone the derivation moved (R5).
       for (const [tid, t] of Object.entries(tasks)) {
         if (t.state !== beforeStates.get(tid)) t.stateEnteredAt = now;
       }
       // Set-done gate guard (T3): a *leaf* may only enter `done` if the repo's
       // exit gate passes on the session's working tree. Runs after validateState
       // (so the transition is already legal) and before saveTaskStore (so a red
-      // gate persists nothing). A milestone reaching `done` via rollup is NOT
+      // gate persists nothing). A milestone reaching `done` by derivation is NOT
       // gated here — see guardLeafSetDone.
       guardLeafSetDone(tasks, id, oldState, opts.json);
       resultTasksFile = sourceForTask(store, id);
@@ -206,8 +206,8 @@ function nowIso(): string {
  *
  *  Only an explicit leaf→done transition is gated:
  *   - `tasks[id].state === "done"` is always the explicit `Object.assign(data)`
- *     result — `rollup()` only rewrites *ancestors*, never the edited task — so
- *     a milestone reaching `done` by rollup is a different id this never sees
+ *     result — the derivation only rewrites tasks that have children, never a
+ *     leaf — so a milestone reaching `done` is a different id this never sees
  *     (and validateState already forbids setting a milestone's state directly).
  *   - `oldState !== "done"` skips an idempotent re-set of an already-done leaf,
  *     so editing a finished task doesn't re-run a multi-minute gate.

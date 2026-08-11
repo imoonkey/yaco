@@ -1,15 +1,15 @@
-/** `yaco task rm <id>` — delete a task and rollup its parent.
+/** `yaco task rm <id>` — delete a task and re-derive the milestones.
  *
  *  Refuses to remove a running task or one that's still referenced by
- *  others (parent or depends). After deletion, picks any surviving
- *  sibling to seed rollup so the parent state collapses to `done` when
- *  it should.
+ *  others (parent or depends). After deletion the milestone states are
+ *  re-derived, so a parent whose last open child is gone settles on what
+ *  the children it has left imply.
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import { loadTaskStore, rollup } from "../../lib/core/task/index.ts";
+import { deriveMilestoneStates, loadTaskStore } from "../../lib/core/task/index.ts";
 import { withLock } from "../../lib/core/task/lock.ts";
 import { saveTaskStore } from "../../lib/core/task/store.ts";
 import { taskLockTimeoutMs } from "./lock-timeout.ts";
@@ -42,12 +42,8 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
           throw new CliError(ErrCode.CONFLICT, `task '${oid}' depends on '${id}'`);
         }
       }
-      const parentId = t.parent;
       delete tasks[id];
-      if (parentId && parentId in tasks) {
-        const remaining = Object.keys(tasks).filter((k) => tasks[k]!.parent === parentId);
-        if (remaining.length > 0) rollup(tasks, remaining[0]!);
-      }
+      deriveMilestoneStates(tasks);
       saveTaskStore(store);
     },
     { command: `yaco task rm ${id}`, timeoutMs: taskLockTimeoutMs() },

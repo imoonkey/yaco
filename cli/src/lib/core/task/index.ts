@@ -41,7 +41,7 @@ export {
   validateRefs,
   validateState,
   checkCycles,
-  rollup,
+  deriveMilestoneStates,
   validateGraph,
   collectParentChain,
   type ValidationProblems,

@@ -2,21 +2,16 @@
  *  state derivation, and the structured validateGraph report used by
  *  `yaco task validate`.
  *
- *  `deriveMilestoneState`/`deriveMilestoneStates` are imported from `graph.ts`
- *  rather than the package index on purpose: they are the store's internals, not
- *  part of the exported `@yaco/cli/core/task` surface (an in-process consumer
- *  gets the derivation applied for it by `loadTaskStore`). */
+ *  The derivation is exercised through `deriveMilestoneStates` — the function
+ *  the loader and both mutation commands actually call — rather than a
+ *  test-only accessor, so what these pin is what ships. */
 
 import { describe, it, expect } from "vitest";
 
 import {
-  deriveMilestoneState,
-  deriveMilestoneStates,
-} from "../../../../src/lib/core/task/graph.ts";
-import {
   checkCycles,
+  deriveMilestoneStates,
   hasChildren,
-  rollup,
   validateGraph,
   validateRefs,
   validateState,
@@ -126,64 +121,72 @@ describe("validateState", () => {
   });
 });
 
-describe("deriveMilestoneState", () => {
-  it("returns null for a task with no children — a leaf owns its state", () => {
+describe("deriveMilestoneStates — the child-state rule", () => {
+  /** Derive, then read `root`'s settled state. */
+  function derived(t: TaskGraph, id = "root"): string {
+    deriveMilestoneStates(t);
+    return t[id]!.state;
+  }
+
+  it("leaves a task with no children alone — a leaf owns its state", () => {
     const t = makeGraph();
-    expect(deriveMilestoneState(t, "a")).toBeNull();
-    expect(deriveMilestoneState(t, "absent")).toBeNull();
+    t["a"]!.state = "blocked";
+    deriveMilestoneStates(t);
+    expect(t["a"]!.state).toBe("blocked");
+    expect(t["b"]!.state).toBe("ready");
   });
 
   it("derives ready while no child has moved", () => {
-    expect(deriveMilestoneState(makeGraph(), "root")).toBe("ready");
+    expect(derived(makeGraph())).toBe("ready");
   });
 
   it("derives running when some children are done and one is still open", () => {
     const t = makeGraph();
     t["a"]!.state = "done";
-    expect(deriveMilestoneState(t, "root")).toBe("running");
+    expect(derived(t)).toBe("running");
   });
 
   it("derives running as soon as one child starts", () => {
     const t = makeGraph();
     t["a"]!.state = "running";
-    expect(deriveMilestoneState(t, "root")).toBe("running");
+    expect(derived(t)).toBe("running");
   });
 
   it("derives running when a child is blocked — blocked is a leaf-only signal", () => {
     const t = makeGraph();
     t["a"]!.state = "blocked";
-    expect(deriveMilestoneState(t, "root")).toBe("running");
+    expect(derived(t)).toBe("running");
   });
 
   it("derives done when every child is done", () => {
     const t = makeGraph();
     t["a"]!.state = "done";
     t["b"]!.state = "done";
-    expect(deriveMilestoneState(t, "root")).toBe("done");
+    expect(derived(t)).toBe("done");
   });
 
   it("derives done when every child is done-or-cancelled", () => {
     const t = makeGraph();
     t["a"]!.state = "done";
     t["b"]!.state = "cancelled";
-    expect(deriveMilestoneState(t, "root")).toBe("done");
+    expect(derived(t)).toBe("done");
   });
 
   it("derives cancelled when every child was cancelled — nothing was delivered", () => {
     const t = makeGraph();
     t["a"]!.state = "cancelled";
     t["b"]!.state = "cancelled";
-    expect(deriveMilestoneState(t, "root")).toBe("cancelled");
+    expect(derived(t)).toBe("cancelled");
   });
 
-  it("reads the recorded child states, never the milestone's own", () => {
+  it("reads the children, never the milestone's own recorded state", () => {
     const t = makeGraph();
-    t["root"]!.state = "done";
-    expect(deriveMilestoneState(t, "root")).toBe("ready");
+    t["root"]!.state = "done"; // hand-edited: both children are ready
+    expect(derived(t)).toBe("ready");
   });
 });
 
-describe("deriveMilestoneStates", () => {
+describe("deriveMilestoneStates — the whole graph", () => {
   /** root -> mid -> {x, y}, plus root's own leaf `z`. */
   function nested(): TaskGraph {
     return {
@@ -195,7 +198,23 @@ describe("deriveMilestoneStates", () => {
     };
   }
 
-  it("rewrites every milestone, children before parents", () => {
+  /** A chain of `n` milestones ending in one leaf: depth is the input. */
+  function chain(n: number, leafState = "done"): TaskGraph {
+    const t: TaskGraph = {};
+    for (let i = 0; i < n; i++) {
+      t[`m${i}`] = {
+        parent: i === 0 ? null : `m${i - 1}`,
+        depends: [], state: "ready", title: `m${i}`, description: "d",
+      };
+    }
+    t["leaf"] = {
+      parent: `m${n - 1}`, depends: [], state: leafState as "done",
+      title: "leaf", description: "d", acceptCriteria: "ok",
+    };
+    return t;
+  }
+
+  it("settles every milestone, children before parents", () => {
     const t = nested();
     deriveMilestoneStates(t);
     expect(t["mid"]!.state).toBe("done");
@@ -216,13 +235,6 @@ describe("deriveMilestoneStates", () => {
     expect([t["x"]!.state, t["y"]!.state, t["z"]!.state]).toEqual(["done", "done", "done"]);
   });
 
-  it("corrects a recorded state that disagrees with the children", () => {
-    const t = makeGraph();
-    t["root"]!.state = "done"; // hand-edited: children are both ready
-    deriveMilestoneStates(t);
-    expect(t["root"]!.state).toBe("ready");
-  });
-
   it("is idempotent", () => {
     const t = nested();
     deriveMilestoneStates(t);
@@ -231,57 +243,59 @@ describe("deriveMilestoneStates", () => {
     expect(JSON.stringify(t)).toBe(once);
   });
 
-  it("terminates on a hand-edited parent cycle so validateGraph can report it", () => {
+  it("re-derives a milestone the caller never named — no chain is privileged", () => {
+    // What a reparent looks like in memory: `moving` leaves `old` for `new`.
+    // A walk seeded from the edited task would only ever reach `new`.
+    const t: TaskGraph = {
+      old: { parent: null, depends: [], state: "running", title: "old", description: "d" },
+      finished: { parent: "old", depends: [], state: "done", title: "f", description: "d", acceptCriteria: "ok" },
+      moving: { parent: "old", depends: [], state: "ready", title: "m", description: "d", acceptCriteria: "ok" },
+      fresh: { parent: null, depends: [], state: "ready", title: "new", description: "d" },
+    };
+    t["moving"]!.parent = "fresh";
+    deriveMilestoneStates(t);
+    expect(t["old"]!.state).toBe("done"); // its one remaining child is done
+    expect(t["fresh"]!.state).toBe("ready");
+  });
+
+  it("handles a chain far deeper than the call stack allows", () => {
+    // Tree depth is input, so a recursive post-order would throw RangeError
+    // here — on exactly the malformed shape that most needs to reach
+    // validateGraph and be reported.
+    const t = chain(50_000);
+    deriveMilestoneStates(t);
+    expect(t["m0"]!.state).toBe("done");
+    expect(t["m49999"]!.state).toBe("done");
+  });
+
+  it("settles a wide-and-deep graph in linear time", () => {
+    const t = chain(5_000);
+    const started = Date.now();
+    deriveMilestoneStates(t);
+    expect(Date.now() - started).toBeLessThan(1_000); // quadratic took ~2.9s at this size
+  });
+
+  it("terminates on a parent cycle so validateGraph can report it", () => {
     const t = makeGraph();
     t["root"]!.parent = "a"; // root -> a -> root
     deriveMilestoneStates(t);
     expect(validateGraph(t).details!.cycles.length).toBeGreaterThan(0);
   });
-});
 
-describe("rollup", () => {
-  it("promotes a parent to done when every child is terminal", () => {
+  it("terminates on a self-parent", () => {
     const t = makeGraph();
-    t["a"]!.state = "done";
-    t["b"]!.state = "done";
-    rollup(t, "a");
-    expect(t["root"]!.state).toBe("done");
+    t["a"]!.parent = "a";
+    deriveMilestoneStates(t);
+    expect(validateGraph(t).details!.selfReference).toContain("a");
   });
 
-  it("demotes a done parent to running when a child becomes non-terminal", () => {
+  it("ignores a parent id that is not in the graph", () => {
     const t = makeGraph();
-    t["a"]!.state = "done";
-    t["b"]!.state = "done";
-    t["root"]!.state = "done";
-    t["a"]!.state = "ready";
-    rollup(t, "a");
-    const finalState: string = t["root"]!.state;
-    expect(finalState).toBe("running");
-  });
-
-  it("promotes a ready parent to running as soon as one child starts", () => {
-    const t = makeGraph();
-    t["a"]!.state = "running";
-    rollup(t, "a");
-    expect(t["root"]!.state).toBe("running");
-  });
-
-  it("recomputes the whole ancestor chain, not just the nearest parent", () => {
-    const t: TaskGraph = {
-      root: { parent: null, depends: [], state: "ready", title: "root", description: "d" },
-      mid: { parent: "root", depends: [], state: "ready", title: "mid", description: "d" },
-      leaf: { parent: "mid", depends: [], state: "done", title: "leaf", description: "d", acceptCriteria: "ok" },
-    };
-    rollup(t, "leaf");
-    expect(t["mid"]!.state).toBe("done");
-    expect(t["root"]!.state).toBe("done");
-  });
-
-  it("leaves the edited task's own state alone", () => {
-    const t = makeGraph();
-    t["a"]!.state = "running";
-    rollup(t, "a");
-    expect(t["a"]!.state).toBe("running");
+    t["a"]!.parent = "ghost";
+    deriveMilestoneStates(t);
+    expect(t["a"]!.state).toBe("ready"); // still a leaf, still its own
+    expect(t["root"]!.state).toBe("ready"); // `b` alone, still ready
+    expect(validateGraph(t).details!.dangling).toContainEqual({ id: "a", kind: "parent", ref: "ghost" });
   });
 });
 
@@ -319,12 +333,40 @@ describe("validateGraph", () => {
     expect(r.details!.cycles.length).toBeGreaterThan(0);
   });
 
-  it("does not report a milestone state that disagrees with its children", () => {
-    // A milestone's state is derived by the loader, so a stale recorded value
-    // is corrected on read rather than reported as an integrity problem —
-    // there is no divergence left for `yaco task validate` to find.
+  // A graph that reached `validateGraph` through `loadTaskStore` is already
+  // derived, so these can only fire for a caller that composed the published
+  // `loadTasks` + `validateGraph` itself. The check is the same rule the
+  // derivation applies, so the two cannot drift apart.
+  it("reports a milestone recorded done while a child is still open", () => {
     const t = makeGraph();
     t["root"]!.state = "done"; // children a and b are both ready
+    const r = validateGraph(t);
+    expect(r.ok).toBe(false);
+    expect(r.details!.milestoneRollup).toEqual([
+      {
+        id: "root",
+        recordedState: "done",
+        impliedState: "ready",
+        reason: "milestone state 'done' is not what its children imply ('ready')",
+      },
+    ]);
+  });
+
+  it("reports a milestone left ready after every child finished", () => {
+    const t = makeGraph();
+    t["a"]!.state = "done";
+    t["b"]!.state = "done";
+    expect(
+      validateGraph(t).details!.milestoneRollup.some(
+        (m) => m.id === "root" && m.impliedState === "done",
+      ),
+    ).toBe(true);
+  });
+
+  it("reports nothing once the derivation has run", () => {
+    const t = makeGraph();
+    t["root"]!.state = "done";
+    deriveMilestoneStates(t);
     expect(validateGraph(t).ok).toBe(true);
   });
 

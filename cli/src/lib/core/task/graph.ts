@@ -116,30 +116,10 @@ function stateFromChildren(states: State[]): State {
   return "running";
 }
 
-/** The state `tid`'s children imply, or null when it has none.
- *
- *  A milestone owns no work of its own, so its state carries no information its
- *  children do not already have: it is derived, never authored (`validateState`
- *  refuses to set it). The value on disk is a projection, rebuilt on every load
- *  by {@link deriveMilestoneStates}. */
-export function deriveMilestoneState(tasks: TaskGraph, tid: string): State | null {
-  const children = childrenOf(tasks, tid);
-  if (children.length === 0) return null;
-  return stateFromChildren(children.map((c) => tasks[c]!.state));
-}
-
-/** Rebuild every milestone's state from its children, children before parents.
- *
- *  Applied by `loadTaskStore`, which is the one choke point every reader and
- *  writer passes through — so no command has to remember to derive, and a
- *  recorded state that disagrees with the children is corrected rather than
- *  believed.
- *
- *  `deriving` is the cycle guard. The loader does not run {@link checkCycles} —
- *  a hand-edited `parent` loop must still reach `validateGraph` to be *reported*
- *  rather than hang the walk — so a task already on the stack contributes its
- *  recorded state and the recursion unwinds. */
-export function deriveMilestoneStates(tasks: TaskGraph): void {
+/** `parent id -> its children`, built in one pass. Every walk below wants the
+ *  edges in this direction, and re-deriving them per task is what makes a
+ *  whole-graph pass quadratic. */
+function childIndex(tasks: TaskGraph): Map<string, string[]> {
   const children = new Map<string, string[]>();
   for (const [tid, task] of Object.entries(tasks)) {
     const pid = task.parent;
@@ -148,29 +128,55 @@ export function deriveMilestoneStates(tasks: TaskGraph): void {
     if (kids) kids.push(tid);
     else children.set(pid, [tid]);
   }
-
-  const deriving = new Set<string>();
-  const derive = (tid: string): State => {
-    const kids = children.get(tid);
-    if (!kids || deriving.has(tid)) return tasks[tid]!.state;
-    deriving.add(tid);
-    const state = stateFromChildren(kids.map(derive));
-    deriving.delete(tid);
-    tasks[tid]!.state = state;
-    return state;
-  };
-  for (const tid of children.keys()) derive(tid);
+  return children;
 }
 
-/** Recompute every ancestor of `tid` from its children, nearest first.
+/** Rebuild every milestone's state from its children.
  *
- *  The write-side counterpart of {@link deriveMilestoneStates}: a command has
- *  changed a task in memory since the load, so the ancestors it can no longer
- *  agree with are re-derived before the graph is saved. */
-export function rollup(tasks: TaskGraph, tid: string): void {
-  for (const id of collectParentChain(tasks, tid).slice(1)) {
-    const derived = deriveMilestoneState(tasks, id);
-    if (derived) tasks[id]!.state = derived;
+ *  A milestone owns no work of its own, so its state carries no information its
+ *  children do not already have: it is derived, never authored (`validateState`
+ *  refuses to set it). The value on disk is a projection, rebuilt here on every
+ *  load by `loadTaskStore` — the one choke point every reader and writer passes
+ *  through, so no command has to remember to derive — and by the mutation
+ *  commands before they save a graph they have changed in memory.
+ *
+ *  Whole-graph rather than "the edited task's ancestors": reparenting changes
+ *  *two* chains, and a walk that starts from the edited task can only find the
+ *  new one. Deriving everything makes that a non-case rather than a case to
+ *  remember, and costs less than the `checkCycles` pass `set` already runs.
+ *
+ *  An explicit stack, and each task settled once: the tree is input, so its
+ *  depth is too, and a recursive post-order overflows on a deep chain — the one
+ *  shape that most needs to *reach* `validateGraph` and be reported. `open` is
+ *  the cycle guard: a task already on the stack contributes its recorded state
+ *  instead of recursing, so a hand-edited `parent` loop unwinds. */
+export function deriveMilestoneStates(tasks: TaskGraph): void {
+  const children = childIndex(tasks);
+  const settled = new Set<string>();
+  const open = new Set<string>();
+
+  for (const start of children.keys()) {
+    if (settled.has(start)) continue;
+    const stack = [start];
+    while (stack.length > 0) {
+      const tid = stack[stack.length - 1]!;
+      const kids = children.get(tid);
+      if (!kids || settled.has(tid)) {
+        // A leaf (it owns its state), or a milestone another walk finished.
+        settled.add(tid);
+        open.delete(tid);
+        stack.pop();
+      } else if (!open.has(tid)) {
+        // First visit: children have to settle before the parent can.
+        open.add(tid);
+        for (const c of kids) if (!settled.has(c) && !open.has(c)) stack.push(c);
+      } else {
+        tasks[tid]!.state = stateFromChildren(kids.map((c) => tasks[c]!.state));
+        settled.add(tid);
+        open.delete(tid);
+        stack.pop();
+      }
+    }
   }
 }
 
@@ -181,6 +187,12 @@ export interface ValidationProblems {
   missingAC: string[];
   invalidState: { id: string; state: unknown }[];
   invalidWorkset: { id: string; workset: unknown }[];
+  milestoneRollup: {
+    id: string;
+    recordedState: State;
+    impliedState: State;
+    reason: string;
+  }[];
 }
 
 export interface ValidationReport {
@@ -196,6 +208,7 @@ export function validateGraph(
 ): ValidationReport {
   const ids = scope ? collectParentChain(tasks, scope.id) : Object.keys(tasks);
   const set = new Set(ids);
+  const children = childIndex(tasks);
   const problems: ValidationProblems = {
     cycles: [],
     dangling: [],
@@ -203,6 +216,7 @@ export function validateGraph(
     missingAC: [],
     invalidState: [],
     invalidWorkset: [],
+    milestoneRollup: [],
   };
 
   for (const tid of ids) {
@@ -226,12 +240,27 @@ export function validateGraph(
         problems.dangling.push({ id: tid, kind: "depends", ref: d });
       }
     }
-    if (!hasChildren(tasks, tid) && isAcceptCriteriaBlank(t.acceptCriteria)) {
+    const kids = children.get(tid);
+    if (!kids && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
     }
-    // No milestone/child state check: a milestone's state is derived from its
-    // children on load (deriveMilestoneStates), so it cannot disagree with them
-    // by the time any caller gets here.
+
+    // A milestone whose recorded state is not the one its children imply.
+    // `loadTaskStore` derives, so nothing that comes through it can land here —
+    // but `loadTasks` and `validateGraph` are both published, and that
+    // composition reaches this function with a graph nobody has derived. The
+    // check is the derivation rule itself, so the two cannot drift apart.
+    if (kids && isState(t.state)) {
+      const implied = stateFromChildren(kids.map((c) => tasks[c]!.state));
+      if (implied !== t.state) {
+        problems.milestoneRollup.push({
+          id: tid,
+          recordedState: t.state,
+          impliedState: implied,
+          reason: `milestone state '${t.state}' is not what its children imply ('${implied}')`,
+        });
+      }
+    }
   }
 
   // Parent-chain cycles — walk only within scope ids; the chain may step
@@ -285,7 +314,8 @@ export function validateGraph(
     problems.selfReference.length > 0 ||
     problems.missingAC.length > 0 ||
     problems.invalidState.length > 0 ||
-    problems.invalidWorkset.length > 0;
+    problems.invalidWorkset.length > 0 ||
+    problems.milestoneRollup.length > 0;
 
   return hasAny ? { ok: false, details: problems } : { ok: true };
 }
