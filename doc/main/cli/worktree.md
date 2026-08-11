@@ -93,6 +93,11 @@ and `app/ui` are unchanged.
   stdout/stderr are captured so the dispatcher's envelope channel stays
   pristine; a non-zero exit surfaces as `IO` (exit 1) with the captured
   output in the message. Non-executable scripts are silently skipped.
+  The CLI owns the hook, never its policy: what this repo's script shares and
+  why a non-zero exit is a designed signal rather than a mishap is
+  [dev/README.md](../../dev/README.md#worktrees-share-the-dependencies-never-the-workspace-links).
+  The hook is read from the **repo root**, so an edit to it reaches new
+  worktrees only once it lands on the base branch.
 
 Result: `{ slug, branch, path, base, reused }`.
 

@@ -157,6 +157,11 @@ policy** — the CLI hardcodes nothing, because shareable state is stack-specifi
 
 - **node_modules** (Node): `ln -s <main>/node_modules` per workspace dir. A task running
   `npm install <dep>` mutates the shared tree → declare `resources: ["node_modules"]`.
+  **Not in an npm/pnpm/yarn workspaces monorepo.** The tree holds the workspace self-links
+  (`@scope/pkg -> ../../pkg`), written *relative*, so sharing it whole makes every
+  workspace import in the worktree resolve to the **main checkout, on another branch** —
+  silently, with the suite still green. Share the third-party tree but give the worktree
+  its own copy of those links; assert it with the resolver, not by reading the symlink.
 - **`.venv`** (Python): symlink shares one venv — works, but **not isolated** (a `pip install` leaks)
   and a venv is **not relocatable**, so never *copy* it per-worktree; isolate dep changes via
   `resources`, not duplication.
@@ -165,3 +170,9 @@ policy** — the CLI hardcodes nothing, because shareable state is stack-specifi
 A minimal hook resolves the main checkout from `git worktree list`, then for each heavy dir symlinks
 `<main>/<dir>` into the new worktree when the source exists and the destination doesn't. Port/other
 runtime isolation belongs in code (e.g. derive a per-worktree port from the path), not the hook.
+Whatever it shares, it should end by **asking the toolchain's own resolver** where the
+worktree's imports land and failing loudly when the answer is another checkout — a share
+that is wrong in one direction produces green runs of the wrong source.
+
+The hook runs from the **main checkout's** copy, so an edit to it reaches new worktrees only
+once it lands on the base branch; existing worktrees are repaired by running it in place.

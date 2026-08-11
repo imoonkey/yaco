@@ -18,8 +18,54 @@ convention as `scripts/worktree-provision.sh`):
 
 | Script | Purpose |
 |--------|---------|
-| [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs `cli` typecheck → build → test → pack smoke → `codex-transcribe` → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. The CLI's four steps are separate because `npm run test` passes on code that neither type-checks nor builds. |
+| [`scripts/verify.sh`](../../scripts/verify.sh) | Single verify entry: runs the two hermetic shell tests (`tools/claude-usage-keepalive.test.sh`, `scripts/worktree-provision.test.sh`) → `cli` typecheck → build → test → pack smoke → `codex-transcribe` → `app/server` test → `app/ui` lint → root build, in order; names the failing step; non-zero on any failure. The CLI's four steps are separate because `npm run test` passes on code that neither type-checks nor builds. |
 | [`scripts/gate.sh <base>`](../../scripts/gate.sh) | Floor-from-diff aggregator. Computes `git diff <base>..HEAD`, maps touched paths to the checks they owe (code→`verify`+`review`, `app/ui`→`qa`, any change→`doc`), runs every owed check, and prints a one-line JSON summary `{verify,doc,review,qa: pass\|fail\|skip}` as the **last stdout line**. Any `fail` → non-zero exit. |
+
+## Worktrees: share the dependencies, never the workspace links
+
+A git worktree does not carry the gitignored `node_modules`, so
+[`scripts/worktree-provision.sh`](../../scripts/worktree-provision.sh) — run by
+`yaco worktree create`, cwd = the new worktree — gives it the main checkout's
+dependencies. **The third-party tree is shared; the workspace links must not be.**
+
+npm writes the workspace self-links inside `node_modules` **relative**
+(`@yaco/cli -> ../../cli`), and a relative symlink resolves against its *physical*
+location. So `ln -s <main>/node_modules <worktree>/node_modules` — the obvious
+share, and what this repo did until 2026-08-11 — makes every `@yaco/*` import in
+that worktree resolve to the **main checkout's source, on a different branch**.
+Nothing in a test run reveals it. The suite goes green against code the branch does
+not contain, a CLI change made on the branch is invisible to the branch's own
+`app/server` tests, and an `app/server` change is validated against a stale CLI.
+That is a false-green generator in both directions, and it cost three workers in
+the `cli-node-sdk` milestone real time plus one confidently wrong conclusion.
+
+**Do not go back to sharing the tree whole.** The script mirrors it instead: a real
+`node_modules` directory whose entries are links into main's tree, with `.bin` and
+the workspace scope directories rebuilt one level down. Each link is recreated with
+its target copied verbatim, so the relative ones re-anchor inside the worktree and
+the rest stay on main — `.bin/vitest` runs main's vitest, `.bin/yaco` runs the
+worktree's CLI. `node_modules/.package-lock.json` is a link to main's, which is the
+tree it describes. Cost: ~550 symlinks, no copied bytes.
+
+| Situation | What to do |
+|---|---|
+| Audit a worktree without changing it | `bash scripts/worktree-provision.sh --check` — exits non-zero naming each package and where it wrongly resolved |
+| A worktree provisioned before this change, or `Cannot find module` after main installed a new dependency | `bash scripts/worktree-provision.sh` from the worktree root — repairs in place and converges on main's current install (links to entries main no longer has are dropped). Every removal it makes is guarded to a symlink; it never runs `rm -r` |
+| `yaco worktree create` still produced the old layout | The hook runs from the **main checkout's** copy of the script, so a change to it only reaches new worktrees once it lands on `main`. Repair the worktree by hand as above |
+
+Two guards keep it honest, both wired into `scripts/verify.sh`: the script's own
+self-check asks the real Node resolver, from every workspace directory, where each
+workspace package lands and fails loudly if it is outside the worktree; and
+`app/server/test/workspace-resolution.test.ts` asserts the same through vite's
+resolver for every `@yaco/*` specifier `app/server` imports.
+`scripts/worktree-provision.test.sh` is a hermetic test of the mirror itself.
+
+**Build the CLI before running `app/server` tests in a fresh worktree.** A few of
+them spawn a plain `node --import tsx` child, which resolves `@yaco/cli/*` to
+`cli/dist/` rather than the source — unbuilt, that is now an honest
+`ERR_MODULE_NOT_FOUND` instead of a silent load of main's build. `scripts/verify.sh`
+already orders `cli build` ahead of `server test`; a bare `npm test` in `app/server`
+does not.
 
 ## Continuous integration
 

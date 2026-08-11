@@ -24,6 +24,8 @@ run_step() {
 }
 
 run_step "keepalive test" .          bash tools/claude-usage-keepalive.test.sh
+# Hermetic: builds throwaway repos under mktemp, touches no real checkout.
+run_step "worktree provision test" . bash scripts/worktree-provision.test.sh
 # The CLI's three gates are separate steps on purpose. `npm run test` passes on
 # code that does not type-check (Vitest strips types, it does not check them) and
 # on code that does not build, so a single test step reported green for both
