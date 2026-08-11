@@ -18,6 +18,14 @@
  *  Neither is visible to a test that runs the server, because in a checkout
  *  both resolve. This file is where they are visible.
  *
+ *  What it is for, and where it stops. The bug class is a dependency that
+ *  *resolves anyway* — by hoisting, by a transitive tree, by a loader route a
+ *  refactor reached for without thinking about packaging — and every such route
+ *  is refused below. It is not a sandbox: `eval("require")` defeats any static
+ *  check, and anyone willing to write that is equally able to edit this file.
+ *  The line is drawn at what a maintainer could plausibly do *without* intending
+ *  to evade an audit.
+ *
  *  The audit reads esbuild's own metafile rather than scanning source text: the
  *  question is what ends up in the bundle, and only the resolver knows that.
  *  A `require("picocolors")` inlines a package with no import statement to find
@@ -145,6 +153,9 @@ describe('the manifest decides what the bundle externalises', () => {
         const argument = code.slice(match.index + match[0].length)
         if (!LITERAL_ARGUMENT.test(argument)) offenders.push(`${path}: non-literal import()`)
       }
+      // `process.getBuiltinModule` hands out `node:module` without importing
+      // it, so it is the one loader route the graph below cannot see either.
+      if (/\bgetBuiltinModule\b/.test(code)) offenders.push(`${path}: getBuiltinModule`)
     }
     expect(offenders).toEqual([])
   })
