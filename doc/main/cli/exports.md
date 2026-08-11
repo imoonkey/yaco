@@ -13,6 +13,13 @@ export may *contain* is a contract, not a preference. The six rules below come
 from the `cli-node-sdk` design; the audit enforces them over each export's
 **transitive production import closure**, and nothing is grandfathered.
 
+Eligibility is necessary and not sufficient. A route also has to be a read
+rather than a mutation, and it has to measure a starvation bound against the
+subprocess route it replaces. The history read is the case that separates the
+two: it was measured, the shipped reader failed the bound, and it stays a
+subprocess — so it is not exported and this audit does not cover it.
+-> See: [read-path.md](read-path.md)
+
 ```mermaid
 flowchart LR
   M["package.json#exports<br/>development → src/**.ts"] --> W["closure walk<br/>(TypeScript compiler)"]
@@ -66,8 +73,9 @@ to exist**, so a rename cannot quietly empty the list. No closure reaches
 `src/commands/**` or `src/main.ts` at all.
 
 The last block of the test audits the auditor: the identical walker runs over
-throwaway fixture trees planting each evasion above, and its verdict is
-asserted. A gate nobody has watched fail is not known to work.
+throwaway fixture trees built to contain each shape above, and its verdict on
+each one is asserted. A gate whose failure has never been observed is not known
+to work.
 
 ## What this cost the barrels
 
@@ -188,8 +196,8 @@ second, unbounded query ran while the audit reported exactly the admitted one.
 So the admission carries two pins. `prepares` is the human-legible half — the
 SQL a reader can hold against the measured bound. **`emitted` is the one that
 means it: the JavaScript the module compiles to, checked in.** The audit asserts
-the file still compiles to that, so any edit fails — the cases above and the
-ones nobody has thought of alike, because none of them is something the check
+the file still compiles to that, so any edit that changes the emitted program
+fails — the cases above and the ones nobody has thought of alike, because none of them is something the check
 has to recognize. Failing means re-judge and re-measure, which is what should
 happen when the code carrying a measured stall bound changes.
 
@@ -290,5 +298,6 @@ parse are one uninterruptible unit — so the reader caps a record at 4 MiB and
 ## -> See
 
 - [README.md](README.md) — CLI documentation map
+- [read-path.md](read-path.md) — which routes these exports actually serve in process, what each move measured, and how to roll one back
 - [paths.md](paths.md) · [task.md](task.md) · [worktree.md](worktree.md) — the barrels this governs
 - [../../dev/cli/workflow.md](../../dev/cli/workflow.md) — build, test, and the two artifacts

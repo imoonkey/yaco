@@ -249,8 +249,10 @@ filter)` in `providers/message-read.ts` does one read of the log, indexes every
 message, and returns the rows a filter keeps; the command adds only the
 projections (`--meta`, `--index`, `--summary`, rendering). `app/server` calls the
 same function in process through `@yaco/cli/core/agent/messages`, so the
-filtering and index semantics have exactly one implementation.
--> See: [exports.md](exports.md), [../app/backend/libs.md](../app/backend/libs.md)
+filtering and index semantics have exactly one implementation. `/messages` still
+spawns: it is one child rather than `1+n`, and what it returns is the command's
+own text rendering, which lives in the command layer.
+-> See: [read-path.md](read-path.md), [exports.md](exports.md), [../app/backend/libs.md](../app/backend/libs.md)
 
 ```text
 yaco agent messages <name> [--meta] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
@@ -357,8 +359,9 @@ the local corpus contains an instance of neither (611/611 labels are identical
 to the implementation this replaces).
 
 -> See: [exports.md](exports.md) (the eligibility rules and the one judged
-`node:sqlite` admission), `test/bench/summary-stall.ts` (the starvation bound and
-the query's own measurement).
+`node:sqlite` admission), [read-path.md](read-path.md) (what this cutover
+measured and how to roll it back), `test/bench/summary-stall.ts` (the starvation
+bound and the query's own measurement).
 
 ## Project Move
 
