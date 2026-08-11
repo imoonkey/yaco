@@ -58,13 +58,15 @@ function packageOf(specifier: string): string | null {
  *  root, so an inlined third-party module reads `node_modules/...`. */
 const graph = await build({ ...bundleOptions, metafile: true, write: false })
 const inputs = Object.keys(graph.metafile.inputs)
+const externalPaths = Object.values(graph.metafile.outputs)
+  .flatMap((output) => output.imports)
+  .filter((imported) => imported.external)
+  .map((imported) => imported.path)
 const externals = new Set(
-  Object.values(graph.metafile.outputs)
-    .flatMap((output) => output.imports)
-    .filter((imported) => imported.external)
-    .map((imported) => packageOf(imported.path))
-    .filter((name): name is string => name !== null),
+  externalPaths.map(packageOf).filter((name): name is string => name !== null),
 )
+/** Both spellings of the builtin that hands out a CommonJS `require`. */
+const MODULE_LOADER = new Set(['module', 'node:module'])
 const declared = new Set([
   ...Object.keys(MANIFEST.dependencies as Record<string, string>),
   ...Object.keys(MANIFEST.optionalDependencies as Record<string, string>),
@@ -128,12 +130,11 @@ describe('the manifest decides what the bundle externalises', () => {
   })
 
   it('loads nothing by a route the resolver cannot follow', () => {
-    // Two escapes survive everything above: `import(name)` stays in the bundle
-    // unresolved, with no warning and no graph entry, and fails on a consumer's
-    // machine the first time that code path runs; `require` — directly or
-    // through `createRequire` — reaches a package the metafile check above
-    // cannot attribute. Everything in the bundle must load by literal import,
-    // so that the graph above is the whole graph.
+    // One escape leaves no trace anywhere else: `import(name)` stays in the
+    // bundle unresolved, with no warning and no graph entry, and fails on a
+    // consumer's machine the first time that code path runs. It has to be
+    // caught in the sources, because by definition it reached nothing that
+    // could record it.
     const offenders: string[] = []
     for (const [path, code] of normalizedInputs) {
       if (code === null) {
@@ -144,10 +145,18 @@ describe('the manifest decides what the bundle externalises', () => {
         const argument = code.slice(match.index + match[0].length)
         if (!LITERAL_ARGUMENT.test(argument)) offenders.push(`${path}: non-literal import()`)
       }
-      if (/\bcreateRequire\b/.test(code)) offenders.push(`${path}: createRequire`)
-      if (/["']node:module["']/.test(code)) offenders.push(`${path}: node:module`)
     }
     expect(offenders).toEqual([])
+  })
+
+  it('never acquires the module loader', () => {
+    // `createRequire` is the one import that would let a source load a package
+    // the graph above cannot attribute, and it can only come from `node:module`
+    // — under any local alias, as a namespace, or through a computed property,
+    // all of which are invisible to a spelling check but none of which avoid
+    // importing the builtin. Both specifiers, taken from the resolved graph, so
+    // neither the bare form nor a dynamic acquisition slips past.
+    expect(externalPaths.filter((path) => MODULE_LOADER.has(path))).toEqual([])
   })
 
   it('references the CommonJS loader nowhere in the bundle', () => {
