@@ -14,8 +14,8 @@ exports map).
 | `yaco-home.ts` | `getYacoHome`, `projectsFile`, `sessionsDir`, `uiStateDir`, `shellSessionsDir`, `channelsDir`, `channelScopeDir`, `projectEventsFile`, `agentWrapperPath` | Runtime root + canonical helpers |
 | `yaco-paths.ts` | `readYacoProjectPaths(repoRoot) → {plan, tasks, active, archive, backlog, worktrees}`, `DEFAULT_PROJECT_PATHS` | Reads `<repoRoot>/yaco.toml [paths]`; merges over defaults |
 | `project-registry.ts` | `readProjects`, `writeProjects`, `addProject`, `removeProject`, `projectsRegistryPath`, `ensureYacoHome` | Sync I/O + validated add/remove behavior for `${YACO_HOME}/projects.json` |
-| `toml.ts` | `parseScopedToml`, `TomlParseError`, `ParsedTomlSections` | Minimal handwritten TOML reader scoped to `[section]` + `key = "string"` pairs; re-exported from the barrel (the app server reads `[colocated] repos` through it) |
-| `index.ts` | Re-exports the public surface | Always import through this barrel |
+| `toml.ts` | `parseScopedToml`, `ParsedTomlSections` | Minimal handwritten TOML reader scoped to `[section]` + `key = "string"` pairs; re-exported from the barrel (the app server reads `[colocated] repos` through it). A parse failure raises `CliError(ENV, "yaco.toml:<line>: …", { line })` — the class it used to throw was a second error type on an exported surface. -> See: [exports.md](exports.md) |
+| `index.ts` | Re-exports the public surface | Always import through this barrel. Published as `@yaco/cli/core/paths`; the registry writers are exported on purpose — the app server is the CLI's peer on `projects.json`, not a reader of it. -> See: [exports.md](exports.md) |
 
 ## Resolution rules
 
