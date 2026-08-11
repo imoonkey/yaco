@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { AREAS, dispatch, helpText } from "../../src/main.ts";
 import { isOk, isErr } from "../../src/lib/core/result.ts";
 

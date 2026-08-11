@@ -6,7 +6,7 @@
  *  dead-but-retained — never GC'd). Real-tmux paths (list --reconcile, start
  *  reclaim, SIGTERM-not-a-crash) live in the integration suite.
  */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";

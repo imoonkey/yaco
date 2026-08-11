@@ -7,11 +7,10 @@
  *  dispatcher's behavior — a success envelope for `--help`, and raw NDJSON
  *  frames (no wrapping envelope) for an actual follow. */
 
-import { describe, it, expect } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { describe, it, expect } from "vitest";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import {
   claudeOutput,
@@ -34,8 +33,8 @@ import { parseWaitArgs } from "../../src/commands/agent/wait.ts";
 import { CliError } from "../../src/lib/core/errors.ts";
 import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../../src/lib/core/agent/model.ts";
+import { runCli } from "../helpers/cli-process.ts";
 
-const BIN = resolve(import.meta.dir, "../../src/main.ts");
 const claudeClassify = claudeOutput().classifyLine;
 const codexClassify = codexOutput().classifyLine;
 
@@ -531,10 +530,7 @@ function runJson(
   args: string[],
   extraEnv: Record<string, string> = {},
 ): { status: number | null; data: unknown; stdout: string } {
-  const r = spawnSync("bun", ["run", BIN, ...args], {
-    encoding: "utf-8",
-    env: { ...process.env, NO_COLOR: "1", ...extraEnv },
-  });
+  const r = runCli(args, { env: { ...process.env, NO_COLOR: "1", ...extraEnv } });
   let data: unknown;
   try {
     data = JSON.parse((r.stdout ?? "").trim());
@@ -595,10 +591,7 @@ function setupFollowSandbox() {
 
   const env = { ...process.env, NO_COLOR: "1", HOME: home, YACO_AGENT_SESSIONS_DIR: sessionsDir };
   const runFollow = (extraArgs: string[]) =>
-    spawnSync("bun", ["run", BIN, "agent", "output-follow", handle, ...extraArgs], {
-      encoding: "utf-8",
-      env,
-    });
+    runCli(["agent", "output-follow", handle, ...extraArgs], { env });
 
   return { sandbox, handle, sessionId, sessionPath, runFollow };
 }
@@ -705,10 +698,9 @@ describe("agent output-follow cursor validation (security)", () => {
     );
     const env = { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: sessionsDir };
     for (const sub of ["output-cursor", "output-follow"]) {
-      const r = spawnSync(
-        "bun",
-        ["run", BIN, "agent", sub, "../secret/leak", "--offset", "0", "--json"],
-        { encoding: "utf-8", env },
+      const r = runCli(
+        ["agent", sub, "../secret/leak", "--offset", "0", "--json"],
+        { env },
       );
       expect(r.status).not.toBe(0);
       expect((r.stdout ?? "").trim()).toBe(""); // no cursor / no NDJSON frames

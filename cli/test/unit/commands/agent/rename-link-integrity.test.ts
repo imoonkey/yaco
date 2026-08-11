@@ -5,7 +5,7 @@
  *  links, plus the guarantee that a failing/skipped task rewrite never aborts
  *  the session rename. No tmux session exists for the test handles, so the
  *  tmux/provider branches are inert. Pins YACO_AGENT_SESSIONS_DIR. */
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

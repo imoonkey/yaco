@@ -12,7 +12,6 @@
  *  binding has a real generation to compare against.
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

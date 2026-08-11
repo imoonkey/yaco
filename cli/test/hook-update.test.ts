@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { applyHookEvent } from "../src/lib/core/agent/hook-event.ts";
 import type { SessionState } from "../src/lib/core/agent/session-state.ts";
 
