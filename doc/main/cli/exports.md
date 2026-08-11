@@ -4,9 +4,12 @@
 
 Last updated: 2026-08-11 · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts` · Parent: [README.md](README.md)
 
-`app/server` imports six CLI subpaths in process. Every one of them is a piece
-of the CLI running inside the app's event loop, under the app's lifetime — so
-what an export may *contain* is a contract, not a preference. The six rules
+`app/server` imports four of the six exported subpaths in process today —
+`core/paths`, `core/task`, `core/agent`, `core/worktree`. (`core/result` and
+`core/errors` are published but not yet imported: the design keeps them as the
+one failure vocabulary Phase 2's shared reads return.) Each import is a piece of
+the CLI running inside the app's event loop, under the app's lifetime — so what
+an export may *contain* is a contract, not a preference. The six rules
 below come from the `cli-node-sdk` design; the audit enforces them over each
 export's **transitive production import closure**, and nothing is
 grandfathered.
@@ -17,7 +20,7 @@ flowchart LR
   W --> F["files reached"]
   W --> X["specifiers not followed"]
   F --> S["AST scan<br/>rules 1-3, 5"]
-  M --> N["exported symbols<br/>rules 5-6 origin + error type"]
+  M --> N["exported symbols<br/>(checker): names by<br/>origin file · error classes"]
 ```
 
 ## The rules
@@ -55,7 +58,7 @@ than an invisible new edge:
 |---|---|
 | the file closure | a new module reachable from an export |
 | the unwalked specifiers | a new package dependency inside an export closure (today: Node builtins only — `smol-toml`, the CLI's one runtime dependency, is in no closure) |
-| the exported names, each resolved through its alias chain to `public=origin` when they differ | `export { saveTasks as loadTasks }`, which leaves both the name and the file census intact |
+| the exported names, **grouped by the file each one comes from** and resolved through its alias chain (`public=origin` when the two differ) | `export { saveTasks as loadTasks }`, which leaves both the name and the file census intact — and a same-named writer added to a file the closure already contains, which leaves the name intact too |
 | the exported error classes | a second failure vocabulary |
 
 Excluded subsystems (tmux, reconciliation, lifecycle, usage, mutation,
@@ -84,7 +87,10 @@ asserted. A gate nobody has watched fail is not known to work.
   `cli/src/commands/task/lock-timeout.ts` and passed down as an explicit
   `AcquireOptions.timeoutMs`. -> See: [task.md](task.md#locking)
 - **`TomlParseError`** is deleted; `parseScopedToml` raises
-  `CliError(ENV, "yaco.toml:<line>: …", { line })`. -> See: [paths.md](paths.md#files)
+  `CliError(ENV, "yaco.toml:<line>: …")` — no `details`, so the envelope is
+  byte-identical to what the deleted class's translation produced, and the line
+  number stays where it always was, in the message.
+  -> See: [paths.md](paths.md#files)
 
 `core/paths` still publishes its registry writers (`addProject`,
 `removeProject`, `writeProjects`) on purpose: the app server is the CLI's peer
