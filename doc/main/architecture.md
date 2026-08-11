@@ -17,7 +17,7 @@ app, the `yaco` CLI/runtime, and global agent configuration.
 
 - `app/server` invokes installed `yaco ... --json` commands for agent, task,
   and worktree operations, then maps the CLI envelope into HTTP responses.
-  **Four reads no longer spawn** — the task GET, the session-list labels, the
+  **Five reads no longer spawn** — the task GET, the session-list labels, the
   provider catalog before a start, and the channel `/last` message read call the
   CLI's own function in process. Everything else does, including the history
   tab, which was measured and deliberately left a subprocess. Mutations and

@@ -677,6 +677,11 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
     for (const r of results) console.log(`  ${r.name.padEnd(17)} ${fmt(r.wall)}   rows=${r.rows}`);
 
     const sub = results.find((r) => r.name === "subprocess");
+    // A forked route inherits the parent's heap and an in-process one does not,
+    // so a heavy control interleaved with the spawns inflates the subprocess
+    // side of the comparison and only that side. Naming it on the verdict line
+    // and in the artifact is what stops the wrong run being quoted as the gate.
+    const contaminated = results.some((r) => r.name === "retired" || r.name === "uncapped");
     const writeJson = (extra: Record<string, unknown>): void => {
       if (!options.json) return;
       writeFileSync(options.json, JSON.stringify({
@@ -686,6 +691,7 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
         iterations: options.iterations,
         envDiscovery: !options.bareSpawn,
         buildInline: options.buildInline,
+        idleFloor,
         routes: results,
         ...extra,
       }, null, 2) + "\n");
@@ -696,8 +702,9 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
     if (!sub) {
       console.log("\n(no subprocess route in this run — no bound to compare against)");
       // `null`, not `false`: nothing was compared, and a boolean would read as
-      // a failed comparison.
-      writeJson({ shippedWithin: null, within: [] });
+      // a failed comparison. One writer for both exits, so a narrowed artifact
+      // and a full one are the same schema and a consumer can compare them.
+      writeJson({ shippedWithin: null, contaminated, within: [] });
       return;
     }
     // Only the shipped route can pass or fail the acceptance. The controls are
@@ -709,11 +716,6 @@ fixture built${options.home ? "  n/a — real home" : options.buildInline
       r.name === "in-process" || r.name === "retired" || r.name === "uncapped");
     const shipped = results.find((r) => r.name === "in-process");
     const shippedWithin = shipped === undefined ? null : shipped.timer.p95 <= sub.timer.p95;
-    // A forked route inherits the parent's heap and an in-process one does not,
-    // so a heavy control interleaved with the spawns inflates the subprocess
-    // side of the comparison and only that side. Naming it on the verdict line
-    // is what stops the wrong run being quoted as the gate.
-    const contaminated = results.some((r) => r.name === "retired" || r.name === "uncapped");
     const within = inProcess.filter((c) => c.timer.p95 <= sub.timer.p95);
     console.log(`
 bound        in-process p95 timer starvation <= subprocess p95 (design: Concurrency and event-loop safety)
@@ -736,21 +738,11 @@ bound        in-process p95 timer starvation <= subprocess p95 (design: Concurre
              --routes spawn-noop,subprocess,in-process`);
     }
 
-    if (options.json) {
-      writeFileSync(options.json, JSON.stringify({
-        fixture: options.home ? { real: options.home } : { scale: options.scale, ...scale, bytes },
-        project: options.project,
-        concurrency: options.concurrency,
-        iterations: options.iterations,
-        buildInline: options.buildInline,
-        envDiscovery: !options.bareSpawn,
-        idleFloor,
-        routes: results,
-        // The acceptance is one boolean about one route. `within` is diagnostic.
-        shippedWithin,
-        within: within.map((c) => c.name),
-      }, null, 2) + "\n");
-    }
+    // One writer for both exits, so a narrowed artifact and a bounded one carry
+    // the same keys and a consumer can compare them. The acceptance is one
+    // tri-state about one route; `within` is diagnostic, and `contaminated` says
+    // whether this run may be quoted as the gate at all.
+    writeJson({ shippedWithin, contaminated, within: within.map((c) => c.name) });
   } finally {
     // Ordered and isolated: the environment is restored before anything that can
     // throw, and one failing step cannot suppress the rest. Otherwise a server

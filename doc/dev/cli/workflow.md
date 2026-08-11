@@ -199,18 +199,28 @@ reads a real provider home; it is read-only, and needs `--project` plus a
 
 `history-stall.ts` builds its fixture in a child process, so no spawn baseline
 carries the heap of writing it. Its own routes still grow one, and the `retired`
-control most of all — on the 10x fixture `spawn-noop` p95 measured 99.3 ms in a
-full run and 33.2 ms under the third command above, same fixture and machine. So
-read the **acceptance comparison** off a full run, where every route pays the
-same baseline and that is the question being asked, and read a **spawn cost** off
-a narrowed one.
+control most of all — **and that bias runs one way**: a forked route inherits the
+parent's native high-water mark while an in-process call pays no fork, so the
+controls raise the `subprocess` side of the comparison and barely move the other.
+On the 10x fixture, full run against narrowed on the same fixture and machine:
+`subprocess` p95 91.7 → 29.8 ms, `spawn-noop` 100.9 → 33.2 ms, `in-process`
+31.7 → 18.4 ms.
+
+So **the gate is the narrowed command**, and a full run is the qualitative
+control-separation table — it shows the retired reader failing the bound the
+shipped one clears, which is a different question from whether the shipped one
+clears it. The harness prints `NOT THE GATE` on any run that included a control,
+so a figure quoted from the wrong one is visible in its own output.
 
 ```bash
 node cli/test/bench/summary-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/summary-stall.ts --sqlite-probe --home ~   # the admitted query's own cost
+# the gate: the narrowed run every figure in read-path.md's cutover 5 comes from
+node cli/test/bench/history-stall.ts --routes spawn-noop,subprocess,in-process \
+  [--scale 1|10] [--home ~ --project /abs/repo]
+# the control-separation table — qualitative; prints NOT THE GATE
 node cli/test/bench/history-stall.ts [--scale 1|10] [--home ~ --project /abs/repo]
 node cli/test/bench/history-stall.ts --sqlite-probe --home ~   # the windowed query's own cost + plan
-node cli/test/bench/history-stall.ts --scale 10 --routes spawn-noop,subprocess,in-process
 node cli/test/bench/message-read-bench.mjs        # needs `npm run build` — it spawns bin/yaco.mjs
 ```
 

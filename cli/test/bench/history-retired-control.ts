@@ -13,23 +13,28 @@
  *  fan-out runs as one `Promise.all` with no yield inside it, and the window's
  *  origin records are read with `readFileSync`, one per row.
  *
- *  Three mechanical edits were needed to keep it compiling beside its successor,
+ *  Four mechanical edits were needed to keep it compiling beside its successor,
  *  and none changes what it does: the origin lookup and its `isSpawnedBy`
  *  predicate are inlined here (the module they used to live in is now a chunked
  *  asynchronous reader), `ProviderHistory` is declared locally (the shared read
- *  retired that capability from `TuiProvider`), and the imports are repointed at
- *  `src/`. Anything else that drifts from the commit above makes this control a
- *  fiction — review caught two such drifts on the first version of this file,
- *  a loosened `spawnedBy` check and a bypassed factory seam.
+ *  retired that capability from `TuiProvider`), `finalizeHistory` is renamed
+ *  `retiredFinalizeHistory` so both can be imported into one benchmark, and the
+ *  imports are repointed at `src/`. Anything else that drifts from the commit
+ *  above makes this control a fiction — review caught two such drifts on the
+ *  first version of this file, a loosened `spawnedBy` check and a bypassed
+ *  factory seam.
  *
- *  Check it rather than trust it:
+ *  Both of those are pinned, fail-closed, in
+ *  `test/unit/bench/retired-control.test.ts`. For the rest, read the diff:
  *
  *      git show 725c46f3:cli/src/lib/core/agent/providers/history.ts \
  *        | diff - cli/test/bench/history-retired-control.ts
  *
- *  It is not a committed test, because a test bound to a commit sha stops
- *  meaning anything the moment the branch is squashed or rebased — the same
- *  lesson the rollback matrix in `doc/main/cli/read-path.md` records.
+ *  which is a human check rather than a committed one, because a test bound to a
+ *  commit sha stops meaning anything the moment the branch is squashed or
+ *  rebased — the same staleness the rollback matrix in
+ *  `doc/main/cli/read-path.md` records. It should show exactly the four edits
+ *  above and nothing else.
  *
  *  Nothing imports it but the benchmark, and it is in no export closure. */
 
