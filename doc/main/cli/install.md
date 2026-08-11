@@ -87,17 +87,34 @@ The CLI has one runtime dependency, `smol-toml`: Node ships no TOML parser, and
 the Codex trust gate has to enumerate inline `[hooks]` tables in
 `.codex/config.toml` fail-closed. `bun build` resolves it from `node_modules`.
 
-The monorepo checkout installs it at its own root. The subset a user clones
-(`tools`, `cli`, `agent-config` — the public tree ships no `plan/`) has no root
-manifest and nothing installed anywhere, so `tools/install.sh` installs under
-`cli/` in exactly that case, from `cli/bun.lock`. The absence of any
-`node_modules` is the signal deliberately: a full checkout must never have its
-workspace reinstalled on every bootstrap.
+Two clone shapes have to bootstrap: a full `git clone` of this repo, and the
+published subset (`tools`, `cli`, `agent-config` — the public tree ships no
+`plan/`). Neither can install in place. Run `bun install` inside `cli/` in a full
+clone and Bun discovers the monorepo workspace through the root manifest, tries
+to migrate `package-lock.json`, and exits non-zero under `--frozen-lockfile`; the
+subset has no root to discover at all. So `tools/install.sh` installs from an
+**isolated copy of `cli/package.json` + `cli/bun.lock`** in a temp directory —
+the one shape that behaves identically with or without a monorepo root above
+it — and copies the result into `cli/node_modules`. It copies rather than
+replaces: the bootstrap does not delete what it did not put there.
+
+**Readiness is decided by the bundler**, not by inspecting `node_modules`:
+`bun build --target=bun cli/src/main.ts` is the same resolution the compile
+performs, over the whole import graph, so it is the only signal that cannot
+mistake a partial or damaged package — or a missing transitive dependency — for
+a usable one. Both cheaper checks tried first (a `node_modules` directory
+existing; each dependency's own manifest existing) did exactly that. A healthy
+checkout therefore installs nothing, at the cost of one ~40 ms bundle.
 
 That makes `cli/bun.lock` load-bearing — a dependency added to
 `cli/package.json` and not to it breaks the README's first-run command for
-everyone outside this repo. `cli/test/integration/install.test.ts` bootstraps a
-real `git archive` of the public subset for exactly that reason.
+everyone outside this repo, and `--frozen-lockfile` is what turns that into a
+loud failure. `cli/test/integration/install.test.ts` bootstraps real `git
+archive` clones of **both** shapes, plus the two interrupted-install residues
+(an empty `node_modules`, and a package whose manifest arrived without its entry
+point). A trimmed archive cannot stand in for the full clone: with the other
+workspace members absent, the root stops being a workspace and the discovery
+this design works around never happens.
 
 ## Bootstrap → canonical handoff
 

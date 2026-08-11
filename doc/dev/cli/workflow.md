@@ -63,9 +63,11 @@ tools/install.sh --cli-only
 ```
 
 `tools/install.sh` is a thin bootstrap: it installs the CLI's runtime
-dependencies when nothing has been installed anywhere (a clone of the
-published subset — see [install.md](../../main/cli/install.md#bootstrap-dependencies)),
-builds `bun build cli/src/main.ts --compile --outfile $BIN_DIR/yaco`,
+dependencies when a trial bundle cannot resolve them — from an isolated copy of
+`cli/package.json` + `cli/bun.lock`, so it works in a full clone and in the
+published subset alike (see
+[install.md](../../main/cli/install.md#bootstrap-dependencies)) — builds
+`bun build cli/src/main.ts --compile --outfile $BIN_DIR/yaco`,
 codesigns on macOS if `codesign` is available, then `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR
 "$BIN_DIR/yaco" install "$@"`. The canonical installer is `yaco install`
 itself (`cli/src/commands/install.ts`) — it merges yaco hooks into

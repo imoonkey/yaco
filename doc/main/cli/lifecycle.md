@@ -246,7 +246,7 @@ is YACO's own; on **any** uncertainty it returns `false` (block). It enumerates
 
 - global + project `hooks.json` (`~/.codex/hooks.json`,
   `<sessionPath>/.codex/hooks.json`, JSON), and inline `[hooks]` tables in global
-  + project `config.toml` (parsed with `Bun.TOML.parse` — a malformed file throws
+  + project `config.toml` (parsed with `smol-toml` — a malformed file throws
   → block).
 
 Across every source it requires, in order:
