@@ -5,7 +5,7 @@ Frozen CLI observable baseline: exit code, stdout, stderr, and durable
 sandbox in `fixture.ts`.
 
 ```bash
-bun run test/golden/capture.ts --out test/golden/matrix.json
+node test/golden/capture.ts --out test/golden/matrix.json
 ```
 
 Two matrices are committed, and they are verified differently:
@@ -13,7 +13,7 @@ Two matrices are committed, and they are verified differently:
 | File | Status | Verified by |
 | --- | --- | --- |
 | `matrix.original.json` | Historical artifact, captured on Bun **before** directory ordering was defined. Not reproducible — it records one machine's undefined `readdir` order. | Never recaptured. |
-| `matrix.json` | The live baseline, captured **after** the sort landed. Runtime- and machine-independent. | `golden.test.ts` recaptures and compares. |
+| `matrix.json` | The live baseline, captured **after** the sort landed under Bun. Runtime- and machine-independent — `cli-sqlite-hop` reproduced it byte-for-byte with a Node child and never recaptured it. | `golden.test.ts` recaptures and compares. |
 
 `ordering-delta.test.ts` compares the two committed files: everything except
 stdout line order must be identical, and at least one case must actually differ

@@ -4,11 +4,11 @@
  *
  *  Provider homes and the YACO sessions dir are redirected to a sandbox. */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import {
   claudeHistory,
   codexHistory,
@@ -40,8 +40,8 @@ function writeClaudeSession(sessionId: string, lines: object[], projectPath = PR
 function createCodexThread(id: string, fields: { title?: string; first?: string }): void {
   const codexDir = join(sandbox, ".codex");
   mkdirSync(codexDir, { recursive: true });
-  const db = new Database(join(codexDir, "state_5.sqlite"));
-  db.run(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, title TEXT, first_user_message TEXT, cwd TEXT, archived INTEGER DEFAULT 0)`);
+  const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+  db.exec(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, title TEXT, first_user_message TEXT, cwd TEXT, archived INTEGER DEFAULT 0)`);
   db.prepare(`INSERT INTO threads (id, title, first_user_message) VALUES ($id, $title, $first)`).run({
     $id: id, $title: fields.title ?? null, $first: fields.first ?? null,
   });

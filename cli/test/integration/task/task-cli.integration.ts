@@ -19,7 +19,7 @@ import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { lockPathFor } from "../../../src/lib/core/task/index.ts";
-import { BUN_BIN, CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
+import { CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
 
 function runYaco(repo: string, args: string[], stdin?: string, env: Record<string, string> = {}): {
@@ -545,9 +545,8 @@ describe("lock contention", () => {
     const spawnSet = (id: string, title: string) =>
       new Promise<{ stdout: string; stderr: string; status: number }>((resolve) => {
         const child = spawn(
-          BUN_BIN,
+          process.execPath,
           [
-            "run",
             CLI_ENTRY,
             "task",
             "set",

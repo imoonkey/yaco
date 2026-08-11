@@ -1,27 +1,43 @@
-import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
-/** The Vitest half of the dual-run cohorts (design §5 stage 2).
+/** The suite runs on Vitest, and the two suites are one directory apart:
+ *  everything under `test/integration/` needs an installed binary and real
+ *  tmux/git/provider processes, everything else does not.
  *
- *  `test/cohorts.mjs` decides which files land here — a file joins this cohort
- *  by importing `vitest`, and the Bun cohort by importing `bun:test`. This
- *  config only has to describe how the files that arrived should run.
+ *  That split used to live in `test/cohorts.mjs`, which also had to decide which
+ *  *runner* owned a file. `cli-sqlite-hop` moved the last database fixtures off
+ *  `bun:test`, so there is one runner again and the split is just two projects.
  */
+const shared = {
+  // Many files build a sandbox out of process-wide state — cwd, PATH, HOME,
+  // YACO_HOME. One process per file is what keeps that honest.
+  isolate: true,
+  // The suite spawns the CLI, git, and tmux; the slowest files are minutes of
+  // real subprocess work under load, not milliseconds of assertion.
+  testTimeout: 120_000,
+  hookTimeout: 120_000,
+};
+
 export default defineConfig({
-  resolve: {
-    alias: {
-      // See test/helpers/bun-sqlite-stub.ts. Removed by cli-sqlite-hop.
-      "bun:sqlite": fileURLToPath(new URL("./test/helpers/bun-sqlite-stub.ts", import.meta.url)),
-    },
-  },
   test: {
-    include: ["test/**/*.{test,integration}.ts"],
-    // Many files build a sandbox out of process-wide state — cwd, PATH, HOME,
-    // YACO_HOME. One process per file is what keeps that honest.
-    isolate: true,
-    // The suite spawns the CLI, git, and tmux; the slowest files are minutes of
-    // real subprocess work under load, not milliseconds of assertion.
-    testTimeout: 120_000,
-    hookTimeout: 120_000,
+    projects: [
+      {
+        test: {
+          ...shared,
+          name: "unit",
+          // Both extensions, so a stray `*.integration.ts` outside the
+          // integration tree lands in a suite rather than in none.
+          include: ["test/**/*.{test,integration}.ts"],
+          exclude: [...configDefaults.exclude, "test/integration/**"],
+        },
+      },
+      {
+        test: {
+          ...shared,
+          name: "integration",
+          include: ["test/integration/**/*.{test,integration}.ts"],
+        },
+      },
+    ],
   },
 });

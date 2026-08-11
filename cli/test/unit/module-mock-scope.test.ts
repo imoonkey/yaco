@@ -1,16 +1,15 @@
-/** Guard: no test file may register a process-global module mock.
+/** Guard: no test file may reach for bun's module-mock registry.
  *
- *  `bun test` runs its whole cohort in one process, bun's module-mock registry is
- *  process-global, and `mock.restore()` does not undo a registration — so one
- *  registration changes what every later-loaded file in that cohort imports, and bun's
- *  load order follows filesystem traversal (i.e. the checkout path). That is how
- *  `hooks-install.test.ts` inherited a stubbed `lifecycle.ts` under `/tmp` and
- *  `tmux.test.ts` inherited a partial `tmux.ts` on the GitHub runner.
+ *  The hazard it was written against is gone with the runner. `bun test` ran a whole
+ *  cohort in one process over a process-global mock registry that `mock.restore()` does
+ *  not undo, so one registration changed what every later-loaded file imported, following
+ *  filesystem traversal order — that is how `hooks-install.test.ts` inherited a stubbed
+ *  `lifecycle.ts` under `/tmp` and `tmux.test.ts` a partial `tmux.ts` on the GitHub runner.
+ *  `vi.mock` is file-scoped by construction, one process per file.
  *
- *  The Vitest cohort has no such hazard: `vi.mock` is file-scoped by construction, one
- *  process per file. Every former `mock.module` user now uses it, so the scoping helper
- *  this guard used to exempt is gone and the rule is simply *never* — for as long as any
- *  file still runs under bun.
+ *  The guard outlives the hazard because the call is still writable. A file carried in from
+ *  the bun era would fail on its unresolvable `bun:test` import, which says nothing about
+ *  what was actually wrong with it. This says it.
  *
  *  The scan is deliberately literal — no comment stripping, no lexing. Anything that
  *  parses TypeScript to decide what "counts" can be fooled into a false negative by a

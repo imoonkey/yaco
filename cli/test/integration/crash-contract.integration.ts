@@ -16,7 +16,7 @@ import { createSession, hasSession, isTmuxAvailable } from "../../src/lib/core/a
 import { writeState, readState, ensureStateDir, type SessionState } from "../../src/lib/core/agent/session-state.ts";
 import { kill } from "../../src/commands/agent/kill.ts";
 import { list } from "../../src/commands/agent/status.ts";
-import { BUN_BIN, CLI_ENTRY } from "../helpers/cli-process.ts";
+import { CLI_ENTRY } from "../helpers/cli-process.ts";
 
 const itt = isTmuxAvailable() ? it.sequential : it.skip;
 
@@ -71,7 +71,7 @@ beforeAll(() => {
   process.env["YACO_HOME"] = sandbox;
   ensureStateDir();
   shim = join(sandbox, "yaco-shim");
-  writeFileSync(shim, `#!/bin/bash\nexec "${BUN_BIN}" run "${CLI_ENTRY}" "$@"\n`, { mode: 0o755 });
+  writeFileSync(shim, `#!/bin/bash\nexec "${process.execPath}" "${CLI_ENTRY}" "$@"\n`, { mode: 0o755 });
   // createSession resolves YACO_BIN from YACO_PATH → point it at the shim so the
   // wrapper's crash path runs THIS worktree's `agent mark-crashed`.
   savedYacoPath = process.env["YACO_PATH"];

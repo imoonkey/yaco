@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { readOriginForSessionId } from "../origin.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
@@ -404,17 +404,20 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
 
   let rows: CodexThreadRow[];
   try {
-    const db = new Database(codexDbPath(), { readonly: true });
+    const db = new DatabaseSync(codexDbPath(), { readOnly: true });
     try {
       rows = db
-        .query<CodexThreadRow, [string]>(
+        .prepare(
           // `id` breaks the updated_at tie: SQLite leaves the order of tied rows
           // to the query plan, so without it the row order is undefined.
           `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
            FROM threads WHERE cwd = ? AND archived = 0
            ORDER BY updated_at DESC, id ASC`,
         )
-        .all(cwd);
+        // `node:sqlite` types every column as `SQLOutputValue`, so the row shape
+        // is the SELECT's to declare — through `unknown`, because a 7-column row
+        // and an open record do not overlap enough for a direct assertion.
+        .all(cwd) as unknown as CodexThreadRow[];
     } finally {
       db.close();
     }
@@ -495,13 +498,13 @@ async function codexSummarize(session: SessionState): Promise<SummaryResult | nu
   let title: string | null = null;
   if (existsSync(codexDbPath())) {
     try {
-      const db = new Database(codexDbPath(), { readonly: true });
+      const db = new DatabaseSync(codexDbPath(), { readOnly: true });
       try {
         const row = db
-          .query<{ title: string | null; first_user_message: string | null }, [string]>(
-            "SELECT title, first_user_message FROM threads WHERE id = ?",
-          )
-          .get(sessionId);
+          .prepare("SELECT title, first_user_message FROM threads WHERE id = ?")
+          .get(sessionId) as
+            | { title: string | null; first_user_message: string | null }
+            | undefined;
         title = row?.title ?? null;
         const first = firstMeaningfulMessage([row?.first_user_message ?? ""], handle);
         if (first) return { sessionId, label: first };

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 // Re-export from model.ts (single source of truth) so callers can keep
 // importing PENDING_SESSION_ID from this module without breaking.
@@ -56,31 +56,31 @@ function queryCodexThreadId(cwd: string, sessionCreatedMs?: number): string {
   if (!existsSync(dbPath)) return "";
 
   try {
-    const db = new Database(dbPath, { readonly: true });
+    const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
       if (sessionCreatedMs) {
         // created_at is epoch seconds; convert sessionCreatedMs to seconds
         const lowerBound = Math.floor((sessionCreatedMs - 1000) / 1000);
         const upperBound = Math.ceil(sessionCreatedMs / 1000) + MAX_THREAD_STARTUP_SEC;
         const row = db
-          .query<{ id: string }, [string, number, number]>(
+          .prepare(
             // `id` breaks the created_at tie: the column is second-precision, so
-          // two threads started in the same second are routine and SQLite leaves
-          // the order of tied rows to the query plan.
-          `SELECT id FROM threads
-             WHERE cwd = ? AND created_at > ? AND created_at < ?
-             ORDER BY created_at ASC, id ASC LIMIT 1`,
+            // two threads started in the same second are routine and SQLite leaves
+            // the order of tied rows to the query plan.
+            `SELECT id FROM threads
+               WHERE cwd = ? AND created_at > ? AND created_at < ?
+               ORDER BY created_at ASC, id ASC LIMIT 1`,
           )
-          .get(cwd, lowerBound, upperBound);
+          .get(cwd, lowerBound, upperBound) as { id: string } | undefined;
         return row?.id ?? "";
       }
       // No time-bound — return latest thread for this cwd
       const row = db
-        .query<{ id: string }, [string]>(
+        .prepare(
           `SELECT id FROM threads WHERE cwd = ?
            ORDER BY created_at DESC, id ASC LIMIT 1`,
         )
-        .get(cwd);
+        .get(cwd) as { id: string } | undefined;
       return row?.id ?? "";
     } finally {
       db.close();
