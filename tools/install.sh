@@ -38,8 +38,12 @@ require npm
 # NaN and every comparison against NaN is false. `bin/node-floor.mjs` has no
 # dependencies and is not built, so it is importable at this point in the
 # bootstrap, and `test/unit/node-floor.test.ts` is its table.
+# `pathToFileURL`, not the bare path: `import()` reads its argument as a URL, so
+# a checkout under a directory containing `#` or `?` would be truncated at that
+# character and fail to resolve.
 if ! node -e '
-  import(process.argv[1]).then(({ belowNodeFloor, MINIMUM_NODE }) => {
+  const { pathToFileURL } = require("node:url");
+  import(pathToFileURL(process.argv[1]).href).then(({ belowNodeFloor, MINIMUM_NODE }) => {
     if (!belowNodeFloor(process.versions.node)) return;
     process.stderr.write(
       `install: yaco requires Node >= ${MINIMUM_NODE}, found ${process.versions.node}\n`,
@@ -83,38 +87,56 @@ pack() {
   (cd "$REPO_ROOT" && npm pack --workspace @yaco/cli --pack-destination "$stage")
 }
 
-# Marks a `node_modules` this script created and has not finished filling. It is
-# written before the install and removed after the pack that follows succeeds,
-# so its presence means exactly "a bootstrap I started did not complete" — the
-# one state in which re-running the dependency install is safe. Existence of
-# `node_modules` alone cannot say that: a developer's tree looks identical, and
-# `npm ci --workspace` prunes every workspace it was not asked about, so
-# repairing on that signal would delete an app/ install this script has no
-# business touching.
-bootstrap_marker="$REPO_ROOT/node_modules/.yaco-bootstrap-incomplete"
-
-install_cli_dependencies() {
-  # Only the CLI's own workspace: the app's native dependencies take minutes to
-  # compile and `--cli-only` exists precisely to skip them.
-  echo "  installing cli dependencies ..."
-  mkdir -p "$REPO_ROOT/node_modules"
-  : > "$bootstrap_marker"
-  (cd "$REPO_ROOT" && npm ci --workspace cli --include-workspace-root --omit=optional)
+# Is this dependency tree one only this script has installed into?
+#
+# It matters because `npm ci --workspace` prunes every workspace it was not
+# asked about, so repairing the wrong tree deletes an app/ install — minutes of
+# native compilation — this script has no business touching. Existence of
+# `node_modules` cannot answer it: a developer's tree and an interrupted
+# bootstrap look identical from outside.
+#
+# `node_modules/.package-lock.json` is npm's own record of what it installed and
+# answers it exactly: this bootstrap installs the `cli` workspace and nothing
+# else, so any other workspace key means somebody's wider install is in there.
+# An absent or unreadable record means no install ever completed here, which is
+# the interrupted first run — the case that most needs repairing. (A developer
+# whose *own* full install was interrupted also lands there and gets reduced to
+# the cli workspace; their tree was unusable either way and `npm ci` restores
+# it.)
+#
+# A marker file was tried first and does not work: the obvious place for it is
+# inside `node_modules`, and npm replaces that directory, so the signal is gone
+# by the time it is needed.
+tree_is_bootstrap_only() {
+  node -e '
+    const { readFileSync } = require("node:fs");
+    try {
+      const record = JSON.parse(readFileSync(process.argv[1], "utf-8"));
+      const foreign = Object.keys(record.packages ?? {}).filter(
+        (key) => key !== "" && !key.startsWith("node_modules/") && !key.startsWith("cli"),
+      );
+      process.exit(foreign.length === 0 ? 0 : 1);
+    } catch {
+      process.exit(0);
+    }
+  ' "$REPO_ROOT/node_modules/.package-lock.json"
 }
 
 probe_log="$stage/pack.log"
 if ! pack >/dev/null 2>"$probe_log"; then
-  if [ -e "$REPO_ROOT/node_modules" ] && [ ! -e "$bootstrap_marker" ]; then
-    # A dependency tree someone else owns, and the build still failed — a source
-    # error or damage, not something to fix by reinstalling over it.
-    echo "install: the cli build failed with dependencies already present in $REPO_ROOT/node_modules." >&2
-    echo "install: if that tree is incomplete, run \`npm ci\` in $REPO_ROOT and retry." >&2
+  if ! tree_is_bootstrap_only; then
+    echo "install: the cli build failed, and $REPO_ROOT/node_modules holds an install" >&2
+    echo "install: wider than this bootstrap's — repairing it would prune the rest." >&2
+    echo "install: run \`npm ci\` in $REPO_ROOT and retry." >&2
     cat "$probe_log" >&2
     exit 1
   fi
   # Either a clone that has never been installed — the README's first-run case —
-  # or one of this script's own installs that did not finish.
-  if ! install_cli_dependencies; then
+  # or one of this script's own installs that did not finish. Only the CLI's own
+  # workspace: the app's native dependencies take minutes to compile and
+  # `--cli-only` exists precisely to skip them.
+  echo "  installing cli dependencies ..."
+  if ! (cd "$REPO_ROOT" && npm ci --workspace cli --include-workspace-root --omit=optional); then
     echo "install: could not install the cli dependencies." >&2
     echo "install: the build failure that asked for them was:" >&2
     cat "$probe_log" >&2
@@ -122,7 +144,6 @@ if ! pack >/dev/null 2>"$probe_log"; then
   fi
   pack
 fi
-rm -f "$bootstrap_marker"
 
 # `find`, not a glob: under `set -o pipefail` an unmatched `ls "$stage"/*.tgz`
 # fails the assignment and `set -e` exits before the check below can say

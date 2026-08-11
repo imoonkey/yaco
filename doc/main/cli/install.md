@@ -117,21 +117,29 @@ When the pack fails, the remedy depends on what is already there:
 
 | `node_modules` at the repo root | Behavior |
 |---|---|
-| absent | `npm ci --workspace cli --include-workspace-root --omit=optional`, then pack again. About 3 s and 74 MB — the CLI's workspace only, no `node-pty` or `better-sqlite3` compile. |
-| present, carrying `node_modules/.yaco-bootstrap-incomplete` | the same install: this is a bootstrap of ours that did not finish. |
-| present, no marker | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
+| `node_modules/.package-lock.json` records only the `cli` workspace, or is absent | `npm ci --workspace cli --include-workspace-root --omit=optional`, then pack again. About 3 s and 74 MB — the CLI's workspace only, no `node-pty` or `better-sqlite3` compile. |
+| it records any other workspace | Report the pack's error and name `npm ci` as the remedy. Install nothing. |
 
-The last row is not timidity. `npm ci --workspace` **prunes every workspace it
+The second row is not timidity. `npm ci --workspace` **prunes every workspace it
 was not asked about**: run against a developer's full tree it would delete the
 app's dependencies — minutes of native compilation — to fix a problem it cannot
 even diagnose.
 
-The marker is what keeps that safety from costing the advertised recovery path.
-It is written *before* the dependency install and removed after the pack that
-follows succeeds, so its presence means exactly "a bootstrap this script started
-did not complete" — an interrupted first run, which re-running must fix. A
-developer's own `npm install` never leaves it, so existence of `node_modules`
-alone is not what decides.
+The signal is npm's own record of what it installed, because existence of
+`node_modules` cannot tell an interrupted first run from a developer's tree, and
+this script is the advertised recovery path for the first. This bootstrap
+installs `cli` and nothing else, so any other workspace key means a wider
+install is present. An absent record means no install ever completed here —
+the interrupted case, and the one that most needs repairing.
+
+A marker file inside `node_modules` was tried first and does not work: npm
+replaces that directory while installing, so the signal is gone exactly when it
+is needed.
+
+One caveat worth stating: a developer whose *own* full `npm install` was
+interrupted before npm wrote a record also lands in the first row and gets
+reduced to the CLI workspace. That tree was unusable either way, and `npm ci`
+restores it.
 
 The probe cannot say *why* the pack failed, so a source error selects the
 dependency branch too. Its log is kept and printed if the install then fails —

@@ -283,50 +283,113 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(again.stdout).not.toContain("installing cli dependencies");
   }, 180_000);
 
-  it("repairs its own interrupted dependency install", () => {
+  /** The three cases below share one piece of damage — a syntax error in
+   *  `cli/src/main.ts` — and differ only in what is in `node_modules`. That is
+   *  deliberate: the damage is the constant, the tree is the variable, and what
+   *  is being pinned is which branch the script takes.
+   *
+   *  A source error is the right damage because `npm pack` reifies the
+   *  workspace before running `prepack`, so anything merely *missing* from
+   *  `node_modules` gets silently reinstalled and the failing branch is never
+   *  reached. A syntax error is one npm cannot fix, so the script has to decide.
+   *
+   *  These cases end non-zero on purpose: the repair runs, and then the second
+   *  pack fails on the source error the repair could never have addressed. */
+  function breakTheSource(clone: string): void {
+    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", {
+      flag: "a",
+    });
+  }
+
+  it("reinstalls into a dependency tree only this bootstrap has installed into", () => {
     // An interrupted first run leaves a populated `node_modules` that is not a
     // developer's install, and the README advertises this script as the
     // recovery path — so existence alone cannot be the irreversible state
-    // transition. The marker the bootstrap writes before installing says
-    // "a bootstrap I started did not finish", which is the one state in which
-    // re-running the workspace install is safe.
+    // transition. `node_modules/.package-lock.json` is npm's own record of what
+    // it installed, and it distinguishes the two exactly.
     const clone = fullClone();
-    mkdirSync(join(clone, "node_modules"), { recursive: true });
-    writeFileSync(join(clone, "node_modules", ".yaco-bootstrap-incomplete"), "");
+    expect(bootstrap(clone).status).toBe(0);
+    const record = JSON.parse(
+      readFileSync(join(clone, "node_modules", ".package-lock.json"), "utf-8"),
+    );
+    expect(
+      Object.keys(record.packages).filter((k) => k && !k.startsWith("node_modules/") && !k.startsWith("cli")),
+    ).toEqual([]);
 
+    breakTheSource(clone);
     const r = bootstrap(clone);
-    if (r.status !== 0) console.error("install.sh stderr:\n", r.stderr);
-    expect(r.status).toBe(0);
     expect(r.stdout).toContain("installing cli dependencies");
-    // Cleared on the way out, so a later failure over a finished tree is
-    // reported rather than repaired.
-    expect(existsSync(join(clone, "node_modules", ".yaco-bootstrap-incomplete"))).toBe(false);
-  }, 180_000);
+    expect(r.stderr).not.toContain("wider than this bootstrap's");
+  }, 300_000);
 
-  it("refuses to reinstall over a populated node_modules, and prunes nothing", () => {
+  it("reinstalls into a tree whose install never got as far as a record", () => {
+    // npm replaces `node_modules` while installing, so an install killed early
+    // leaves a directory with no `.package-lock.json` in it. That is exactly the
+    // state a marker file placed inside `node_modules` could not survive, and it
+    // is the one that most needs repairing.
+    const clone = fullClone();
+    mkdirSync(join(clone, "node_modules", "half-extracted"), { recursive: true });
+    expect(existsSync(join(clone, "node_modules", ".package-lock.json"))).toBe(false);
+
+    breakTheSource(clone);
+    const r = bootstrap(clone);
+    expect(r.stdout).toContain("installing cli dependencies");
+    expect(r.stderr).not.toContain("wider than this bootstrap's");
+  }, 300_000);
+
+  it("refuses to reinstall over an install wider than its own, and prunes nothing", () => {
     // `npm ci --workspace cli` deletes every workspace it was not asked about,
     // so on a developer machine the remedial install would silently take out
     // the app's dependency tree — minutes of native compilation, removed to fix
-    // a problem the script cannot even diagnose. The bootstrap install is for a
-    // clone that has never been installed; anything else is reported.
+    // a problem the script cannot even diagnose.
     const clone = fullClone();
     expect(bootstrap(clone).status).toBe(0);
+
+    // A second workspace really installed — `codex-transcribe` has no runtime
+    // dependencies, so this is cheap and still writes a real foreign key into
+    // npm's record rather than a hand-forged one.
+    const second = spawnSync(
+      "npm",
+      ["install", "--workspace", "packages/codex-transcribe", "--ignore-scripts", "--omit=optional"],
+      { cwd: clone, encoding: "utf-8", timeout: 300_000 },
+    );
+    expect(second.status).toBe(0);
+    const record = JSON.parse(
+      readFileSync(join(clone, "node_modules", ".package-lock.json"), "utf-8"),
+    );
+    expect(Object.keys(record.packages)).toContain("packages/codex-transcribe");
 
     const otherWorkspaceDep = join(clone, "node_modules", "not-ours");
     mkdirSync(otherWorkspaceDep, { recursive: true });
     writeFileSync(join(otherWorkspaceDep, "marker"), "someone else's install\n");
-    // Break the build so the probe fails with dependencies present.
-    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", {
-      flag: "a",
-    });
+    breakTheSource(clone);
 
     const r = bootstrap(clone);
     expect(r.status).not.toBe(0);
     expect(r.stdout).not.toContain("installing cli dependencies");
-    expect(r.stderr).toContain("dependencies already present");
+    expect(r.stderr).toContain("wider than this bootstrap's");
     expect(r.stderr).toContain("npm ci");
     expect(existsSync(join(otherWorkspaceDep, "marker"))).toBe(true);
-  }, 180_000);
+  }, 300_000);
+
+  it("bootstraps from a checkout path containing a URL-significant character", () => {
+    // `import()` reads its argument as a URL, so importing the shared Node-floor
+    // module by bare path truncated the checkout at a `#` and died before the
+    // pack. Nothing else in this file uses a path that would notice.
+    const clone = join(sandbox, "repo#checkout");
+    mkdirSync(clone, { recursive: true });
+    expect(
+      spawnSync("bash", ["-c", `git -C "${REPO_ROOT}" archive HEAD | tar -x -C "${clone}"`], {
+        encoding: "utf-8",
+      }).status,
+    ).toBe(0);
+
+    const r = bootstrap(clone);
+    if (r.status !== 0) console.error("install.sh stderr:\n", r.stderr);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain("ERR_MODULE_NOT_FOUND");
+    expect(existsSync(join(sandbox, "bin", "yaco"))).toBe(true);
+  }, 300_000);
 
   it("reports the build failure that asked for the install, not the install's own", () => {
     // The probe cannot say *why* the pack failed, so a source error selects the
