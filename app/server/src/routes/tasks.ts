@@ -1,5 +1,20 @@
+/** Task routes.
+ *
+ *  The GET is in process: `@yaco/cli/core/task#readTaskList` is the same
+ *  function `yaco task list --workset all --json` renders, so this route reads
+ *  the graph without paying a ~100 ms spawn per request.
+ *
+ *  Every mutation still spawns. Task mutation is one authority — the
+ *  tasks-file lock, the repository gate, the write — and half of it running
+ *  inside this process is how two writers end up disagreeing about who owns
+ *  the file. Which also makes the GET independently revertible: put
+ *  `runYacoTask(['list', '--workset', 'all'], …)` back and nothing else moves.
+ */
+
 import { execFile } from 'child_process'
 import { Hono } from 'hono'
+import { readTaskList } from '@yaco/cli/core/task'
+import { isErr } from '@yaco/cli/core/result'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
 import { emitRefresh } from '../lib/notify'
@@ -116,12 +131,16 @@ function invalidateTasksCache(projectPath: string): void {
 }
 
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | CliFailure> {
-  // Return every workset (active, backlog, archive); the workspace filters client-side.
-  const result = await runYacoTask(['list', '--workset', 'all'], projectPath)
-  if (!result.ok) return result
-  const tasks = (result.data['tasks'] && typeof result.data['tasks'] === 'object')
-    ? result.data['tasks'] as Record<string, Record<string, unknown>>
-    : {}
+  // Return every workset (active, backlog, archive); the workspace filters
+  // client-side. `repoRoot` is explicit, so two projects read concurrently
+  // without either touching process cwd or environment.
+  const result = await readTaskList({ repoRoot: projectPath, workset: 'all' })
+  if (isErr(result)) {
+    return { ok: false, code: result.code, message: result.message, details: result.details }
+  }
+  // The store is built fresh per call, so enriching these records below
+  // mutates nothing another request can see.
+  const tasks = result.value.tasks as Record<string, Record<string, unknown>>
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {
