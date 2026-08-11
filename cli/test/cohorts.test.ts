@@ -10,11 +10,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { classify, runBunFile } from "./cohorts.mjs";
-import { fileURLToPath } from "node:url";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
-
-const CLI_ROOT = fileURLToPath(new URL("..", import.meta.url));
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const withTest = (head: string) => `${head}\nit("x", () => {});\n`;
 
@@ -51,37 +49,36 @@ describe("cohort partition", () => {
 });
 
 describe("bun cohort verdict", () => {
-  /** A fixture under `cli/` so `runBunFile`'s CLI_ROOT-relative path resolves,
-   *  and outside `test/` so the real cohort scan never sees it. */
-  function fixture(body: string): { rel: string; cleanup: () => void } {
-    const dir = mkdtempSync(join(CLI_ROOT, ".cohorts-fixture-"));
-    writeFileSync(join(dir, "case.test.ts"), body);
-    return {
-      rel: `${basename(dir)}/case.test.ts`,
-      cleanup: () => rmSync(dir, { recursive: true, force: true }),
-    };
+  /** Outside the checkout entirely, so a crash between here and the `finally`
+   *  cannot leave a stray test file for the next cohort scan — or for
+   *  `git status` — to find. */
+  function fixture(body: string): { path: string; cleanup: () => void } {
+    const dir = mkdtempSync(join(tmpdir(), "yaco-cohorts-fixture-"));
+    const path = join(dir, "case.test.ts");
+    writeFileSync(path, body);
+    return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
   }
 
   it("refuses a zero-test file that prints its own positive summary", () => {
     // `bun test` exits 0 here and the console is shared with the test, so a
     // console-scraping check reads the lie. The JUnit report is not written at
     // all when nothing ran, and only the runner writes it.
-    const { rel, cleanup } = fixture(
+    const { path, cleanup } = fixture(
       `import { test } from "bun:test";\n` +
         `console.log("Ran 1 test across 1 file");\n` +
         `console.error('<testsuites name="bun test" tests="99" />');\n`,
     );
     try {
-      expect(runBunFile(rel)).toBe(false);
+      expect(runBunFile(path)).toBe(false);
     } finally {
       cleanup();
     }
   });
 
   it("accepts a file that really runs a test", () => {
-    const { rel, cleanup } = fixture(`import { test, expect } from "bun:test";\ntest("x", () => expect(1).toBe(1));\n`);
+    const { path, cleanup } = fixture(`import { test, expect } from "bun:test";\ntest("x", () => expect(1).toBe(1));\n`);
     try {
-      expect(runBunFile(rel)).toBe(true);
+      expect(runBunFile(path)).toBe(true);
     } finally {
       cleanup();
     }

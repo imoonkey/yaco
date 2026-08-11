@@ -19,7 +19,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -73,11 +73,11 @@ function runVitest(args) {
  *  their own, while the report is a file only the runner writes. With zero tests
  *  bun writes no report at all, which is the signal.
  *
- *  `./` matters too: a bare path is a name *filter* to `bun test`, and an
- *  `.integration.ts` file matches no filter at all. */
+ *  The path is spelled absolutely because a *bare* path is a name filter to
+ *  `bun test`, and an `.integration.ts` file matches no filter at all. */
 export function runBunFile(file) {
   const report = join(mkdtempSync(join(tmpdir(), "yaco-cohorts-")), "junit.xml");
-  const args = ["test", "--reporter=junit", `--reporter-outfile=${report}`, `./${file}`];
+  const args = ["test", "--reporter=junit", `--reporter-outfile=${report}`, resolve(CLI_ROOT, file)];
   announce("bun cohort", "bun", args);
   try {
     if (spawnSync("bun", args, { cwd: CLI_ROOT, stdio: "inherit" }).status !== 0) return false;
