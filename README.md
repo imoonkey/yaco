@@ -62,6 +62,12 @@ cd yaco
 tools/install.sh
 ```
 
+> **`main` is mid-migration and this does not currently work.** The CLI now
+> imports `node:sqlite`, which Bun cannot load, so the binary `tools/install.sh`
+> compiles exits before it starts. The Node artifact that replaces it is the next
+> step of the migration; until it lands, run the CLI from source with
+> `node cli/src/main.ts <area> <command>`.
+
 This compiles the `yaco` binary into `${YACO_BIN_DIR:-~/.local/bin}` (make sure
 that's on your `PATH`), wires hooks and skills into `~/.claude` and `~/.codex`,
 npm-installs the app, registers this repo, and finishes with `yaco doctor` —
