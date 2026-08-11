@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-08-11 (dual-artifact npm package)
+> Last updated: 2026-08-11 (dual-artifact npm package + the skills mirror)
 
 ## Prerequisites
 
@@ -57,6 +57,7 @@ duplication is deliberate:
 
 | Script | Output | Why it exists |
 |---|---|---|
+| `build:assets` | `agent-config/global/` | the skills, mirrored in from the repo — see [The skills mirror](#the-skills-mirror) |
 | `build:bundle` | `dist/yaco.mjs` (esbuild, ESM, `node24`) | the command artifact. A `tsc` module graph costs +65–85 ms per command — see [Startup budget](#startup-budget) |
 | `build:lib` | `dist/**.js` + `dist/**.d.ts` (`tsconfig.build.json`) | the exports map. TypeScript source under `node_modules` fails plain Node with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so an installed consumer can only import emitted JS |
 
@@ -67,12 +68,37 @@ root in both layouts, which is what makes
 emit, and from esbuild's inlined copy. Rooting the emit anywhere else silently
 retargets every packaged asset.
 
-`prepack` runs `clean && build`, so `npm pack` cannot ship a stale `dist/`.
+`prepack` runs `clean && build`, so `npm pack` cannot ship a stale `dist/`;
+`clean` removes the mirror too, and `build` puts it back.
 
-The suite spawns `bin/yaco.mjs`, so a Vitest `globalSetup`
-(`test/build-bundle.setup.ts`) rebuilds the bundle before anything runs —
-including a focused `npx vitest run <file>`, which is exactly where a
-`npm test`-only hook would have left you testing yesterday's code.
+The suite spawns `bin/yaco.mjs` and resolves the skills manifest from the package
+root, so a Vitest `globalSetup` (`test/build-bundle.setup.ts`) rebuilds the
+bundle *and* the mirror before anything runs — including a focused
+`npx vitest run <file>`, which is exactly where a `npm test`-only hook would have
+left you testing yesterday's code.
+
+### The skills mirror
+
+`scripts/sync-agent-config.mjs` copies the repo's `agent-config/global/` into
+`cli/agent-config/global/`, which the `files` allowlist ships and `.gitignore`
+keeps out of git. `yaco install` and `yaco doctor` read the manifest from there
+through `package-root.ts#PACKAGED_SKILLS_DIR`, so an installed package carries
+its own skills and never links into a checkout.
+
+A checked-in `cli/agent-config -> ../agent-config` symlink would have avoided the
+copy and was measured first: **`npm pack` drops a symlinked directory from the
+tarball without a word**, which ships a package with no skills and no error. The
+copy is destructive (the destination is removed first), so a skill deleted
+upstream cannot survive in the package as a stale link target.
+
+Two consequences for a skill author working from a clone:
+
+- **editing a skill needs a rebuild**, because `~/.claude/skills/<name>` points at
+  the package's copy, not at your working tree — `tools/install.sh --cli-only`, or
+  `npm run build:assets` if you are only running tests;
+- **adding or removing a skill needs a golden recapture**, because
+  `install --dry-run` plans one action per shipped skill. -> See:
+  [test/golden/README.md](../../../cli/test/golden/README.md).
 
 Provider hooks and normal `yaco ...` commands use the installed binary
 (`${YACO_BIN_DIR:-~/.local/bin}/yaco`), so a source build never updates live

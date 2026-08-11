@@ -58,20 +58,46 @@ Linux or macOS, with:
 
 ### Install
 
+**From npm — no clone.** The CLI carries the 22 skills inside it, so this is a
+complete layers 1 + 2 install:
+
+```bash
+npm install -g @yaco/cli
+yaco install
+```
+
+`npm install -g` is inert: it puts files and the `yaco` executable on disk and
+touches nothing else. `yaco install` is the separate, explicit step that
+configures the machine — it merges provider hooks into `~/.claude` and
+`~/.codex`, writes the agent wrapper, plants one symlink per skill into
+`~/.claude/skills` (alongside — never replacing — the skills you already have),
+and finishes with `yaco doctor`. Everything it plants comes out of the installed
+package, so nothing points at a directory that could go away. Add
+`npm install -g @yaco/app` for layer 3. Re-run `yaco install` after either
+upgrade.
+
+Doctor reports the checks that need a repo — the project registry, the task
+graph — as **SKIP** rather than failing; register your own repos with
+`yaco project add <name> <path>` when you have one.
+
+**From a clone — the way to change YACO.** The skills are the layer most people
+will want to edit, and an installed package is a read-only copy of them, so
+**modifying YACO's behaviour means cloning it**:
+
 ```bash
 git clone https://github.com/imoonkey/yaco.git
 cd yaco
 tools/install.sh
 ```
 
-This packs `@yaco/cli` and installs that tarball into
+This packs `@yaco/cli` and installs that same tarball into
 `${YACO_BIN_DIR:-~/.local/bin}`'s prefix (make sure the bin dir is on your
-`PATH`), wires hooks and skills into `~/.claude` and `~/.codex`, npm-installs
-the app, registers this repo, and finishes with `yaco doctor` — which you can
-re-run any time something looks wrong. The steps are not transactional: if one
-fails, the earlier ones already ran, so read the error and re-run. The same
-command updates an existing install after `git pull` (`--cli-only` skips the
-app's npm installs).
+`PATH`), then runs `yaco install` for you and additionally npm-installs the app
+and registers this repo as a project. Re-run it after `git pull` — and after
+editing a skill, since what `yaco install` links to is the copy inside the built
+package (`--cli-only` skips the app's npm installs). The steps are not
+transactional: if one fails, the earlier ones already ran, so read the error and
+re-run.
 
 It installs the tarball rather than linking the checkout deliberately: what
 lands on your `PATH` is byte-for-byte the artifact npm would deliver. A clone
@@ -113,8 +139,11 @@ Twenty-two skills in
 development loop — and drive the `yaco` subcommands built for it: `yaco task`
 (a per-repo task graph under `plan/`), `yaco worktree` (each task gets its own
 checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
-`yaco gate`. The installer plants them as **per-skill symlinks** into
-`~/.claude/skills`, alongside — never replacing — the skills you already have.
+`yaco gate`. They ship **inside `@yaco/cli`**, and the installer plants them as
+**per-skill symlinks** into `~/.claude/skills`, alongside — never replacing —
+the skills you already have. From a clone, those links point at the copy in the
+built package rather than at your working tree, so re-run `tools/install.sh`
+after editing one.
 
 A milestone typically flows like this — drawn linear, lived with loops:
 

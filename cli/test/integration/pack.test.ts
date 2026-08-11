@@ -12,7 +12,19 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -32,11 +44,14 @@ let tarballEntries: string[];
 let homeAfterInstall: string[];
 
 /** `yaco` as an installed user runs it: the launcher on the prefix's bin, an
- *  isolated HOME/YACO_HOME, and a cwd with no checkout anywhere above it. */
+ *  isolated HOME/YACO_HOME, and a cwd with no checkout anywhere above it — and
+ *  no $YACO_REPO_ROOT either, so nothing points at one from the side. This is
+ *  the whole situation under test; every assertion below is made from inside it. */
 function runInstalled(args: string[], input?: string) {
   const env = { ...process.env };
   delete env["YACO_PATH"];
   delete env["YACO_BIN_DIR"];
+  delete env["YACO_REPO_ROOT"];
   return spawnSync(join(prefix, "bin", "yaco"), args, {
     cwd: join(sandbox, "nowhere"),
     encoding: "utf-8",
@@ -45,14 +60,16 @@ function runInstalled(args: string[], input?: string) {
       ...env,
       HOME: home,
       YACO_HOME: join(sandbox, "yaco"),
-      YACO_REPO_ROOT: join(sandbox, "repo"),
       // The prefix's bin first and no other `yaco` — an installed user's PATH.
       // It keeps the developer's own installation out of the assertions below,
       // which is otherwise what `which yaco` finds. The running Node's
       // directory has to be on it too: the launcher's shebang is
       // `#!/usr/bin/env node`, so a PATH without it resolves whatever old
-      // system Node exists and the floor guard correctly refuses to run.
-      PATH: `${join(prefix, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin`,
+      // system Node exists and the floor guard correctly refuses to run. The
+      // shims make doctor's remaining `which` lookups hermetic, so a machine
+      // without a provider CLI does not turn an install assertion into a
+      // statement about that machine.
+      PATH: [join(prefix, "bin"), dirname(process.execPath), join(sandbox, "shims"), "/usr/bin", "/bin"].join(":"),
     },
     timeout: 60_000,
   });
@@ -65,11 +82,15 @@ beforeAll(() => {
   for (const d of ["stage", "home", "nowhere", "prefix"]) {
     mkdirSync(join(sandbox, d), { recursive: true });
   }
-  // A repo root with the skills skeleton `yaco install` wants, and nothing that
-  // could stand in for a package asset.
-  mkdirSync(join(sandbox, "repo", "agent-config", "global", "skills", "alpha"), {
-    recursive: true,
-  });
+  // A bare directory to name as a session cwd. Deliberately not a checkout:
+  // nothing in this sandbox may stand in for a package asset.
+  mkdirSync(join(sandbox, "repo"), { recursive: true });
+  mkdirSync(join(sandbox, "shims"), { recursive: true });
+  for (const command of ["tmux", "git", "claude", "codex"]) {
+    const path = join(sandbox, "shims", command);
+    writeFileSync(path, "#!/bin/sh\nexit 0\n");
+    chmodSync(path, 0o755);
+  }
 
   const packed = spawnSync(
     "npm",
@@ -113,6 +134,23 @@ describe("npm pack contains only intended files", () => {
     expect(tarballEntries).toContain("dist/yaco.mjs");
     expect(tarballEntries).toContain("dist/package-root.js");
     expect(tarballEntries).toContain("scripts/agent-wrapper.sh");
+    // The skills, mirrored in from the repo's agent-config/global at build time.
+    // Without them the package is a CLI and none of the behaviour it drives —
+    // and `npm pack` drops a symlinked directory silently, so this is the only
+    // assertion that can tell a real copy from one.
+    const shipped = tarballEntries
+      .filter((p) => p.startsWith("agent-config/global/skills/"))
+      .map((p) => p.split("/")[3]!);
+    // Compared against the repo's tree, not the mirror inside the package: the
+    // mirror is what the tarball was made from, so comparing them would only
+    // ask whether tar dropped something, never whether the mirror is complete.
+    expect([...new Set(shipped)].sort()).toEqual(
+      readdirSync(join(REPO_ROOT, "agent-config", "global", "skills"), { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+        .sort(),
+    );
+    expect(tarballEntries).toContain("agent-config/global/skills/implement/SKILL.md");
     expect(tarballEntries).toContain("package.json");
     expect(tarballEntries).toContain("LICENSE");
     // Every exports-map target, both the JS and its declarations.
@@ -192,6 +230,49 @@ describe("an installed tarball, with no checkout above it", () => {
       expect(existsSync(executable)).toBe(true);
       expect(executable).not.toContain(CLI_DIR);
     }
+  });
+
+  it("configures the machine and exits 0 with no checkout to configure it from", () => {
+    // The install a user gets from `npm i -g @yaco/cli` alone: doctor included,
+    // because install throws on any failing check and that is what a package
+    // user's first command would hit. What is skipped here is skipped because
+    // there is nothing to do, not because it was turned off.
+    const r = runInstalled(["install", "--cli-only", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+
+    const doctor = JSON.parse(r.stdout).data.doctor;
+    const status = (name: string) =>
+      doctor.checks.find((c: { name: string }) => c.name === name).status;
+    expect(status("skills-link")).toBe("pass");
+    expect(status("registry")).toBe("skip");
+    expect(status("task-graph")).toBe("skip");
+    expect(doctor.summary.fail).toBe(0);
+
+    // No repo to register, so none was invented out of the cwd.
+    expect(existsSync(join(sandbox, "yaco", "projects.json"))).toBe(false);
+  });
+
+  it("plants every shipped skill, resolving inside the installed package", () => {
+    const packagedSkills = join(installedPackage, "agent-config", "global", "skills");
+    const shipped = readdirSync(packagedSkills, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    expect(shipped.length).toBeGreaterThan(0);
+
+    const container = join(home, ".claude", "skills");
+    expect(lstatSync(container).isDirectory()).toBe(true);
+    for (const name of shipped) {
+      const link = join(container, name);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      // Inside the installed package, and actually there — a link that resolves
+      // to a checkout would work on the machine that built it and nowhere else.
+      expect(readlinkSync(link)).toBe(join(packagedSkills, name));
+      expect(realpathSync(link).startsWith(realpathSync(installedPackage))).toBe(true);
+      expect(existsSync(join(link, "SKILL.md"))).toBe(true);
+    }
+    expect(readdirSync(container).sort()).toEqual(shipped);
   });
 
   it("fires the hook command it installed", () => {

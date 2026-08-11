@@ -9,6 +9,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -16,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
 import { runAllChecks, REQUIRED_CHECKS } from "../../../src/commands/doctor.ts";
 import { runInstall } from "../../../src/commands/install.ts";
 import { runCli } from "../../helpers/cli-process.ts";
@@ -28,6 +30,13 @@ const ORIG = {
   YACO_REPO_ROOT: process.env["YACO_REPO_ROOT"],
   PATH: process.env["PATH"],
 };
+
+/** One of the skills this package ships. The manifest is a package asset, so
+ *  the fixtures have to be the real listing — there is no other one to stage. */
+const SHIPPED_SKILL: string = readdirSync(PACKAGED_SKILLS_DIR, { withFileTypes: true })
+  .filter((e) => e.isDirectory())
+  .map((e) => e.name)
+  .sort()[0]!;
 
 let sandbox: string;
 let repoRoot: string;
@@ -43,7 +52,11 @@ beforeEach(() => {
   process.env["YACO_HOME"] = join(sandbox, "yaco");
   process.env["YACO_BIN_DIR"] = join(sandbox, "bin");
   mkdirSync(process.env["YACO_BIN_DIR"]!, { recursive: true });
+  // A stand-in yaco checkout: install registers a repo that carries this
+  // package's manifest, and several checks below read what it wrote.
   repoRoot = join(sandbox, "repo");
+  mkdirSync(join(repoRoot, "cli"), { recursive: true });
+  writeFileSync(join(repoRoot, "cli", "package.json"), JSON.stringify({ name: "@yaco/cli" }));
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   // Minimal valid tasks graph for the task-graph check.
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
@@ -226,8 +239,20 @@ describe("runAllChecks — individual failure modes", () => {
     expect(home?.status).toBe("fail");
   });
 
-  it("registry check fails when projects.json is missing", () => {
+  it("registry check skips when projects.json is missing", () => {
+    // An absent registry is a zero state, not breakage: `yaco install` writes
+    // the "yaco" entry only against a checkout, and an `npm i -g` user adds
+    // their own repos with `yaco project add`. A skip counts in neither summary
+    // bucket, which is what keeps that user's first install at exit 0.
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
+    const r = runAllChecks();
+    const reg = r.checks.find((c) => c.name === "registry");
+    expect(reg?.status).toBe("skip");
+  });
+
+  it("registry check fails on a malformed projects.json", () => {
+    mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
+    writeFileSync(join(process.env["YACO_HOME"]!, "projects.json"), "{not json[");
     const r = runAllChecks();
     const reg = r.checks.find((c) => c.name === "registry");
     expect(reg?.status).toBe("fail");
@@ -243,7 +268,7 @@ describe("runAllChecks — individual failure modes", () => {
     installPrereqs();
     const container = join(process.env["HOME"]!, ".claude", "skills");
     rmSync(container, { recursive: true, force: true });
-    symlinkSync(join(repoRoot, "agent-config", "global", "skills"), container);
+    symlinkSync(PACKAGED_SKILLS_DIR, container);
     const r = runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
@@ -251,34 +276,35 @@ describe("runAllChecks — individual failure modes", () => {
   });
 
   it("skills-link fails when a shipped skill's link is missing, names it", () => {
-    mkdirSync(join(repoRoot, "agent-config", "global", "skills", "gamma"), { recursive: true });
     installPrereqs();
-    rmSync(join(process.env["HOME"]!, ".claude", "skills", "gamma"), { force: true });
+    rmSync(join(process.env["HOME"]!, ".claude", "skills", SHIPPED_SKILL), { force: true });
     const r = runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("fail");
-    expect(skills?.detail).toContain("gamma");
-  });
-
-  it("skills-link fails cleanly (no throw) when the manifest is a file", () => {
-    installPrereqs();
-    rmSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
-    writeFileSync(join(repoRoot, "agent-config", "global", "skills"), "not a dir\n");
-    const r = runAllChecks();
-    const skills = r.checks.find((c) => c.name === "skills-link");
-    expect(skills?.status).toBe("fail");
-    expect(skills?.detail).toContain("not a directory");
+    expect(skills?.detail).toContain(SHIPPED_SKILL);
   });
 
   it("skills-link passes with a user-override real dir at a shipped name", () => {
-    mkdirSync(join(repoRoot, "agent-config", "global", "skills", "gamma"), { recursive: true });
     installPrereqs();
-    const link = join(process.env["HOME"]!, ".claude", "skills", "gamma");
+    const link = join(process.env["HOME"]!, ".claude", "skills", SHIPPED_SKILL);
     rmSync(link, { force: true });
     mkdirSync(link, { recursive: true });
     const r = runAllChecks();
     const skills = r.checks.find((c) => c.name === "skills-link");
     expect(skills?.status).toBe("pass");
+  });
+
+  it("skills-link answers from the package, with no checkout in sight", () => {
+    // The manifest is a package asset, so removing the checkout marker changes
+    // nothing — the check that used to resolve it through the registry's `yaco`
+    // entry could not have said anything here at all.
+    installPrereqs();
+    rmSync(join(repoRoot, "agent-config"), { recursive: true, force: true });
+    rmSync(join(process.env["YACO_HOME"]!, "projects.json"), { force: true });
+    const r = runAllChecks();
+    const skills = r.checks.find((c) => c.name === "skills-link");
+    expect(skills?.status).toBe("pass");
+    expect(skills?.detail).toContain(PACKAGED_SKILLS_DIR);
   });
 
   it("agent-wrapper check fails when ${YACO_HOME}/agent-wrapper.sh is missing", () => {

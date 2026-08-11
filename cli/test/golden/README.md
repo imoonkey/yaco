@@ -24,3 +24,14 @@ A matrix is only comparable to another with the same `casesDigest`. Changing
 `cases.ts` changes the digest and requires recapturing `matrix.json`;
 `matrix.original.json` cannot be recaptured, so a case-list change ends the
 comparison rather than updating it.
+
+Recapture `matrix.json` whenever a captured observable changes on purpose, and
+declare it in `ordering-delta.test.ts`'s `INTENTIONAL_DELTAS` — the **exact
+fields** that changed, plus the reason. That file compares the two matrices, and
+it exempts fields, never whole cases: `durable` is never exemptible, every other
+field of the case is still compared, and an exemption for a field that did not
+actually move is itself a failure.
+
+`install-dry-run-json` plans one action per shipped skill, so **adding or removing
+a skill under `agent-config/global/skills/` requires a recapture** — an honest
+coupling: the plan is the skill list.

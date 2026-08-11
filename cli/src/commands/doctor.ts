@@ -28,13 +28,14 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { packagedAssetPath } from "../package-root.ts";
+import { PACKAGED_SKILLS_DIR, packagedAssetPath } from "../package-root.ts";
 import { ok, type Result } from "../lib/core/result.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { emit } from "../lib/core/json.ts";
@@ -164,41 +165,46 @@ function checkYacoHome(): CheckResult {
   return pass("yaco-home", home);
 }
 
+/** `registry` (stable check name): ${YACO_HOME}/projects.json is readable.
+ *
+ *  An absent file is a legitimate zero state — `yaco install` writes the "yaco"
+ *  entry only when it ran against a checkout, and an `npm i -g @yaco/cli` user
+ *  registers their own repos with `yaco project add` when they have one. So it
+ *  skips, and a file that is there but unreadable still fails.
+ *
+ *  It no longer asserts a "yaco" entry: nothing reads one any more. `skills-link`
+ *  was the last consumer, and it now resolves the manifest from the package. */
 function checkRegistry(): CheckResult {
   const path = projectsRegistryPath();
-  if (!existsSync(path)) return fail("registry", `${path} missing — run \`yaco install\``);
+  if (!existsSync(path)) {
+    return skip("registry", `${path} absent — no projects registered yet (\`yaco project add\`)`);
+  }
   try {
     const projects = readProjects();
-    const yaco = projects.find((p) => p.name === "yaco");
-    if (!yaco) return fail("registry", `${path}: no 'yaco' entry`);
-    return pass("registry", `${path} (yaco → ${yaco.path})`);
+    return pass("registry", `${path} (${projects.length} project(s))`);
   } catch (e) {
     return fail("registry", `${path}: ${(e as Error).message}`);
   }
 }
 
 /** `skills-link` (stable check name): ~/.claude/skills is a real directory
- *  and every skill shipped by the registered yaco checkout resolves inside
- *  it. The manifest is the checkout's agent-config/global/skills/ listing,
- *  resolved via the registry's `yaco` entry so the check is cwd-independent.
+ *  and every skill this package ships resolves inside it. The manifest is the
+ *  packaged agent-config/global/skills/ listing — the same one `yaco install`
+ *  plants links from, so the check is independent of cwd and of any checkout.
  *  A same-name entry that is a real directory passes — that is a user
- *  override the installer deliberately keeps. */
+ *  override the installer deliberately keeps.
+ *
+ *  Package-scoped, so it never skips: a package that cannot show its own skills
+ *  is broken, and reporting that as "nothing to check here" would hide the one
+ *  failure a partial install produces. */
 function checkSkillsLink(): CheckResult {
   const name = "skills-link";
   const claudeSkills = join(userHome(), ".claude", "skills");
-  let repoPath: string;
-  try {
-    const yaco = readProjects().find((p) => p.name === "yaco");
-    if (!yaco) return fail(name, `no 'yaco' registry entry — run \`yaco install\``);
-    repoPath = yaco.path;
-  } catch (e) {
-    return fail(name, `cannot resolve yaco repo from registry: ${(e as Error).message}`);
-  }
-  const skillsDir = join(repoPath, "agent-config", "global", "skills");
+  const skillsDir = PACKAGED_SKILLS_DIR;
   let manifestIsDir = false;
   try { manifestIsDir = statSync(skillsDir).isDirectory(); } catch { /* missing */ }
   if (!manifestIsDir) {
-    return fail(name, `${skillsDir} missing or not a directory — checkout moved? re-run \`yaco install\``);
+    return fail(name, `${skillsDir} missing or not a directory — this @yaco/cli installation is incomplete (reinstall it)`);
   }
   let st;
   try {
@@ -227,7 +233,25 @@ function checkSkillsLink(): CheckResult {
     const more = missing.length > 3 ? `, +${missing.length - 3} more` : "";
     return fail(name, `${missing.length} skill link(s) missing (${shown}${more}) — re-run \`yaco install\``);
   }
-  return pass(name, `${claudeSkills} (${skills.length} skills from ${skillsDir})`);
+  // Every name resolves, which is the pass condition — but not every one need
+  // resolve to *our* copy: install keeps a same-name real directory, and
+  // retargets a link the user pointed elsewhere only under --force. Saying how
+  // many are theirs is the difference between "22 skills" and a report that
+  // reads as a clean install while some of it is somebody else's.
+  const overrides = skills.filter((s) => !resolvesInside(join(claudeSkills, s), join(skillsDir, s)));
+  const note = overrides.length > 0 ? `; ${overrides.length} user override(s)` : "";
+  return pass(name, `${claudeSkills} (${skills.length} skills from ${skillsDir}${note})`);
+}
+
+/** Whether `entry` is this package's copy of `target` rather than something the
+ *  user put at that name. Compared by realpath, so a symlinked home or an alias
+ *  of the same file is not mistaken for an override. */
+function resolvesInside(entry: string, target: string): boolean {
+  try {
+    return realpathSync(entry) === realpathSync(target);
+  } catch {
+    return false;
+  }
 }
 
 /** `agent-hook-config` (stable check name): pass when at least one provider has
