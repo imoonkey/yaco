@@ -28,15 +28,43 @@ echo "yaco bootstrap"
 echo "  repo root: $REPO_ROOT"
 echo "  bin dir:   $BIN_DIR"
 
-# The CLI has runtime dependencies, and the build resolves them from
-# node_modules. The monorepo checkout installs them at its own root; the subset
-# a user clones ships no root manifest and no node_modules at all, so nothing
-# has been installed there. Fetch them under cli/ in exactly that case — a full
-# checkout must not have its workspace reinstalled on every bootstrap.
-# `cli/bun.lock` is what makes the fetch deterministic, so it has to list them.
-if [ ! -d "$REPO_ROOT/node_modules" ] && [ ! -d "$REPO_ROOT/cli/node_modules" ]; then
+# The CLI has runtime dependencies and the build resolves them from
+# node_modules, so a clone that has never been installed cannot build. Neither
+# clone shape can install them in place: run inside cli/ and Bun discovers the
+# monorepo workspace root, then tries to migrate the npm lockfile and dies under
+# --frozen-lockfile; the published subset has no root to discover at all. An
+# isolated copy of the CLI's own manifest is the one thing that behaves
+# identically in both, so install there and copy the result in.
+#
+# Readiness is the dependency actually being resolvable, not a node_modules
+# directory existing — an interrupted install leaves an empty one behind, and
+# treating that as installed puts the unresolvable-import failure back.
+cli_dependencies_missing() {
+  local dep
+  while IFS= read -r dep; do
+    [ -n "$dep" ] || continue
+    if [ ! -f "$REPO_ROOT/node_modules/$dep/package.json" ] \
+      && [ ! -f "$REPO_ROOT/cli/node_modules/$dep/package.json" ]; then
+      return 0
+    fi
+    # Trailing newline deliberately: `read` drops a final unterminated line, so
+    # a single-dependency manifest would otherwise report nothing missing.
+  done < <(cd "$REPO_ROOT/cli" && bun -e 'for (const d of Object.keys(require("./package.json").dependencies ?? {})) console.log(d)')
+  return 1
+}
+
+if cli_dependencies_missing; then
   echo "  installing cli dependencies ..."
-  (cd "$REPO_ROOT/cli" && bun install --production --frozen-lockfile)
+  stage="$(mktemp -d)"
+  trap 'rm -rf "$stage"' EXIT
+  cp "$REPO_ROOT/cli/package.json" "$REPO_ROOT/cli/bun.lock" "$stage/"
+  (cd "$stage" && bun install --production --frozen-lockfile)
+  # Copy rather than replace: node_modules may already hold something this
+  # bootstrap did not put there and has no business deleting.
+  mkdir -p "$REPO_ROOT/cli/node_modules"
+  cp -R "$stage/node_modules/." "$REPO_ROOT/cli/node_modules/"
+  rm -rf "$stage"
+  trap - EXIT
 fi
 
 echo "  building $BIN_DIR/yaco ..."
