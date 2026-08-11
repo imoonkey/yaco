@@ -15,6 +15,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -86,20 +87,14 @@ describe("tools/install.sh — static contract", () => {
 });
 
 describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
-  /** PARKED by `cli-sqlite-hop`, and it is the whole cost of that hop.
-   *
-   *  `tools/install.sh` ends with `exec "$BIN_DIR/yaco" install`, so this case
-   *  needs the artifact it just built to *run*. That artifact is
-   *  `bun build --compile`, and Bun cannot load `node:sqlite` — it still builds,
-   *  and then exits 1 with "No such built-in module" before reaching main. Every
-   *  other case in this file exercises the bootstrap up to the build and still
-   *  passes; this is the only one that gets past it.
-   *
-   *  `cli-dual-artifact-package` owns `tools/install.sh` and the Node artifact
-   *  that replaces the compiled binary. Unskip there — the assertions below need
-   *  no change, only a runnable `$BIN_DIR/yaco`.
+  /** The one case that runs the artifact the bootstrap just produced, because
+   *  `tools/install.sh` ends with `exec "$BIN_DIR/yaco" install`. It was parked
+   *  through `cli-sqlite-hop`, whose whole cost this was: the artifact then was
+   *  `bun build --compile`, and Bun cannot load `node:sqlite`, so the binary
+   *  built and exited 1 before reaching main. The assertions are the ones that
+   *  were parked, unchanged — all they ever needed was a runnable `$BIN_DIR/yaco`.
    */
-  it.skip("from a clean $BIN_DIR (no yaco), builds + installs + exits 0", () => {
+  it("from a clean $BIN_DIR (no yaco), builds + installs + exits 0", () => {
     const env = withShimmedEnv();
     // Sanity: $BIN_DIR/yaco does not exist yet.
     expect(existsSync(join(env["YACO_BIN_DIR"]!, "yaco"))).toBe(false);
@@ -107,7 +102,6 @@ describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
     const r = spawnSync("bash", [INSTALL_SH, "--cli-only", "--skip-doctor"], {
       env,
       encoding: "utf-8",
-      // bun build can take a while; allow 90s.
       timeout: 90_000,
     });
 
@@ -126,25 +120,74 @@ describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
     // Purely additive: install never claims a global instruction file.
     expect(existsSync(join(env["HOME"]!, ".claude", "CLAUDE.md"))).toBe(false);
   }, 120_000);
+
+  it("installs the tarball, so the executable is not a link into this checkout", () => {
+    // The point of packing: what lands on the user's PATH is the published
+    // artifact. A symlink back to `cli/` would test a different thing from the
+    // one npm ships, and would keep working after a packaging mistake.
+    const env = withShimmedEnv();
+    const r = spawnSync("bash", [INSTALL_SH, "--cli-only", "--skip-doctor"], {
+      env,
+      encoding: "utf-8",
+      timeout: 90_000,
+    });
+    expect(r.status).toBe(0);
+
+    const installed = realpathSync(join(env["YACO_BIN_DIR"]!, "yaco"));
+    expect(installed).toContain(join("lib", "node_modules", "@yaco", "cli"));
+    expect(installed.startsWith(REPO_ROOT)).toBe(false);
+    // And the hook it wrote names the prefix's executable, not the package's
+    // own launcher, because the bootstrap exports $YACO_BIN_DIR.
+    const settings = JSON.parse(
+      readFileSync(join(env["HOME"]!, ".claude", "settings.json"), "utf-8"),
+    );
+    const commands: string[] = Object.values(settings.hooks ?? {})
+      .flatMap((groups) => groups as { hooks?: { command?: string }[] }[])
+      .flatMap((group) => group.hooks ?? [])
+      .map((hook) => hook.command ?? "");
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(command.split(" ")[0]).toBe(join(env["YACO_BIN_DIR"]!, "yaco"));
+    }
+  }, 120_000);
+
+  it("refuses a $YACO_BIN_DIR that is not a prefix's bin/", () => {
+    // npm --global writes executables to <prefix>/bin and nowhere else, so a
+    // bin dir named anything else would silently install somewhere the caller
+    // never asked for — and the hook command would name a yaco that is not the
+    // one just installed.
+    const env = withShimmedEnv();
+    env["YACO_BIN_DIR"] = join(sandbox, "tools");
+    const r = spawnSync("bash", [INSTALL_SH, "--cli-only", "--skip-doctor"], {
+      env,
+      encoding: "utf-8",
+      timeout: 60_000,
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("must end in /bin");
+    expect(existsSync(join(sandbox, "tools"))).toBe(false);
+  }, 90_000);
 });
 
 describe("tools/install.sh — public fresh clone with no plan/", () => {
   it("bootstraps and runs the closing doctor to exit 0", () => {
-    // Export HEAD the way the public tree ships it — everything install.sh
-    // needs, and no plan/ (the release history is scrubbed of it). This is the
-    // README's first-run command, doctor included: the previous end-to-end
-    // test passes --skip-doctor and runs against this checkout, which HAS a
-    // plan/, so neither of them covers the flow an outside user actually runs.
+    // Export HEAD the way the public tree ships it — plan/ is untracked, so
+    // the archive is the public repository byte for byte. This is the README's
+    // first-run command, doctor included: the end-to-end test above passes
+    // --skip-doctor and runs against this checkout, which HAS a plan/, so
+    // neither of them covers the flow an outside user actually runs.
     const clone = join(sandbox, "fresh-clone");
     mkdirSync(clone, { recursive: true });
     const exported = spawnSync(
       "bash",
-      ["-c", `git -C "${REPO_ROOT}" archive HEAD tools cli agent-config | tar -x -C "${clone}"`],
+      ["-c", `git -C "${REPO_ROOT}" archive HEAD | tar -x -C "${clone}"`],
       { encoding: "utf-8" },
     );
     expect(exported.status).toBe(0);
     expect(existsSync(join(clone, "plan"))).toBe(false);
     expect(existsSync(join(clone, "tools", "install.sh"))).toBe(true);
+    // The pack reads the root lockfile, so a public clone must carry one.
+    expect(existsSync(join(clone, "package-lock.json"))).toBe(true);
 
     const env = { ...withShimmedEnv(), YACO_REPO_ROOT: clone };
     const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only"], {
@@ -211,51 +254,49 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(existsSync(join(sandbox, "bin", "yaco"))).toBe(true);
   }, 120_000);
 
-  it("re-runs without reinstalling, and repairs either shape of interrupted install", () => {
+  it("re-runs without reinstalling", () => {
     const clone = fullClone();
     expect(bootstrap(clone).status).toBe(0);
 
-    // Already installed: nothing to fetch.
+    // Already installed: the pack probe succeeds, so nothing is fetched.
     const again = bootstrap(clone);
     expect(again.status).toBe(0);
     expect(again.stdout).not.toContain("installing cli dependencies");
+  }, 180_000);
 
-    // Two residues an interrupted install leaves, and every readiness signal
-    // short of asking the bundler has mistaken one of them for a finished
-    // install: an empty node_modules, and a package present but incomplete —
-    // its manifest written, its entry point never extracted.
-    const deps = join(clone, "cli", "node_modules");
-    const damage = [
-      () => {
-        rmSync(deps, { recursive: true, force: true });
-        mkdirSync(deps, { recursive: true });
-      },
-      () => {
-        const manifest = readFileSync(join(deps, "smol-toml", "package.json"), "utf-8");
-        rmSync(join(deps, "smol-toml"), { recursive: true, force: true });
-        mkdirSync(join(deps, "smol-toml"), { recursive: true });
-        writeFileSync(join(deps, "smol-toml", "package.json"), manifest);
-      },
-    ];
-    for (const breakIt of damage) {
-      breakIt();
-      const repaired = bootstrap(clone);
-      if (repaired.status !== 0) console.error("install.sh stderr:\n", repaired.stderr);
-      expect(repaired.status).toBe(0);
-      expect(repaired.stdout).toContain("installing cli dependencies");
-      expect(repaired.stderr).not.toContain("Could not resolve");
-    }
+  it("refuses to reinstall over a populated node_modules, and prunes nothing", () => {
+    // `npm ci --workspace cli` deletes every workspace it was not asked about,
+    // so on a developer machine the remedial install would silently take out
+    // the app's dependency tree — minutes of native compilation, removed to fix
+    // a problem the script cannot even diagnose. The bootstrap install is for a
+    // clone that has never been installed; anything else is reported.
+    const clone = fullClone();
+    expect(bootstrap(clone).status).toBe(0);
+
+    const otherWorkspaceDep = join(clone, "node_modules", "not-ours");
+    mkdirSync(otherWorkspaceDep, { recursive: true });
+    writeFileSync(join(otherWorkspaceDep, "marker"), "someone else's install\n");
+    // Break the build so the probe fails with dependencies present.
+    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", {
+      flag: "a",
+    });
+
+    const r = bootstrap(clone);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).not.toContain("installing cli dependencies");
+    expect(r.stderr).toContain("dependencies already present");
+    expect(r.stderr).toContain("npm ci");
+    expect(existsSync(join(otherWorkspaceDep, "marker"))).toBe(true);
   }, 180_000);
 
   it("reports the build failure that asked for the install, not the install's own", () => {
-    // The probe cannot say *why* the bundle failed, so a source error selects
-    // the install branch too. On a machine that cannot reach a registry the
-    // install then fails, and its error is a red herring — the cause has to
-    // survive.
+    // The probe cannot say *why* the pack failed, so a source error selects the
+    // install branch too. On a machine that cannot reach a registry the install
+    // then fails, and its error is a red herring — the cause has to survive.
     const clone = fullClone();
-    expect(bootstrap(clone).status).toBe(0);
-    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", { flag: "a" });
-    rmSync(join(clone, "cli", "node_modules"), { recursive: true, force: true });
+    writeFileSync(join(clone, "cli", "src", "main.ts"), "\nthis is not valid typescript (((\n", {
+      flag: "a",
+    });
 
     const r = spawnSync("bash", [join(clone, "tools", "install.sh"), "--cli-only", "--skip-doctor"], {
       env: {
@@ -263,18 +304,21 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
         YACO_REPO_ROOT: clone,
         // No reachable registry and no warm cache, so the remedial install
         // cannot quietly succeed.
-        BUN_CONFIG_REGISTRY: "http://127.0.0.1:9/",
-        BUN_INSTALL_CACHE_DIR: join(sandbox, "empty-bun-cache"),
+        npm_config_registry: "http://127.0.0.1:9/",
+        npm_config_cache: join(sandbox, "empty-npm-cache"),
+        npm_config_fetch_retries: "0",
+        npm_config_fetch_timeout: "5000",
       },
       encoding: "utf-8",
-      timeout: 90_000,
+      timeout: 120_000,
     });
 
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("could not install the cli dependencies");
-    expect(r.stderr).toContain("Expected");
-    expect(r.stderr).toContain("cli/src/main.ts");
-  }, 120_000);
+    // The pack's own failure, kept verbatim underneath the install's.
+    expect(r.stderr).toContain("the build failure that asked for them was:");
+    expect(r.stderr).toContain("@yaco/cli");
+  }, 180_000);
 });
 
 // One-shot afterAll guard against any stray sandbox.

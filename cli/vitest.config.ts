@@ -39,6 +39,12 @@ export default defineConfig({
           ...shared,
           name: "integration",
           include: ["test/integration/**/*.{test,integration}.ts"],
+          // Sequential. These files share the machine — tmux, git, the
+          // installed binary — and one of them runs `tools/install.sh`, whose
+          // `prepack` deletes and rebuilds `dist/` under every other file's
+          // feet. Isolation between processes does not help when the contended
+          // resource is the filesystem.
+          fileParallelism: false,
         },
       },
     ],
