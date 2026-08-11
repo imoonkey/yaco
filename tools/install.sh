@@ -13,6 +13,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${YACO_BIN_DIR:-$HOME/.local/bin}"
+# Shared by the readiness probe and the compile, so the probe can never resolve
+# a different graph than the build it is standing in for.
+BUILD_ENTRY="cli/src/main.ts"
+BUILD_TARGET="bun"
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -36,14 +40,15 @@ echo "  bin dir:   $BIN_DIR"
 # isolated copy of the CLI's own manifest is the one thing that behaves
 # identically in both, so install there and copy the result in.
 #
-# Readiness is decided by the bundler, not by inspecting node_modules. It is the
-# same resolution the compile below performs, over the whole import graph, so it
-# is the only signal that cannot mistake a partially installed or damaged
-# package — or a missing transitive dependency — for a usable one. Every cheaper
-# check tried here (a directory existing, then a dependency's own manifest
-# existing) did exactly that. A non-dependency build error trips it too; the
-# install that follows is harmless and the compile then reports the real failure.
-if ! (cd "$REPO_ROOT" && bun build --target=bun cli/src/main.ts) >/dev/null 2>&1; then
+# Readiness is decided by the bundler, not by inspecting node_modules: the probe
+# and the compile below share an entry point and a target, so the probe performs
+# the compile's own resolution over the whole import graph. That makes it the
+# only signal that cannot mistake a partially installed or damaged package — or
+# a missing transitive dependency — for a usable one. Every cheaper check tried
+# here (a directory existing, then a dependency's own manifest existing) did
+# exactly that. A non-dependency build error trips it too; the install that
+# follows is harmless and the compile then reports the real failure.
+if ! (cd "$REPO_ROOT" && bun build --target="$BUILD_TARGET" "$BUILD_ENTRY") >/dev/null 2>&1; then
   echo "  installing cli dependencies ..."
   stage="$(mktemp -d)"
   trap 'rm -rf "$stage"' EXIT
@@ -59,7 +64,7 @@ fi
 
 echo "  building $BIN_DIR/yaco ..."
 
-(cd "$REPO_ROOT" && bun build cli/src/main.ts --compile --outfile "$BIN_DIR/yaco")
+(cd "$REPO_ROOT" && bun build --target="$BUILD_TARGET" "$BUILD_ENTRY" --compile --outfile "$BIN_DIR/yaco")
 chmod +x "$BIN_DIR/yaco"
 
 case "$(uname -s)" in
