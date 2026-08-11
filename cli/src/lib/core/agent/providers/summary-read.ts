@@ -18,15 +18,13 @@
  *
  *  -> See: `doc/main/cli/exports.md` (the six eligibility rules this obeys). */
 
-import { existsSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { PENDING_SESSION_ID } from "../model.ts";
 import { NEWLINE, resolveClaudeLogPath, resolveCodexLogPaths } from "./output.ts";
 import { extractUserText, firstMeaningfulMessage } from "./prompt-label.ts";
-import { codexDbPath } from "./provider-home.ts";
+import { codexThreadRow } from "./codex-thread.ts";
 
 /** Everything a summary is derived from, and nothing else. A `SessionState`
  *  satisfies it, so the CLI passes its state files through unchanged; the app
@@ -62,7 +60,7 @@ const SCAN_CHUNK_BYTES = 256 * 1024;
  *  Chunking bounds how long the *scan* blocks the thread, but not one record:
  *  a JSONL record is decoded, `JSON.parse`d and collapsed in one uninterruptible
  *  go, and that cost is linear in its length — ~2 ms per MB, so a 36 MB record
- *  is ~73 ms, three times the whole subprocess route this replaces.
+ *  is ~73 ms, two to three times the whole subprocess route this replaces.
  *
  *  A record above this cap is skipped without being decoded, and the scan
  *  continues past it. That is a real behaviour change and it is bounded by
@@ -127,46 +125,14 @@ function codexTexts(line: string): string[] {
   }
 }
 
-/** `title`/`first_user_message` for one thread.
- *
- *  This is rule 5's one judged synchronous admission: `node:sqlite` has no
- *  asynchronous interface, and this query is admitted because it is a point
- *  lookup on the `threads` primary key — `SEARCH threads USING INDEX
- *  sqlite_autoindex_threads_1 (id=?)` — which measures 0.3 ms warm and 1.4-1.8 ms
- *  on a first touch, open and close included, on an 11.1 MB, 2 297-row database.
- *  It is not droppable: on that same database `first_user_message` is empty for
- *  most recent threads and `title` is the last-resort label, so a reader without
- *  it answers differently.
- *
- *  The audit pins this SQL string itself and rejects every unbounded statement
- *  method in this module, so a second or edited query is a failing diff.
- *  -> See: `test/bench/summary-stall.ts --sqlite-probe`,
- *  `RULE_5_SQLITE` in `test/unit/export-audit.test.ts`. */
-function codexThreadRow(sessionId: string): { title: string | null; first: string | null } | null {
-  if (!existsSync(codexDbPath())) return null;
-  try {
-    const db = new DatabaseSync(codexDbPath(), { readOnly: true });
-    try {
-      const row = db
-        .prepare("SELECT title, first_user_message FROM threads WHERE id = ?")
-        .get(sessionId) as { title: string | null; first_user_message: string | null } | undefined;
-      return row ? { title: row.title ?? null, first: row.first_user_message ?? null } : null;
-    } finally {
-      db.close();
-    }
-  } catch {
-    return null;
-  }
-}
-
 /** Codex auto-renames the thread `title` to the YACO handle on start, so the
  *  real signal is `first_user_message`; the rollout log is the fallback, and
  *  `title` only when it is not a handle echo.
  *
- *  Every rollout naming the session is tried, newest first, until one produces a
- *  label. Taking only the newest would lose a real prompt whenever a session has
- *  been resumed into a fresh rollout that opens with nothing but a filtered
- *  context block. */
+ *  Each day's rollout for the session is tried, newest day first, until one
+ *  produces a label. Stopping at the newest would lose a real prompt whenever a
+ *  session has been resumed into a fresh rollout that opens with nothing but a
+ *  filtered context block. */
 async function codexLabel(target: SummaryTarget): Promise<string | null> {
   const row = codexThreadRow(target.sessionId);
   const first = firstMeaningfulMessage([row?.first ?? ""], target.handle);

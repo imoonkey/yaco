@@ -60,7 +60,12 @@ function createCodexThread(id: string, fields: { title?: string; first?: string 
 }
 
 /** A Codex rollout log under `~/.codex/sessions/<Y>/<M>/<D>/`. */
-function writeCodexRollout(sessionId: string, texts: string[], day = new Date()): void {
+function writeCodexRollout(
+  sessionId: string,
+  texts: string[],
+  day = new Date(),
+  prefix = "rollout-2026-06-05T00-00-00",
+): void {
   const dayDir = join(
     sandbox, ".codex", "sessions",
     String(day.getFullYear()),
@@ -69,7 +74,7 @@ function writeCodexRollout(sessionId: string, texts: string[], day = new Date())
   );
   mkdirSync(dayDir, { recursive: true });
   writeFileSync(
-    join(dayDir, `rollout-2026-06-05T00-00-00-${sessionId}.jsonl`),
+    join(dayDir, `${prefix}-${sessionId}.jsonl`),
     texts
       .map((text) => JSON.stringify({
         type: "response_item",
@@ -204,6 +209,19 @@ describe("codex summarize", () => {
     expect(await labelOf(session({ provider: "codex", sessionId }))).toBe("real codex prompt");
   });
 
+  it("takes one rollout per day — the first by name, as the resolver always has", async () => {
+    // Days descend but a day's filenames sort ascending, so yielding every
+    // same-day match would hand a later file precedence over an earlier one and
+    // over every older day. One per day is the selection this walk has always
+    // made; only continuing past a day is new.
+    const sessionId = "55555555-6666-7777-8888-999999999999";
+    const day = new Date();
+    writeCodexRollout(sessionId, ["# context only"], day, "rollout-2026-08-11T01-00-00");
+    writeCodexRollout(sessionId, ["a later same-day prompt"], day, "rollout-2026-08-11T09-00-00");
+    writeCodexRollout(sessionId, ["yesterday's prompt"], new Date(Date.now() - 86400000));
+    expect(await labelOf(session({ provider: "codex", sessionId }))).toBe("yesterday's prompt");
+  });
+
   it("keeps looking at older rollouts when the newest one yields no label", async () => {
     // A resumed session gets a fresh rollout that can open with nothing but a
     // filtered context block. Stopping at the newest match would lose the real
@@ -286,41 +304,91 @@ describe("bounded scan", () => {
     // inside a UTF-8 sequence, so a record is only ever decoded whole. A later
     // refactor to per-chunk string decoding would put U+FFFD in the label here
     // while every other test in this file stayed green.
-    const chunk = 256 * 1024;
-    // "𝄞" is four bytes. Pad so the record's own bytes place one across the
-    // boundary, then close the record and put the prompt in the next one.
-    const head = JSON.stringify({ type: "user", message: { content: "x" } });
-    const padTo = chunk - head.length - 40;
-    const straddling = `${"a".repeat(padTo)}𝄞${"b".repeat(64)}`;
+    //
+    // The offset is computed from the serialized record and asserted, not
+    // estimated: a fixture that lands the code point *near* the boundary passes
+    // against a reader that corrupts one *on* it.
+    const CHUNK = 256 * 1024;
+    const CLEF = "𝄞"; // four bytes in UTF-8
+    const pad = (n: number): string => "a".repeat(n);
+    const serialize = (content: string): string =>
+      JSON.stringify({ type: "user", message: { content } });
+    const build = (padding: number): string =>
+      `<system-reminder>${pad(padding)}${CLEF}${pad(64)}</system-reminder>`;
+    /** Byte offset of the clef within the serialized record — which, since this
+     *  is the log's first record, is its offset in the file. */
+    const offsetOf = (content: string): number => {
+      const line = serialize(content);
+      return Buffer.byteLength(line.slice(0, line.indexOf(CLEF)));
+    };
+
+    // The prefix grows exactly one byte per padding character, so one linear
+    // correction lands the clef's first byte on CHUNK-2 — two bytes inside the
+    // first read, two bytes into the second.
+    const guess = CHUNK;
+    const padding = guess + (CHUNK - 2) - offsetOf(build(guess));
+    const straddling = build(padding);
+    const offset = offsetOf(straddling);
+    expect(offset, "clef starts before the boundary").toBeLessThan(CHUNK);
+    expect(offset + 4, "clef ends after the boundary").toBeGreaterThan(CHUNK);
+
     writeClaudeSession("c-utf8", [
-      { type: "user", message: { content: `<system-reminder>${straddling}</system-reminder>` } },
-      { type: "user", message: { content: `after ${straddling.slice(-70)}` } },
+      { type: "user", message: { content: straddling } },
+      { type: "user", message: { content: `after the boundary ${CLEF}` } },
     ]);
     const label = await labelOf(session({ sessionId: "c-utf8" }));
-    expect(label).toContain("𝄞");
+    expect(label).toBe(`after the boundary ${CLEF}`);
     expect(label).not.toContain("�");
   });
 
-  it("skips a record too large to decode without stalling, and reads on past it", async () => {
-    // A record above MAX_RECORD_BYTES costs ~2 ms per MB to decode, parse and
-    // collapse in one uninterruptible go. It is skipped undecoded; the scan
-    // continues, so the next record's prompt is still the label.
+  /** A Claude log whose first record serializes to exactly `bytes`, followed by
+   *  a normal prompt. `trailingNewline: false` leaves the giant record last and
+   *  unterminated, which is the other path through the scan. */
+  function writeSizedRecord(
+    sessionId: string,
+    bytes: number,
+    opts: { after?: string; trailingNewline?: boolean } = {},
+  ): void {
     const dir = join(sandbox, ".claude", "projects", encodeClaudeCwd(PROJECT));
     mkdirSync(dir, { recursive: true });
-    const filler = "word ".repeat(Math.round(5 * 1024 * 1024 / 5));
-    writeFileSync(join(dir, "c-huge.jsonl"),
-      [JSON.stringify({ type: "user", message: { content: filler } }),
-       JSON.stringify({ type: "user", message: { content: "the prompt after the giant record" } })].join("\n") + "\n");
-    expect(await labelOf(session({ sessionId: "c-huge" }))).toBe("the prompt after the giant record");
+    const serialize = (content: string): string =>
+      JSON.stringify({ type: "user", message: { content } });
+    const overhead = Buffer.byteLength(serialize(""));
+    const record = serialize("w".repeat(bytes - overhead));
+    expect(Buffer.byteLength(record), `record for ${sessionId}`).toBe(bytes);
+    const rest = opts.after === undefined ? [] : [serialize(opts.after)];
+    writeFileSync(
+      join(dir, `${sessionId}.jsonl`),
+      [record, ...rest].join("\n") + (opts.trailingNewline === false ? "" : "\n"),
+    );
+  }
+
+  const CAP = 4 * 1024 * 1024;
+
+  it("keeps a record of exactly MAX_RECORD_BYTES", async () => {
+    writeSizedRecord("c-at-cap", CAP);
+    expect((await labelOf(session({ sessionId: "c-at-cap" })))?.length)
+      .toBe(CAP - Buffer.byteLength(JSON.stringify({ type: "user", message: { content: "" } })));
   });
 
-  it("keeps a record just under the cap", async () => {
-    const dir = join(sandbox, ".claude", "projects", encodeClaudeCwd(PROJECT));
-    mkdirSync(dir, { recursive: true });
-    const text = "word ".repeat(Math.round(3 * 1024 * 1024 / 5));
-    writeFileSync(join(dir, "c-big.jsonl"),
-      JSON.stringify({ type: "user", message: { content: text } }) + "\n");
-    expect((await labelOf(session({ sessionId: "c-big" })))?.length).toBe(text.trim().length);
+  it("skips a record one byte over the cap and reads on past it", async () => {
+    // A record above the cap costs ~2 ms per MB to decode, parse and collapse in
+    // one uninterruptible go. It is skipped undecoded; the scan continues, so
+    // the next record's prompt is still the label.
+    writeSizedRecord("c-over-cap", CAP + 1, { after: "the prompt after the giant record" });
+    expect(await labelOf(session({ sessionId: "c-over-cap" })))
+      .toBe("the prompt after the giant record");
+  });
+
+  it("skips an over-cap final record that has no trailing newline", async () => {
+    writeSizedRecord("c-over-tail", CAP + 1, { trailingNewline: false });
+    expect(await labelOf(session({ sessionId: "c-over-tail" }))).toBeNull();
+  });
+
+  it("keeps an at-cap final record that has no trailing newline", async () => {
+    writeSizedRecord("c-at-cap-tail", CAP, { trailingNewline: false });
+    expect((await labelOf(session({ sessionId: "c-at-cap-tail" })))?.length)
+      .toBe(CAP - Buffer.byteLength(JSON.stringify({ type: "user", message: { content: "" } })));
   });
 });
 

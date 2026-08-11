@@ -300,15 +300,20 @@ function codexSessionsRoot(): string {
   return join(userHome(), ".codex", "sessions");
 }
 
-/** Walk ~/.codex/sessions/YYYY/MM/DD newest-first, yielding every rollout file
- *  whose name embeds this session id.
+/** Walk ~/.codex/sessions/YYYY/MM/DD from the newest day back, yielding **one**
+ *  rollout per day: the first by name among that day's files naming this session.
  *
  *  Lazy on purpose. A caller that wants "the session's rollout" takes the first
- *  and the walk stops there, paying what a `return`-on-first-hit search paid.
- *  A caller that has to *judge* each candidate — the summary read, which keeps
- *  looking when a rollout yields no label — resumes the same walk instead of
- *  reimplementing it. Files within a day are sorted, so the order is defined
- *  when a day holds more than one. */
+ *  value and the walk stops there, paying exactly what a return-on-first-hit
+ *  search paid and choosing exactly the file it chose. A caller that has to
+ *  *judge* each candidate — the summary read, which keeps looking when a rollout
+ *  yields no label — resumes the same walk instead of reimplementing it.
+ *
+ *  One per day rather than all of them, deliberately: the days are descending
+ *  but a day's filenames sort ascending, so yielding every match would hand a
+ *  later same-day file precedence over an earlier one *and* over every older
+ *  day. One-per-day is the selection this walk has always made; only the
+ *  continuation past a day is new. */
 async function* codexLogPaths(sessionId: string): AsyncGenerator<string> {
   const root = codexSessionsRoot();
   if (!existsSync(root)) return;
@@ -322,9 +327,8 @@ async function* codexLogPaths(sessionId: string): AsyncGenerator<string> {
         for (const day of await descending(monthDir, /^\d{2}$/)) {
           const dayDir = join(monthDir, day);
           const files = (await readdir(dayDir)).sort();
-          for (const file of files) {
-            if (file.includes(sessionId) && file.endsWith(".jsonl")) yield join(dayDir, file);
-          }
+          const hit = files.find((f) => f.includes(sessionId) && f.endsWith(".jsonl"));
+          if (hit) yield join(dayDir, hit);
         }
       }
     }

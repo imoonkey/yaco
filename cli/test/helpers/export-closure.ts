@@ -457,48 +457,54 @@ export interface SqliteUse {
    *  argument is not a literal reports `null` — an audit that cannot read the
    *  query cannot bound it. */
   prepared: (string | null)[];
-  /** Calls to a SQL-executing method other than `get`. */
+  /** Every read of an unbounded execution method, and every member read the
+   *  scan cannot name. */
   unbounded: Finding[];
 }
 
 /** What one module does with `node:sqlite`, for rule 5's judged admissions.
  *
- *  Names rather than types, and deliberately so: `db.prepare(sql)` and
- *  `statement.all()` are the same call however the statement got its name, so
- *  matching the method name catches the shapes a chained-expression check misses
- *  — `const s = db.prepare(q); s.all()`, an alias, `s["all"]()`. The cost is
- *  that an unrelated `.run()` in an admitted module also fails, which is the
- *  fail-closed direction: an admitted module is small and hand-read. */
+ *  The rule is on **property access, not on calls**, and that is the whole
+ *  lesson of getting it wrong twice. A text match missed
+ *  `const s = db.prepare(q); s.all()`. Matching the *callee* name of a call
+ *  caught that one and still missed `s.all.bind(s)()`, `s.all.call(s)`, and a
+ *  local binding shadowing the `Promise` global the check exempted — three
+ *  bypasses review found in one sitting. Reading the member is the one event
+ *  every spelling has in common, so that is what fails.
+ *
+ *  Consequently a computed member whose key is not a literal fails too: an audit
+ *  that cannot see which member is read cannot bound it. That is only livable
+ *  because an admitted module is small and single-purpose by construction — it
+ *  cannot contain a `Promise.all`, which is exactly why the admitted query lives
+ *  in a module of its own. */
 export function scanSqliteUse(absPath: string, root: string = SRC_ROOT): SqliteUse {
   const { file } = parse(absPath);
   const path = relative(dirname(root), absPath);
   const use: SqliteUse = { prepared: [], unbounded: [] };
+  const at = (node: ts.Node): number =>
+    file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+  const reject = (node: ts.Node, detail: string): void => {
+    use.unbounded.push({ path, line: at(node), rule: 5, detail });
+  };
 
   const visit = (node: ts.Node): void => {
     if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)) return;
-    if (ts.isCallExpression(node)) {
-      const name = calleeName(node.expression);
-      if (name === "prepare") {
-        const arg = node.arguments[0] && unwrap(node.arguments[0]);
-        use.prepared.push(
-          arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))
-            ? arg.text.replace(/\s+/g, " ").trim()
-            : null,
-        );
-      } else if (
-        name !== null && SQLITE_UNBOUNDED.has(name) &&
-        // `Promise.all` is the one collision worth naming: `Promise` is a
-        // global, so nothing can hide a statement behind it.
-        !isNamespacedCall(node.expression, "Promise")
-      ) {
-        use.unbounded.push({
-          path,
-          line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
-          rule: 5,
-          detail: `${name}()`,
-        });
-      }
+
+    if (ts.isCallExpression(node) && calleeName(node.expression) === "prepare") {
+      const arg = node.arguments[0] && unwrap(node.arguments[0]);
+      use.prepared.push(
+        arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))
+          ? arg.text.replace(/\s+/g, " ").trim()
+          : null,
+      );
+    } else if (ts.isPropertyAccessExpression(node)) {
+      if (SQLITE_UNBOUNDED.has(node.name.text)) reject(node, `.${node.name.text}`);
+    } else if (ts.isElementAccessExpression(node)) {
+      const key = unwrap(node.argumentExpression);
+      if (!ts.isStringLiteral(key)) reject(node, "[<computed member>]");
+      else if (SQLITE_UNBOUNDED.has(key.text)) reject(node, `["${key.text}"]`);
     }
+
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(file, visit);

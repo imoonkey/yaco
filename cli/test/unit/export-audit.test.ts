@@ -295,6 +295,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
   "./core/agent/summaries": {
     files: [
       "src/lib/core/agent/model.ts",
+      "src/lib/core/agent/providers/codex-thread.ts",
       "src/lib/core/agent/providers/output.ts",
       "src/lib/core/agent/providers/prompt-label.ts",
       "src/lib/core/agent/providers/provider-home.ts",
@@ -370,10 +371,11 @@ const RULE_5_DEBT: string[] = [];
  *  bounded-name list, because the name is a database handle and not an
  *  operation: `BOUNDED_SYNC` would admit `.all()` over a whole table, anywhere,
  *  invisibly. What is admitted is not the import — it is `prepares`, the exact
- *  queries measured, checked against the module's AST, with every unbounded
- *  execution method in that module rejected. Changing the SQL, adding a second
- *  query, or reaching a statement through a variable to call `.all()` on it all
- *  fail. */
+ *  queries measured, checked against the module's AST, with every *read* of an
+ *  unbounded execution member in that module rejected. Changing the SQL, adding
+ *  a second query, or reaching `all` through a variable, a `.bind`, a `.call` or
+ *  a computed key all fail. Rejecting the member read rather than the call is
+ *  what makes an admitted module necessarily tiny — see `codex-thread.ts`. */
 interface SqliteAdmission {
   /** The measurement, and the command that reproduces it. */
   bound: string;
@@ -382,13 +384,12 @@ interface SqliteAdmission {
 }
 
 const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
-  "src/lib/core/agent/providers/summary-read.ts import DatabaseSync": {
+  "src/lib/core/agent/providers/codex-thread.ts import DatabaseSync": {
     bound:
       "point lookup on the `threads` primary key (SEARCH threads USING INDEX " +
       "sqlite_autoindex_threads_1 (id=?)) on an 11.1 MB, 2 297-row database: " +
-      "0.3 ms p50 and max over 40 warm samples, open and close included, and " +
-      "1.4-1.8 ms on a first touch. Reproduce with " +
-      "`node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
+      "0.3 ms p50 and max over 40 warm samples, open and close included. " +
+      "Reproduce with `node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
     prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
   },
 };
@@ -896,6 +897,61 @@ describe("the audit itself", () => {
         "3:execSync()",
         "3:execSync()",
       ]);
+    } finally {
+      rmSync(dirname(root), { recursive: true, force: true });
+    }
+  });
+
+  it("sees an unbounded query however the statement's method is reached", () => {
+    // Every one of these was a live bypass of an earlier version of this check:
+    // the first two of a text match, the rest of a check on the callee name of a
+    // call — including a local binding shadowing the `Promise` global that check
+    // exempted. Reading the member is what they have in common, so that is what
+    // the scan rejects.
+    const { root } = plant({
+      "index.ts":
+        `import { DatabaseSync } from "node:sqlite";\n` +
+        `const db = new DatabaseSync("x", { readOnly: true });\n` +
+        `const statement = db.prepare("SELECT title FROM threads WHERE id = ?");\n` +
+        `export const a = () => statement.all();\n` +
+        `export const b = () => statement.all.bind(statement)();\n` +
+        `export const c = () => statement.all.call(statement);\n` +
+        `export const d = () => statement["all"]();\n` +
+        `const key = "a" + "ll";\n` +
+        `export const e = () => statement[key]();\n` +
+        `const Promise = db.prepare("SELECT * FROM threads");\n` +
+        `export const f = () => Promise.all();\n` +
+        `export const ok = () => statement.get("id");\n`,
+    });
+    try {
+      const use = scanSqliteUse(join(root, "index.ts"), root);
+      expect(use.prepared).toEqual([
+        "SELECT title FROM threads WHERE id = ?",
+        "SELECT * FROM threads",
+      ]);
+      expect(use.unbounded.map((f) => f.detail)).toEqual([
+        ".all",
+        ".all",
+        ".all",
+        '["all"]',
+        "[<computed member>]",
+        ".all",
+      ]);
+    } finally {
+      rmSync(dirname(root), { recursive: true, force: true });
+    }
+  });
+
+  it("reads a query it cannot see as unauditable rather than as the admitted one", () => {
+    const { root } = plant({
+      "index.ts":
+        `import { DatabaseSync } from "node:sqlite";\n` +
+        `const table = "threads";\n` +
+        `export const q = (db: DatabaseSync, id: string) =>\n` +
+        `  db.prepare(\`SELECT title FROM \${table} WHERE id = ?\`).get(id);\n`,
+    });
+    try {
+      expect(scanSqliteUse(join(root, "index.ts"), root).prepared).toEqual([null]);
     } finally {
       rmSync(dirname(root), { recursive: true, force: true });
     }
