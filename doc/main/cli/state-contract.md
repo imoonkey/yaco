@@ -161,6 +161,7 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 ### `yaco agent hook-event <EventName>`
 
 - Provider hook entry point (not for direct user invocation). Reads JSON from stdin, applies `applyHookEvent` to the live session's state file. `Stop`/`StopFailure` events go through a 120 ms debounce window.
+- **Which session the event belongs to** is resolved by `resolveWhoamiMatch` — the same resolver `agent whoami` uses: the calling process's own pane (`$TMUX_PANE`), then its provider session-id env, then its ancestor PIDs, and only ever a handle that owns a live state file. No match → the event is dropped. The hook configs are installed **globally** (`~/.claude/settings.json`, `~/.codex/hooks.json`), so this entry point runs for every provider process on the machine, including ones yaco never started and ones outside tmux; the identity must come from the calling process, never from ambient tmux state. Asking tmux for "the current session" with no target does not have that property — outside tmux it answers with the server's most-recently-active session, which applies a foreign process's `Stop` notice and `SessionStart` session id to an unrelated live agent. -> See: [lifecycle.md](lifecycle.md), [providers.md](providers.md#hook-availability)
 
 ## Persisted ≈ Runtime
 

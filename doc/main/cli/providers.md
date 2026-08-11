@@ -214,6 +214,14 @@ Contract details:
   (`AgentOutputEvent | null`), so each event maps to a unique `nextOffset` and
   no same-line event is lost across a reconnect. Claude folds lead-in text into
   the single `question` event.
+- Codex writes an agent message under **two** rollout envelopes: a flat
+  `event_msg/agent_message` payload, and an `event_msg/item_completed` payload
+  wrapping an `AgentMessage` item whose text is split into `content[]` blocks.
+  The `phase` (`final_answer` / `commentary`) and the text are the same two
+  facts in both, so `classifyCodex` reads either into one shape and classifies
+  once. A payload shape the classifier does not recognise yields no `final` at
+  all, which reads downstream as `agent wait` hanging to its lifetime cap and an
+  empty Codex idle notice — not as a parse error.
 - `nextOffset` is the byte offset just past the consumed line; pass it back as
   the next `--offset` to resume without replay.
 - **Termination:** first `final` event, a defensive **max-lifetime** cap
@@ -447,7 +455,7 @@ apply displays apply counts (matching the historical plan-vs-apply split).
 | X9 | `suppress_unstable_features_warning` in config.toml | Codex docs | `src/lib/core/agent/lifecycle.ts#ensureCodexHooks` | **none** | warning text disrupts idle detection |
 | X10 | session data in `~/.codex/state_5.sqlite` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-sync: sessionId recovered after repair | SQLite fails, rollout scan already succeeded or stays PENDING |
 | X11 | SQLite `threads` table has `id`, `cwd`, `created_at` (no PID column); rollout scan is primary, DB is fallback | reverse engineering DB (2026-04-11: `logs` table dropped in migration #23; priority reversed to rollout-first for ms-precision concurrency safety) | `src/lib/core/agent/session-id.ts` | session-id.test.ts: SQL validation | query empty, sessionId stays PENDING |
-| X12 | rollout files at `~/.codex/sessions/YYYY/MM/DD/`; final answers are `event_msg.payload.type="agent_message"` with `phase="final_answer"` | reverse engineering | `src/lib/core/agent/session-id.ts`, `src/lib/core/agent/providers/output.ts#resolveCodexLogPath` | agent-output.test.ts: Codex final parser; hook-event.test.ts: Codex idle notice | sessionId stays PENDING, output streaming fails, or idle notice is empty |
+| X12 | rollout files at `~/.codex/sessions/YYYY/MM/DD/`; a final answer is `phase="final_answer"` under **either** `event_msg.payload.type="agent_message"` (flat, `message` string) or `event_msg.payload.type="item_completed"` with `item.type="AgentMessage"` (text in `content[]` blocks discriminated by `type="Text"`) — every local rollout from 2026-08-07 uses the second | reverse engineering | `src/lib/core/agent/session-id.ts`, `src/lib/core/agent/providers/output.ts#resolveCodexLogPath` | agent-output.test.ts: Codex final parser; hook-event.test.ts: Codex idle notice | sessionId stays PENDING, output streaming fails, or idle notice is empty |
 | X13 | detached Codex OSC 10/11 synthetic replies are gated by the provider adapter's `terminal.respondToColorQuery`; `start.ts` launches the responder right after `tmux new-session` when the adapter declares it (Codex does), with no fixed launch delay | provider-registry slice 2026-06-05 | gating in `src/commands/agent/start.ts`, responder in `src/lib/core/agent/tmux.ts#startOscColorQueryResponder`, flag in `src/lib/core/agent/providers/codex.ts` | lifecycle-guards test asserts Codex start launches the responder before publishing pid | input box may lose background tint if the responder attaches after Codex's first query |
 | X14 | `codex resume <uuid>` restores session | Codex docs | `src/commands/agent/start.ts` | agent-sync: resume contains token | resume fails |
 | X15 | Codex tool subprocesses expose `CODEX_THREAD_ID`, matching YACO state `sessionId` | live QA 2026-06-05 (`qa-codex-whoami`) | `src/lib/core/agent/whoami.ts` | whoami.test.ts: session-id fallback; live QA: `env -u TMUX_PANE yaco agent whoami --json` | `whoami` still resolves via `TMUX_PANE`; session-id fallback fails outside tmux pane env |

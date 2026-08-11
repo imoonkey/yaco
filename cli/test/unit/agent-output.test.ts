@@ -476,6 +476,61 @@ describe("provider classifyLine", () => {
     expect(codexClassify(msg("other"))).toBeNull();
     expect(codexClassify(JSON.stringify({ type: "response_item" }))).toBeNull();
   });
+
+  // The rollout event stream also carries an agent message as an
+  // `item_completed` envelope wrapping an `AgentMessage` item — the phase and
+  // the text are the same two facts, one level deeper. A turn whose final lands
+  // in this shape and is not recognised never produces a `final` event, so
+  // `agent wait` runs to its lifetime cap and the idle notice stays empty.
+  it("codex: an item_completed AgentMessage maps by the same phases", () => {
+    const item = (phase: string, ...texts: string[]) =>
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          thread_id: "019ff247-76e5-7e23-ad01-4bf401ebf427",
+          item: { type: "AgentMessage", id: "msg_1", phase, content: texts.map((text) => ({ type: "Text", text })) },
+        },
+      });
+    expect(codexClassify(item("final_answer", "done"))).toEqual({ kind: "final", text: "done" });
+    expect(codexClassify(item("commentary", "thinking out loud"))).toEqual({
+      kind: "interim",
+      text: "thinking out loud",
+    });
+    expect(codexClassify(item("final_answer", "one", "two"))).toEqual({ kind: "final", text: "one\ntwo" });
+    expect(codexClassify(item("other", "x"))).toBeNull();
+    expect(codexClassify(item("final_answer", "   "))).toBeNull();
+  });
+
+  it("codex: only `Text` content blocks contribute to an agent message", () => {
+    const line = JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        item: {
+          type: "AgentMessage",
+          id: "msg_1",
+          phase: "final_answer",
+          content: [
+            { type: "Metadata", text: "internal" },
+            { type: "Text", text: "answer" },
+          ],
+        },
+      },
+    });
+    expect(codexClassify(line)).toEqual({ kind: "final", text: "answer" });
+  });
+
+  it("codex: a non-message item_completed is not an agent message", () => {
+    const line = JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        item: { type: "CommandExecution", id: "exec-1", command: ["/bin/bash", "-lc", "ls"], exit_code: 0 },
+      },
+    });
+    expect(codexClassify(line)).toBeNull();
+  });
 });
 
 describe("cursor token", () => {
