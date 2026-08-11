@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-08-11: one corrupt events line stops costing a stack trace per read
+
+**What changed:**
+- `eventsLog.readEvents` logged a skipped malformed line by passing the caught `SyntaxError` to `console.warn`, so Node printed its stack — about five lines — for every bad line on every call, and the attention engine re-reads the log on every recompute. It now logs one line: the 1-based line number, the file, and a snippet capped at 120 characters.
+- The snippet renders C0/DEL bytes as U+FFFD. This is not decoration: the corruption actually observed on the desktop was a terminal OSC background-color reply written ahead of an event, and the old warning echoed those bytes straight back to whatever terminal was reading the log.
+- Skip-and-continue is untouched, which was the point — the behavior was already correct and only its log volume was not. The pre-existing test asserting the good events on either side of a bad line are still returned is what pins that, and four tests now cover the warning's shape (cardinality, line number, bound, byte rendering) plus a silent all-valid path.
+- Not done, deliberately: the warning still repeats once per read, so a corrupt line still costs one line per recompute. Suppressing that needs per-file state and invalidation, the acceptance criteria did not ask for it, and the 5x per-skip factor is the part that made the log unreadable.
+
+**Why:**
+- A handled, correct skip was producing output sized like an unhandled crash, which is what made a one-line data problem read as a server fault.
+
+**Key files:** `app/server/src/lib/eventsLog.ts`, `app/server/test/eventsLog.test.ts`, `doc/main/app/data-model/persistence.md`
+**Verification:** `bash scripts/verify.sh` green; `test/eventsLog.test.ts` 22/22. E2E on an isolated `YACO_HOME` + port 3457: server boots on a planted corrupt line, `/api/attention/feed` still returns the events either side of it, log shows one bounded line. Base-vs-head on the same fixture: 3 console lines → 1, raw `^[` → U+FFFD, same events returned. Independent Codex review (`rev-events-log`): APPROVE, 0 Critical/High.
+**Commit:** c5bde43d
+**Blockers:** None. Two environment issues reported, not fixed: `worktree-provision-wrong-cli` (the worktree's `app/server/node_modules` symlink makes `manifest.test.ts` fail at the pristine base too — worked around worktree-locally), and a malformed `projects.json` taking down `startRuntime` with an `ERR_INVALID_ARG_TYPE` stack.
+
 ## 2026-08-11: the history read moves in process — the fifth and last Phase-2 cutover
 
 **What changed:**
