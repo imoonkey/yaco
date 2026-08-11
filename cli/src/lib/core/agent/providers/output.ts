@@ -356,10 +356,18 @@ function codexAgentMessage(payload: unknown): { phase: unknown; text: string } |
     return typeof p.message === "string" ? { phase: p.phase, text: p.message } : null;
   }
   if (p.type !== "item_completed" || p.item?.type !== "AgentMessage") return null;
+  // Keyed on the block's own discriminator, not on "has a string `text`":
+  // today `Text` is the only content variant Codex defines, so a second
+  // text-bearing one would otherwise be folded into the answer silently.
   const blocks = Array.isArray(p.item.content) ? p.item.content : [];
   const text = blocks
-    .map((b) => (b && typeof b === "object" ? (b as { text?: unknown }).text : undefined))
-    .filter((t): t is string => typeof t === "string")
+    .filter((b): b is { type: string; text: string } =>
+      Boolean(b) &&
+      typeof b === "object" &&
+      (b as { type?: unknown }).type === "Text" &&
+      typeof (b as { text?: unknown }).text === "string",
+    )
+    .map((b) => b.text)
     .join("\n");
   return { phase: p.item.phase, text };
 }

@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-08-11: `agent wait` was not the bug — a provider hook was writing into the wrong session
+
+**What changed:**
+- `yaco agent hook-event` no longer asks tmux for "the current session". `deriveHandle()` ran `tmux display-message -p '#{session_name}'` with **no target**: inside a pane that names the caller's own session, and outside tmux it does not fail — it names the server's most-recently-active session. The hook configs are installed globally (`~/.claude/settings.json`, `~/.codex/hooks.json`), so that entry point runs for every Claude / Codex process on the machine, including ones yaco never started and ones outside tmux, and each of those applied **its own** event to an arbitrary live agent's state file. Identity now comes from `resolveWhoamiMatch` — the resolver `agent whoami` already used: own pane, then provider session-id env, then ancestor PIDs, and only ever a handle that owns a live state file. Two identity resolvers become one, and the surviving one was already under test.
+- `classifyCodex` reads the `event_msg/item_completed` envelope wrapping an `AgentMessage` item, alongside the flat `event_msg/agent_message` payload it already read. Same phase, same text, one level deeper, text split across `content[]` blocks.
+
+**Why — and this is the whole finding.** The task was filed as two symptoms of `agent wait` / `send --wait` under concurrency: (a) empty stdout while the turn completed normally, (b) another session's completion notice surfacing in a wait or a `messages --index -1`. **Neither is in the wait path.** They are one defect in the hook handler, plus one unrelated stale parser:
+- a foreign `Stop` writes `status: idle` and a `notice` filled from the **foreign** transcript — that is symptom (b) exactly;
+- a foreign `SessionStart` overwrites `sessionId`, which is unconditional in `applyHookEvent`. `sessionId` is the key *every* downstream read resolves a provider log from — `messages`, `output-cursor`, `wait`, `send --wait`. Once hijacked, the wait follows a file the victim will never write a final into, runs to its cap, and exits with an error that a caller reading only stdout sees as an empty result. That is symptom (a).
+- **Why it read as a concurrency bug and survived for months.** With one live session the misresolution lands on *yourself* and the wrong answer is accidentally the right one; it only becomes crosstalk once a second session exists, and which session it hits is ordered by tmux activity, so it moves between runs. The standing workaround — poll `agent status`, then `agent capture` — reads the corrupted `status` but never the corrupted `sessionId`, which is why it kept working and why nobody ever had to diagnose this.
+- The Codex classifier is a separate defect that produced the *same* symptom (a) for one provider, and produced it deterministically rather than under concurrency. Recording both, rather than folding the second into the first, is what kept the shared-cause claim honest.
+
+**Measured:**
+- Corpus, 2262 local Codex rollouts: the last day carrying the flat envelope is 2026-08-06, and from 2026-08-07 every rollout carries the new one. Recognised finals across the 46 rollouts written since 2026-08-08: **0 before, 100 after**, with every day up to 2026-08-06 byte-identical — so nothing that used to classify stopped.
+- Hook identity cost, on this machine: pane route **~25 ms** against the retired call's ~30 ms; fallback route ~0.7 ms. The change is not a regression on a path that runs on every tool use.
+
+**Reproduced, not just described.** `plan/all/agent-wait-concurrency/repro-hook-crosstalk.mjs` drives three concurrent agents on a **private** tmux server and fires a foreign `Stop` and `SessionStart` from outside tmux; against the base it lands a foreign notice and a foreign `sessionId` on `victim-c` and then makes `agent wait victim-c` return `""` while `victim-c`'s own log holds a completed final, and after the fix all three rows flip together. The harness aborts before creating anything if the tmux server it reaches is outside its sandbox — the first, unguarded draft of it created three sessions on the real server, which is exactly the failure that guard now prevents. One live command shows the same thing: `env -u TMUX -u TMUX_PANE tmux display-message -p '#{session_name}'` named a different live agent.
+
+**Key files:** `cli/src/lib/core/agent/hook-event.ts`, `cli/src/lib/core/agent/providers/output.ts`, `cli/test/hook-event-identity.test.ts` (new), `cli/test/unit/agent-output.test.ts`, `doc/main/cli/{state-contract,providers}.md`
+**Verification:** `cd cli && npm run test` — 87 files / 1370 tests green; `tsc --noEmit -p .` clean; golden matrix untouched (no command output changed). `scripts/verify.sh` passes every step except `app/server`'s `manifest.test.ts`, confirmed failing identically at base `10e20e8e` by stash-test. One cross-provider Codex review.
+**Commit:** `10e20e8e..HEAD`
+**Next:** `providers/output.ts` was outside the task's declared scope and is fixed anyway — flagged in `plan/all/agent-wait-concurrency/findings.md`, revertable alone. A provider process launched from inside a managed agent's pane still resolves to that pane's agent; unchanged behaviour, recorded so it is not mistaken for a regression.
+**Blockers:** None.
+
 ## 2026-08-11: the history read moves in process — the fifth and last Phase-2 cutover
 
 **What changed:**

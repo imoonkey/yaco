@@ -214,6 +214,14 @@ Contract details:
   (`AgentOutputEvent | null`), so each event maps to a unique `nextOffset` and
   no same-line event is lost across a reconnect. Claude folds lead-in text into
   the single `question` event.
+- Codex writes an agent message under **two** rollout envelopes: a flat
+  `event_msg/agent_message` payload, and an `event_msg/item_completed` payload
+  wrapping an `AgentMessage` item whose text is split into `content[]` blocks.
+  The `phase` (`final_answer` / `commentary`) and the text are the same two
+  facts in both, so `classifyCodex` reads either into one shape and classifies
+  once. A payload shape the classifier does not recognise yields no `final` at
+  all, which reads downstream as `agent wait` hanging to its lifetime cap and an
+  empty Codex idle notice — not as a parse error.
 - `nextOffset` is the byte offset just past the consumed line; pass it back as
   the next `--offset` to resume without replay.
 - **Termination:** first `final` event, a defensive **max-lifetime** cap

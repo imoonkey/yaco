@@ -502,6 +502,25 @@ describe("provider classifyLine", () => {
     expect(codexClassify(item("final_answer", "   "))).toBeNull();
   });
 
+  it("codex: only `Text` content blocks contribute to an agent message", () => {
+    const line = JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        item: {
+          type: "AgentMessage",
+          id: "msg_1",
+          phase: "final_answer",
+          content: [
+            { type: "Metadata", text: "internal" },
+            { type: "Text", text: "answer" },
+          ],
+        },
+      },
+    });
+    expect(codexClassify(line)).toEqual({ kind: "final", text: "answer" });
+  });
+
   it("codex: a non-message item_completed is not an agent message", () => {
     const line = JSON.stringify({
       type: "event_msg",
