@@ -1,4 +1,4 @@
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
+import type { MsEdgeTTS } from 'msedge-tts'
 import type { Readable } from 'node:stream'
 
 // Server-side neural TTS via edge-tts (Microsoft "Read Aloud" voices). One
@@ -49,7 +49,16 @@ function safeClose(tts: MsEdgeTTS): void {
  * the socket — so a hung connect or a synchronous toStream() throw cannot leak.
  */
 export async function synthesizeSpeech(text: string, voice: string): Promise<Buffer> {
-  const tts = new MsEdgeTTS()
+  // Loaded here, not at module scope, because `msedge-tts` is an
+  // optionalDependency and may legitimately be absent: it ships
+  // `preinstall: npx only-allow pnpm`, which refuses under npm and aborts a
+  // `npm install --global` of anything that requires it. Optional is the one
+  // classification npm tolerates that failure for — and a static import of a
+  // package that may be missing takes the whole server down at load, while this
+  // one lands in the same rejection path as any other synthesis failure, which
+  // /speak answers by letting the browser speak instead.
+  const { MsEdgeTTS: MsEdgeTtsClient, OUTPUT_FORMAT } = await import('msedge-tts')
+  const tts = new MsEdgeTtsClient()
 
   return await new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = []

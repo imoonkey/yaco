@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-08-11: the app ships as `@yaco/app` — one bundle, the built UI inside it
+
+**What changed:**
+- `app/server` is no longer the private workspace `yaco-server`: it is `@yaco/app@0.1.0`, publishable, versioned in lockstep with `@yaco/cli` and depending on it by published range (`^0.1.0`) rather than workspace `*`.
+- `app/server/scripts/build.mjs` emits one esbuild bundle, `dist/yaco-app.mjs`, which is also the `bin` (`yaco-app`, shebang from esbuild, written 0755). Externals are read from the manifest — **a declared dependency is external, everything else is inlined** — so `@yaco/codex-transcribe` is inlined precisely by not being a dependency, which is also the only correct published manifest.
+- `app/server/src/package-root.ts` resolves the UI at `<package-root>/ui`, replacing `resolve(SERVER_SRC_DIR, '../../ui/dist')`, which named a directory two levels *above* the package once installed. `app/ui`'s `build.outDir` moves to `../server/ui` so the same path is right from a checkout and from an install; `compress-dist` now follows the resolved `outDir` instead of a hardcoded `../dist/`, which also means the e2e build finally compresses the directory it wrote.
+- Three dependency defects, all invisible from a checkout where npm's hoisting resolves everything: `qrcode-terminal` was imported but never declared (so the bundle inlined a copy of it) → now optional beside the WhatsApp channel it serves; `better-sqlite3` was declared but unimported since the CLI moved to `node:sqlite` → removed, 13 MB and a native compile off every install; `msedge-tts` ships `preinstall: npx only-allow pnpm`, which refuses under npm and **aborted `npm install --global` of the whole package** → now optional behind a dynamic import, with `/speak` answering 502 and the browser speaking instead.
+- `app/server/test/manifest.test.ts` audits esbuild's metafile against the manifest in both directions and refuses the two routes the resolver cannot follow (non-literal `import()`, `require`/`createRequire`). `app/server/test/integration/pack.test.ts` packs both packages, installs them into a clean prefix under an isolated HOME, and fetches the UI over HTTP from a directory with no checkout above it. `vitest.config.ts` splits them into `unit` / `integration` projects, mirroring `cli`.
+- Deleted `app/server/package-lock.json`: npm ignores a lockfile inside a workspace, and this one still described `yaco-server`.
+
+**Why:**
+- Publishing the app is the second half of §7 of the `cli-node-sdk` design: the CLI alone delivers one layer of a three-layer product. It stays a **separate** package because merging would make every CLI-only user install `node-pty` and compile it on Linux to run `yaco agent list`, discarding the CLI's near-zero-dependency install.
+- The app carries no library contract — nothing imports it — so unlike the CLI it needs no dual emit. One bundle, native dependencies external, UI as static files.
+- The build output moved rather than being copied at pack time because `vite build --watch` (the `yaco-ui-build` service) never reaches a `&&`-chained copy step, and a fallback path in the server would have been exactly the repo-relative path this task exists to remove.
+
+**Key files:** `app/server/package.json`, `app/server/scripts/build.mjs`, `app/server/src/package-root.ts`, `app/server/src/index.ts`, `app/server/src/lib/tts.ts`, `app/server/vitest.config.ts`, `app/server/test/{manifest.test.ts,integration/pack.test.ts}`, `app/ui/vite.config.ts`, `app/ui/scripts/compress-dist.ts`, `doc/main/app/packaging.md`
+**Verification:** `scripts/verify.sh` green end to end; `app/server` 829 unit + 7 integration tests; Playwright e2e 206 passed / 1 flaky / 1 skipped; the installed tarball served the SPA shell, its hashed entry module (brotli-negotiated) and a deep route from a cwd with no checkout above it; `/api/voice/speak` returned a real 14,688-byte MP3 with the optional dependency present and a clean 502 on an `--omit=optional` install. Cross-provider review by Codex.
+**Commit:** `c434b30d..HEAD`
+**Next:** `tools/install.sh` still installs `@yaco/cli` only; teaching it the app is a follow-up, as is deciding whether `npm run test:integration` earns a place in `scripts/verify.sh` (it costs a clean-prefix install with a `node-pty` compile).
+**Blockers:** None
+
 ## 2026-08-11: export eligibility is a test, not a review judgment
 
 **What changed:**

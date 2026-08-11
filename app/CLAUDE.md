@@ -14,7 +14,7 @@ React/Vite frontend.
 ## Local Shape
 
 - `server/` — Hono API, SSE, WebSocket terminal, filesystem/tmux/yaco integration.
-- `ui/` — React 19 + Vite workspace UI.
+- `ui/` — React 19 + Vite workspace UI. Its build output is `server/ui` (the server resolves it from its own package root, and it ships there inside `@yaco/app`), never `ui/dist`.
 - Runtime state resolves through `${YACO_HOME:-~/.yaco}` and shared path helpers from `@yaco/cli/core/paths`.
 - Session management shells out to installed `yaco agent ... --json`; task mutations shell out to `yaco task ... --json`.
 

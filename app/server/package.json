@@ -1,37 +1,60 @@
 {
-  "name": "yaco-server",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@yaco/app",
+  "version": "0.1.0",
   "type": "module",
+  "description": "YACO web app — the Hono server for agent sessions, terminals and task graphs, and the built React UI it serves.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imoonkey/yaco.git",
+    "directory": "app/server"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "bin": {
+    "yaco-app": "./dist/yaco-app.mjs"
+  },
+  "files": [
+    "dist",
+    "ui",
+    "LICENSE"
+  ],
   "scripts": {
+    "clean": "rm -rf dist ui",
+    "build": "npm run build:ui && npm run build:bundle",
+    "build:ui": "cd ../ui && npm run build",
+    "build:bundle": "node scripts/build.mjs",
+    "prepack": "npm run clean && npm run build",
     "dev": "tsx watch --conditions=development src/index.ts",
     "start": "node --max-old-space-size=1536 --conditions=development --import tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "@yaco/cli": "*",
-    "@yaco/codex-transcribe": "*",
-    "better-sqlite3": "^12.8.0",
+    "@yaco/cli": "^0.1.0",
     "chokidar": "^3.6.0",
     "dotenv": "^17.3.1",
     "groq-sdk": "^1.1.1",
     "hono": "^4.7.0",
     "ignore": "^7.0.5",
-    "msedge-tts": "2.0.6",
     "node-pty": "^1.0.0",
     "openai": "^6.33.0",
     "weixin-agent-sdk": "^0.5.0",
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
+    "msedge-tts": "2.0.6",
+    "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.34.7"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
+    "esbuild": "^0.28.0",
     "tsx": "^4.19.0",
     "vitest": "^4.1.1"
   }

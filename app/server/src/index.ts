@@ -4,8 +4,7 @@ import { cors } from 'hono/cors'
 import { serve } from '@hono/node-server'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
-import { dirname, extname, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { extname, join, resolve, sep } from 'node:path'
 import { readFile, stat } from 'node:fs/promises'
 import { projectRoutes } from './routes/projects.js'
 import { progressRoutes } from './routes/progress.js'
@@ -24,6 +23,7 @@ import { usageRoutes } from './routes/usage.js'
 import { worktreeRoutes } from './routes/worktrees.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
+import { PACKAGE_ROOT } from './package-root.js'
 import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { pickEncoding, appendVary } from './lib/static-encoding.js'
 import { createOriginGuard } from './lib/origin.js'
@@ -58,12 +58,13 @@ import type { IPty } from 'node-pty'
 
 const isAllowedOrigin = createOriginGuard(process.env)
 
-const SERVER_SRC_DIR = dirname(fileURLToPath(import.meta.url))
-// Built UI to serve. Defaults to the canonical app/ui/dist; e2e overrides it via
-// YACO_UI_DIST so an isolated run serves its own build without clobbering dist.
+// Built UI to serve. It ships inside this package at `<package-root>/ui`, which
+// is also where `app/ui`'s vite build writes from a checkout, so one path is
+// right in both. e2e overrides it via YACO_UI_DIST so an isolated run serves its
+// own build without clobbering that one.
 const UI_DIST_DIR = process.env.YACO_UI_DIST
   ? resolve(process.env.YACO_UI_DIST)
-  : resolve(SERVER_SRC_DIR, '../../ui/dist')
+  : join(PACKAGE_ROOT, 'ui')
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],

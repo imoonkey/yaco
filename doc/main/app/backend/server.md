@@ -84,9 +84,11 @@ Signal handlers route through `shutdownGracefully()` which **awaits** `shutdownW
 
 ## UI Serving
 
-The served build directory is `ui/dist/` by default, overridable via the
-`YACO_UI_DIST` env var (e2e points it at its own `dist-e2e` build so an isolated
-run never clobbers `dist/` — see [doc/dev/app/workflow.md](../../../dev/app/workflow.md#e2e-isolation-hermetic-static-build)). When that dir exists, the server serves it with:
+The served build directory is `<package-root>/ui` by default — `app/server/ui`
+in a checkout, the same directory inside the installed package, resolved through
+`src/package-root.ts` (-> See: [packaging.md](../packaging.md#the-package-root))
+— overridable via the `YACO_UI_DIST` env var (e2e points it at its own
+`dist-e2e` build so an isolated run never clobbers the served one — see [doc/dev/app/workflow.md](../../../dev/app/workflow.md#e2e-isolation-hermetic-static-build)). When that dir exists, the server serves it with:
 - Content-type detection by **base** file extension (never `.br`/`.gz` — those are content-encoding markers, not media types)
 - Immutable cache headers for `/assets/` (hashed filenames)
 - SPA fallback: non-asset paths without extensions fall through to `index.html`
@@ -97,7 +99,7 @@ The build pipeline writes precompressed `.br` (brotli q11) and `.gz` (gzip 9) si
 Two subtle invariants:
 
 - **Suffix guard checks the resolved path, not the raw URL.** Direct requests like `/assets/foo.js.br` (or the percent-encoded `/assets/foo.js%2ebr`) must 404 — otherwise a client could fetch raw compressed bytes and mis-interpret them as identity. The check sits **after** `resolveUiPath` (i.e. post-`decodeURIComponent`) so encoded variants can't bypass it.
-- **Compressed-sibling reads fall back to identity on ENOENT.** `stat` then `readFile` is racy: a concurrent build can rewrite `dist/` between the two calls — routinely so on desktop, where `vite build --watch` rebuilds on every UI source change (see [dev/workflow.md](../../../dev/app/workflow.md#tailnet-mapping---serves-the-built-bundle)). If the chosen `.br`/`.gz` vanishes mid-flight, the handler re-reads the base file, drops `Content-Encoding`, and returns 200. ENOENT on the base file itself is a genuine miss → returns null so the SPA fallback runs.
+- **Compressed-sibling reads fall back to identity on ENOENT.** `stat` then `readFile` is racy: a concurrent build can rewrite the served directory between the two calls — routinely so on desktop, where `vite build --watch` rebuilds on every UI source change (see [dev/workflow.md](../../../dev/app/workflow.md#tailnet-mapping---serves-the-built-bundle)). If the chosen `.br`/`.gz` vanishes mid-flight, the handler re-reads the base file, drops `Content-Encoding`, and returns 200. ENOENT on the base file itself is a genuine miss → returns null so the SPA fallback runs.
 
 Negotiation only applies to UI routes (`/`, `/assets/*`, and the index fallback). The `/api/*` routes — including the SSE streams — are untouched so each line can flush immediately.
 

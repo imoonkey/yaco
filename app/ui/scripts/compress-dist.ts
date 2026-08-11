@@ -5,7 +5,6 @@ import { pipeline } from 'node:stream/promises'
 import { createBrotliCompress, createGzip, constants } from 'node:zlib'
 import type { Transform } from 'node:stream'
 
-const DIST = new URL('../dist/', import.meta.url).pathname
 const MIN_SIZE = 1024
 const COMPRESSIBLE = new Set([
   '.js', '.mjs', '.css', '.html', '.svg', '.json', '.webmanifest', '.txt', '.map',
@@ -42,14 +41,17 @@ async function compressTo(src: string, dest: string, makeStream: () => Transform
   return size
 }
 
-export async function compressDist() {
+/** Writes `.br`/`.gz` siblings next to every compressible file under `dist`.
+ *  The directory is a parameter because the build has three of them: the
+ *  packaged UI, e2e's `dist-e2e`, and whatever `--outDir` a caller passes. */
+export async function compressDist(dist: string) {
   let rawTotal = 0
   let brTotal = 0
   let gzTotal = 0
   let count = 0
   let failed = 0
 
-  for await (const file of walk(DIST)) {
+  for await (const file of walk(dist)) {
     const ext = extname(file).toLowerCase()
     if (ext === '.br' || ext === '.gz') continue
     if (!COMPRESSIBLE.has(ext)) continue
