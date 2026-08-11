@@ -151,10 +151,6 @@ export interface HistoryWindow {
   oldestUpdatedAt: string | null;
 }
 
-export interface ProviderHistory {
-  list(projectPath: string, liveSessions: readonly SessionState[]): Promise<HistorySession[]>;
-}
-
 /** Opaque cursor into a provider's persisted turn log. `token` is opaque to
  *  app/server; only the owning adapter may interpret it. */
 export interface OutputCursor {
@@ -324,7 +320,6 @@ export interface TuiProvider {
   sessionId: ProviderSessionId;
   hooks?: ProviderHooks;
   terminal?: ProviderTerminal;
-  history?: ProviderHistory;
   output?: ProviderOutput;
   projectMove?: ProviderProjectMove;
 }

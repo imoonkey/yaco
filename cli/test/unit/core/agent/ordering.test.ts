@@ -22,7 +22,11 @@ import { linkSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { encodeClaudeCwd } from "../../../../src/lib/core/project/encode.ts";
-import { claudeHistory, finalizeHistory } from "../../../../src/lib/core/agent/providers/history.ts";
+import {
+  DEFAULT_HISTORY_LIMIT,
+  finalizeHistory,
+  historyReaderForProvider,
+} from "../../../../src/lib/core/agent/providers/history.ts";
 import { listByPath, listStateHandles } from "../../../../src/lib/core/agent/session-state.ts";
 import type { HistorySession } from "../../../../src/lib/core/agent/providers/types.ts";
 
@@ -102,7 +106,7 @@ describe("claude project-log enumeration", () => {
         );
       }
 
-      const rows = await claudeHistory().list(projectPath, []);
+      const rows = await historyReaderForProvider("claude")!(projectPath, DEFAULT_HISTORY_LIMIT + 1);
       expect(rows.map((r) => r.sessionId)).toEqual(IDS);
     });
   }
@@ -122,32 +126,32 @@ describe("history window tie break", () => {
     };
   }
 
-  it("orders rows sharing an updatedAt by ascending sessionId", () => {
+  it("orders rows sharing an updatedAt by ascending sessionId", async () => {
     const tied = "2026-06-01T11:00:00.000Z";
-    const window = finalizeHistory(
+    const window = await finalizeHistory(
       [row("c", tied), row("a", tied), row("b", tied), row("z", "2026-06-01T10:00:00.000Z")],
       [],
     );
     expect(window.rows.map((r) => r.sessionId)).toEqual(["a", "b", "c", "z"]);
   });
 
-  it("keeps the window boundary stable when the tie straddles the limit", () => {
+  it("keeps the window boundary stable when the tie straddles the limit", async () => {
     const tied = "2026-06-01T11:00:00.000Z";
     const rows = [row("c", tied), row("a", tied), row("b", tied)];
-    const window = finalizeHistory(rows, [], { limit: 2 });
+    const window = await finalizeHistory(rows, [], { limit: 2 });
     expect(window.rows.map((r) => r.sessionId)).toEqual(["a", "b"]);
     expect(window.truncated).toBe(true);
   });
 
-  it("ranks rows whose updatedAt does not parse after every real timestamp", () => {
-    const window = finalizeHistory(
+  it("ranks rows whose updatedAt does not parse after every real timestamp", async () => {
+    const window = await finalizeHistory(
       [row("c", "not-a-date"), row("a", "not-a-date"), row("b", "2026-06-01T10:00:00.000Z")],
       [],
     );
     expect(window.rows.map((r) => r.sessionId)).toEqual(["b", "a", "c"]);
   });
 
-  it("returns the same order for every permutation of the same rows", () => {
+  it("returns the same order for every permutation of the same rows", async () => {
     // A comparator that answers NaN, or that ranks a row differently depending
     // on which row it is asked about, produces a different result per input
     // permutation — the sort's internals, not the data, decide.
@@ -159,7 +163,8 @@ describe("history window tie break", () => {
     ];
     const expected = ["a", "b", "d", "c"];
     for (const permutation of permutations(input)) {
-      expect(finalizeHistory(permutation, []).rows.map((r) => r.sessionId)).toEqual(expected);
+      const window = await finalizeHistory(permutation, []);
+      expect(window.rows.map((r) => r.sessionId)).toEqual(expected);
     }
   });
 });

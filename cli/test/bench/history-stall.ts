@@ -63,11 +63,10 @@ import { fileURLToPath } from "node:url";
 import { buildFixture, FIXTURE_PROJECT, SCALES, type FixtureScale } from "./history-fixture.ts";
 import { boundedHistory } from "./history-bounded-prototype.ts";
 import {
-  claudeHistory,
-  codexHistory,
   DEFAULT_HISTORY_LIMIT,
-  finalizeHistory,
+  readProjectHistory,
 } from "../../src/lib/core/agent/providers/history.ts";
+import { isOk } from "../../src/lib/core/result.ts";
 
 const CLI_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const BOUNDED_ENTRY = fileURLToPath(new URL("./bounded-entry.ts", import.meta.url));
@@ -228,16 +227,12 @@ interface RouteResult {
 type Route = () => Promise<RouteResult>;
 
 /** The shipped reader called directly, live sessions supplied by the caller
- *  (the app already holds them), as an admitted export would be. */
+ *  (the app already holds them), as the admitted export is. */
 function inProcessRoute(projectPath: string): Route {
   return async () => {
     const started = now();
-    const perProvider = await Promise.all([
-      claudeHistory().list(projectPath, []),
-      codexHistory().list(projectPath, []),
-    ]);
-    const window = finalizeHistory(perProvider.flat(), []);
-    return { rows: window.returned, wallMs: now() - started };
+    const window = await readProjectHistory(projectPath, []);
+    return { rows: isOk(window) ? window.value.returned : 0, wallMs: now() - started };
   };
 }
 

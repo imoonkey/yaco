@@ -10,10 +10,13 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { DatabaseSync } from "node:sqlite";
 import {
-  claudeHistory,
-  codexHistory,
+  DEFAULT_HISTORY_LIMIT,
   finalizeHistory,
+  historyReaderForProvider,
+  readProjectHistory,
 } from "../src/lib/core/agent/providers/history.ts";
+import { listProviderIds } from "../src/lib/core/agent/providers/index.ts";
+import { isOk } from "../src/lib/core/result.ts";
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 import { runHistory } from "../src/commands/agent/history.ts";
 import { writeState } from "../src/lib/core/agent/session-state.ts";
@@ -26,6 +29,12 @@ const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 
 let sandbox: string;
 const PROJECT = "/repo/demo";
+
+/** Every provider scan is capped at `limit + 1`; the tests read at the default
+ *  cap unless they are pinning the cap itself. */
+const CAP = DEFAULT_HISTORY_LIMIT + 1;
+const readClaude = (path = PROJECT, cap = CAP) => historyReaderForProvider("claude")!(path, cap);
+const readCodex = (path = PROJECT, cap = CAP) => historyReaderForProvider("codex")!(path, cap);
 
 function writeClaudeSession(sessionId: string, lines: object[], projectPath = PROJECT): void {
   const dir = join(sandbox, ".claude", "projects", encodeClaudeCwd(projectPath));
@@ -100,7 +109,7 @@ describe("claude history list", () => {
       { type: "assistant", timestamp: "2026-06-04T10:05:00.000Z" },
     ]);
 
-    const rows = await claudeHistory().list(PROJECT, []);
+    const rows = await readClaude(PROJECT);
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
     expect(row.sessionId).toBe("claude-1");
@@ -126,13 +135,13 @@ describe("claude history list", () => {
         },
       },
     ]);
-    const rows = await claudeHistory().list(PROJECT, []);
+    const rows = await readClaude(PROJECT);
     expect(rows[0]!.tokens).toBe(1 + 466 + 435901 + 294);
   });
 
   it("leaves tokens null when no usage record is present", async () => {
     writeClaudeSession("claude-notok", [userLine("hi", "2026-06-04T10:00:00.000Z")]);
-    const rows = await claudeHistory().list(PROJECT, []);
+    const rows = await readClaude(PROJECT);
     expect(rows[0]!.tokens).toBeNull();
   });
 
@@ -143,12 +152,12 @@ describe("claude history list", () => {
         "2026-06-04T11:00:00.000Z",
       ),
     ]);
-    const rows = await claudeHistory().list(PROJECT, []);
+    const rows = await readClaude(PROJECT);
     expect(rows[0]!.summary).toBe("/design payment flow");
   });
 
   it("returns an empty list when the project dir is absent", async () => {
-    expect(await claudeHistory().list("/no/such/project", [])).toEqual([]);
+    expect(await readClaude("/no/such/project")).toEqual([]);
   });
 
   it("resolves a project path with non-alphanumeric segments (.worktrees)", async () => {
@@ -158,7 +167,7 @@ describe("claude history list", () => {
     expect(encodeClaudeCwd(wt)).toBe("-home-dev-yaco--worktrees-feat");
     writeClaudeSession("wt-1", [userLine("worktree task", "2026-06-04T12:00:00.000Z")], wt);
 
-    const rows = await claudeHistory().list(wt, []);
+    const rows = await readClaude(wt);
     expect(rows.map((r) => r.sessionId)).toEqual(["wt-1"]);
     expect(rows[0]!.summary).toBe("worktree task");
   });
@@ -173,7 +182,7 @@ describe("codex history list", () => {
       { id: "cx-other", first: "other project", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T00:00:00Z"), cwd: "/repo/elsewhere" },
     ]);
 
-    const rows = await codexHistory().list(PROJECT, []);
+    const rows = await readCodex(PROJECT);
     expect(rows.map((r) => r.sessionId)).toEqual(["cx-new", "cx-old"]);
     expect(rows[0]!.provider).toBe("codex");
     expect(rows[0]!.summary).toBe("newer task");
@@ -192,7 +201,7 @@ describe("codex history list", () => {
     createCodexDb([
       { id: "cx-tok", first: "task", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T09:00:00Z"), cwd: PROJECT, rollout: rolloutPath },
     ]);
-    const rows = await codexHistory().list(PROJECT, []);
+    const rows = await readCodex(PROJECT);
     expect(rows[0]!.tokens).toBe(317379);
   });
 
@@ -200,7 +209,7 @@ describe("codex history list", () => {
     createCodexDb([
       { id: "cx-noroll", first: "task", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T09:00:00Z"), cwd: PROJECT },
     ]);
-    const rows = await codexHistory().list(PROJECT, []);
+    const rows = await readCodex(PROJECT);
     expect(rows[0]!.tokens).toBeNull();
   });
 
@@ -215,12 +224,12 @@ describe("codex history list", () => {
         JSON.stringify({ id: "cx-1", thread_name: "renamed" }),
       ].join("\n") + "\n",
     );
-    const rows = await codexHistory().list(PROJECT, []);
+    const rows = await readCodex(PROJECT);
     expect(rows[0]!.title).toBe("renamed");
   });
 
   it("returns an empty list when the Codex DB is absent", async () => {
-    expect(await codexHistory().list(PROJECT, [])).toEqual([]);
+    expect(await readCodex(PROJECT)).toEqual([]);
   });
 });
 
@@ -229,11 +238,11 @@ describe("finalizeHistory", () => {
     return { sessionId, provider: "claude", title: null, summary: "x", created: updatedAt, updatedAt, tokens: null, gitBranch: null };
   }
 
-  it("sorts newest-first and returns the default 200-row window metadata", () => {
+  it("sorts newest-first and returns the default 200-row window metadata", async () => {
     const many = Array.from({ length: 250 }, (_, i) =>
       row(`s-${i}`, new Date(2026, 0, 1, 0, i).toISOString()),
     );
-    const out = finalizeHistory(many, []);
+    const out = await finalizeHistory(many, []);
     expect(out.rows).toHaveLength(200);
     expect(out.returned).toBe(200);
     expect(out.truncated).toBe(true);
@@ -241,42 +250,42 @@ describe("finalizeHistory", () => {
     expect(out.oldestUpdatedAt).toBe(out.rows.at(-1)!.updatedAt);
   });
 
-  it("honors --limit above the default without truncation", () => {
+  it("honors --limit above the default without truncation", async () => {
     const many = Array.from({ length: 250 }, (_, i) =>
       row(`s-${i}`, new Date(2026, 0, 1, 0, i).toISOString()),
     );
-    const out = finalizeHistory(many, [], { limit: 300 });
+    const out = await finalizeHistory(many, [], { limit: 300 });
     expect(out.rows).toHaveLength(250);
     expect(out.returned).toBe(250);
     expect(out.truncated).toBe(false);
     expect(out.oldestUpdatedAt).toBe(out.rows.at(-1)!.updatedAt);
   });
 
-  it("filters --since after provider merge and before applying the limit", () => {
+  it("filters --since after provider merge and before applying the limit", async () => {
     const many = Array.from({ length: 250 }, (_, i) =>
       row(`s-${i}`, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()),
     );
     const cutoff = new Date(Date.UTC(2026, 0, 1, 0, 30));
 
-    const highLimit = finalizeHistory(many, [], { since: cutoff, limit: 300 });
+    const highLimit = await finalizeHistory(many, [], { since: cutoff, limit: 300 });
     expect(highLimit.rows).toHaveLength(220);
     expect(highLimit.returned).toBe(220);
     expect(highLimit.truncated).toBe(false);
     expect(highLimit.rows.at(-1)!.sessionId).toBe("s-30");
 
-    const defaultLimit = finalizeHistory(many, [], { since: cutoff });
+    const defaultLimit = await finalizeHistory(many, [], { since: cutoff });
     expect(defaultLimit.rows).toHaveLength(200);
     expect(defaultLimit.returned).toBe(200);
     expect(defaultLimit.truncated).toBe(true);
     expect(defaultLimit.rows.at(-1)!.sessionId).toBe("s-50");
   });
 
-  it("returns an empty window with null oldestUpdatedAt", () => {
-    const out = finalizeHistory([], []);
+  it("returns an empty window with null oldestUpdatedAt", async () => {
+    const out = await finalizeHistory([], []);
     expect(out).toEqual({ rows: [], returned: 0, truncated: false, oldestUpdatedAt: null });
   });
 
-  it("tags live sessions by sessionId and leaves others untagged", () => {
+  it("tags live sessions by sessionId and leaves others untagged", async () => {
     const live: SessionState[] = [
       {
         handle: "worker", provider: "claude", sessionPath: PROJECT,
@@ -289,7 +298,7 @@ describe("finalizeHistory", () => {
         spawnedBy: "agent", parentSession: "ignored",
       },
     ];
-    const out = finalizeHistory([row("live-id", "2026-06-04T00:00:00Z"), row("ghost", "2026-06-03T00:00:00Z")], live);
+    const out = await finalizeHistory([row("live-id", "2026-06-04T00:00:00Z"), row("ghost", "2026-06-03T00:00:00Z")], live);
     const tagged = out.rows.find((r) => r.sessionId === "live-id")!;
     const ghost = out.rows.find((r) => r.sessionId === "ghost")!;
     expect(tagged.live).toBe(true);
@@ -302,7 +311,7 @@ describe("finalizeHistory", () => {
     expect(ghost.parentSession).toBeNull();
   });
 
-  it("treats live resumed sessions as unknown origin", () => {
+  it("treats live resumed sessions as unknown origin", async () => {
     const live: SessionState[] = [
       {
         handle: "resumed", provider: "claude", sessionPath: PROJECT,
@@ -310,7 +319,7 @@ describe("finalizeHistory", () => {
         spawnedBy: "agent", parentSession: "boss", resumedFrom: "resumed-id",
       },
     ];
-    const out = finalizeHistory([row("resumed-id", "2026-06-04T00:00:00Z")], live);
+    const out = await finalizeHistory([row("resumed-id", "2026-06-04T00:00:00Z")], live);
     expect(out.rows[0]).toMatchObject({
       live: true,
       liveSessionName: "resumed",
@@ -319,7 +328,7 @@ describe("finalizeHistory", () => {
     });
   });
 
-  it("point-reads durable origins for window rows and emits explicit nulls when absent", () => {
+  it("point-reads durable origins for window rows and emits explicit nulls when absent", async () => {
     recordOriginIfResolved({
       handle: "first-handle",
       provider: "claude",
@@ -332,7 +341,7 @@ describe("finalizeHistory", () => {
       parentSession: "parent",
     });
 
-    const out = finalizeHistory([
+    const out = await finalizeHistory([
       row("unknown-id", "2026-06-05T00:00:00Z"),
       row("durable-id", "2026-06-04T00:00:00Z"),
     ], []);
@@ -345,6 +354,97 @@ describe("finalizeHistory", () => {
       spawnedBy: null,
       parentSession: null,
     });
+  });
+});
+
+describe("the per-provider cap", () => {
+  /** Wide enough that no provider scan in this block is capped by it. */
+  const UNCAPPED = 10_000;
+  const LIMIT = 10;
+  /** Minute `i` of the fixture day — the timestamp session `i` last updated at. */
+  const at = (i: number): string => new Date(Date.UTC(2026, 5, 4, 0, i)).toISOString();
+
+  /** 30 Claude logs and 30 Codex threads interleaved minute by minute, so any
+   *  window straddles both providers.
+   *
+   *  The Claude logs are written newest-in-log **first**, so their file mtimes
+   *  run opposite to their in-log timestamps. That is deliberate: `updatedAt` is
+   *  the log's own last timestamp, so a cap taken on mtime would select the
+   *  reverse of the window the merge chooses, and every assertion below would
+   *  fail. It is the property that decides whether a cap is sound at all. */
+  function buildInterleavedHistory(): void {
+    const codex: CodexFixtureRow[] = [];
+    for (let i = 59; i >= 0; i--) {
+      if (i % 2 === 0) {
+        writeClaudeSession(`cl-${String(i).padStart(2, "0")}`, [
+          userLine(`claude prompt ${i}`, at(0)),
+          { type: "assistant", timestamp: at(i) },
+        ]);
+      } else {
+        codex.push({
+          id: `cx-${String(i).padStart(2, "0")}`,
+          first: `codex prompt ${i}`,
+          created: epochSec(at(0)),
+          updated: epochSec(at(i)),
+          cwd: PROJECT,
+        });
+      }
+    }
+    createCodexDb(codex);
+  }
+
+  /** The same merge over provider scans that were never capped. */
+  async function uncapped(options: { limit?: number; since?: Date }) {
+    const rows = [...await readClaude(PROJECT, UNCAPPED), ...await readCodex(PROJECT, UNCAPPED)];
+    return finalizeHistory(rows, [], options);
+  }
+
+  async function capped(options: { limit?: number; since?: Date }) {
+    const result = await readProjectHistory(PROJECT, [], options);
+    expect(isOk(result)).toBe(true);
+    return isOk(result) ? result.value : null;
+  }
+
+  beforeEach(buildInterleavedHistory);
+
+  it("orders the window by updatedAt, not by file mtime", async () => {
+    const window = (await capped({ limit: LIMIT }))!;
+    expect(window.rows.map((r) => r.updatedAt)).toEqual(
+      [59, 58, 57, 56, 55, 54, 53, 52, 51, 50].map(at),
+    );
+  });
+
+  it("returns exactly what an uncapped scan would, at every --since cutoff", async () => {
+    // 0 and 60 bracket the fixture; the rest land inside it, including cutoffs
+    // that leave fewer, exactly, and more matching rows than the limit.
+    for (const minute of [0, 1, 25, 49, 50, 51, 55, 59, 60]) {
+      const options = { limit: LIMIT, since: new Date(at(minute)) };
+      expect(await capped(options), `--since ${at(minute)}`).toEqual(await uncapped(options));
+    }
+  });
+
+  it("returns exactly what an uncapped scan would, at every --limit", async () => {
+    for (const limit of [1, 2, 9, 10, 11, 30, 59, 60, 61, 200]) {
+      expect(await capped({ limit }), `--limit ${limit}`).toEqual(await uncapped({ limit }));
+    }
+  });
+
+  it("keeps `truncated` exact at the cap boundary", async () => {
+    // The cap is `limit + 1`, so a window whose matching total is exactly the
+    // limit is the case a cap of `limit` would misreport as untruncated.
+    const exactly = { limit: LIMIT, since: new Date(at(50)) };
+    expect((await capped(exactly))!.returned).toBe(10);
+    expect((await capped(exactly))!.truncated).toBe(false);
+
+    const oneMore = { limit: LIMIT, since: new Date(at(49)) };
+    expect((await capped(oneMore))!.returned).toBe(10);
+    expect((await capped(oneMore))!.truncated).toBe(true);
+  });
+
+  it("gives every registered provider a history reader", () => {
+    for (const id of listProviderIds()) {
+      expect(historyReaderForProvider(id), id).not.toBeNull();
+    }
   });
 });
 

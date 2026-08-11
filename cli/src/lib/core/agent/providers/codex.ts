@@ -4,7 +4,6 @@ import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
 import { shellEscape } from "./shell-escape.ts";
 import { hasPermissionFlag, stripNameFlag, extractResume, stripResume } from "./args.ts";
 import { codexHooks } from "./hooks.ts";
-import { codexHistory } from "./history.ts";
 import { codexOutput } from "./output.ts";
 import { codexProjectMove } from "./project-move.ts";
 import { codexHooksAllYacoOwned } from "../lifecycle.ts";
@@ -111,8 +110,6 @@ export const codexProvider: TuiProvider = {
   },
 
   hooks: codexHooks(),
-
-  history: codexHistory(),
 
   output: codexOutput(),
 
