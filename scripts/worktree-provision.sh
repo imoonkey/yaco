@@ -295,10 +295,12 @@ bad=0
 
 # probe <dir> : report every workspace package that <dir> resolves outside $wt.
 probe() {
-  local dir="$1" out spec resolved
+  local dir="$1" out spec resolved where
   [ -d "$dir" ] || return 0
+  where="${dir#"$wt"/}"
+  [ "$where" != "$dir" ] || where="."
   if ! out="$(cd "$dir" && WP_ROOT="$wt" WP_PKGS="$workspaces" node --input-type=module -e "$resolve_js")"; then
-    echo "worktree-provision: ✗ resolution probe failed to run in ${dir#"$wt/"}" >&2
+    echo "worktree-provision: ✗ resolution probe failed to run in $where" >&2
     bad=$((bad + 1))
     return 0
   fi
@@ -308,7 +310,7 @@ probe() {
     "$wt/"*) ;;
     *)
       echo "worktree-provision: ✗ $spec does not resolve inside this worktree" >&2
-      echo "worktree-provision:     imported from  ${dir#"$wt"/}" >&2
+      echo "worktree-provision:     imported from  $where" >&2
       echo "worktree-provision:     resolves to    $resolved" >&2
       bad=$((bad + 1))
       ;;
