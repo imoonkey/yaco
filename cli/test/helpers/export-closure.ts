@@ -453,51 +453,53 @@ export interface SqliteUse {
    *  argument is not a literal reports `null` — an audit that cannot read the
    *  query cannot bound it. */
   prepared: (string | null)[];
-  /** The module's executable syntax, normalized. Comments, formatting and type
-   *  annotations are absent; every identifier and literal that survives to
-   *  runtime is present. */
-  shape: string[];
+  /** The JavaScript the module compiles to — what Node actually runs, with
+   *  comments and types gone and formatting the emitter's own. */
+  emitted: string[];
 }
 
 /** What one module does with `node:sqlite`, for rule 5's judged admissions.
  *
  *  **The admission pins the code that was measured, not a set of forbidden
- *  spellings.** That is the fourth version of this check, and the first three
- *  are why: each enumerated the dangerous shapes it knew, and each was defeated
- *  in review by one it did not.
+ *  spellings.** Four earlier versions listed the constructs a module may not
+ *  contain, and review found each list incomplete:
  *
- *  | version | matched | walked past |
+ *  | version | detects | does not detect |
  *  |---|---|---|
  *  | text | `.prepare(…).all()` | `const s = db.prepare(q); s.all()` |
  *  | callee name of a call | that | `s.all.bind(s)()`, a local `Promise` binding |
  *  | property access | those | `const { all } = s`, `Reflect.get(s, "all")` |
- *  | denylist + imports | those | `(() => {}).constructor("… .all()")` |
+ *  | that plus pinned imports | those | `(() => {}).constructor("… .all()")` |
  *
- *  The last one is the proof that the game is unwinnable as posed: every
- *  function exposes `Function` through `.constructor`, and code inside a string
- *  is not in the AST at all. There is no set of banned names that closes it.
+ *  The last row is why the approach was replaced rather than extended: every
+ *  function reaches `Function` through `.constructor`, and code inside a string
+ *  is not in the AST at all, so no list of names can be complete.
  *
- *  So the admission carries `shape` — the module's whole executable syntax,
- *  normalized — and the audit asserts the file still *is* it. Anything at all
- *  that changes what the module runs fails, including every escape above and
- *  every one nobody has thought of, because none of them is a shape this
- *  function is asked to recognize. Failing means "re-judge and re-measure",
- *  which is exactly what should happen when code carrying a measured stall
- *  bound changes.
+ *  So `emitted` is **the JavaScript the module compiles to** — what Node
+ *  actually runs — and the audit asserts the file still compiles to it.
+ *  Anything that changes what the module executes fails, and failing means
+ *  "re-judge and re-measure", which is what should happen when code carrying a
+ *  measured stall bound changes.
+ *
+ *  Emitting rather than summarizing the syntax tree is a correctness decision.
+ *  A tree summary has to enumerate which node properties matter, and review
+ *  found one a `forEachChild` walk cannot reach at all: `const` / `let` /
+ *  `using` / `await using` live in `VariableDeclarationList.flags` rather than
+ *  in a child token, so `const row = …` and `using row = …` summarized
+ *  identically while emitting different programs — the second throwing at
+ *  runtime and costing the read its database inputs. The compiler's own output
+ *  has no such gap by construction, and it normalizes exactly the right things:
+ *  comments and type annotations are gone, and the formatting is the emitter's
+ *  rather than the source's.
  *
  *  This is only livable because an admitted module does one thing. That is the
  *  point of `providers/codex-thread.ts` existing at all: the rule and the module
- *  shape are one decision, not two. */
+ *  are one decision, not two. */
 export function scanSqliteUse(absPath: string, _root: string = SRC_ROOT): SqliteUse {
   const { file } = parse(absPath);
-  const use: SqliteUse = { prepared: [], shape: [] };
+  const use: SqliteUse = { prepared: [], emitted: [] };
 
-  const visit = (node: ts.Node, depth: number): void => {
-    // Type nodes are erased before anything runs, so they are not part of what
-    // was measured — and keeping them out means a type annotation can be
-    // improved without forcing a re-judge.
-    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)) return;
-
+  const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && calleeName(node.expression) === "prepare") {
       const arg = node.arguments[0] && unwrap(node.arguments[0]);
       use.prepared.push(
@@ -506,27 +508,25 @@ export function scanSqliteUse(absPath: string, _root: string = SRC_ROOT): Sqlite
           : null,
       );
     }
-
-    use.shape.push(`${"  ".repeat(depth)}${ts.SyntaxKind[node.kind]}${nodeText(node)}`);
-    ts.forEachChild(node, (child) => visit(child, depth + 1));
+    ts.forEachChild(node, visit);
   };
-  ts.forEachChild(file, (node) => visit(node, 0));
+  ts.forEachChild(file, visit);
+
+  use.emitted = ts.transpileModule(file.getFullText(), {
+    fileName: absPath,
+    // The project's own options, so this is the emit the package ships — minus
+    // comments, which are not something Node runs and would make the pin fire
+    // on edits nobody needs to re-measure.
+    compilerOptions: {
+      ...compilerOptions,
+      removeComments: true,
+      sourceMap: false,
+      inlineSourceMap: false,
+      declaration: false,
+    },
+  }).outputText.trimEnd().split("\n");
 
   return use;
-}
-
-/** The text a node contributes to its module's shape: every name and literal
- *  value, so a renamed binding or an edited query is a different shape. */
-function nodeText(node: ts.Node): string {
-  if (
-    ts.isIdentifier(node) || ts.isPrivateIdentifier(node) ||
-    ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ||
-    ts.isNumericLiteral(node) || ts.isTemplateHead(node) ||
-    ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
-  ) {
-    return ` ${node.text}`;
-  }
-  return "";
 }
 
 /** Rule 3's polling loop, in the two shapes that are decidable from syntax: a

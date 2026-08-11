@@ -382,10 +382,10 @@ interface SqliteAdmission {
   /** Every SQL string the admitted module prepares, whitespace-normalized —
    *  the human-legible half, so a reader can see what the bound is a bound on. */
   prepares: string[];
-  /** The checked-in normalized syntax of the module that was measured. This is
-   *  the pin that closes the escapes an enumeration cannot: an admission says
-   *  "*this code* costs 0.3 ms", and that sentence is only true of this code. */
-  shape: string;
+  /** The checked-in JavaScript the measured module compiles to. This is the pin
+   *  an enumeration of forbidden constructs cannot be: an admission says "*this
+   *  code* costs 0.3 ms", and that sentence is only true of this code. */
+  emitted: string;
 }
 
 const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
@@ -396,7 +396,7 @@ const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
       "0.3 ms p50 and max over 40 warm samples, open and close included. " +
       "Reproduce with `node test/bench/summary-stall.ts --sqlite-probe --home ~`.",
     prepares: ["SELECT title, first_user_message FROM threads WHERE id = ?"],
-    shape: "test/fixtures/rule5-sqlite/codex-thread.shape.txt",
+    emitted: "test/fixtures/rule5-sqlite/codex-thread.emit.js",
   },
 };
 
@@ -540,12 +540,13 @@ describe("rules 1-3 and 5 — no ambient request state, no process ownership, no
       const file = site.slice(0, site.indexOf(" "));
       const use = scanSqliteUse(resolve(CLI_ROOT, file));
       expect(use.prepared, `${file}: prepared SQL`).toEqual(admission.prepares);
-      // The admission is of *this code*, so this is the pin that means it. A
-      // failure here is not a test to update — it is a re-judgement and a
-      // re-measurement, because the module carrying a measured stall bound has
-      // changed. Regenerate the fixture only after re-running `--sqlite-probe`.
-      expect(use.shape.join("\n") + "\n", `${file}: syntax`).toBe(
-        readFileSync(resolve(CLI_ROOT, admission.shape), "utf-8"),
+      // The admission is of *this code*, so this is the pin that means it: the
+      // JavaScript Node runs. A failure here is not a test to update — it is a
+      // re-judgement and a re-measurement, because the module carrying a
+      // measured stall bound has changed. Regenerate the fixture only after
+      // re-running `--sqlite-probe`.
+      expect(use.emitted.join("\n") + "\n", `${file}: emitted JavaScript`).toBe(
+        readFileSync(resolve(CLI_ROOT, admission.emitted), "utf-8"),
       );
     }
   });
@@ -915,14 +916,15 @@ describe("the audit itself", () => {
   });
 
   describe("the rule-5 SQLite admission", () => {
-    // The admission pins the syntax of the module that was measured, so what has
-    // to be demonstrated is not that the scan recognizes each escape — it is
-    // that *no* edit to that module survives. Each of these is a real bypass of
-    // some earlier version of the check, planted into the admitted module
-    // itself; the last of them is the reason the pin exists at all, because no
-    // denylist can see code that lives inside a string.
+    // The admission pins the JavaScript the measured module compiles to, so what
+    // has to be demonstrated is not that the scan recognizes each construct — it
+    // is that *no* edit to that module survives. Each case below is one an
+    // earlier version of the check did not detect, applied to a copy of the
+    // admitted module. The last two are the reasons this pin exists: code inside
+    // a string is invisible to any name-based rule, and a declaration's
+    // `const`/`using` mode is invisible to a syntax-tree walk.
     const ADMITTED = "src/lib/core/agent/providers/codex-thread.ts";
-    const baseline = scanSqliteUse(resolve(CLI_ROOT, ADMITTED)).shape;
+    const baseline = scanSqliteUse(resolve(CLI_ROOT, ADMITTED)).emitted;
 
     /** The admitted module with `edit` applied, scanned in place of it. */
     const edited = (edit: (source: string) => string): string[] => {
@@ -931,7 +933,7 @@ describe("the audit itself", () => {
       try {
         const file = join(dir, "codex-thread.ts");
         writeFileSync(file, edit(source));
-        return scanSqliteUse(file, dir).shape;
+        return scanSqliteUse(file, dir).emitted;
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -963,20 +965,33 @@ describe("the audit itself", () => {
           '"SELECT title, first_user_message FROM threads WHERE id = ?"',
           "`SELECT ${column} FROM threads WHERE id = ?`",
         )],
+      // `const` / `let` / `using` / `await using` live in a declaration list's
+      // `flags`, not in a child token, so a syntax-tree walk cannot see this at
+      // all — the two forms summarized identically while emitting different
+      // programs. `using` on a plain row throws at runtime, and this module's
+      // outer catch would turn that into "no row", silently costing the summary
+      // read its database inputs.
+      ["a using declaration in place of const", (source) =>
+        source
+          .replace("      const row = db", "      using row = db")
+          .replace(
+            "        .get(sessionId) as { title: string | null; first_user_message: string | null } | undefined;",
+            "        .get(sessionId) as any;",
+          )],
     ];
 
-    it("matches the checked-in shape of the module as it stands", () => {
+    it("matches the checked-in emit of the module as it stands", () => {
       const admission = RULE_5_SQLITE[`${ADMITTED} import DatabaseSync`]!;
       expect(baseline.join("\n") + "\n").toBe(
-        readFileSync(resolve(CLI_ROOT, admission.shape), "utf-8"),
+        readFileSync(resolve(CLI_ROOT, admission.emitted), "utf-8"),
       );
     });
 
     for (const [name, edit] of BYPASSES) {
       it(`fails on ${name}`, () => {
-        // Every edit changes the shape — which is the whole claim, and it holds
-        // for the escapes no rule was ever written against as much as for the
-        // rest, because none of them is a shape the pin has to recognize.
+        // Every edit changes the emit — which is the whole claim, and it holds
+        // for the constructs no rule was ever written against as much as for
+        // the rest, because none of them is something the pin has to recognize.
         expect(edited(edit), name).not.toEqual(baseline);
       });
     }

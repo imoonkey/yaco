@@ -170,30 +170,39 @@ recent threads, and `title` is the last-resort label).
 What is admitted is **the code that was measured**. Adding `DatabaseSync` to
 the walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table
 anywhere, invisibly — but so, it turned out, would any list of forbidden
-spellings. Four versions of this check were written and four were defeated in
-review:
+constructs. Four versions of this check were written, and review found each one
+incomplete:
 
-| version | matched | walked past |
+| version | detects | does not detect |
 |---|---|---|
 | a text match | `.prepare(…).all()` | `const s = db.prepare(q); s.all()` |
 | the callee name of a call | that | `s.all.bind(s)()`, a local binding shadowing `Promise` |
 | property access | those | `const { all } = s`, `Reflect.get(s, "all")` |
 | that plus a pinned import list | those | `(() => {}).constructor("… .all()")` |
 
-The last one is the proof the game is unwinnable as posed: every function
-exposes `Function` through `.constructor`, and code inside a string is not in
-the AST at all. Each of those bypasses ran a second, unbounded query while the
-audit reported exactly the admitted one.
+The last row is why the approach was replaced rather than extended: every
+function reaches `Function` through `.constructor`, and code inside a string is
+not in the AST at all, so no list of names can be complete. In each case a
+second, unbounded query ran while the audit reported exactly the admitted one.
 
 So the admission carries two pins. `prepares` is the human-legible half — the
-SQL a reader can hold against the measured bound. **`shape` is the one that
-means it: the module's whole executable syntax, normalized, checked in.** The
-audit asserts the file still *is* that, so any edit fails — the escapes above
-and the ones nobody has thought of alike, because none of them is a shape the
-check has to recognize. Failing means re-judge and re-measure, which is what
-should happen when the code carrying a measured stall bound changes. Comments,
-formatting and type annotations are normalized out, so a pin that fires is
-always about something that runs.
+SQL a reader can hold against the measured bound. **`emitted` is the one that
+means it: the JavaScript the module compiles to, checked in.** The audit asserts
+the file still compiles to that, so any edit fails — the cases above and the
+ones nobody has thought of alike, because none of them is something the check
+has to recognize. Failing means re-judge and re-measure, which is what should
+happen when the code carrying a measured stall bound changes.
+
+Pinning the emit rather than a summary of the syntax tree is a correctness
+decision. A tree summary has to enumerate which node properties matter, and
+review found one a `forEachChild` walk cannot reach at all: `const` / `let` /
+`using` / `await using` live in `VariableDeclarationList.flags` rather than in a
+child token, so `const row = …` and `using row = …` summarized identically while
+emitting different programs — the second throwing at runtime and costing the
+read its database inputs. The compiler's own output has no such gap, and it
+normalizes exactly the right things: comments and type annotations are gone, and
+the formatting is the emitter's rather than the source's. The fixture is 22
+lines of ordinary JavaScript, which is also what makes a change to it legible.
 
 Nothing but a single-purpose module can live under that, which is why the
 admitted query sits alone in `providers/codex-thread.ts` rather than inside the
