@@ -90,7 +90,15 @@ workspaces="$(node -e '
           const sub = Object.keys(exp).find((k) => k.startsWith("./"));
           if (sub) spec += sub.slice(1);
         }
-        out.push([pkg.name, dir, spec].join("\t"));
+        // The shell re-parses these records on tabs and newlines. A value
+        // carrying one would arrive there as a different name and directory than
+        // the two checks above just approved, so it is refused rather than
+        // rewritten — the values that reach a write are exactly the validated ones.
+        const record = [pkg.name, dir, spec];
+        const delimited = record.find((v) => /[\t\r\n]/.test(v));
+        if (delimited !== undefined)
+          throw new Error(`workspace value ${JSON.stringify(delimited)} contains a tab, carriage return or newline`);
+        out.push(record.join("\t"));
       }
     process.stdout.write(out.join("\n"));
   } catch (e) {

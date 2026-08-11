@@ -413,6 +413,28 @@ assert_contains "and says which name" "../../node_modules/sentinel" "$out"
 assert_eq "the file it pointed at is untouched" "must survive" "$(cat "$repo/node_modules/sentinel")"
 assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
 
+# --------------------------------------------------------------------------
+# 14. The shell re-reads these records on tabs. A name that survives the
+#     containment check but carries a delimiter would arrive at the write as a
+#     different name and directory than the one that was approved, so the check
+#     has to be on the value the shell will see, not only on the value Node saw.
+#     `safe<TAB>../victim` resolves inside node_modules as one string, then
+#     re-parses into name `safe` and directory `../victim`.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/escape-tab/package.json" '{"name":"safe\t../victim","version":"1.0.0"}'
+git -C "$repo" add -A
+git -C "$repo" commit -qm escape-tab
+write "$root/victim/node_modules/marker" 'source side'
+write "$repo/victim/keep" 'must survive'
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a workspace name carrying a record delimiter is refused" 1 "$rc"
+assert_contains "and says it carries one" "carriage return or newline" "$out"
+assert_eq "no tree was written outside the worktree" "keep" "$(ls "$repo/victim")"
+assert_eq "and nothing was mirrored first" "" "$(readlink "$wt/node_modules" || true)"
+
 echo
 echo "passed=$pass failed=$fail"
 [ "$fail" = 0 ]
