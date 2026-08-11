@@ -15,7 +15,7 @@
 
 **Key files:** `cli/src/lib/core/task/graph.ts`, `cli/src/lib/core/task/store.ts`, `cli/src/commands/task/{set,rm}.ts`, `cli/test/unit/core/task/{graph,store}.test.ts`, `cli/test/integration/task/task-cli.integration.ts`, `doc/main/cli/task.md`
 **Verification:** `scripts/verify.sh` green; golden matrix byte-identical; cross-provider Codex review (3 High, all resolved); QA over a copy of the live 492-task graph — exactly 7 states move, `doctor` and `validate` stay green, and `app/server`'s in-process read reflects the derivation. -> `plan/all/milestone-derived-state/`
-**Commit:** 5094677a..b14a35d3
+**Commit:** 5094677a..42c7e6ad
 **Next:** none — `agent-config/global/skills/yaco-task/SKILL.md` already says milestone state is derived and needs no change.
 **Blockers:** None
 
