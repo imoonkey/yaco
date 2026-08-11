@@ -95,10 +95,13 @@ asserted. A gate nobody has watched fail is not known to work.
   export rather than a widening of the `core/agent` barrel, because the barrel's
   pinned census is a file two other Phase-2 cutovers also have to edit. It
   publishes `messagesForProvider` as the *only* answer to which reader a provider
-  uses: `getProvider(id).messages` reaches tmux and the session lifecycle, so the
-  read side keeps its own two-entry lookup and a test fails closed if the two
-  disagree. `validateName` rides along because an in-process caller resolves the
-  handle itself and must reject exactly what `agent messages` rejects.
+  uses: the TUI registry reaches tmux and the session lifecycle, so the read side
+  keeps its own two-entry lookup and a test fails closed when a registered
+  provider is missing from it. (`TuiProvider.messages` was that check's original
+  subject and is now deleted — it was a shadow of this registry, and a provider
+  that simply omitted the flag slipped past.) `validateName` rides along because
+  an in-process caller resolves the handle itself and must reject exactly what
+  `agent messages` rejects.
   -> See: [providers.md](providers.md#message-inventory)
 
 Getting there cost `providers/output.ts` its follower: `followOutput` polls, and
@@ -166,22 +169,35 @@ recent threads, and `title` is the last-resort label).
 
 What is admitted is **the query, not the import**. Adding `DatabaseSync` to the
 walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table,
-anywhere, invisibly; and an earlier text-matching version of this check was
-shown by review to pass `const s = db.prepare(q); s.all()` — it found no matches
-and compared the empty list with an empty list. `scanSqliteUse` walks the AST
-instead and pins two things per admitted module:
+anywhere, invisibly. `scanSqliteUse` walks the AST instead and pins two things
+per admitted module:
 
 - the exact SQL strings it prepares, so a second or edited query is a failing
   diff, and a non-literal `prepare(...)` fails outright — an audit that cannot
   read the query cannot bound it;
-- that it calls no `all` / `run` / `exec` / `iterate` anywhere, matched by name
-  so an aliased or string-keyed statement is no cheaper than a chained one.
+- that it never *reads the member* `all` / `run` / `exec` / `iterate` off
+  anything, nor any member the scan cannot name.
+
+The second rule is on property access rather than on calls, and that is the
+whole lesson of getting it wrong twice. A text-matching first version was shown
+by review to pass `const s = db.prepare(q); s.all()` — it found no matches and
+compared the empty list with an empty list. Matching the *callee name* of a call
+caught that one and still fell to `s.all.bind(s)()`, `s.all.call(s)`, and a
+local binding shadowing the `Promise` global the check exempted. Reading the
+member is what all of them have in common.
+
+The price is that an admitted module cannot contain a `Promise.all` either —
+which is why the admitted query lives alone in
+`providers/codex-thread.ts` rather than inside the reader that uses it. An
+admitted module is now necessarily tiny, and that is the design, not a
+side effect: the rule is only fail-closed because there is nothing else in the
+file to trip over.
 
 The measurement is reproducible rather than asserted:
 `node cli/test/bench/summary-stall.ts --sqlite-probe --home ~` prints the
 database, the plan (`SEARCH threads USING INDEX sqlite_autoindex_threads_1
-(id=?)`) and the open/get/close distribution — 0.3 ms warm, 1.4–1.8 ms on a
-first touch, on an 11.1 MB, 2 297-row database.
+(id=?)`) and the open/get/close distribution — 0.3 ms at the p50 and the maximum
+over 40 warm samples, on an 11.1 MB, 2 297-row database.
 
 ### The query that was refused
 
@@ -233,8 +249,8 @@ the audit pins land together in the follow-up cutover.
 The session-summary read repeated the lesson from the other side.
 `summary-stall.ts` carries a `whole-file` control route — the previous reader's
 shape through the same call mechanism — and it is what makes the harness
-falsifiable: bounded 11–14 ms p95 against unbounded 134–585 ms and a subprocess
-route at 22–36 ms. Had the two measured alike, no figure the harness printed
+falsifiable: bounded 13–22 ms p95 against unbounded 174–590 ms and a subprocess
+route at 27–39 ms. Had the two measured alike, no figure the harness printed
 about the in-process route would have meant anything. Review then found the one
 thing chunking does *not* bound — a single input-sized record, whose decode and
 parse are one uninterruptible unit — so the reader caps a record at 4 MiB and

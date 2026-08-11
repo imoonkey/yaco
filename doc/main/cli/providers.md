@@ -323,7 +323,7 @@ Per provider, in order, stopping at the first label:
 | Provider | Source |
 |---|---|
 | claude | the session's project JSONL |
-| codex | `state_5.sqlite` `first_user_message` → every rollout naming the session, newest first → the `title` column |
+| codex | `state_5.sqlite` `first_user_message` → one rollout per day, newest day back → the `title` column |
 
 Codex auto-renames the thread `title` to the YACO handle on start, so the title
 is a name echo and only ever the last resort.
@@ -340,13 +340,21 @@ Two things it does **not** answer identically, both deliberate:
 
 - **A record over 4 MiB is skipped undecoded.** Chunking bounds the scan but not
   one record: decode + `JSON.parse` + collapse is ~2 ms per MB in one
-  uninterruptible go, so a 36 MB record is ~73 ms — three times the whole
-  subprocess route. Across the 300 largest local logs (1.15 GB) the largest
+  uninterruptible go, so a 36 MB record is ~73 ms — two to three times the whole
+  subprocess route it replaces. Across the 300 largest local logs (1.15 GB) the largest
   record of any kind is 4.15 MB and the largest *user* record — the only kind
   that can be a label — is 0.85 MB.
 - **Codex rollout search is the whole `YYYY/MM/DD` tree**, not the eight days the
-  previous private walk covered, and it continues past a rollout that yields no
-  label. Strictly more labels than before.
+  previous private walk covered, and it continues to the next day when a rollout
+  yields no label. Which file a day contributes is unchanged — the first by name,
+  as `resolveCodexLogPath` has always chosen — so the only sessions this reaches
+  that the old walk did not are ones whose prompt sits in an older day's rollout.
+
+Net, a Codex session gains a label where an older rollout holds its prompt, and
+loses one where the prompt is a single record over the cap. Neither is
+"strictly more": they are two independent changes in opposite directions, and
+the local corpus contains an instance of neither (611/611 labels are identical
+to the implementation this replaces).
 
 -> See: [exports.md](exports.md) (the eligibility rules and the one judged
 `node:sqlite` admission), `test/bench/summary-stall.ts` (the starvation bound and
