@@ -14,9 +14,11 @@ from the `cli-node-sdk` design; the audit enforces them over each export's
 **transitive production import closure**, and nothing is grandfathered.
 
 Eligibility is necessary and not sufficient. A route also has to be a read
-rather than a mutation, and it has to measure a starvation bound no worse than
-the subprocess route it replaces — the history read passes this audit and stays
-a subprocess for that reason. -> See: [read-path.md](read-path.md)
+rather than a mutation, and it has to measure a starvation bound against the
+subprocess route it replaces. The history read is the case that separates the
+two: it was measured, the shipped reader failed the bound, and it stays a
+subprocess — so it is not exported and this audit does not cover it.
+-> See: [read-path.md](read-path.md)
 
 ```mermaid
 flowchart LR

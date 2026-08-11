@@ -33,8 +33,10 @@ flowchart LR
 
 ## The rule that admits a read in process
 
-All three must hold. They are separate questions, and a path that satisfies two
-of them stays a subprocess.
+All three are asked of every candidate. They are separate questions, and the
+first two are absolute — a path that fails either stays a subprocess. The third
+is a measurement, and where a landed cutover falls short of it on one topology,
+what shipped is the exception written down, not a softened condition.
 
 1. **It is a read.** No lock, no repository gate, no write, no tmux, no process
    liveness, no detachment. Task mutation is one authority — lock, gate, write —
@@ -44,12 +46,15 @@ of them stays a subprocess.
 2. **Its closure is admissible.** Everything the export transitively imports
    runs inside the app's event loop under the app's lifetime, so what it may
    contain is a contract: explicit per-request state under a three-name ambient
-   allowlist, no `process.exit` or stdout ownership, no polling loop or
-   synchronous primitive, asynchronous input-sized filesystem work, and one
-   failure vocabulary. `cli/test/unit/export-audit.test.ts` decides this over
-   the TypeScript compiler's own import graph, per export, and a fourth ambient
-   `process.env` name is a failing test rather than a review judgement.
-   -> See: [exports.md](exports.md)
+   allowlist, no `process.exit` or stdout ownership, no polling loop and no
+   synchronous process primitive (`execSync`, `spawnSync`, a synchronous sleep),
+   asynchronous input-sized filesystem work, and one failure vocabulary. Bounded
+   synchronous reads of a known file are allowed, and a `node:sqlite` query is
+   admissible against a measured bound — rule 5 draws the line at *input-sized*
+   work, not at the word "sync". `cli/test/unit/export-audit.test.ts` decides
+   this over the TypeScript compiler's own import graph, per export, and a
+   fourth ambient `process.env` name is a failing test rather than a review
+   judgement. -> See: [exports.md](exports.md)
 
 3. **It starves a queued request no longer than the route it replaces.** The
    design's condition, and the one that is measured rather than reasoned about.
@@ -58,6 +63,18 @@ of them stays a subprocess.
    invocations, with the two routes interleaved. The comparison is against the
    **complete** subprocess route — including the synchronous `ssh-add`
    environment discovery the parent pays before every spawn.
+
+   **Two landed cutovers do not meet condition 3 everywhere, and were accepted
+   with the exception written down rather than with the condition relaxed.**
+   Cutover 1 reaches parity rather than improvement on a multi-megabyte
+   single-file task store (29.15 → 31.63 ms p95; either route can win a run) and
+   meets the condition by 3–7× on every other topology. Cutover 4 costs 14–23 ms
+   against ~6 ms on the largest log in the local corpus, and is better or equal
+   everywhere else. Both are stated below with what they cost and why the
+   alternatives were rejected; neither gate was widened to admit its own result,
+   and cutover 1's single-file case asserts only wall time, with the stall
+   printed rather than bounded, because no threshold there separates a
+   regression from the noise.
 
 Condition 3 is the one that has produced surprises in both directions, so two
 findings belong with the rule itself:
@@ -84,8 +101,8 @@ has the commands that reproduce them.
 |---:|---|---|---|
 | 1 | `GET /api/tasks/:project` → `readTaskList` | **181.6 → 28.5 ms** median, 485 tasks, two live servers | **17.95 → 4.97 ms** (dir, 480) · **28.07 → 10.93 ms** (dir, 4 800) · **21.97 → 8.43 ms** (one file, 480) · **29.15 → 31.63 ms** (one file, 4 800 — parity, see below) |
 | 2 | session-list labels → `readSessionSummaries` | **122 → 30 ms** p50 real provider home · **138 → 36 ms** synthetic 10× | **27.1 → 13.4 ms** · **34.3 → 14.1 ms** |
-| 3 | `agent start` provider validation → `providerCatalog()` | one spawn per start → none | a frozen array: no I/O, no environment read, no failure mode |
-| 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 7×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
+| 3 | `agent start` provider validation → `providerCatalog()` | **72.7 → 0.0003 ms** median (see below) | no I/O and no environment read, so nothing to starve — and no failure mode |
+| 4 | channel `/last` → `readMessageRows` | **357 → 3.8 ms** (240 KB log) · **656 → 30 ms** (6.1 MB) · **1 088 → 169 ms** (38 MB, real record shape) — 6.4×–94× | equal or better everywhere except the corpus extreme, where it costs **14–23 ms against ~6 ms** |
 
 Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
 over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** at
@@ -93,6 +110,18 @@ over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** a
 generated fixtures when `plan/tasks` is not in the checkout — which it is not in
 a worktree, since `plan/` is a separate repository — and says which source it
 used.
+
+**Cutover 3's row is the one figure this milestone did not record at the time.**
+The task's artifacts prove the spawn is *gone* — a stubbed `yaco` binary serves a
+whole session list and never sees an `agent providers` call — but no route
+median was captured, because the payload is three string fields fixed at build
+time and the interesting property was the absence of I/O rather than a speedup.
+The numbers above were therefore measured for this document, on this machine, on
+2026-08-11: 21 samples of `node cli/bin/yaco.mjs agent providers --json` after a
+warm-up (median 72.7 ms, min 54.5 ms) against 21 in-process `providerCatalog()`
+calls (median 0.0003 ms). The real "before" was worse than 72.7 ms, because the
+app also paid `buildChildProcessEnv()`'s synchronous `ssh-add` probe on every
+spawn.
 
 Parity evidence beside the timings: 45 frozen pre-cutover envelopes for the task
 read; **611/611** identical labels on a real provider home for the summary read;
@@ -188,30 +217,38 @@ and its reproduction commands.
 ## Rolling one back
 
 The design's Phase-2 acceptance requires each cutover to be independently
-reversible: reverting one restores the still-supported Node CLI subprocess
-without reverting the others. That property holds because **every CLI command
-the app used to spawn is unchanged and still shipped** — `yaco task list`,
-`yaco agent summaries`, `yaco agent providers` and `yaco agent messages` all
-render exactly what they rendered before their route moved, which the unchanged
-golden matrix pins.
+reversible: putting one back restores the still-supported Node CLI subprocess
+without disturbing the others. The durable form of that is *restore the app's
+call site*, one route at a time:
 
-The durable rollback is therefore *restore the app's call site*, one route at a
-time:
-
-| Cutover | Restore | Verified |
+| Cutover | Restore | Feature commit(s) |
 |---|---|---|
-| 1 · task GET | `runYacoTask(['list','--workset','all'], …)` in `app/server/src/routes/tasks.ts#buildTasksResponse`. `runYacoTask` is still there for the mutations, and nothing else in the app depends on `readTaskList` | The CLI-side asynchronous store is a separate commit (`32d1736b`) and stays — that is what the design's *ordered* rollback means: Phase 2's route reverts without Phase 1's library |
-| 2 · session summaries | the `yaco agent summaries --path <p> --json` spawn in `app/server/src/lib/session-summary.ts`. The cache in front of it is app-owned and unchanged | Both feature commits (`5bbc6f0a` catalog, `3a773dab` summaries) were reverted on a scratch branch at that task's head: applied cleanly, every suite green, CLI output byte-identical |
-| 3 · provider catalog | the `yaco agent providers --json` spawn in `app/server/src/lib/agent.ts` before `startAgentSession` | same run as cutover 2 |
-| 4 · channel `/last` | `agent.ts#lastAssistantMessages` and the router's import of it | **`git revert --no-commit 2709fcec`** on a throwaway branch at that task's head: `app/server`'s suite passed, 825 tests, with the CLI half (`97ade32a`) still in place |
+| 1 · task GET | `runYacoTask(['list','--workset','all'], …)` in `app/server/src/routes/tasks.ts#buildTasksResponse`. `runYacoTask` is still there for the mutations, and nothing else in the app depends on `readTaskList` | route only; the CLI-side asynchronous store is a separate commit (`32d1736b`) and **stays** — that is what the design's *ordered* rollback means: Phase 2's route reverts without Phase 1's library |
+| 2 · session summaries | the `yaco agent summaries --path <p> --json` spawn in `app/server/src/lib/session-summary.ts`. The cache in front of it is app-owned and unchanged | `3a773dab` |
+| 3 · provider catalog | the `yaco agent providers --json` spawn in `app/server/src/lib/agent.ts` before `startAgentSession` | `5bbc6f0a` |
+| 4 · channel `/last` | `agent.ts#lastAssistantMessages` and the router's import of it | `2709fcec` (app half); the CLI half `97ade32a` stays |
 | 5 · history | nothing — it never moved | |
 
-**A recorded revert SHA is evidence, not a recipe.** Each was verified at its own
-task's head. Replayed at the milestone head, cutovers 2 and 4 conflict, because
-later cutovers edited the same files — reverting `2709fcec` now wants to delete
-`channels/agent-messages.ts`, which `summary-read-cutover` has since modified.
-Resolving that is ordinary work, but it is work: reach for the "restore" column,
-and treat the SHA as the record of what was proven.
+**`git revert <sha>` is not the procedure, and the record should not be read as
+one.** Each task tested its revert at the commit it had just made, and each
+passed there — for cutover 4, `app/server`'s suite at 825 tests. A later commit
+that adds lines to a file the revert deletes turns that same revert into a
+modify/delete conflict, and one landed in both cases almost immediately.
+Replayed:
+
+| Revert | Clean at | Conflicts at |
+|---|---|---|
+| `2709fcec` | `2709fcec` | its own child `b0c959fd` onward — that task's final head, and today's — 2 paths |
+| `3a773dab` + `5bbc6f0a` | `3a773dab` | the next commit `3c6ee4cd` onward, and today's head — 6 paths |
+| `5bbc6f0a` alone | everywhere, including today's head | — |
+
+So use the **Restore** column, which is durable, and treat a commit revert as a
+convenience that has to be checked against the head you are on. The property the
+design actually guarantees survives either way: **every CLI command these routes
+used to spawn is unchanged and still shipped** — `yaco task list`,
+`yaco agent summaries`, `yaco agent providers` and `yaco agent messages` render
+exactly what they rendered before, which the unchanged golden matrix pins. That
+is what makes the subprocess a live rollback target rather than a historical one.
 
 ## -> See
 
