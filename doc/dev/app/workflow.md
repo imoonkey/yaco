@@ -97,7 +97,7 @@ when started by npm scripts, so live Claude/Codex behavior only changes after
 
 The backend starts runtime watchers only after `:3001` is successfully bound. If two foreground `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing the project file watchers; the active server keeps the `${YACO_HOME:-~/.yaco}/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
 
-`npm run start:app` is the intended local shape for installed/mobile use: it builds `app/ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
+`npm run start:app` is the intended local shape for installed/mobile use: it builds the UI into `app/server/ui` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
 ## Long-running services (systemd / launchd + Tailscale)
 
@@ -107,12 +107,12 @@ Three services, defined once in the `SERVICES` table at the top of `app/scripts/
 
 | Service | Runs | Purpose | MemoryHigh / Max | Autostart |
 |---|---|---|---|---|
-| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/ui/dist` | 2G / 3G | yes |
-| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `dist` tracking source | 2G / 3G | yes |
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/server/ui` | 2G / 3G | yes |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `app/server/ui` tracking source | 2G / 3G | yes |
 | `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 1G / 2G | **no — on demand** |
 
-**Vite dev is on demand.** Nothing in the normal path touches it: `/` serves `dist`
-from `yaco-server`, and `yaco-ui-build` is what keeps `dist` current. It is needed
+**Vite dev is on demand.** Nothing in the normal path touches it: `/` serves the
+built UI from `yaco-server`, and `yaco-ui-build` is what keeps it current. It is needed
 only while actively editing UI code and wanting HMR at `:8741`. Left enabled it is
 a resident Node process around the clock — one instance here accumulated 400 MB RSS
 and 384 MB of swap over 16 idle days, on a box that shares memory with agent fleets.
@@ -188,7 +188,7 @@ Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` 
 
 | URL | → | Serves |
 |---|---|---|
-| `https://<host>.tailnet-example.ts.net/` | `:3001` | Built `app/ui/dist`, via the Hono server |
+| `https://<host>.tailnet-example.ts.net/` | `:3001` | The built UI (`app/server/ui`), via the Hono server |
 | `https://<host>.tailnet-example.ts.net:8741` | `:5173` | Vite dev — HMR intact over the tailnet. 502s unless `yaco-ui` is started (on demand, above) |
 
 **Why `/` is not Vite.** These machines are reached over the tailnet at ~110 ms RTT, and Vite dev's unbundled module graph pays that per waterfall level. Measured from the laptop against desktop, real Chrome, cold cache: Vite dev **208 requests / 2.4 MB / 2.5 s** to first paint, against **31 requests / 643 KB / 1.0 s** for the built bundle.
@@ -273,19 +273,25 @@ Name the actual host if you serve one.
 ## Build
 
 ```bash
-npm run build    # Produces app/ui/dist/ (+ .br/.gz siblings)
+npm run build    # Produces app/server/ui/ (+ .br/.gz siblings)
 ```
 
 After a build, the backend can serve the built UI directly at `http://localhost:3001/`.
 
-`ui/package.json`'s build script is `tsc -b && vite build`. Compression is a `closeBundle` plugin (`compress-dist` in `vite.config.ts`, implemented in `scripts/compress-dist.ts`) rather than a step chained after `vite build` — **a chained npm step never runs under `vite build --watch`**, which is how desktop keeps its served bundle current (see [Long-running services](#long-running-services-systemd--launchd--tailscale)). The plugin walks `dist/`, writing brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
+**The build output lives under `app/server`, not `app/ui`.** `build.outDir` is
+`../server/ui`, because the server resolves the UI from its own package root and
+that one path has to be right both in a checkout and inside the published
+`@yaco/app` -> See: [doc/main/app/packaging.md](../../main/app/packaging.md#the-package-root).
 
-Vite empties `dist` on every build, watch rebuilds included, so siblings never go stale — a missing `.br`/`.gz` degrades to identity encoding, it is never served as the wrong bytes.
+`ui/package.json`'s build script is `tsc -b && vite build`. Compression is a `closeBundle` plugin (`compress-dist` in `vite.config.ts`, implemented in `scripts/compress-dist.ts`) rather than a step chained after `vite build` — **a chained npm step never runs under `vite build --watch`**, which is how desktop keeps its served bundle current (see [Long-running services](#long-running-services-systemd--launchd--tailscale)). The plugin follows the **resolved** `outDir` rather than naming one, so the e2e build (`--outDir dist-e2e`) compresses the directory it just wrote instead of the one nobody is serving. It writes brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
+
+Vite empties the output directory on every build, watch rebuilds included, so siblings never go stale — a missing `.br`/`.gz` degrades to identity encoding, it is never served as the wrong bytes.
 
 ## Testing
 
 ```bash
 cd app/server && npm test                                # Server unit tests (vitest)
+cd app/server && npm run test:integration                # Pack + clean-prefix install + HTTP (slow)
 cd app/ui && npx playwright test                         # Full E2E suite (isolated, static build)
 cd app/ui && npx playwright test tests/e2e/foo.spec.ts   # Single spec
 cd app/ui && npm run lint                                # ESLint
@@ -311,7 +317,7 @@ holds for the **main checkout too**, not just worktrees.
   vite-dev — removes per-request module compilation, so the suite stays reliable
   under machine load. `tests/e2e/preclean.mjs` wipes the ephemeral home pre-boot
   (web servers start before `globalSetup`); the server reads the build dir from
-  `YACO_UI_DIST` (= `dist-e2e`) so it never clobbers `app/ui/dist`. Channels are
+  `YACO_UI_DIST` (= `dist-e2e`) so it never clobbers the served `app/server/ui`. Channels are
   disabled — each run gets a throwaway `YACO_HOME` with no `channels/enabled.json`, so no orphan puppeteer Chromes.
 - **Self-provisioned fixtures.** `tests/e2e/helpers/workspace.ts`:
   `provisionWorkspace(page, request, { files?, tasks? })` / `createFixtureProject`

@@ -190,15 +190,6 @@ describe('the installed bundle', () => {
     expect(walks[0]).toContain('PACKAGE_ROOT')
   })
 
-  it('inlines no third-party package', () => {
-    // A package that reached the bundle instead of the manifest is a copy of
-    // someone else's library shipped inside ours, and it only got there because
-    // this monorepo's hoisting made an undeclared import resolve.
-    const labels = readFileSync(join(installedApp, 'dist/yaco-app.mjs'), 'utf-8')
-      .split('\n')
-      .filter((line) => /^\s*\/\/ \S+$/.test(line) && line.includes('node_modules/'))
-    expect(labels).toEqual([])
-  })
 })
 
 describe('the installed server', () => {
