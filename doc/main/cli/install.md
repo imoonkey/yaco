@@ -94,9 +94,14 @@ rather than done silently:
 | `isYacoCheckout(repoRoot)` is false | `npm install` in whatever directory a package user happened to be standing in is not a step, it is an accident. Repository identity, the same question the registry step asks — not the presence of an `app/` directory |
 | `repoRoot` is a **linked worktree** | its `node_modules` is not its own. `scripts/worktree-provision.sh` builds it as a *mirror*: every third-party package, and `.package-lock.json` itself, is a symlink into the main checkout's tree, so `npm install` there is a reconciler pointed at somebody else's data — it would write through those symlinks and rewrite the main checkout's `node_modules` from the worktree's branch. The action names `scripts/worktree-provision.sh` instead |
 
-Git's own marker decides the second: `.git` is a **file** in a linked worktree
-(it holds `gitdir: …`) and a directory in the checkout that owns the repository.
-No `.git` at all — a tarball, an export — counts as owning its own tree.
+The second is asked of git's **topology**, not of the filesystem:
+`git rev-parse --git-dir --git-common-dir`, and only a linked worktree makes the
+two differ (its own `…/.git/worktrees/<name>` against the repository they all
+share). `.git` being a file looks like the same question and is not — a
+submodule and a repository created with `--separate-git-dir` both carry a
+`gitdir:` file while owning their `node_modules` outright, and skipping their
+install would break the very thing this step exists to fix. A directory git
+cannot answer for — a tarball, an export — owns whatever it has.
 
 ## Global links are additive
 
@@ -406,6 +411,14 @@ known doctor-fail is being repaired in a follow-up step.
   `$PATH` that runs nothing and records the directory it was run in: the
   recorded set must be exactly `[repoRoot]`, which is both halves of the
   contract — the root is installed, and no member is.
+- `cli/test/unit/commands/workspace-root-install.test.ts` — the same two claims
+  against the real tools, because a shim cannot settle either: **npm** on a
+  network-free fixture workspace (a root install links `packages/*`, the member
+  install it replaced does not), and **git** on real repositories (a linked
+  worktree is skipped; a `--separate-git-dir` checkout, which carries the same
+  `gitdir:` file, is not). In the unit project, which `scripts/verify.sh` runs —
+  `test/integration/` is outside the gate, and a regression test outside the
+  gate is decoration.
 - `cli/test/integration/install.test.ts` — `tools/install.sh` end-to-end from
   a clean `$BIN_DIR` (builds + chains + exits 0) plus the static AC1 grep on
   `install.sh` content.

@@ -521,14 +521,26 @@ function plantSkillLink(
  *  rewrite the main checkout's node_modules from the worktree's branch. So the
  *  step is skipped, and the tool that owns the mirror is named instead.
  *
- *  Git's own marker decides: `.git` is a FILE in a linked worktree (it holds
- *  `gitdir: …`) and a directory in the checkout that owns the repository. */
+ *  Asked of git's topology, not of the filesystem: `--git-dir` is the worktree's
+ *  own `…/.git/worktrees/<name>` and `--git-common-dir` the repository they all
+ *  share, and only a linked worktree makes those two differ. `.git` being a file
+ *  looks like the same question and is not — a submodule and a repository
+ *  created with `--separate-git-dir` both carry a `gitdir:` file while owning
+ *  their `node_modules` outright, and skipping their install would break the
+ *  very thing this step exists to fix.
+ *
+ *  A directory git cannot answer for is nobody's worktree: an exported tarball
+ *  owns whatever it has. */
 function ownsItsNodeModules(repoRoot: string): boolean {
-  try {
-    return !statSync(join(repoRoot, ".git")).isFile();
-  } catch {
-    return true; // no .git at all — a tarball or an export, not a worktree
-  }
+  const r = spawnSync("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (r.status !== 0) return true;
+  const [gitDir, commonDir] = r.stdout.trim().split("\n");
+  if (!gitDir || !commonDir) return true;
+  return realpathOr(resolve(repoRoot, gitDir)) === realpathOr(resolve(repoRoot, commonDir));
 }
 
 /** One `npm install` at the workspace ROOT — never inside a member (no-op when

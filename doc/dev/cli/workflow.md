@@ -140,9 +140,12 @@ workspace's dependencies first when the clone has none (see
 itself (`cli/src/commands/install.ts`) — it merges yaco hooks into
 `~/.claude/settings.json` + `~/.codex/hooks.json` (canonical command
 `<BIN>/yaco agent hook-event <Event>`), writes `${YACO_HOME}/agent-wrapper.sh`,
-links the global agent-config skills, upserts this repo into
-`${YACO_HOME}/projects.json`, removes legacy `$BIN_DIR/{mt,multmux}`
-symlinks, and runs `yaco doctor`.
+links the global agent-config skills, runs one `npm install` at the
+**workspace root** (the only place that links `packages/*`; skipped for
+`--cli-only`, for a non-checkout, and in a linked worktree — see
+[install.md](../../main/cli/install.md#the-app-install-runs-at-the-workspace-root)),
+upserts this repo into `${YACO_HOME}/projects.json`, removes legacy
+`$BIN_DIR/{mt,multmux}` symlinks, and runs `yaco doctor`.
 
 Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `--dry-run`, `--repo <path>`, `--bin-dir <path>`, `--json`.
