@@ -100,9 +100,9 @@ beforeAll(() => {
   burstScript = join(sandbox, "burst.sh");
   writeFileSync(
     burstScript,
-    // ~250KB, which tmux cannot ingest in one read callback — so the tail of it
-    // is still pending on the pty when the process exits. Without an ordering
-    // barrier the capture lands mid-stream and the last line is not there yet.
+    // ~250KB then an immediate exit: enough to have scrolled the screen many
+    // times over and to put the most pressure on the tail. Stress, not proof —
+    // see the note on the assertion below.
     "#!/bin/bash\nfor i in $(seq 1 4000); do " +
       "echo \"noise line $i ----------------------------------------\"; done\n" +
       "echo 'LAST-LINE-BEFORE-EXIT' >&2\nexit 3\n",
