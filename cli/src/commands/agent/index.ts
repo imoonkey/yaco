@@ -79,8 +79,11 @@ Providers (start): ${Object.keys(PROVIDERS).join(", ")}
 \`--name=<handle>\`), \`--json\`, \`--wait\` and \`--timeout-ms\`. EVERY other token,
 before or after \`--\`, is forwarded verbatim to the provider CLI. So a mistyped
 yaco flag is handed to the provider, and a provider that rejects it exits
-immediately — reported here as "died during bootstrap", with its own message
-left in a tmux pane that is already gone.
+immediately — reported here as "died during bootstrap (<provider> exited <n>)"
+followed by what the provider itself printed, salvaged from the pane.
+
+A provider whose executable is not on \$PATH is refused before any session is
+created, naming it (\`yaco doctor\` reports which providers are available).
 
 Use top-level shortcuts \`yaco claude ...\` / \`yaco codex ...\` to start a
 session in one step. \`yaco agent <provider>\` (without 'start') is rejected.

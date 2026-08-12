@@ -128,6 +128,31 @@ stateDiagram-v2
     end note
 ```
 
+## Bootstrap Failure: What Start Can Name, and What Only the Provider Can
+
+`start` binds four yaco flags and forwards every other token to the provider CLI
+verbatim. That is deliberate — it is what lets a caller pass arbitrary provider
+arguments through — and it has one unavoidable consequence: **a mistyped yaco
+flag is a provider error.** yaco cannot validate it away without taking
+passthrough with it. So bootstrap failure is reported on two different channels,
+and which one applies is fixed by whether yaco could have known in advance.
+
+| | Absent executable | Everything else the provider rejects |
+| --- | --- | --- |
+| Known before launch | yes — `which(<executable>)` | no |
+| Reported by | `CliError(ENV)`, exit 3, naming the executable | `died during bootstrap (<exe> exited <n>)` + the provider's own text, exit 5 |
+| When | before the handle is resolved: no state file, no tmux session, nothing to orphan | after the fact, from the pane |
+
+The precheck is the same `which` behind `doctor`'s `providers` check and the
+provider lines of `agent status` ([which.ts](../../../cli/src/lib/core/which.ts)),
+so a machine where `doctor` reports `claude: not found` is exactly the machine
+where `yaco claude` refuses.
+
+The second channel needs the pane, and the pane is destroyed with the session.
+The wrapper's EXIT trap runs while the pane still exists — the wrapper *is* its
+process — so that is where the capture happens; see
+[Sequence Diagram 5](#sequence-diagram-5-wrapper-exit--handle-reuse-guard).
+
 ## Sequence Diagram 1: Claude Start Flow
 
 Claude x with/without prompt x with/without `--name`.
@@ -342,6 +367,21 @@ sequenceDiagram
         Note over W: already cleaned by kill, nothing to do
     end
 ```
+
+**Exit report (`.exit-<handle>`).** On the same non-zero-exit branch that writes
+the crash tombstone, the trap first captures its own pane —
+`tmux capture-pane -t $TMUX_PANE`, up to 40 non-blank lines — and writes it
+beside the state file as `.exit-<handle>`: `createdAt` (the same generation
+discriminator the tombstone uses), the exit code, then the text. An intentional
+kill takes the other branch and writes nothing; there is no error to explain.
+
+This is the only moment the output exists to be read: from outside, a session
+tmux still reports as alive has a pane that has not died yet, and one it reports
+as gone has no pane at all. Ordering is therefore race-free rather than
+best-effort — the trap completes before the wrapper exits, and the pane outlives
+the wrapper, so a session `checkSessionAlive` confirms dead is one whose report
+is already on disk. `start` reads it (`readExitReport`, which rejects any other
+generation) and `deleteState` removes it with the handle's other breadcrumbs.
 
 **Wrapper environment (lineage capture).** Before launching the provider, the
 wrapper also exports `YACO_AGENT_HANDLE="$sn"` (so a child `yaco agent start`
