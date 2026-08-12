@@ -175,7 +175,9 @@ object.
 
 - **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. A new child task is written to its parent's source file; a new top-level task is written to `<paths.tasks>/<id>/tasks.json` when `paths.tasks` is a directory.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
-- `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
+- `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics). `blockReason: null` deletes the same way; an absent key still means "leave it alone".
+- **`blockReason` lives only alongside `state: "blocked"`** — the invariant `setStatus` keeps for agent sessions ([state-contract.md](state-contract.md)), for the same field. `set` enforces it on the write, so unblocking is ONE write: a payload that leaves the task in any other state drops the reason, including a task the [derivation](#milestone-state-is-derived-not-stored) rolled off `blocked` because it just gained a child. Rejecting the pair instead would make every caller that forgets a second write produce the contradiction. A reason named in the *same* payload as a non-blocked state is `INVALID` exit 1 rather than a silent drop — auto-clear only ever drops a value this write did not mention.
+- `set` is the only author of a leaf's `state` or of `blockReason`, so the invariant is **closed over a graph that satisfies both it and `milestoneRollup`**: no command can then produce a disagreement. Both halves are needed — a milestone recorded `blocked` on disk is already a rollup violation (a milestone never settles on `blocked`), and `archive`/`rm` save the whole normalized store, which would persist the derived non-blocked state beside the surviving reason. `set` is also the only *repairer*: `attach`/`detach` re-read the raw file and persist only the agents delta (the same scope milestone-state normalization has), so a legacy pair survives them and is cleared by `validate` + a sweep. -> See: [`validate`](#validate---id-id)
 - A payload carrying `agent` or `agents` is rejected (`INVALID` exit 1) — session links are mutated only through [`attach`/`detach`](#attach-id-handle--detach-id-handle).
 - Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `deriveMilestoneStates` → save. `validateState` compares the payload against the task's **derived** state, so `set` on a milestone is a no-op when the value already matches and `INVALID` for anything else — see [Milestone state](#milestone-state-is-derived-not-stored).
 - **State-edge stamping**: `set` snapshots every task's `state` before the **whole** mutation, then after `deriveMilestoneStates()` stamps `stateEnteredAt = now` on **every** task whose `state` changed — the edited task and every milestone the derivation moved, including one on a chain the edit left rather than joined. This is the durable task-state-edge generation key (`task_done|task_blocked:<proj>::<id>:<stateEnteredAt>`) the app's attention engine reads, so a derived milestone transition gets a stable generation.
@@ -263,7 +265,20 @@ returns exit 1 `INVALID`):
 | `invalidState` | `[{id, state}]` | `state` not in `STATES` |
 | `invalidWorkset` | `[{id, workset}]` | `workset` not in `WORKSETS` |
 | `milestoneRollup` | `[{id, recordedState, impliedState, reason}]` | a milestone's recorded state is not the one its children imply |
+| `staleBlockReason` | `[{id, state, blockReason}]` | a task carries `blockReason` while its state is not `blocked` |
 | `staleLocks` | `[LockStatus]` | a cross-host lock is present (see [Locking](#locking)) |
+
+**Not every problem is malformation.** `ValidationReport` carries a second flag,
+`malformed`, true only for the structural buckets — a defect no write heals on
+its own. `staleBlockReason` is the one bucket that leaves it false: the graph
+loads, and the next [`set`](#set-id) on that task drops the field.
+
+`validate` fails on **any** non-empty bucket, so a graph can be swept once.
+`doctor` gates on `malformed` instead, and otherwise passes while naming the
+count. That split is load-bearing rather than cosmetic: `yaco install` throws on
+any failing doctor check ([install.md](install.md)), so a field left over from
+before this invariant existed must not be able to block an install on a machine
+whose graph is otherwise sound — and the repair path runs through the same CLI.
 
 `milestoneRollup` cannot fire for a graph that arrived through
 `loadTaskStore` — that path [derives](#milestone-state-is-derived-not-stored)
