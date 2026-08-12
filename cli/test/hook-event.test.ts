@@ -41,42 +41,93 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
   };
 }
 
-/** Delay between `fire()` and the rival's write. The child has already execed by
- *  then, so this is a signal-to-write delay, not a process launch: it only has to
- *  outlast the microseconds the debounce needs to take its baseline read, and stay
- *  well inside STOP_DEBOUNCE_MS. */
+/** Delay between `fire()` and the rival's write. The child is already running by
+ *  then and writes in-process, so this is a signal-to-write delay, not a process
+ *  launch: it only has to outlast the microseconds the debounce needs to take its
+ *  baseline read, and stay well inside STOP_DEBOUNCE_MS. */
 const RIVAL_WRITE_DELAY_MS = STOP_DEBOUNCE_MS / 4;
 
 /** Children armed by armRivalWrite, awaited by settleRivals() before the temp dir goes. */
 const rivals: ReturnType<typeof spawn>[] = [];
+
+interface RivalWriter {
+  /** Hand the child its payload. Returns once the byte is queued; call it
+   *  immediately before the code that opens the debounce window. */
+  fire: () => void;
+  /** Resolve once the rival's write is on disk, asserting it actually landed
+   *  inside the window it was aimed at. Without this the test can pass for the
+   *  wrong reason: a rival that lands *after* a broken Stop committed `idle` but
+   *  before the assertion re-reads the file looks exactly like a back-off. */
+  confirmLandedInWindow: () => Promise<void>;
+}
 
 /** Arm a rival writer: a separate process that overwrites the state file mid-debounce.
  *  The debounce's sleepSync blocks this thread but not other processes, which is
  *  exactly the race the debounce defends against (two provider hooks running
  *  concurrently as separate processes).
  *
- *  Resolves once the child has printed `ready` — it has execed and is parked on a
- *  blocking read — so the process launch is paid for BEFORE the window opens.
- *  `fire()` hands it the payload; it writes RIVAL_WRITE_DELAY_MS later, by temp
- *  file + rename, the same atomic shape writeState uses. */
-async function armRivalWrite(
-  handle: string,
-  newState: SessionState,
-): Promise<{ fire: () => void }> {
-  const path = statePath(handle);
-  const script = [
-    `printf 'ready\\n'`,
-    // No payload (stdin closed by settleRivals) → never armed, write nothing.
-    `IFS= read -r payload || exit 0`,
-    // Hold the window delay in bash itself; `sleep` would be another process launch.
-    `read -r -t ${(RIVAL_WRITE_DELAY_MS / 1000).toFixed(3)} _`,
-    `printf '%s' "$payload" > "${path}.rival"`,
-    `mv "${path}.rival" "${path}"`,
-  ].join("\n");
-  const child = spawn("bash", ["-c", script], { stdio: ["pipe", "pipe", "ignore"] });
+ *  Resolves once the child has printed `ready` — it has execed, loaded, and is
+ *  waiting on stdin — so the whole process launch is paid for BEFORE the window
+ *  opens. Nothing inside the window forks: the child writes and renames in-process
+ *  (node, not a shell), the same atomic shape writeState uses. */
+async function armRivalWrite(handle: string, newState: SessionState): Promise<RivalWriter> {
+  const script = `
+    const { writeFileSync, renameSync } = require("fs");
+    const path = ${JSON.stringify(statePath(handle))};
+    let buf = "";
+    process.stdout.write("ready\\n");
+    // Stdin closed without a payload (never fired) → exit without writing.
+    process.stdin.on("end", () => process.exit(0));
+    process.stdin.on("data", (chunk) => {
+      buf += chunk;
+      if (!buf.includes("\\n")) return;
+      const payload = buf.trim();
+      setTimeout(() => {
+        writeFileSync(path + ".rival", payload);
+        renameSync(path + ".rival", path);
+        process.stdout.write(Date.now() + "\\n");   // the landing witness
+      }, ${RIVAL_WRITE_DELAY_MS});
+    });
+  `;
+  const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "ignore"] });
   rivals.push(child);
-  await new Promise<void>((resolve) => child.stdout!.once("data", () => resolve()));
-  return { fire: () => void child.stdin!.write(JSON.stringify(newState) + "\n") };
+  const lines = readLines(child);
+  await lines();                                    // "ready"
+
+  let firedAt = 0;
+  return {
+    fire: () => {
+      firedAt = Date.now();
+      child.stdin!.write(JSON.stringify(newState) + "\n");
+    },
+    confirmLandedInWindow: async () => {
+      const landing = Number(await lines()) - firedAt;
+      expect(landing).toBeGreaterThan(0);
+      expect(landing).toBeLessThan(STOP_DEBOUNCE_MS);
+    },
+  };
+}
+
+/** Read the child's stdout one line at a time: each call resolves with the next line. */
+function readLines(child: ReturnType<typeof spawn>): () => Promise<string> {
+  const pending: string[] = [];
+  const waiting: ((line: string) => void)[] = [];
+  let buf = "";
+  child.stdout!.on("data", (chunk) => {
+    buf += chunk;
+    for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      const next = waiting.shift();
+      if (next) next(line);
+      else pending.push(line);
+    }
+  });
+  return () => new Promise<string>((resolve) => {
+    const line = pending.shift();
+    if (line !== undefined) resolve(line);
+    else waiting.push(resolve);
+  });
 }
 
 /** Let every armed rival finish before its temp dir is removed. A child still in
@@ -620,6 +671,7 @@ describe("Stop debounce — runHookEventForHandle", () => {
 
     rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
@@ -641,6 +693,7 @@ describe("Stop debounce — runHookEventForHandle", () => {
 
     rival.fire();
     await runHookEventForHandle(handle, "StopFailure", { hook_event_name: "StopFailure" });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
@@ -718,6 +771,7 @@ describe("Provider idle notice — Stop final message tail", () => {
 
     rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
