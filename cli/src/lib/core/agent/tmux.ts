@@ -220,10 +220,16 @@ export function createSession(handle: string, command: string, cwd?: string): vo
   try {
     execSync(`${escape}${newSession}`, execOpts);
   } catch (e: unknown) {
-    // The escape claims a singleton unit. A concurrent start that won the race
-    // has already put the server in that scope, so this session only has to
-    // join it — unescaped, exactly as every non-first session does.
-    if (!escape) throw e;
+    // Dropping the escape is only ever right when someone else has already
+    // applied it: a concurrent start won the singleton unit, and the server now
+    // running is the escaped one this session merely has to join. Absent that,
+    // the failure is the escape's own (no user bus, systemd-run refusing an
+    // option) and retrying unescaped would silently found the server inside the
+    // restartable service — forfeiting, without a word, the property the whole
+    // mechanism exists for. A session that did get created before the call
+    // failed (the 5s timeout elapsing after tmux forked) owes the caller that
+    // error too, not a second attempt that dies on the duplicate name.
+    if (!escape || hasSession(handle) || !isTmuxServerRunning()) throw e;
     execSync(newSession, execOpts);
   }
   ensureTrueColorSupport();
