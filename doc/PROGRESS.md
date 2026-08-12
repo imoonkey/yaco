@@ -478,6 +478,7 @@
 - Every asset was re-captured in the light theme and the set renamed to explicit pairs — `doc/assets/<name>-{light,dark}.{png,gif}`, 9 pairs including two walkthrough GIFs. README and `tour.md` select between them with `<picture><source media="(prefers-color-scheme: dark)">` and the light file as the `<img>` fallback.
 - Captions and alt text were rewritten to be true of *both* images in a pair — the two sets were captured hours apart, so the session lineage and notification rows differ, and no reader ever sees them side by side.
 - [doc/dev/app/workflow.md](dev/app/workflow.md#refreshing-the-screenshots) now documents how to refresh the set: viewport and scale, the `localStorage['workflow-theme']` seed, the yaco-only/English-only content rules, the media-query caveat, and the compression step.
+- The phone shot now sits in a rendered device frame, and the dark one was re-captured — the old one had terminal lines truncated at the right edge, which only became obvious once framed.
 - Doubling the set doubled the bytes, so everything was recompressed: PNGs quantized to a 256-colour palette in place (still `.png`, so no reference churn) and both GIFs re-encoded with a diff-mode palette at 64 colours. **`doc/assets/` went 9.6 MB → 5.0 MB**, smaller than the single-theme set was before this change.
 
 **Why:**

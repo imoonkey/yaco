@@ -293,6 +293,8 @@ Vite empties the output directory on every build, watch rebuilds included, so si
 
 Two content rules the captures have to satisfy, both easiest to enforce in-page before the shot: **only this repo** (hide other project rows in the sidebar) and **English only** (drop `.notif-row`s from other projects, and check the attached session's transcript — a session that was prompted in another language will show it).
 
+The phone shot gets a **device frame** — a CSS bezel (rounded rect, speaker slit and lens in a thickened top band, side buttons, soft shadow) rendered around the raw capture and screenshotted. Without it a 390px-wide screenshot reads as just another cropped desktop panel next to the others. The frame's page background is the GitHub canvas that variant is served on (`#ffffff` light, `#0d1117` dark) rather than transparency, since the palette-quantized PNGs below only carry 1-bit alpha and would show jagged corners.
+
 Compress before committing — the set is committed twice over, so it earns it. PNGs are quantized in place to a 256-colour palette (`magick in.png -colors 256 PNG8:out.png`), which keeps the `.png` extension and therefore every existing reference; GIFs are re-encoded from the recording with a **diff-mode palette**, which is what makes a mostly-static screencast compress:
 
 ```bash
