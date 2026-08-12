@@ -47,23 +47,40 @@ Object.defineProperty(process, "platform", { value: "linux" });
 process.env["YACO_PATH"] = "/opt/bin/yaco";
 delete process.env["YACO_HOME"];
 
-const { createSession, CGROUP_ESCAPE_PREFIX } = await import(
+const { createSession, CGROUP_ESCAPE_PREFIX, JOIN_EXISTING_SERVER } = await import(
   "../../../src/lib/core/agent/tmux.ts"
 );
 
-const isNewSession = (cmd: string) => cmd.includes("tmux new-session");
+// Matches both forms the code can issue: `tmux new-session` and the join-only
+// `tmux -N new-session` of the fallback.
+const isNewSession = (cmd: string) => cmd.includes("new-session");
 const newSessions = () => issued.filter(isNewSession);
 
 /** Is a tmux server up? Mutable, so a test can have one appear mid-call the way
  *  a concurrent starter makes one appear. */
 let serverRunning = false;
 
-/** Default world: systemd-run present, no tmux server, handle not taken. */
-function world(over: { hasSession?: boolean; newSession?: () => void } = {}) {
+/** tmux's own exit-1 "no such session", which is the only answer that confirms
+ *  absence. Anything without a status (a timeout, a signal) is indeterminate. */
+function exitOne(message: string): Error {
+  return Object.assign(new Error(message), { status: 1 });
+}
+
+/** Default world: systemd-run present, no tmux server, handle confirmed absent. */
+function world(
+  over: {
+    session?: "absent" | "present" | "indeterminate";
+    newSession?: () => void;
+  } = {},
+) {
   outcome = (cmd) => {
     if (cmd === "which systemd-run") return;
-    if (cmd === "tmux list-sessions" && !serverRunning) throw new Error("no server running");
-    if (cmd.includes("has-session") && !over.hasSession) throw new Error("no such session");
+    if (cmd === "tmux list-sessions" && !serverRunning) throw exitOne("no server running");
+    if (cmd.includes("has-session")) {
+      if (over.session === "present") return;
+      if (over.session === "indeterminate") throw new Error("ETIMEDOUT");
+      throw exitOne("can't find session");
+    }
     if (isNewSession(cmd)) over.newSession?.();
   };
 }
@@ -107,22 +124,37 @@ describe("losing the race for the singleton scope unit", () => {
 
     expect(newSessions()).toHaveLength(2);
     expect(newSessions()[0]).toContain(CGROUP_ESCAPE_PREFIX);
-    expect(newSessions()[1]!.startsWith("tmux new-session")).toBe(true);
-    // Same command either way — the escape is the only difference.
-    expect(newSessions()[0]).toBe(CGROUP_ESCAPE_PREFIX + newSessions()[1]);
+    // The retry cannot start a server, only join the rival's escaped one: if
+    // that server went away in between, this must fail rather than found an
+    // unescaped replacement inside the service.
+    expect(newSessions()[1]!.startsWith(`tmux ${JOIN_EXISTING_SERVER}new-session`)).toBe(true);
   });
 
   it("does not retry a new-session that already created the session", () => {
     // The 5s exec timeout elapsing after tmux forked: the command failed, the
     // session exists. Retrying would only fail again on the duplicate name.
     world({
-      hasSession: true,
+      session: "present",
       newSession: () => {
         throw new Error("ETIMEDOUT");
       },
     });
 
     expect(() => createSession("timed-out", "cmd", "/p")).toThrow("ETIMEDOUT");
+    expect(newSessions()).toHaveLength(1);
+  });
+
+  it("does not retry when the session probe could not answer", () => {
+    // A probe that timed out has not confirmed the session absent, and a retry
+    // on that basis would be a guess about whether tmux forked.
+    world({
+      session: "indeterminate",
+      newSession: () => {
+        throw new Error("Unit yaco-tmux-server.scope was already loaded");
+      },
+    });
+
+    expect(() => createSession("unknown", "cmd", "/p")).toThrow("already loaded");
     expect(newSessions()).toHaveLength(1);
   });
 
@@ -141,7 +173,24 @@ describe("losing the race for the singleton scope unit", () => {
     expect(newSessions()).toHaveLength(1);
   });
 
-  it("surfaces a genuine failure after the one retry", () => {
+  it("surfaces the fallback's own failure when the retry also fails", () => {
+    let attempt = 0;
+    world({
+      newSession: () => {
+        if (++attempt === 1) {
+          serverRunning = true;
+          throw new Error("Unit yaco-tmux-server.scope was already loaded");
+        }
+        // The rival's server went away before the join could land.
+        throw new Error("no server running");
+      },
+    });
+
+    expect(() => createSession("loser-then-gone", "cmd", "/p")).toThrow("no server running");
+    expect(newSessions()).toHaveLength(2);
+  });
+
+  it("makes one attempt only when a server was up from the outset", () => {
     serverRunning = true;
     world({
       newSession: () => {
@@ -149,7 +198,6 @@ describe("losing the race for the singleton scope unit", () => {
       },
     });
 
-    // A server is up, so this start is unwrapped from the outset: one attempt.
     expect(() => createSession("bad-cwd", "cmd", "/nope")).toThrow("no such directory");
     expect(newSessions()).toHaveLength(1);
   });

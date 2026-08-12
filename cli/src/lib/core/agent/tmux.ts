@@ -189,9 +189,18 @@ export function ensureTrueColorSupport(): void {
   }
 }
 
+/** tmux's `-N` forbids starting a server, so a command carrying it can only join
+ *  one that is already up. */
+export const JOIN_EXISTING_SERVER = "-N ";
+
 /** The `tmux new-session` command line for a managed session, without the cgroup
  *  escape. Pure apart from the two env vars it forwards, so tests can pin it. */
-export function newSessionCommand(handle: string, command: string, projectPath: string): string {
+export function newSessionCommand(
+  handle: string,
+  command: string,
+  projectPath: string,
+  serverFlag = "",
+): string {
   const cwdArg = `-c "${projectPath}"`;
   // Propagate an explicit YACO_HOME into the session so the agent's hooks and
   // wrapper write state to the same runtime root as the launching `yaco`
@@ -209,7 +218,7 @@ export function newSessionCommand(handle: string, command: string, projectPath: 
   // -x/-y is the initial detached size; window-size=latest sizes the window
   // to whatever client most recently became active — so the device you're
   // currently using always sees content fit to its own screen.
-  return `tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`;
+  return `tmux ${serverFlag}new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`;
 }
 
 export function createSession(handle: string, command: string, cwd?: string): void {
@@ -228,9 +237,13 @@ export function createSession(handle: string, command: string, cwd?: string): vo
     // restartable service — forfeiting, without a word, the property the whole
     // mechanism exists for. A session that did get created before the call
     // failed (the 5s timeout elapsing after tmux forked) owes the caller that
-    // error too, not a second attempt that dies on the duplicate name.
-    if (!escape || hasSession(handle) || !isTmuxServerRunning()) throw e;
-    execSync(newSession, execOpts);
+    // error too, not a second attempt that dies on the duplicate name — and a
+    // probe that merely could not answer is not a session confirmed absent.
+    if (!escape || checkSessionAlive(handle) !== false || !isTmuxServerRunning()) throw e;
+    // `-N` rather than a bare retry: should the rival's last session end between
+    // that check and this call, this must fail rather than quietly found a
+    // second, unescaped server inside the service.
+    execSync(newSessionCommand(handle, command, projectPath, JOIN_EXISTING_SERVER), execOpts);
   }
   ensureTrueColorSupport();
   execSync(`tmux set-option -t ${paneTarget(handle)} status off`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
