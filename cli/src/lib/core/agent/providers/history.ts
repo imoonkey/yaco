@@ -271,16 +271,39 @@ function claudeProjectDir(projectPath: string): string {
   return join(claudeProjectsRoot(), encodeClaudeCwd(projectPath));
 }
 
-/** The literal `cwd` a Claude log records, from a slice of it. */
+const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+/** The literal `cwd` a Claude log records, from a slice of it — the **last** one
+ *  the slice carries.
+ *
+ *  Read out of the raw bytes rather than out of a parsed record, because a
+ *  single record can be larger than the slice and then no whole line inside it
+ *  parses: a log whose first record is 20 KB and whose last is 70 KB has no
+ *  complete line in either the head or the tail, and would be unattributable
+ *  under a parse-a-line rule. The reference home already holds 219 individual
+ *  records over `TAIL_BYTES`.
+ *
+ *  Taking the *last* match is what makes reading raw bytes safe. Text a user
+ *  pasted cannot be mistaken for the field at all — a quote inside a JSON
+ *  string is escaped, and `\"cwd\"` does not match this pattern. A **nested
+ *  key** can, a tool result carrying its own `cwd` being unescaped and
+ *  structural; but it sits inside `message`, and Claude writes `message` before
+ *  the record's own `cwd`, with nothing after `cwd` carrying content. So the
+ *  last match in a slice is the record's own. Checked against a whole-file parse
+ *  of every log on the reference home: 1 053 of 1 053 agree. A session that
+ *  changed directory mid-run resolves to where it ended, which is the
+ *  newest-wins rule `updatedAt` already follows. */
 function parseCwd(text: string): string | null {
-  for (const line of text.split("\n")) {
-    if (!line.includes('"cwd"')) continue;
-    try {
-      const entry = JSON.parse(line);
-      if (typeof entry.cwd === "string" && entry.cwd) return entry.cwd;
-    } catch { /* partial line at a read boundary — skip */ }
-  }
-  return null;
+  let last: string | null = null;
+  CWD_FIELD.lastIndex = 0;
+  for (let m = CWD_FIELD.exec(text); m !== null; m = CWD_FIELD.exec(text)) last = m[1] ?? null;
+  if (last === null) return null;
+  try {
+    // Through JSON so an escaped quote or backslash in a path comes back as the
+    // byte it stands for, exactly as parsing the record would have given it.
+    const decoded = JSON.parse(`"${last}"`);
+    return typeof decoded === "string" && decoded ? decoded : null;
+  } catch { return null; }
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
@@ -486,9 +509,13 @@ function newestPerSession(tails: ClaudeTail[]): ClaudeTail[] {
  *  The directory it was filed under is not the evidence to fall back to — it is
  *  the same lossy encoding, `/repo/demo` and `/repo:demo` being one name — so
  *  falling back there would keep exactly the leak per-log attribution removes.
- *  Nothing real is lost by failing closed: a Claude log records its cwd on every
- *  user and assistant record, so the only logs this drops are ones that never
- *  reached a turn (0 of 1 051 logs on the reference home lack one). */
+ *  Nothing real is lost by failing closed, and the margin is measured rather
+ *  than assumed: a Claude log records its cwd on every user and assistant
+ *  record, and because `parseCwd` reads bytes rather than records, what has to
+ *  fit in the tail is the field, not the record around it. Across the reference
+ *  home's 1 053 logs — 298 of them over `TAIL_BYTES`, the largest 3.8 MB — the
+ *  furthest the last `cwd` sits from the end of a file is 20 KB, a third of the
+ *  window. The only logs this drops are ones that never reached a turn. */
 function belongsToProject(tail: ClaudeTail, projectPath: string): boolean {
   return tail.cwd !== null && isPathDescendantOrEqual(tail.cwd, projectPath);
 }

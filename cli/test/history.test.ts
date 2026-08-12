@@ -227,6 +227,45 @@ describe("claude history list — the project subtree", () => {
     expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["mine"]);
   });
 
+  it("attributes a log whose records are each larger than the slices read", async () => {
+    // Neither the 16 KB head nor the 64 KB tail contains a whole record here, so
+    // a rule that had to parse one would find no cwd and drop a valid session.
+    // Both records carry the cwd, and Claude writes it after `message`, so it
+    // sits near the end of the last record — inside the tail, whatever the
+    // record's size.
+    const big = (bytes: number, ts: string): object => ({
+      type: "user",
+      message: { role: "user", content: "x".repeat(bytes) },
+      timestamp: ts,
+      cwd: PROJECT,
+    });
+    writeClaudeSession("huge-records", [big(20_000, "2026-06-04T10:00:00.000Z"), big(70_000, "2026-06-04T11:00:00.000Z")]);
+
+    const rows = await readClaude(PROJECT);
+    expect(rows.map((r) => r.sessionId)).toEqual(["huge-records"]);
+    // Its `updatedAt` does fall back to the file's mtime, because the timestamp
+    // *is* read out of a parsed record and no whole one fits. That fallback is
+    // the reader's documented last resort and it degrades a row's ordering key;
+    // being unattributable would have dropped the row altogether.
+    expect(Date.parse(rows[0]!.updatedAt)).not.toBeNaN();
+  });
+
+  it("prefers a record's own cwd over a nested one inside its payload", async () => {
+    // Text a user pasted cannot be confused for the field — a quote inside a
+    // JSON string is escaped, and `\"cwd\"` does not match. A *nested key*
+    // can: a tool result carrying its own `cwd` is unescaped, structural, and
+    // sits inside `message`, which Claude writes before the record's own field.
+    writeClaudeSession("nested", [{
+      type: "user",
+      message: { role: "user", content: [{ type: "tool_result", content: { cwd: "/somewhere/else", ok: true } }] },
+      timestamp: "2026-06-04T10:00:00.000Z",
+      cwd: PROJECT,
+    }]);
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["nested"]);
+    expect((await readClaude("/somewhere/else")).map((r) => r.sessionId)).toEqual([]);
+  });
+
   it("drops a log that records no cwd, including from the project's own directory", async () => {
     // There is no directory to fall back to: the project's own name is the same
     // lossy encoding as any other, so `/repo:demo` files into it too. A log that

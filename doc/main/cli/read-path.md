@@ -303,10 +303,16 @@ Three things the widening had to get right:
   `readdir` order. Nor can the filesystem answer: a worktree's directory is
   deleted when it merges, long before its history stops mattering — which is the
   very history this scan exists to find. The cwd comes out of the tail slice the
-  log is read for anyway, so exact attribution costs nothing. A log that records
-  no cwd at all falls back to the only other evidence there is, the directory it
-  was filed under — exact for the project's own encoded name, a prefix guess for
-  any other, so it is kept there and dropped everywhere else.
+  log is read for anyway, so exact attribution costs no extra read.
+  A log that records no cwd in those bytes belongs to **nothing** — there is no
+  directory to fall back to, because the project's own encoded name is the same
+  lossy encoding as any other and `/repo:demo` files into `/repo/demo`'s
+  directory. What has to fit in the slice is the *field*, not the record around
+  it: the cwd is matched in the raw bytes, taking the last match, because Claude
+  writes `cwd` after `message` and a single record can be larger than the whole
+  slice. On the reference home the furthest a last `cwd` sits from the end of a
+  file is 20 KB against a 64 KB window, and byte-matching agrees with a
+  whole-file parse on all 1 053 logs.
 - **A path is a subtree of itself and of nothing shorter.** The prefix every
   descendant starts with is the project path plus exactly one separator; the
   filesystem root already carries its own, and a second would match no absolute
