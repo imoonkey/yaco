@@ -14,9 +14,9 @@ React/Vite frontend.
 ## Local Shape
 
 - `server/` — Hono API, SSE, WebSocket terminal, filesystem/tmux/yaco integration.
-- `ui/` — React 19 + Vite workspace UI. Its build output is `server/ui` (the server resolves it from its own package root, and it ships there inside `@yaco/app`), never `ui/dist`.
-- Runtime state resolves through `${YACO_HOME:-~/.yaco}` and shared path helpers from `@yaco/cli/core/paths`.
-- Session **lifecycle and mutation** shell out to installed `yaco agent ... --json`; task mutations shell out to `yaco task ... --json`. Five **reads** are in-process `@yaco/cli` calls that spawn nothing: task lists (`core/task#readTaskList`), channel message reads (`core/agent/messages#readMessageRows`), session-list summary labels (`core/agent/summaries#readSessionSummaries`), the startable provider catalog (`core/agent#providerCatalog`), and project session history (`core/agent#readProjectHistory`). What may be exported for that is a contract, not a preference. -> See: [../doc/main/cli/exports.md](../doc/main/cli/exports.md)
+- `ui/` — React 19 + Vite workspace UI. Its build output is `server/ui` (the server resolves it from its own package root, and it ships there inside `yaco-app`), never `ui/dist`.
+- Runtime state resolves through `${YACO_HOME:-~/.yaco}` and shared path helpers from `yaco-cli/core/paths`.
+- Session **lifecycle and mutation** shell out to installed `yaco agent ... --json`; task mutations shell out to `yaco task ... --json`. Five **reads** are in-process `yaco-cli` calls that spawn nothing: task lists (`core/task#readTaskList`), channel message reads (`core/agent/messages#readMessageRows`), session-list summary labels (`core/agent/summaries#readSessionSummaries`), the startable provider catalog (`core/agent#providerCatalog`), and project session history (`core/agent#readProjectHistory`). What may be exported for that is a contract, not a preference. -> See: [../doc/main/cli/exports.md](../doc/main/cli/exports.md)
 
 ## Rules
 

@@ -1,4 +1,4 @@
-/** Public surface for @yaco/cli/core/worktree — pure path and slug helpers.
+/** Public surface for yaco-cli/core/worktree — pure path and slug helpers.
  *
  *  Only the naming convention is shared. Everything that *does* something to a
  *  worktree — git plumbing, create, merge, cleanup, PR — spawns git or gh

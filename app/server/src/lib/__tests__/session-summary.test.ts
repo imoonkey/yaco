@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mock the shared read: session-summary owns the cache and the refresh edge,
 // not the provider I/O, so the test drives `readSessionSummaries`.
 const { readSessionSummaries } = vi.hoisted(() => ({ readSessionSummaries: vi.fn() }))
-vi.mock('@yaco/cli/core/agent/summaries', () => ({ readSessionSummaries }))
+vi.mock('yaco-cli/core/agent/summaries', () => ({ readSessionSummaries }))
 
 import { resolveSessionSummaries, invalidateSummaryCache } from '../session-summary'
 import type { AgentSession } from '../agent'

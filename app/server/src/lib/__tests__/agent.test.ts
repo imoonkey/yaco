@@ -23,7 +23,7 @@ vi.mock('../constants', () => ({
 }))
 
 import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type AgentSessionState } from '../agent'
-import { NOTICE_MAX } from '@yaco/cli/core/agent'
+import { NOTICE_MAX } from 'yaco-cli/core/agent'
 
 function writeStateFile(dir: string, handle: string, overrides: Partial<AgentSessionState> = {}) {
   const state: AgentSessionState = {

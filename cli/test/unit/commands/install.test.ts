@@ -67,7 +67,7 @@ function makeShim(path: string): void {
  *  and the skills tree the package ships a mirror of. */
 function stageCheckout(root: string): string {
   mkdirSync(join(root, "cli"), { recursive: true });
-  writeFileSync(join(root, "cli", "package.json"), JSON.stringify({ name: "@yaco/cli" }));
+  writeFileSync(join(root, "cli", "package.json"), JSON.stringify({ name: "yaco-cli" }));
   mkdirSync(join(root, "agent-config", "global", "skills"), { recursive: true });
   return root;
 }
@@ -134,7 +134,7 @@ describe("runInstall — basic shape", () => {
   it("does not let a defaulted bin dir outrank the yaco actually being run", async () => {
     // `--bin-dir` and $YACO_BIN_DIR are the caller saying where yaco lives.
     // The default, `~/.local/bin`, is a guess — and treating a guess as an
-    // override is how `npm i -g @yaco/cli` into an nvm prefix, followed by
+    // override is how `npm i -g yaco-cli` into an nvm prefix, followed by
     // `yaco install`, wrote every hook command back to a stale binary a much
     // older bootstrap had left in ~/.local/bin.
     delete process.env["YACO_BIN_DIR"];
@@ -827,7 +827,7 @@ describe("runInstall — what counts as the yaco checkout", () => {
   });
 });
 
-describe("runInstall — no checkout at all (the `npm i -g @yaco/cli` user)", () => {
+describe("runInstall — no checkout at all (the `npm i -g yaco-cli` user)", () => {
   /** Everything the package needs, and nothing a checkout would have provided:
    *  a directory that is simply where the user happened to be standing. */
   function stageNoCheckout(): string {

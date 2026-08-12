@@ -170,7 +170,7 @@ and flowed through the existing session-state read — no app-side `~/.claude` /
   re-stamps `statusEnteredAt`), so stale question/permission text never leaks into
   trust/idle/crash; a payload-bearing event then refills it (payload-less
   re-affirmations never clear). Sanitized + clamped to ≤2000 chars by `clampNotice`
-  (`@yaco/cli/core/agent`) at capture — it carries the (near-)full final message (the
+  (`yaco-cli/core/agent`) at capture — it carries the (near-)full final message (the
   read-back paraphrases it; the toast shows a teaser) and lands in the durable
   `events.jsonl` payload, so it is bounded on-disk retention, not purely transient.
 - **Render (server projector).** `noticeText(notice)` sets `message` at all five

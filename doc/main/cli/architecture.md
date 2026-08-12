@@ -40,7 +40,7 @@ src/
   lib/core/agent/
     model.ts                           # SessionState, RuntimeSessionState, HookEvent, PENDING_SESSION_ID, name helpers, ANSI strip
     projection.ts                      # pure state→AgentSessionRow projection (project/projectPath resolve, lineage passthrough)
-    index.ts                           # @yaco/cli/core/agent barrel — exports projection only (reconcile stays CLI-only)
+    index.ts                           # yaco-cli/core/agent barrel — exports projection only (reconcile stays CLI-only)
     providers/                         # typed TuiProvider registry (index, types, claude, codex; idle/hooks/history/output/project-move capabilities)
     providers.ts                       # legacy shim over providers/ for not-yet-migrated call sites (Provider, getProvider, isIdle)
     session-state.ts                   # state file CRUD; YACO_AGENT_SESSIONS_DIR / sessionsDir() resolver
@@ -308,11 +308,11 @@ rollback path:
 
 | Export | Shape | Replaces | Server consumer |
 |---|---|---|---|
-| `@yaco/cli/core/task#readTaskList` | `Result<{tasks, tasksPath, tasksFile}>` | `yaco task list --workset all --json` | `GET /api/tasks/:project` |
-| `@yaco/cli/core/agent/summaries#readSessionSummaries` | per-session `{handle,sessionId,provider,label}` | `yaco agent summaries --path <p> --json` | session-list labels (app-side cache; misses only) |
-| `@yaco/cli/core/agent#providerCatalog` | provider catalog `{id,label,executable}` | `yaco agent providers --json` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
-| `@yaco/cli/core/agent/messages#readMessageRows` | indexed message rows, `role`/`type`/`range` filtered | a metadata sweep plus one child per kept row | channel `/last` |
-| `@yaco/cli/core/agent#readProjectHistory` | windowed `Result<HistoryWindow>` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` — an explicit input — and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Every provider scan is capped at `limit + 1`, which is exact under `--since` because the cutoff and the merge key on the same `updatedAt` | `yaco agent history --path <p> --json`, whose strict parser (unknown flag / bad value / stray positional → `USAGE`) and ISO-8601-only `--since` are unchanged and still shipped | History tab |
+| `yaco-cli/core/task#readTaskList` | `Result<{tasks, tasksPath, tasksFile}>` | `yaco task list --workset all --json` | `GET /api/tasks/:project` |
+| `yaco-cli/core/agent/summaries#readSessionSummaries` | per-session `{handle,sessionId,provider,label}` | `yaco agent summaries --path <p> --json` | session-list labels (app-side cache; misses only) |
+| `yaco-cli/core/agent#providerCatalog` | provider catalog `{id,label,executable}` | `yaco agent providers --json` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
+| `yaco-cli/core/agent/messages#readMessageRows` | indexed message rows, `role`/`type`/`range` filtered | a metadata sweep plus one child per kept row | channel `/last` |
+| `yaco-cli/core/agent#readProjectHistory` | windowed `Result<HistoryWindow>` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` — an explicit input — and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Every provider scan is capped at `limit + 1`, which is exact under `--since` because the cutoff and the merge key on the same `updatedAt` | `yaco agent history --path <p> --json`, whose strict parser (unknown flag / bad value / stray positional → `USAGE`) and ISO-8601-only `--since` are unchanged and still shipped | History tab |
 
 -> See: [read-path.md](read-path.md) for the rule that admits a read, what each
 move measured, and how to put one back.

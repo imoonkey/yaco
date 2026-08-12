@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'fs'
 import { execFile } from 'child_process'
-import { worktreePath, worktreeBranch } from '@yaco/cli/core/worktree'
+import { worktreePath, worktreeBranch } from 'yaco-cli/core/worktree'
 
 export interface WorktreeStatus {
   active: boolean

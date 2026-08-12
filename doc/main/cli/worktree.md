@@ -17,14 +17,14 @@ strings, no command-injection surface**.
 
 | File | Surface | Notes |
 |------|---------|-------|
-| `convention.ts` | `worktreePath(repoRoot, slug)`, `worktreeBranch(slug)` | Single source of the slug↔path↔branch convention (`<repoRoot>/.worktrees/<slug>`, `task/<slug>`). Exported via `@yaco/cli/core/worktree` and imported by `app/server`. See [convention export](#convention-export). |
+| `convention.ts` | `worktreePath(repoRoot, slug)`, `worktreeBranch(slug)` | Single source of the slug↔path↔branch convention (`<repoRoot>/.worktrees/<slug>`, `task/<slug>`). Exported via `yaco-cli/core/worktree` and imported by `app/server`. See [convention export](#convention-export). |
 | `slug.ts` | `validateSlug` | Lowercase alphanumeric + hyphens, no leading/trailing hyphen. Throws `CliError(USAGE)`. |
 | `git.ts` | `runGit`, `resolveRepoRoot`, `branchExists`, `isDirty`, `isWorktreeRegistered`, `GitResult` | Thin spawn wrapper. Repo root resolved via `git rev-parse --path-format=absolute --git-common-dir` so linked worktrees still target the primary checkout. |
 | `pr.ts` | `createPullRequest` | `gh pr create --fill` with captured stdio. URL extracted by regex from gh's stdout (or stderr fallback). |
 | `create.ts` | `createWorktree`, `CreateResult` | Idempotent create + reuse + branch reattach. Runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) on first create. |
 | `merge.ts` | `mergeWorktree`, `MergeMode`, `MergeResult` | Two modes: `pr` (push + `gh pr create`) and `local` (rebase + ff-merge). |
 | `cleanup.ts` | `cleanupWorktree`, `CleanupResult` | `git worktree remove` + `git branch -d` (conservative; `--force` switches to `-D` and `--force`). Tolerant of partially-cleaned state. |
-| `index.ts` | Re-exports `validateSlug`, `worktreePath`, `worktreeBranch` — nothing else | The published `@yaco/cli/core/worktree`. Everything that *does* something to a worktree spawns git or gh synchronously and reads `process.cwd()`, so it fails export eligibility and is imported from its own module by `cli/src/commands/worktree/*`. -> See: [exports.md](exports.md) |
+| `index.ts` | Re-exports `validateSlug`, `worktreePath`, `worktreeBranch` — nothing else | The published `yaco-cli/core/worktree`. Everything that *does* something to a worktree spawns git or gh synchronously and reads `process.cwd()`, so it fails export eligibility and is imported from its own module by `cli/src/commands/worktree/*`. -> See: [exports.md](exports.md) |
 
 ## CLI surface
 
@@ -63,7 +63,7 @@ export const worktreeBranch = (slug: string): string => `task/${slug}`;
 ```
 
 Both are re-exported from the `cli/src/lib/core/worktree/index.ts` barrel and
-published over the workspace exports map as `@yaco/cli/core/worktree`
+published over the workspace exports map as `yaco-cli/core/worktree`
 (`cli/package.json#exports`), together with `validateSlug` — and that is the
 whole export. `create.ts`, `merge.ts`, and `cleanup.ts` all use them (and
 `create.ts` derives its `.worktrees` parent dir via
@@ -71,7 +71,7 @@ whole export. `create.ts`, `merge.ts`, and `cleanup.ts` all use them (and
 but those three are behind the subprocess boundary rather than on the barrel.
 
 `app/server/src/lib/worktree.ts` imports `worktreePath` / `worktreeBranch` from
-`@yaco/cli/core/worktree` instead of hardcoding `.worktrees/<slug>` and
+`yaco-cli/core/worktree` instead of hardcoding `.worktrees/<slug>` and
 `task/<slug>`. Previously the app re-spelled both templates, so a YACO scheme
 change would have broken the app's worktree-status reader silently. The app's
 git-status aggregation (dirty / ahead-behind, async + batched, safe-defaulting

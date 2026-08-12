@@ -1,7 +1,7 @@
 /** Mirror `agent-config/global/` into the package, so the skills ship in the tarball.
  *
  *  `yaco install` plants one `~/.claude/skills/<name>` symlink per shipped skill and
- *  the manifest is that directory's listing, so an `npm i -g @yaco/cli` with no
+ *  the manifest is that directory's listing, so an `npm i -g yaco-cli` with no
  *  skills inside it delivers a CLI and none of the behaviour the CLI exists to drive.
  *  npm cannot pack a path outside the package directory, so the tree is copied in.
  *

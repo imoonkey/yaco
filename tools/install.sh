@@ -2,7 +2,7 @@
 # yaco bootstrap installer.
 #
 # The ONLY entry point for first-time install or recovery from a missing/broken
-# yaco binary. Packs `@yaco/cli` into a tarball, installs that tarball globally
+# yaco binary. Packs `yaco-cli` into a tarball, installs that tarball globally
 # into $BIN_DIR's prefix, then delegates to `"$BIN_DIR/yaco" install "$@"` for
 # the rest of the work (hooks, wrapper, symlinks, registry, doctor).
 #
@@ -84,7 +84,10 @@ trap 'rm -rf "$stage"' EXIT
 # then fails, the install's own error is a red herring and the real cause has to
 # survive.
 pack() {
-  (cd "$REPO_ROOT" && npm pack --workspace @yaco/cli --pack-destination "$stage")
+  # Selected by workspace DIRECTORY, not by package name: this is the only line
+  # in the bootstrap that would otherwise have to be edited when the published
+  # name changes, and `cli/` is what it actually means.
+  (cd "$REPO_ROOT" && npm pack --workspace cli --pack-destination "$stage")
 }
 
 # Install the CLI workspace's dependencies **without deleting anything**.

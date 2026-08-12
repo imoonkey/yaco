@@ -37,7 +37,7 @@ The Hono backend serves the built React app from `<package-root>/ui` — `app/se
 | [data-model/](data-model/) | Entity shapes, API contracts, persistence boundaries |
 | [frontend/](frontend/) | React components, hooks, state patterns |
 | [ui/](ui/) | User-visible behavior specs and interaction contracts |
-| [packaging.md](packaging.md) | How the app is published as `@yaco/app` |
+| [packaging.md](packaging.md) | How the app is published as `yaco-app` |
 | [security.md](security.md) | Cross-cutting security controls |
 
 **Reading order:** Start with this README, then drill into the subsystem relevant to your change. For dev setup, see [doc/dev/app/workflow.md](../../dev/app/workflow.md).

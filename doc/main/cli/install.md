@@ -4,21 +4,21 @@
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design: **the package lands, then it configures the machine.**
-Landing it is `npm install -g @yaco/cli` or `tools/install.sh`, which packs and
+Landing it is `npm install -g yaco-cli` or `tools/install.sh`, which packs and
 installs that same tarball; configuring is `yaco install`, and **it needs no
 checkout** — everything it plants comes out of the installed package.
 
 1. **`tools/install.sh`** is the entry point for a clone, and the recovery path
    for a missing / broken yaco binary. It requires `node` and `npm`,
    rejects a Node below `engines.node` before building anything, resolves
-   `REPO_ROOT` and `BIN_DIR`, packs `@yaco/cli` into a tarball, installs that
+   `REPO_ROOT` and `BIN_DIR`, packs `yaco-cli` into a tarball, installs that
    tarball with `npm install --global --prefix <dirname $BIN_DIR>`, then
    `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR "$BIN_DIR/yaco" install
    "$@"`. The exec is absolute-path — `grep -E '^[[:space:]]*yaco install'
    tools/install.sh` returns no matches.
 
    **It installs the tarball, never a link into the checkout.** What lands on
-   `$PATH` is byte-for-byte what an `npm install -g @yaco/cli` delivers, so a
+   `$PATH` is byte-for-byte what an `npm install -g yaco-cli` delivers, so a
    packaging mistake fails in the bootstrap rather than on a user's machine.
 
    **`$YACO_BIN_DIR` must end in `/bin`** (exit 2 otherwise). `npm --global`
@@ -49,7 +49,7 @@ install is identical either way:
 | upsert `{id:"yaco", path: repoRoot}` | reported as a `skipped registry:` action. The entry names *the yaco repo itself*; a package user has no such repo and registers their own with `yaco project add` |
 
 `isYacoCheckout(repoRoot)` decides, and it asks for **repository identity**, not
-a directory layout: `<repoRoot>/cli/package.json` must declare `@yaco/cli`. The
+a directory layout: `<repoRoot>/cli/package.json` must declare `yaco-cli`. The
 layout marker it replaced (`agent-config/global/skills` being present) answers
 yes for anyone's dotfiles or agent-configuration repo, which would then be
 registered under a reserved name it does not own — and the real checkout would
@@ -75,7 +75,7 @@ byte-for-byte alone.
 
 **The manifest is a package asset.** `agent-config/global/` is mirrored into
 `cli/agent-config/` at build time and shipped in the tarball, so `npm i -g
-@yaco/cli` delivers the skills too and the links never name a checkout. -> See:
+yaco-cli` delivers the skills too and the links never name a checkout. -> See:
 [the mirror](../../dev/cli/workflow.md#the-skills-mirror) for how it gets there
 and what that costs a skill author.
 
@@ -156,11 +156,11 @@ The CLI has one runtime dependency, `smol-toml`: Node ships no TOML parser, and
 the Codex trust gate has to enumerate inline `[hooks]` tables in
 `.codex/config.toml` fail-closed. Its build additionally needs `esbuild` and
 `typescript`, both devDependencies. `typescript` is deliberately **not** a peer
-dependency: npm auto-installs peers, so every `npm i -g @yaco/cli` would drag in
+dependency: npm auto-installs peers, so every `npm i -g yaco-cli` would drag in
 23 MB of compiler the CLI never runs.
 
 **Readiness is decided by the pack**, not by inspecting `node_modules`. `npm pack
---workspace @yaco/cli` runs `prepack`, which is a clean build, so a pack that
+--workspace yaco-cli` runs `prepack`, which is a clean build, so a pack that
 succeeds has resolved the whole import graph, emitted both artifacts, and
 written the file list. Every cheaper check tried before (a `node_modules`
 directory existing; each dependency's own manifest existing) mistook a partially
@@ -254,7 +254,7 @@ Hook configs written by `yaco install` use the canonical form:
 - **Rung 2 is only for an explicit bin dir.** `runInstall` exports
   `$YACO_BIN_DIR` only when `--bin-dir` or the environment supplied one. Its
   default (`~/.local/bin`) is a guess, and exporting the guess made it outrank a
-  real installation: `npm i -g @yaco/cli` into an nvm prefix followed by `yaco
+  real installation: `npm i -g yaco-cli` into an nvm prefix followed by `yaco
   install` wrote every hook command back to a stale binary an older bootstrap
   had left behind. `tools/install.sh` always passes one, so the bootstrap still
   names the prefix it just installed into.

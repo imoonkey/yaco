@@ -1,6 +1,6 @@
 # Export Eligibility (`cli/package.json#exports`)
 
-> What `@yaco/cli` may publish for in-process use, and the audit that decides it.
+> What `yaco-cli` may publish for in-process use, and the audit that decides it.
 
 Last updated: 2026-08-11 (history-read-land: `readProjectHistory` joins the `core/agent` barrel, and rule 5 judges a second `node:sqlite` query) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
 

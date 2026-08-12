@@ -130,7 +130,7 @@ tools/install.sh --cli-only
 ```
 
 `tools/install.sh` is a thin bootstrap: it checks the Node floor, packs
-`@yaco/cli`, installs that tarball with
+`yaco-cli`, installs that tarball with
 `npm install --global --prefix <dirname $BIN_DIR>`, and installs the CLI
 workspace's dependencies first when the clone has none (see
 [install.md](../../main/cli/install.md#bootstrap-dependencies)), then
@@ -423,8 +423,8 @@ src/
   commands/                 # per-area handlers (paths/, agent/, task/, worktree/, align/, init.ts, install.ts, doctor.ts)
   lib/core/                 # shared core primitives
     result.ts, errors.ts, json.ts, args.ts
-    paths/                  # @yaco/cli/core/paths (exports)
-    task/                   # @yaco/cli/core/task (exports)
+    paths/                  # yaco-cli/core/paths (exports)
+    task/                   # yaco-cli/core/task (exports)
     worktree/               # slug-keyed git worktree lifecycle (spawn-based, no shell)
     agent/                  # agent runtime (model, providers, state, hooks, lifecycle, tmux, ...)
 scripts/

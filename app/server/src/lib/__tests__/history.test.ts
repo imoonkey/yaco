@@ -26,8 +26,8 @@ const probe = vi.hoisted(() => ({ spawns: [] as unknown[][] }))
  *  by design, so nothing on disk can produce one. */
 const control = vi.hoisted(() => ({ fail: null as null | { code: string; message: string } }))
 
-vi.mock('@yaco/cli/core/agent', async (orig) => {
-  const actual = await orig<typeof import('@yaco/cli/core/agent')>()
+vi.mock('yaco-cli/core/agent', async (orig) => {
+  const actual = await orig<typeof import('yaco-cli/core/agent')>()
   return {
     ...actual,
     readProjectHistory: (...args: Parameters<typeof actual.readProjectHistory>) =>

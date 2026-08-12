@@ -46,7 +46,7 @@ const MANIFEST_VERSION = JSON.parse(
 describe("package assets from source", () => {
   it("resolves the manifest to this package's own", () => {
     const manifest = JSON.parse(readFileSync(packagedAssetPath("package.json"), "utf-8"));
-    expect(manifest.name).toBe("@yaco/cli");
+    expect(manifest.name).toBe("yaco-cli");
   });
 
   it("resolves the wrapper to the script the lifecycle reads", () => {

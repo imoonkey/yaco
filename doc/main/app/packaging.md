@@ -1,21 +1,21 @@
 # Packaging
 
-> How `app/` becomes `@yaco/app` on npm: one bundle, the built UI inside it, native dependencies left outside.
+> How `app/` becomes `yaco-app` on npm: one bundle, the built UI inside it, native dependencies left outside.
 
 Last updated: 2026-08-11 · Code: `app/server/scripts/build.mjs`, `app/server/package.json`, `app/ui/vite.config.ts` · Parent: [README.md](README.md)
 
 | Package | Contents | Artifact |
 |---|---|---|
-| `@yaco/cli` | CLI + the agent skills | esbuild command bundle + a `tsc` module emit -> See: [../cli/architecture.md](../cli/architecture.md) |
-| `@yaco/app` | `app/server` + the built UI | one esbuild bundle, `dist/yaco-app.mjs`, which is also the `bin` |
+| `yaco-cli` | CLI + the agent skills | esbuild command bundle + a `tsc` module emit -> See: [../cli/architecture.md](../cli/architecture.md) |
+| `yaco-app` | `app/server` + the built UI | one esbuild bundle, `dist/yaco-app.mjs`, which is also the `bin` |
 
-**Two packages, not one.** `@yaco/cli` has one small runtime dependency. Merging
+**Two packages, not one.** `yaco-cli` has one small runtime dependency. Merging
 would make everyone running `yaco agent list` install `node-pty` and compile it
 from source on Linux, plus ~40 MB of SDKs. The CLI's near-zero-dependency install
 is its most valuable distribution property.
 
 **Two, not three.** `app/ui` and `packages/codex-transcribe` stay `private` and are
-never published: the UI ships as built files inside `@yaco/app`, and
+never published: the UI ships as built files inside `yaco-app`, and
 codex-transcribe (one consumer, no dependencies) is inlined into the bundle.
 
 ## The package root
@@ -42,7 +42,7 @@ the `yaco-ui-build` service runs — never reaches a `&&`-chained copy step.
 **A declared dependency is external; everything else is inlined.**
 `scripts/build.mjs` reads the externals straight out of `package.json`, so the
 manifest is not documentation — it is the build's only input for that decision.
-`@yaco/codex-transcribe` is inlined precisely *by not being a dependency*, which
+`yaco-codex-transcribe` is inlined precisely *by not being a dependency*, which
 is also the only correct published manifest, since it is not published.
 
 Both ways of breaking that rule are silent in a checkout, where npm's hoisting
@@ -69,17 +69,17 @@ feature instead of stopping the server at load.
 
 ## Releasing
 
-`@yaco/cli` and `@yaco/app` carry one shared version and release together; the
+`yaco-cli` and `yaco-app` carry one shared version and release together; the
 app depends on the CLI by published range, never by workspace `*`. `prepack`
 cleans, builds the UI into `<package-root>/ui`, and bundles the server, so a
 successful `npm pack` has also proved the build. `files` ships `dist`, `ui` and
 `LICENSE` — no sources.
 
-Until `@yaco/cli` is on the registry, the two tarballs install together in one
+Until `yaco-cli` is on the registry, the two tarballs install together in one
 command; npm satisfies the app's dependency edge from the co-installed CLI.
 
 ```bash
-npm pack --workspace @yaco/cli --workspace @yaco/app
+npm pack --workspace yaco-cli --workspace yaco-app
 npm install --global yaco-cli-<v>.tgz yaco-app-<v>.tgz
 yaco-app                       # serves the UI + API on WORKFLOW_PORT (default 3001)
 ```

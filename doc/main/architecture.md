@@ -24,17 +24,17 @@ app, the `yaco` CLI/runtime, and global agent configuration.
   write are one authority, and tmux is another.
   -> See: [cli/read-path.md](cli/read-path.md)
 - `cli/package.json` exports shared TypeScript primitives for app/server, and
-  `app/server` imports all eight subpaths in process: `@yaco/cli/core/paths`,
-  `@yaco/cli/core/task`, `@yaco/cli/core/agent`,
-  `@yaco/cli/core/agent/messages`, `@yaco/cli/core/agent/summaries`,
-  `@yaco/cli/core/worktree`, `@yaco/cli/core/result`, and
-  `@yaco/cli/core/errors`. What an entry may publish is a contract, not a
+  `app/server` imports all eight subpaths in process: `yaco-cli/core/paths`,
+  `yaco-cli/core/task`, `yaco-cli/core/agent`,
+  `yaco-cli/core/agent/messages`, `yaco-cli/core/agent/summaries`,
+  `yaco-cli/core/worktree`, `yaco-cli/core/result`, and
+  `yaco-cli/core/errors`. What an entry may publish is a contract, not a
   preference — these run inside the app's event loop — and a checked-in audit
   enforces it over each export's transitive import closure.
   -> See: [cli/exports.md](cli/exports.md)
 - Runtime state resolves through `${YACO_HOME:-~/.yaco}`. Path helpers under
-  `@yaco/cli/core/paths` are the shared source of truth.
-- `tools/install.sh` is the recovery-safe bootstrap. It packs `@yaco/cli` and
+  `yaco-cli/core/paths` are the shared source of truth.
+- `tools/install.sh` is the recovery-safe bootstrap. It packs `yaco-cli` and
   installs that tarball into `${YACO_BIN_DIR:-~/.local/bin}`'s prefix — the same
   artifact npm would deliver — then delegates to `yaco install`.
 - `yaco install` owns global hook/wrapper install, skill symlinks, and registry

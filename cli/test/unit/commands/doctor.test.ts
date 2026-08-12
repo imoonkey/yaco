@@ -53,7 +53,7 @@ beforeEach(() => {
   // package's manifest, and several checks below read what it wrote.
   repoRoot = join(sandbox, "repo");
   mkdirSync(join(repoRoot, "cli"), { recursive: true });
-  writeFileSync(join(repoRoot, "cli", "package.json"), JSON.stringify({ name: "@yaco/cli" }));
+  writeFileSync(join(repoRoot, "cli", "package.json"), JSON.stringify({ name: "yaco-cli" }));
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   // Minimal valid tasks graph for the task-graph check.
   mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
@@ -141,7 +141,7 @@ describe("runAllChecks — providers zero state (no agent CLI installed)", () =>
   }
 
   it("skips providers, and nothing fails, when only the agent CLI is missing", async () => {
-    // The stranger's machine: `npm i -g @yaco/cli` before `claude` or `codex`.
+    // The stranger's machine: `npm i -g yaco-cli` before `claude` or `codex`.
     // `yaco install` throws on any failing check, so a fail here would be a
     // throw from the documented first command — and there is nothing install
     // could have done about it, because YACO ships no agent.

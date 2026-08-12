@@ -10,7 +10,7 @@ import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { AGENT_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './agent'
 import { notifyAttentionSessionChange, notifyAttentionTaskChange } from './attention-runtime'
-import { projectsFile as yacoProjectsFile, readYacoProjectPaths } from '@yaco/cli/core/paths'
+import { projectsFile as yacoProjectsFile, readYacoProjectPaths } from 'yaco-cli/core/paths'
 
 const DEBOUNCE_MS = 200
 /** How often to retry arming the sessions-dir watcher when the dir is absent at

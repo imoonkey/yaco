@@ -65,7 +65,7 @@ plants links from — so the three are the alphabetically first.
 `registry` is the mirror image. It stopped asserting a `yaco` entry because
 nothing reads one: `skills-link` was the last consumer and now resolves the
 manifest from the package. What is left is "the file parses", and an absent file
-is the legitimate zero state of an `npm i -g @yaco/cli` user who has not run
+is the legitimate zero state of an `npm i -g yaco-cli` user who has not run
 `yaco project add` yet. -> See:
 [install.md](install.md#what-a-checkout-is-still-for)
 
@@ -114,7 +114,7 @@ does, and the extracted *root* is the likelier shape.
 
 YACO ships no agent. A machine with neither `claude` nor `codex` installed is a
 legitimate starting point — the documented first commands are `npm i -g
-@yaco/cli` then `yaco install`, and nothing says an agent CLI has to come first:
+yaco-cli` then `yaco install`, and nothing says an agent CLI has to come first:
 
 ```
 SKIP  providers  no provider executable on $PATH (claude, codex) — install one before starting agents

@@ -153,7 +153,7 @@ describe("tools/install.sh — end-to-end bootstrap (AC 8)", () => {
     expect(r.status).toBe(0);
 
     const installed = realpathSync(join(env["YACO_BIN_DIR"]!, "yaco"));
-    expect(installed).toContain(join("lib", "node_modules", "@yaco", "cli"));
+    expect(installed).toContain(join("lib", "node_modules", "yaco-cli"));
     expect(installed.startsWith(REPO_ROOT)).toBe(false);
     // And the hook it wrote names the prefix's executable, not the package's
     // own launcher, because the bootstrap exports $YACO_BIN_DIR.
@@ -352,7 +352,7 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
       { cwd: clone, encoding: "utf-8", timeout: 300_000 },
     );
     expect(second.status).toBe(0);
-    const secondWorkspaceLink = join(clone, "node_modules", "@yaco", "codex-transcribe");
+    const secondWorkspaceLink = join(clone, "node_modules", "yaco-codex-transcribe");
     expect(existsSync(secondWorkspaceLink)).toBe(true);
 
     const foreign = join(clone, "node_modules", "not-ours");
@@ -419,7 +419,7 @@ describe("tools/install.sh — dependency bootstrap from a never-installed clone
     expect(r.stderr).toContain("could not install the cli dependencies");
     // The pack's own failure, kept verbatim underneath the install's.
     expect(r.stderr).toContain("the build failure that asked for them was:");
-    expect(r.stderr).toContain("@yaco/cli");
+    expect(r.stderr).toContain("yaco-cli");
   }, 180_000);
 });
 

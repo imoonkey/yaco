@@ -29,9 +29,9 @@ A git worktree does not carry the gitignored `node_modules`, so
 dependencies. **The third-party tree is shared; the workspace links must not be.**
 
 npm writes the workspace self-links inside `node_modules` **relative**
-(`@yaco/cli -> ../../cli`), and a relative symlink resolves against its *physical*
+(`yaco-cli -> ../cli`), and a relative symlink resolves against its *physical*
 location. So `ln -s <main>/node_modules <worktree>/node_modules` — the obvious
-share, and what this repo did until 2026-08-11 — makes every `@yaco/*` import in
+share, and what this repo did until 2026-08-11 — makes every workspace import in
 that worktree resolve to the **main checkout's source, on a different branch**.
 Nothing in a test run reveals it. The suite goes green against code the branch does
 not contain, a CLI change made on the branch is invisible to the branch's own
@@ -40,12 +40,17 @@ That is a false-green generator in both directions, and it cost three workers in
 the `cli-node-sdk` milestone real time plus one confidently wrong conclusion.
 
 **Do not go back to sharing the tree whole.** The script mirrors it instead: a real
-`node_modules` directory whose entries are links into main's tree, with `.bin` and
-the workspace scope directories rebuilt one level down. Each link is recreated with
-its target copied verbatim, so the relative ones re-anchor inside the worktree and
-the rest stay on main — `.bin/vitest` runs main's vitest, `.bin/yaco` runs the
-worktree's CLI. `node_modules/.package-lock.json` is a link to main's, which is the
-tree it describes. Cost: ~550 symlinks, no copied bytes.
+`node_modules` directory whose entries are links into main's tree, with `.bin` — and
+any scope directory hosting a workspace package — rebuilt one level down. Each link
+is recreated with its target copied verbatim, so the relative ones re-anchor inside
+the worktree and the rest stay on main — `.bin/vitest` runs main's vitest,
+`.bin/yaco` runs the worktree's CLI. `node_modules/.package-lock.json` is a link to
+main's, which is the tree it describes. Cost: ~550 symlinks, no copied bytes.
+
+Since the packages went unscoped, this repo contributes no such scope directory:
+its self-links sit one level down, beside every third-party package, and only
+symlink-vs-real separates them. The script already accepted both name shapes;
+`scripts/worktree-provision.test.sh` §19 is what runs the one-segment half.
 
 | Situation | What to do |
 |---|---|
@@ -57,11 +62,11 @@ Two guards keep it honest, both wired into `scripts/verify.sh`: the script's own
 self-check asks the real Node resolver, from every workspace directory, where each
 workspace package lands and fails loudly if it is outside the worktree; and
 `app/server/test/workspace-resolution.test.ts` asserts the same through vite's
-resolver for every `@yaco/*` specifier `app/server` imports.
+resolver for every workspace specifier `app/server` imports.
 `scripts/worktree-provision.test.sh` is a hermetic test of the mirror itself.
 
 **Build the CLI before running `app/server` tests in a fresh worktree.** A few of
-them spawn a plain `node --import tsx` child, which resolves `@yaco/cli/*` to
+them spawn a plain `node --import tsx` child, which resolves `yaco-cli/*` to
 `cli/dist/` rather than the source — unbuilt, that is now an honest
 `ERR_MODULE_NOT_FOUND` instead of a silent load of main's build. `scripts/verify.sh`
 already orders `cli build` ahead of `server test`; a bare `npm test` in `app/server`

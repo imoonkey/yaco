@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { channelScopeDir } from '@yaco/cli/core/paths'
+import { channelScopeDir } from 'yaco-cli/core/paths'
 
 export interface Binding {
   project: string

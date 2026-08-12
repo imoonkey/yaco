@@ -1,4 +1,4 @@
-/** Public surface of @yaco/cli/core/paths.
+/** Public surface of yaco-cli/core/paths.
  *
  *  Re-exports the runtime root resolver, the [paths] reader, and the
  *  registry helpers. Importers should always go through this barrel so

@@ -71,7 +71,7 @@ Linux or macOS, with:
 complete layers 1 + 2 install:
 
 ```bash
-npm install -g @yaco/cli
+npm install -g yaco-cli
 yaco install
 ```
 
@@ -82,7 +82,7 @@ configures the machine — it merges provider hooks into `~/.claude` and
 `~/.claude/skills` (alongside — never replacing — the skills you already have),
 and finishes with `yaco doctor`. Everything it plants comes out of the installed
 package, so nothing points at a directory that could go away. Add
-`npm install -g @yaco/app` for layer 3. Re-run `yaco install` after either
+`npm install -g yaco-app` for layer 3. Re-run `yaco install` after either
 upgrade.
 
 Doctor reports what you have not set up yet — the project registry, the task
@@ -101,7 +101,7 @@ cd yaco
 tools/install.sh
 ```
 
-This packs `@yaco/cli` and installs that same tarball into
+This packs `yaco-cli` and installs that same tarball into
 `${YACO_BIN_DIR:-~/.local/bin}`'s prefix (make sure the bin dir is on your
 `PATH`), then runs `yaco install` for you and additionally npm-installs the app
 and registers this repo as a project. Re-run it after `git pull` — and after
@@ -160,7 +160,7 @@ Twenty-two skills in
 development loop — and drive the `yaco` subcommands built for it: `yaco task`
 (a per-repo task graph under `plan/`), `yaco worktree` (each task gets its own
 checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
-`yaco gate`. They ship **inside `@yaco/cli`**, and the installer plants them as
+`yaco gate`. They ship **inside `yaco-cli`**, and the installer plants them as
 **per-skill symlinks** into `~/.claude/skills`, alongside — never replacing —
 the skills you already have. From a clone, those links point at the copy in the
 built package rather than at your working tree, so re-run `tools/install.sh`
@@ -299,7 +299,7 @@ recommendation.) Paths are configurable in `yaco.toml` under `[paths]`;
 bash scripts/verify.sh
 ```
 
-runs the standard gate — CLI tests, the `@yaco/codex-transcribe` typecheck and
+runs the standard gate — CLI tests, the `yaco-codex-transcribe` typecheck and
 tests, server tests, UI lint and build — stopping at the first failure. The
 suites it deliberately skips (UI component tests, Playwright e2e, CLI
 integration) and their side effects are covered in

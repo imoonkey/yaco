@@ -5,13 +5,13 @@ import {
   removeProject as coreRemoveProject,
   ensureYacoHome as coreEnsureYacoHome,
   type Project,
-} from '@yaco/cli/core/paths'
+} from 'yaco-cli/core/paths'
 
 export type { Project }
 
 /** Async adapters over the shared sync registry core. The app keeps an async
  *  surface for its route handlers; the on-disk shape, normalization, name/path
- *  validation, and duplicate rules all live in @yaco/cli/core/paths so the CLI
+ *  validation, and duplicate rules all live in yaco-cli/core/paths so the CLI
  *  and the app server never diverge. */
 
 export async function ensureYacoHome(): Promise<void> {

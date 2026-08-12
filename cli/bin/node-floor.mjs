@@ -1,4 +1,4 @@
-/** Is this Node older than the version `@yaco/cli` requires?
+/** Is this Node older than the version `yaco-cli` requires?
  *
  *  A separate file from the launcher for one reason: the launcher runs the CLI
  *  the moment it is loaded, so it cannot be imported to be tested, and a

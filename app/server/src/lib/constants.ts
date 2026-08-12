@@ -2,8 +2,8 @@ import { execSync } from 'child_process'
 import { statSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { sessionsDir } from '@yaco/cli/core/paths'
-import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from '@yaco/cli/core/task'
+import { sessionsDir } from 'yaco-cli/core/paths'
+import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from 'yaco-cli/core/task'
 
 function userHome(): string {
   return process.env.HOME || homedir()
@@ -41,7 +41,7 @@ export const YACO_PATH = (() => {
 
 /** Global yaco agent session state directory.
  *  Resolves to `${YACO_HOME:-~/.yaco}/sessions` via the shared YACO resolver
- *  (see `@yaco/cli/core/paths#sessionsDir`). The agent runtime owns writes;
+ *  (see `yaco-cli/core/paths#sessionsDir`). The agent runtime owns writes;
  *  the YACO server reads + watches this directory. The agent CLI's
  *  YACO_AGENT_SESSIONS_DIR override is intentionally NOT honored here —
  *  YACO should observe the same root the agent is publishing to under
