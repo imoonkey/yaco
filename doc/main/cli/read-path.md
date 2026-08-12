@@ -313,6 +313,15 @@ Three things the widening had to get right:
   slice. On the reference home the furthest a last `cwd` sits from the end of a
   file is 20 KB against a 64 KB window, and byte-matching agrees with a
   whole-file parse on all 1 053 logs.
+- **`updatedAt` is matched the same way, and for a sharper reason.** It is the
+  key the provider cap and the merge both sort by, so a log whose records are
+  larger than the slices does not merely display an approximate time when the
+  reader falls back to the file's mtime — it *moves*, and a row moved below the
+  cap is a row the window never sees. `created` keeps its record parse and its
+  birthtime fallback, because what makes byte-matching sound is taking the
+  **last** match: a *first* match could be a structural key nested inside the
+  first record's payload, so there is no byte-level answer to "the first
+  record's timestamp". One field is display, the other is the window.
 - **A path is a subtree of itself and of nothing shorter.** The prefix every
   descendant starts with is the project path plus exactly one separator; the
   filesystem root already carries its own, and a second would match no absolute

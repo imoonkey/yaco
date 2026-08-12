@@ -243,11 +243,28 @@ describe("claude history list — the project subtree", () => {
 
     const rows = await readClaude(PROJECT);
     expect(rows.map((r) => r.sessionId)).toEqual(["huge-records"]);
-    // Its `updatedAt` does fall back to the file's mtime, because the timestamp
-    // *is* read out of a parsed record and no whole one fits. That fallback is
-    // the reader's documented last resort and it degrades a row's ordering key;
-    // being unattributable would have dropped the row altogether.
-    expect(Date.parse(rows[0]!.updatedAt)).not.toBeNaN();
+    expect(rows[0]!.updatedAt).toBe("2026-06-04T11:00:00.000Z");
+  });
+
+  it("keeps an oversized-record log in the window against a disagreeing mtime", async () => {
+    // `updatedAt` is the cap key, so losing the in-log timestamp does not merely
+    // mislabel this row — it moves it below the cap and out of the window. The
+    // fixture dates are in the future, so a file's mtime is *older* than every
+    // in-log timestamp here: falling back to mtime orders this session last
+    // rather than first.
+    const big = (bytes: number, ts: string): object => ({
+      type: "user",
+      message: { role: "user", content: "x".repeat(bytes) },
+      timestamp: ts,
+      cwd: PROJECT,
+    });
+    writeClaudeSession("newest-huge", [big(20_000, "2087-06-04T09:00:00.000Z"), big(70_000, "2087-06-04T23:00:00.000Z")]);
+    for (let i = 0; i < 5; i++) {
+      writeClaudeSession(`older-${i}`, [userLine(`older ${i}`, `2087-06-04T1${i}:00:00.000Z`)]);
+    }
+
+    // A cap of one: only the genuinely newest session may survive it.
+    expect((await readClaude(PROJECT, 1)).map((r) => r.sessionId)).toEqual(["newest-huge"]);
   });
 
   it("prefers a record's own cwd over a nested one inside its payload", async () => {

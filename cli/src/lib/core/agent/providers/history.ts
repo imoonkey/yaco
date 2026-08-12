@@ -158,6 +158,15 @@ function parseEntryTimestamp(line: string): string | null {
   } catch { return null; }
 }
 
+/** The first record's timestamp, which is the row's `created`.
+ *
+ *  Record-parsed, unlike `parseLastTimestamp` below, and that asymmetry is the
+ *  point: what makes matching raw bytes sound is taking the *last* match — see
+ *  `lastStringField`. A *first* match could be a structural key nested inside
+ *  the first record's payload, so there is no byte-level answer to "the first
+ *  record's timestamp", and a log whose opening record is larger than the head
+ *  falls back to the file's birthtime. That costs a display field; the ordering
+ *  key below is the one that must not fall back. */
 function parseFirstTimestamp(text: string): string | null {
   for (const line of text.split("\n")) {
     if (!line) continue;
@@ -167,12 +176,18 @@ function parseFirstTimestamp(text: string): string | null {
   return null;
 }
 
+/** The last record's timestamp — the row's `updatedAt`, and therefore the key
+ *  the provider cap and the merge both sort by.
+ *
+ *  Matched in the raw bytes for the same reason `cwd` is: a single record can be
+ *  larger than the slice, and then no whole line in it parses. Here the stakes
+ *  are higher than attribution — falling back to the file's mtime does not merely
+ *  mislabel a row, it *moves* it, and a row moved below the provider cap is a row
+ *  the window never sees. Agrees with the parsed field on 166 907 of 166 907
+ *  timestamp-bearing records on the reference home. */
 function parseLastTimestamp(text: string): string | null {
-  for (const line of linesFromEnd(text)) {
-    const ts = parseEntryTimestamp(line);
-    if (ts) return ts;
-  }
-  return null;
+  const ts = lastStringField(text, TIMESTAMP_FIELD);
+  return ts !== null && !Number.isNaN(Date.parse(ts)) ? ts : null;
 }
 
 /** The first meaningful user message in the head of a Claude JSONL file.
@@ -272,38 +287,49 @@ function claudeProjectDir(projectPath: string): string {
 }
 
 const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+const TIMESTAMP_FIELD = /"timestamp"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
 
-/** The literal `cwd` a Claude log records, from a slice of it — the **last** one
- *  the slice carries.
+/** The **last** value a slice carries for a top-level string field, matched in
+ *  the raw bytes rather than in a parsed record.
  *
- *  Read out of the raw bytes rather than out of a parsed record, because a
- *  single record can be larger than the slice and then no whole line inside it
- *  parses: a log whose first record is 20 KB and whose last is 70 KB has no
- *  complete line in either the head or the tail, and would be unattributable
- *  under a parse-a-line rule. The reference home already holds 219 individual
- *  records over `TAIL_BYTES`.
+ *  Records are not always available to parse: a single Claude record can be
+ *  larger than the slice, and then no whole line inside it parses at all. A log
+ *  whose first record is 20 KB and whose last is 70 KB has no complete line in
+ *  either the head or the tail — the reference home already holds 219 individual
+ *  records over `TAIL_BYTES` — so a rule that has to parse one loses the field
+ *  entirely. What must fit in the slice is the field, not the record around it.
  *
- *  Taking the *last* match is what makes reading raw bytes safe. Text a user
- *  pasted cannot be mistaken for the field at all — a quote inside a JSON
- *  string is escaped, and `\"cwd\"` does not match this pattern. A **nested
- *  key** can, a tool result carrying its own `cwd` being unescaped and
+ *  Taking the *last* match is what makes reading raw bytes sound. Text a user
+ *  pasted cannot be mistaken for a field at all — a quote inside a JSON string
+ *  is escaped, and `\"cwd\"` does not match this pattern. A **nested key** can,
+ *  a tool result carrying its own `cwd` or `timestamp` being unescaped and
  *  structural; but it sits inside `message`, and Claude writes `message` before
- *  the record's own `cwd`, with nothing after `cwd` carrying content. So the
- *  last match in a slice is the record's own. Checked against a whole-file parse
- *  of every log on the reference home: 1 053 of 1 053 agree. A session that
- *  changed directory mid-run resolves to where it ended, which is the
- *  newest-wins rule `updatedAt` already follows. */
-function parseCwd(text: string): string | null {
+ *  both of these fields, with nothing content-bearing after them. So the last
+ *  match in a slice is the record's own — checked against parsing rather than
+ *  argued from the format: 157 523 of 157 523 cwd-bearing records and 166 907 of
+ *  166 907 timestamp-bearing records on the reference home agree, as does a
+ *  whole-file parse of all 1 053 logs.
+ *
+ *  There is deliberately no "first match" counterpart: the argument above only
+ *  holds at the end of a record. -> See: `parseFirstTimestamp`. */
+function lastStringField(text: string, field: RegExp): string | null {
   let last: string | null = null;
-  CWD_FIELD.lastIndex = 0;
-  for (let m = CWD_FIELD.exec(text); m !== null; m = CWD_FIELD.exec(text)) last = m[1] ?? null;
+  field.lastIndex = 0;
+  for (let m = field.exec(text); m !== null; m = field.exec(text)) last = m[1] ?? null;
   if (last === null) return null;
   try {
-    // Through JSON so an escaped quote or backslash in a path comes back as the
-    // byte it stands for, exactly as parsing the record would have given it.
+    // Through JSON so an escaped quote or backslash comes back as the byte it
+    // stands for, exactly as parsing the record would have given it.
     const decoded = JSON.parse(`"${last}"`);
     return typeof decoded === "string" && decoded ? decoded : null;
   } catch { return null; }
+}
+
+/** The literal `cwd` a Claude log records — what decides whether the log is this
+ *  project's. A session that changed directory mid-run resolves to where it
+ *  ended, the same newest-wins rule `updatedAt` follows. */
+function parseCwd(text: string): string | null {
+  return lastStringField(text, CWD_FIELD);
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
