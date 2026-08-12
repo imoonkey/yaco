@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-08-12 (the app install runs at the workspace root)
+> Last updated: 2026-08-12 (the agent wrapper has one writer and is replaced by rename, never rewritten in place — live sessions are executing it. Prior — the app install runs at the workspace root)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design: **the package lands, then it configures the machine.**
@@ -325,8 +325,9 @@ Iterates the provider registry (`listProviders()` from
 `lib/core/agent/providers`) and calls each provider's `hooks.install()` for
 adapters that declare hooks — Claude's resolves to `ensureClaudeHooks`, Codex's
 to `ensureCodexHooks` (both in `lib/core/agent/lifecycle.ts`). `install.ts`
-writes the wrapper once via `installAgentWrapper`; the adapter hook merge is
-then direct so the install plan stays keyed off each adapter's
+plants the wrapper once via `installAgentWrapper` and then calls the adapters'
+`hooks.install()` directly rather than `ensureHooks()`, which would write the
+wrapper a second time; the merge stays keyed off each adapter's
 `hooks.configPath()`. Adding a provider widens the merge loop with no
 install.ts edit.
 
@@ -352,10 +353,51 @@ older installs migrate in place).
 
 ## Agent-wrapper write
 
-`installAgentWrapper` writes `${YACO_HOME}/agent-wrapper.sh` from exactly one
-source: `readAgentWrapperScript()`, which reads
-`<package-root>/scripts/agent-wrapper.sh` or throws `INTERNAL`. Runtime
-`ensureAgentWrapperScript` refreshes the managed copy from the same place.
+`${YACO_HOME}/agent-wrapper.sh` has exactly **one writer**,
+`ensureAgentWrapperScript()` in `lib/core/agent/lifecycle.ts`, and it replaces
+the file by **rename, never by rewriting it in place**. `install.ts` calls it and
+adds only the action reporting; `ensureHooks()` — every `yaco agent start` —
+calls the same one. Content comes from exactly one source,
+`readAgentWrapperScript()`, which reads `<package-root>/scripts/agent-wrapper.sh`
+or throws `INTERNAL`.
+
+Both halves of that are load-bearing, and each was a live bug:
+
+**Why a rename.** This file is *executing* while install replaces it. Every live
+session is a `bash agent-wrapper.sh` holding the inode open at a byte offset —
+bash reads a script incrementally and seeks back to just past the command it
+consumed — and the wrapper does not `exec` the provider (its last statement is
+`bash -lic 'exec "$@"' _ "$@"`), so that outer shell sits parked at the file's
+EOF offset for the *whole session*. `writeFileSync` on an existing path is
+`O_TRUNC`: it refills the same inode, and the parked shell then reads whatever
+the new file has at its old offset. Demonstrated at the real wrapper's scale: the
+shell re-executed a command it had already run and finished by executing a
+*different version's* tail, exit 0; in the real control flow it died with a
+syntax error and **exit 2** — the code its own EXIT trap hands to `mark-crashed`,
+so a healthy session tombstones itself as crashed. A rename swaps the directory
+entry only: the old inode stays intact for the shells still on it, and every
+session started afterwards opens the new one.
+
+**Why one writer.** `lifecycle.ts` used to carry a second, truncating
+implementation (`ensureManagedScript`) that `ensureHooks()` went through — so the
+hazard survived on the path that runs *most often*, and always while other
+sessions are live. Two writers of a file with this property is the bug; a new one
+is not a refactor away from safe.
+
+Four details the rename depends on, each with a failure mode no outcome
+assertion can see: the temp is a **sibling** (`rename(2)` is `EXDEV` across
+filesystems and `$TMPDIR` is routinely a different one), created **exclusively**
+(`wx`, so the write can never follow a symlink planted at that path), **chmod
+0755 before the rename** (after it, a session starting in the gap `exec`s a
+non-executable file), and removed on **every failure past the exclusive create**
+— EEXIST at the create itself is the one exemption, because that is the proof the
+file is not ours to delete.
+
+The content check short-circuits an unchanged wrapper, so `install` reports
+`wrote <path>` only on a real change and no inode is swapped for a no-op.
+
+-> See: [src/lib/core/agent/lifecycle.ts](../../../cli/src/lib/core/agent/lifecycle.ts),
+[test/unit/core/agent/wrapper-atomic-write.test.ts](../../../cli/test/unit/core/agent/wrapper-atomic-write.test.ts)
 
 There is no fallback chain. There used to be one — explicit `repoRoot`, then
 `$YACO_REPO_ROOT`, then `git rev-parse --show-toplevel`, then cwd — for the same
