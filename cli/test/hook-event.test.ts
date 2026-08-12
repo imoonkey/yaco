@@ -89,7 +89,7 @@ async function armRivalWrite(handle: string, newState: SessionState): Promise<Ri
       }, ${RIVAL_WRITE_DELAY_MS});
     });
   `;
-  const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "pipe"] });
   rivals.push(child);
   const lines = readLines(child);
   await lines();                                    // "ready"
@@ -108,25 +108,40 @@ async function armRivalWrite(handle: string, newState: SessionState): Promise<Ri
   };
 }
 
-/** Read the child's stdout one line at a time: each call resolves with the next line. */
+/** Read the child's stdout one line at a time: each call resolves with the next line.
+ *  A child that dies before its next line rejects the read with whatever it put on
+ *  stderr — otherwise a failed write would hang the reader until the vitest timeout
+ *  and report nothing about why. */
 function readLines(child: ReturnType<typeof spawn>): () => Promise<string> {
   const pending: string[] = [];
-  const waiting: ((line: string) => void)[] = [];
+  const waiting: { resolve: (line: string) => void; reject: (e: Error) => void }[] = [];
   let buf = "";
+  let dead: Error | null = null;
+  let stderr = "";
+  child.stderr!.on("data", (chunk) => { stderr += chunk; });
   child.stdout!.on("data", (chunk) => {
     buf += chunk;
     for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
       const line = buf.slice(0, nl);
       buf = buf.slice(nl + 1);
       const next = waiting.shift();
-      if (next) next(line);
+      if (next) next.resolve(line);
       else pending.push(line);
     }
   });
-  return () => new Promise<string>((resolve) => {
+  const die = (reason: string) => {
+    dead = new Error(`rival writer ${reason}${stderr ? `: ${stderr.trim()}` : ""}`);
+    while (waiting.length) waiting.shift()!.reject(dead);
+  };
+  child.on("error", (e) => die(`failed to start: ${e.message}`));
+  // `close`, not `exit`: it fires after stdout is drained, so a line already in
+  // flight is never lost to a rejection.
+  child.on("close", (code, signal) => die(`exited (code ${code}, signal ${signal})`));
+  return () => new Promise<string>((resolve, reject) => {
     const line = pending.shift();
     if (line !== undefined) resolve(line);
-    else waiting.push(resolve);
+    else if (dead) reject(dead);
+    else waiting.push({ resolve, reject });
   });
 }
 
