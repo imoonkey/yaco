@@ -168,6 +168,16 @@ real <code>depends</code> edges, and a Gantt view when you want dates.</td>
 </tr>
 </table>
 
+The workflow's paper trail — the task graph, design docs, reviews, QA and
+implementation summaries — lives in `<repo>/plan/`, next to the code and
+committed with it by default; a visible design history is a feature. The
+design docs and task graph are the parts you co-author; the rest the agents
+write and you mostly read — implementation summaries routinely, the others
+when you need them. If you'd rather
+not commit it with the code, `yaco plan init` promotes `plan/` into a
+separate, colocated git repo the host repo ignores; every file stays exactly
+where it was ([doc/main/cli/plan.md](doc/main/cli/plan.md)).
+
 This layer is the least settled, on purpose: nobody — us included — knows the
 right way to work with coding agents yet. Treat these skills as a fork-and-edit
 starting point, not a doctrine.
@@ -228,15 +238,6 @@ app assumes the CLI and skills exist. So the best way to change any layer is
 the intended way: **tell your agent what you want.** The whole stack is plain
 TypeScript orchestrating tools your agent already understands, and it is built
 and maintained exactly this way.
-
-## Your `plan/` directory
-
-YACO keeps each project's task graph and design docs in `<repo>/plan/`, next
-to the code and committed with it by default — a visible design history is a
-feature. If yours shouldn't be public, `yaco plan init` promotes `plan/` into
-a separate, colocated git repo that the host repo ignores; every file stays
-exactly where it was. Details and caveats:
-[doc/main/cli/plan.md](doc/main/cli/plan.md).
 
 ## Repository layout
 
