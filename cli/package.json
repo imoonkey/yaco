@@ -87,5 +87,8 @@
   },
   "dependencies": {
     "smol-toml": "^1.7.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
