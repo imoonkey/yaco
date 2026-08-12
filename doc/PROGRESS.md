@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-08-12: the Stop-debounce tests stop racing a process launch
+
+**What changed:**
+- `cli/test/hook-event.test.ts`'s rival writer is armed before the debounce window
+  opens, not spawned into it. `armRivalWrite()` waits for the child to print
+  `ready` (execed, waiting on stdin); `fire()` then hands it the payload and the
+  window opens. What is left inside the window is a 30 ms signal-to-write delay.
+- The rival is a node child that writes and renames **in-process**, so nothing
+  forks inside the window — the first attempt still shelled out to `/usr/bin/mv`.
+- `confirmLandedInWindow()` asserts the write's own timestamp fell inside the
+  window, and the line reader rejects with the child's stderr if it dies.
+- Children are tracked, not detached; both `afterEach` hooks await
+  `settleRivals()` before `rmSync`.
+- Production is untouched: `STOP_DEBOUNCE_MS` is still 120 and nothing retries.
+
+**Why:**
+- CI run 31618556044 failed on `expected 'idle' to be 'processing'` and passed on
+  an immediate rerun. The old helper spawned `bash -c "sleep 0.060 && printf > file"`
+  *as* the window opened, so a whole process launch had to fit in 60 ms of
+  head-room; the same late child also wrote into a temp dir `afterEach` had
+  removed (`ENOTEMPTY`).
+- Measured at the real call site, pinned to one CPU with 8 busy loops: the old
+  rival landed 83/102/127 ms into a 120 ms window and missed it 9 times in 25.
+  The new one lands 36/44/59 ms and missed 0 in 25.
+- A "stabilised" race test that can no longer fail is worse than a flaky one, so
+  the tests were mutation-checked: removing **both** back-off checks in
+  `runHookEventForHandle` reds all three. Removing either one alone reds nothing —
+  the two checks are mutually redundant for this scenario, a property of the
+  production code, recorded rather than hidden.
+
+**Key files:** `cli/test/hook-event.test.ts`, `doc/dev/cli/workflow.md`
+**Verification:** `scripts/verify.sh` all steps passed; cli unit suite green
+(93 files / 1501 tests) in a `$PATH` with neither `claude` nor `codex`, premise
+asserted in the same log; 39 consecutive full-file runs on one shared CPU, all
+green, no `ENOTEMPTY`; E2E against the built bundle (`node cli/bin/yaco.mjs agent
+hook-event Stop`) in an isolated `HOME`/`YACO_HOME`; codex review `rv-debounce`
+APPROVE after 3 rounds (2 findings, both fixed).
+**Commit:** `3c4a528b..bc172573`
+**Next:** none
+**Blockers:** None
+
 ## 2026-08-12: the agent wrapper gets one writer, and a rename instead of a rewrite
 
 **What changed:**
