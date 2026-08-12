@@ -94,6 +94,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       if ("worktree" in data && data["worktree"] === null) {
         delete tasks[id]!.worktree;
       }
+      applyBlockReason(tasks[id]!, id, data["blockReason"]);
       tasks[id]!.updated = now;
 
       if (!hasChildren(tasks, id) && isAcceptCriteriaBlank(tasks[id]!.acceptCriteria)) {
@@ -106,7 +107,13 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       // Stamp stateEnteredAt for every task whose state changed across the whole
       // mutation — the edited task and any milestone the derivation moved (R5).
       for (const [tid, t] of Object.entries(tasks)) {
-        if (t.state !== beforeStates.get(tid)) t.stateEnteredAt = now;
+        if (t.state !== beforeStates.get(tid)) {
+          t.stateEnteredAt = now;
+          // Same invariant as applyBlockReason, for the state changes that
+          // payload never named: a blocked leaf that just gained a child is a
+          // milestone now, and the derivation above rolled it off `blocked`.
+          if (t.state !== "blocked") delete t.blockReason;
+        }
       }
       // Set-done gate guard (T3): a *leaf* may only enter `done` if the repo's
       // exit gate passes on the session's working tree. Runs after validateState
@@ -192,6 +199,35 @@ function readPayloadFile(path: string): string {
       `--file: cannot read ${path}: ${(e as Error).message}`,
     );
   }
+}
+
+/** Keep `blockReason` present only where it means something: alongside
+ *  `state: "blocked"`. The same invariant `setStatus` keeps for agent sessions
+ *  (`lib/core/agent/model.ts`), for the same field and the same reason.
+ *
+ *  Enforced on the write rather than refused at it, so unblocking a task stays
+ *  ONE write: `{"state":"ready"}` cannot leave the old reason behind, and no
+ *  caller has to remember a second call. Rejecting the pair instead would make
+ *  every caller that forgets — `app/server`'s task routes, a skill, a human —
+ *  produce exactly the contradiction this guards against.
+ *
+ *  A reason the caller named in *this* payload is different: dropping that
+ *  would be a silent failure, so a blockReason written onto a task that is not
+ *  becoming blocked is an error. `null` is the explicit clear. Only a value
+ *  nobody mentioned in this write is dropped quietly. */
+function applyBlockReason(task: Task, id: string, asked: unknown): void {
+  if (task.state !== "blocked") {
+    if (asked !== undefined && asked !== null) {
+      throw new CliError(
+        ErrCode.INVALID,
+        `blockReason requires state 'blocked', but '${id}' is '${task.state}' — ` +
+          `set both in one write, or drop blockReason to leave it unblocked`,
+      );
+    }
+    delete task.blockReason;
+    return;
+  }
+  if (asked === null) delete task.blockReason;
 }
 
 /** Format current UTC as `YYYY-MM-DDTHH:MM:SSZ` (no fractional seconds) —

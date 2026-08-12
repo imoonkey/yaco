@@ -495,6 +495,157 @@ describe("yaco task set / rm / archive / list / validate", () => {
   });
 });
 
+/** `blockReason` exists only alongside `state: "blocked"` — the invariant
+ *  `setStatus` already keeps for agent sessions. Enforced on the write, so
+ *  unblocking a task is ONE write and cannot leave the old reason behind. */
+describe("blockReason is clearable and cannot outlive `blocked`", () => {
+  let repo: string;
+  const create = (id: string, extra: Record<string, unknown> = {}) =>
+    runYaco(repo, ["task", "set", id, "--data",
+      JSON.stringify({ title: id, description: "d", acceptCriteria: "x", ...extra }), "--json"]);
+  const taskOf = (id: string) =>
+    JSON.parse(readFileSync(defaultTasksFile(repo, id), "utf-8"))[id] as Record<string, unknown>;
+
+  beforeEach(() => {
+    repo = mkRepo();
+  });
+
+  it("keeps a reason on a blocked task", () => {
+    expect(create("t", { state: "blocked", blockReason: "external" }).status).toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("external");
+  });
+
+  it("keeps the reason across an unrelated update to a still-blocked task", () => {
+    // The other half of "absent means leave it alone": auto-clear must not
+    // widen into dropping a reason on every write to a blocked task.
+    create("t", { state: "blocked", blockReason: "external" });
+    expect(runYaco(repo, ["task", "set", "t", "--data", '{"priority":"high"}', "--json"]).status)
+      .toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("external");
+    expect(taskOf("t")["state"]).toBe("blocked");
+  });
+
+  it("rejects a reason on a NEW task that is not blocked", () => {
+    const r = create("fresh", { blockReason: "external" }); // seed state is `ready`
+    expect(r.status).toBe(1);
+    expect(parseJson(r.stderr).error!.message).toMatch(/blockReason requires state 'blocked'/);
+  });
+
+  it("clears the reason on an explicit null while the task stays blocked", () => {
+    create("t", { state: "blocked", blockReason: "external" });
+    const r = runYaco(repo, ["task", "set", "t", "--data", '{"blockReason":null}', "--json"]);
+    expect(r.status).toBe(0);
+    // Absent from the file, not stored as null — `null` is the clear signal,
+    // never a value the graph carries.
+    expect("blockReason" in taskOf("t")).toBe(false);
+    expect(taskOf("t")["state"]).toBe("blocked");
+  });
+
+  it("drops the reason when one write moves the task out of blocked", () => {
+    create("t", { state: "blocked", blockReason: "human-review" });
+    const r = runYaco(repo, ["task", "set", "t", "--data", '{"state":"ready"}', "--json"]);
+    expect(r.status).toBe(0);
+    expect("blockReason" in taskOf("t")).toBe(false);
+  });
+
+  it("self-heals a legacy pair on the next unrelated write", () => {
+    create("t", { state: "blocked", blockReason: "human-review" });
+    // Reproduce the shape this task was filed about: a reason left behind by a
+    // state change made before the invariant existed.
+    const file = defaultTasksFile(repo, "t");
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    raw["t"].state = "ready";
+    writeFileSync(file, JSON.stringify(raw, null, 2) + "\n");
+
+    runYaco(repo, ["task", "set", "t", "--data", '{"priority":"low"}', "--json"]);
+    expect("blockReason" in taskOf("t")).toBe(false);
+  });
+
+  it("rejects a reason written onto a task that is not becoming blocked", () => {
+    create("t");
+    const r = runYaco(repo, ["task", "set", "t", "--data", '{"blockReason":"external"}', "--json"]);
+    expect(r.status).toBe(1);
+    const env = parseJson(r.stderr);
+    expect(env.error!.code).toBe("INVALID");
+    expect(env.error!.message).toMatch(/blockReason requires state 'blocked'/);
+    // Refused, not silently dropped — and nothing was written.
+    expect("blockReason" in taskOf("t")).toBe(false);
+  });
+
+  it("accepts state and reason set together in one write", () => {
+    create("t");
+    const r = runYaco(repo, ["task", "set", "t", "--data",
+      '{"state":"blocked","blockReason":"merge-conflict"}', "--json"]);
+    expect(r.status).toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("merge-conflict");
+  });
+
+  it("still rejects an unknown reason, and points at null as the clear", () => {
+    create("t", { state: "blocked" });
+    const r = runYaco(repo, ["task", "set", "t", "--data", '{"blockReason":""}', "--json"]);
+    expect(r.status).toBe(1);
+    expect(parseJson(r.stderr).error!.message).toMatch(/or null to clear/);
+  });
+
+  // The derivation runs after the payload merge and can move a task the
+  // payload never named: a blocked leaf that gains a child is a milestone, and
+  // `stateFromChildren` never returns `blocked`.
+  it("drops the reason from a blocked leaf that becomes a milestone", () => {
+    create("m", { state: "blocked", blockReason: "external" });
+    expect(create("kid", { parent: "m" }).status).toBe(0);
+    const m = taskOf("m");
+    expect(m["state"]).toBe("ready"); // rolled up from the new child
+    expect("blockReason" in m).toBe(false);
+  });
+
+  // Repair is `task set`-scoped on purpose. `attach`/`detach` re-read the raw
+  // file and write only the agents delta precisely so they don't persist
+  // normalization of fields they were not asked about (see link.ts) — the same
+  // scope milestone-state normalization has. Pinned so nobody "fixes" it
+  // without deciding to.
+  it("leaves a legacy stale pair for `task set`, not for attach", () => {
+    create("t", { state: "blocked", blockReason: "human-review" });
+    const file = defaultTasksFile(repo, "t");
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    raw["t"].state = "ready";
+    writeFileSync(file, JSON.stringify(raw, null, 2) + "\n");
+
+    expect(runYaco(repo, ["task", "attach", "t", "w-1", "--json"]).status).toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("human-review");
+    // ...and `task set` is what clears it.
+    runYaco(repo, ["task", "set", "t", "--data", '{"priority":"low"}', "--json"]);
+    expect("blockReason" in taskOf("t")).toBe(false);
+  });
+
+  it("validate fails on a stale pair and names the fix; the graph still loads", () => {
+    create("t", { state: "blocked", blockReason: "human-review" });
+    const file = defaultTasksFile(repo, "t");
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    raw["t"].state = "ready";
+    writeFileSync(file, JSON.stringify(raw, null, 2) + "\n");
+
+    const r = runYaco(repo, ["task", "validate", "--json"]);
+    expect(r.status).toBe(1);
+    const env = parseJson(r.stderr);
+    expect(env.error!.code).toBe("INVALID");
+    expect(env.error!.message).toMatch(/stale blockReason/);
+    expect(env.error!.message).toMatch(/blockReason":null/);
+    const details = env.error!.details as { staleBlockReason: unknown[] };
+    expect(details.staleBlockReason).toEqual([
+      { id: "t", state: "ready", blockReason: "human-review" },
+    ]);
+
+    // The repair path must survive whatever validate says about the graph:
+    // reading it, and the one write that fixes it, both keep working.
+    expect(runYaco(repo, ["task", "get", "t", "--json"]).status).toBe(0);
+    expect(runYaco(repo, ["task", "list", "--json"]).status).toBe(0);
+    expect(
+      runYaco(repo, ["task", "set", "t", "--data", '{"blockReason":null}', "--json"]).status,
+    ).toBe(0);
+    expect(runYaco(repo, ["task", "validate", "--json"]).status).toBe(0);
+  });
+});
+
 describe("task attach / detach (agents link delta)", () => {
   let repo: string;
   beforeEach(() => {

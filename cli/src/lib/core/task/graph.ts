@@ -206,10 +206,24 @@ export interface ValidationProblems {
     impliedState: State;
     reason: string;
   }[];
+  /** A task carrying `blockReason` while its state is not `blocked`. Stale
+   *  data rather than a structural defect — see `ValidationReport.malformed`. */
+  staleBlockReason: { id: string; state: unknown; blockReason: unknown }[];
 }
 
 export interface ValidationReport {
+  /** No problems of any kind. `yaco task validate` fails on `!ok`. */
   ok: boolean;
+  /** At least one problem is *structural* — a defect no write heals on its own
+   *  (a cycle, a dangling ref, an unknown state). A stale `blockReason` is not:
+   *  it is a non-structural disagreement that the next `task set` on that task
+   *  drops.
+   *
+   *  `doctor` gates on this rather than on `ok`, because `yaco install` throws
+   *  on any failing check — a stale field left over from before the invariant
+   *  existed must not be able to block an install on a machine whose graph is
+   *  otherwise sound. */
+  malformed: boolean;
   details?: ValidationProblems;
 }
 
@@ -232,6 +246,7 @@ export function validateGraph(
     invalidState: [],
     invalidWorkset: [],
     milestoneRollup: [],
+    staleBlockReason: [],
   };
 
   for (const tid of ids) {
@@ -258,6 +273,29 @@ export function validateGraph(
     const implied = milestones.get(tid);
     if (implied === undefined && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
+    }
+
+    // `blockReason` exists only alongside `state: "blocked"`. `task set` is the
+    // only author of a leaf's state or of `blockReason`, and it enforces the
+    // pair, so the invariant is closed over a graph that satisfies BOTH this
+    // rule and `milestoneRollup`. Both are needed: a milestone recorded
+    // `blocked` on disk is already a rollup violation (a milestone never
+    // settles on `blocked`), and any command that saves the whole store would
+    // persist the derived non-blocked state next to the surviving reason.
+    //
+    // What lands here is a task written before the invariant existed, or edited
+    // outside the CLI — and only `task set` repairs it, the same scope
+    // milestone-state normalization has (see the note in `link.ts`).
+    //
+    // Reported so a graph can be swept once, not repaired on read: the reason
+    // is authored data, not derivable like a milestone's state, so dropping it
+    // here would make every reader disagree with the file.
+    if (t.blockReason !== undefined && t.state !== "blocked") {
+      problems.staleBlockReason.push({
+        id: tid,
+        state: t.state,
+        blockReason: t.blockReason,
+      });
     }
 
     // A milestone whose recorded state is not the one its children imply.
@@ -319,7 +357,7 @@ export function validateGraph(
     );
   }
 
-  const hasAny =
+  const malformed =
     problems.cycles.length > 0 ||
     problems.dangling.length > 0 ||
     problems.selfReference.length > 0 ||
@@ -328,7 +366,9 @@ export function validateGraph(
     problems.invalidWorkset.length > 0 ||
     problems.milestoneRollup.length > 0;
 
-  return hasAny ? { ok: false, details: problems } : { ok: true };
+  const hasAny = malformed || problems.staleBlockReason.length > 0;
+
+  return hasAny ? { ok: false, malformed, details: problems } : { ok: true, malformed: false };
 }
 
 /** All ancestors of `id` including `id` itself, walking through `parent`. */

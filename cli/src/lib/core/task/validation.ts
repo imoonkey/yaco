@@ -127,9 +127,14 @@ export function validateTypes(data: Record<string, unknown>): void {
     }
   }
 
+  // `null` clears the field, the same explicit-clear spelling `worktree` uses;
+  // absent means "leave it alone". `""` stays rejected — one clear sentinel.
   if ("blockReason" in data) {
-    if (!(BLOCK_REASONS as readonly string[]).includes(data["blockReason"] as string)) {
-      invalid(`blockReason must be one of: ${[...BLOCK_REASONS].sort().join(", ")}`);
+    const reason = data["blockReason"];
+    if (reason !== null && !(BLOCK_REASONS as readonly string[]).includes(reason as string)) {
+      invalid(
+        `blockReason must be one of: ${[...BLOCK_REASONS].sort().join(", ")} (or null to clear)`,
+      );
     }
   }
 

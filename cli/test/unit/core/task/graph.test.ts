@@ -408,6 +408,52 @@ describe("validateGraph", () => {
     });
   });
 
+  // `blockReason` may only sit alongside `state: "blocked"`. `task set` keeps
+  // that on every write, so a disagreement is legacy data — reported so the
+  // graph can be swept, but never classed as malformed, because `yaco install`
+  // throws on a failing doctor check and this one heals itself on next write.
+  describe("stale blockReason", () => {
+    it("reports a reason carried by a task that is not blocked", () => {
+      const t = makeGraph();
+      t["a"]!.blockReason = "human-review";
+      const r = validateGraph(t);
+      expect(r.ok).toBe(false);
+      expect(r.details!.staleBlockReason).toEqual([
+        { id: "a", state: "ready", blockReason: "human-review" },
+      ]);
+    });
+
+    it("leaves a blocked task's reason alone", () => {
+      const t = makeGraph();
+      t["a"]!.state = "blocked";
+      t["a"]!.blockReason = "external";
+      t["root"]!.state = "running"; // what a blocked child implies for the milestone
+      expect(validateGraph(t).ok).toBe(true);
+    });
+
+    it("is not malformed on its own, so doctor keeps passing", () => {
+      const t = makeGraph();
+      t["a"]!.blockReason = "human-review";
+      const r = validateGraph(t);
+      expect(r.ok).toBe(false);
+      expect(r.malformed).toBe(false);
+    });
+
+    it("is malformed once a structural problem joins it", () => {
+      const t = makeGraph();
+      t["a"]!.blockReason = "human-review";
+      t["b"]!.parent = "ghost";
+      const r = validateGraph(t);
+      expect(r.malformed).toBe(true);
+    });
+
+    it("a clean graph is neither", () => {
+      const r = validateGraph(makeGraph());
+      expect(r.ok).toBe(true);
+      expect(r.malformed).toBe(false);
+    });
+  });
+
   it("narrowing by id only reports problems on the parent chain", () => {
     const t = makeGraph();
     delete t["a"]!.acceptCriteria;

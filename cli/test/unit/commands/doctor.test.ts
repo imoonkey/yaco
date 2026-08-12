@@ -213,6 +213,33 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
     expect(r.summary.fail).toBe(1);
   });
 
+  // `yaco install` throws on any failing doctor check, so what this check calls
+  // a failure decides what can lock a user out of installing. A task carrying a
+  // blockReason it should have shed is stale data, not breakage: the graph
+  // loads, `yaco task validate` reports it, and the next write to that task
+  // drops it. It must not take `yaco install` down with it.
+  it("passes task-graph on a stale blockReason and names it instead of failing", async () => {
+    await installPrereqs();
+    writeFileSync(
+      join(tasksDir(), "tasks.json"),
+      JSON.stringify({
+        stale: {
+          title: "stale",
+          state: "ready",
+          depends: [],
+          parent: null,
+          acceptCriteria: ["x"],
+          blockReason: "human-review",
+        },
+      }) + "\n",
+    );
+    const r = await runAllChecks();
+    const tg = r.checks.find((c) => c.name === "task-graph");
+    expect(tg?.status).toBe("pass");
+    expect(tg?.detail).toContain("1 task(s) carry a stale blockReason");
+    expect(r.summary.fail).toBe(0);
+  });
+
   it("still fails task-graph when the tasks file is malformed", async () => {
     await installPrereqs();
     writeFileSync(join(tasksDir(), "tasks.json"), "not json\n");
