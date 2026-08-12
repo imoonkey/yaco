@@ -518,6 +518,37 @@ assert_eq "the .bin the mirror owned is gone" "absent" \
 assert_eq "a workspace's emptied nested tree keeps no stale links" "" \
   "$(readlink "$wt/cli/node_modules/@types" || true)"
 
+# --------------------------------------------------------------------------
+# 19. A one-segment workspace name — the other half of the shape the script
+#     accepts, and what this repo publishes since `@yaco/cli` became `yaco-cli`.
+#     Its self-link sits one level down, in the SAME directory as every
+#     third-party package, so depth no longer separates the two and only
+#     symlink-vs-real does. Every scoped case above leaves that untested.
+# --------------------------------------------------------------------------
+repo="$(mk_repo)"
+write "$repo/packages/tool/package.json" \
+  '{"name":"fx-tool","version":"1.0.0","bin":{"fxt":"./bin/fxt.mjs"},"exports":{"./core":{"development":"./src/core.ts","default":"./dist/core.js"}}}'
+write "$repo/packages/tool/src/core.ts" 'export const WHO = "tool"'
+write "$repo/packages/tool/bin/fxt.mjs" 'console.log("fxt")'
+git -C "$repo" add -A
+git -C "$repo" commit -qm bare
+in_root "$repo/node_modules/fx-tool"
+ln -s ../packages/tool "$repo/node_modules/fx-tool"
+in_root "$repo/node_modules/.bin/fxt"
+ln -s ../fx-tool/bin/fxt.mjs "$repo/node_modules/.bin/fxt"
+wt="$(mk_wt "$repo")"
+out="$(provision "$wt")"
+rc=$?
+assert_eq "a one-segment workspace name provisions cleanly" 0 "$rc"
+assert_contains "and the self-check covers it" "every workspace package resolves inside" "$out"
+# Unbuilt, like a fresh worktree: the answer must still name this checkout.
+assert_eq "its unbuilt exports subpath resolves to the worktree's own copy" \
+  "$wt/packages/tool/dist/core.js" "$(resolve_from "$wt/app/server" fx-tool/core)"
+assert_eq "its .bin shim runs the worktree's copy" \
+  "$wt/packages/tool/bin/fxt.mjs" "$(realpath "$wt/node_modules/.bin/fxt")"
+assert_eq "a third-party package at the same depth still comes from main" \
+  "$repo/node_modules/leftpad/index.js" "$(resolve_from "$wt/app/server" leftpad)"
+
 echo
 echo "passed=$pass failed=$fail"
 [ "$fail" = 0 ]
