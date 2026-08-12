@@ -216,7 +216,8 @@ export interface ValidationReport {
   ok: boolean;
   /** At least one problem is *structural* — a defect no write heals on its own
    *  (a cycle, a dangling ref, an unknown state). A stale `blockReason` is not:
-   *  it is well-formed data that the next `task set` on that task drops.
+   *  it is a non-structural disagreement that the next `task set` on that task
+   *  drops.
    *
    *  `doctor` gates on this rather than on `ok`, because `yaco install` throws
    *  on any failing check — a stale field left over from before the invariant
@@ -275,8 +276,13 @@ export function validateGraph(
     }
 
     // `blockReason` exists only alongside `state: "blocked"`. `task set` is the
-    // only writer of either field and it enforces the pair, so the invariant is
-    // closed: from a graph without a disagreement, no command can produce one.
+    // only author of a leaf's state or of `blockReason`, and it enforces the
+    // pair, so the invariant is closed over a graph that satisfies BOTH this
+    // rule and `milestoneRollup`. Both are needed: a milestone recorded
+    // `blocked` on disk is already a rollup violation (a milestone never
+    // settles on `blocked`), and any command that saves the whole store would
+    // persist the derived non-blocked state next to the surviving reason.
+    //
     // What lands here is a task written before the invariant existed, or edited
     // outside the CLI — and only `task set` repairs it, the same scope
     // milestone-state normalization has (see the note in `link.ts`).
