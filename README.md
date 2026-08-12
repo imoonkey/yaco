@@ -95,18 +95,17 @@ started is already there as a terminal tab.
 ## Layer 1 — the agent CLI
 
 ```bash
-yaco claude "fix the flaky checkout test"   # or: yaco codex …
-yaco agent list --all        # every session, across every project
-yaco agent capture <handle>  # recent output
-yaco agent send <handle> "…" # reply to it
-yaco agent kill <handle>     # end it
+yaco claude "fix the flaky checkout test" [--wait]   # or: yaco codex …
+yaco agent list --all                 # every session, across every project
+yaco agent capture <handle>           # recent output
+yaco agent send <handle> "…" [--wait] # reply — --wait blocks for the response
+yaco agent kill <handle>              # end it
 ```
 
-Add `--wait` to block until the agent finishes and print its reply. And that
-is precisely how multi-agent works here: your agents run these same commands
-to spawn and coordinate sub-agents, so every session an agent creates is one
-you can list, capture, and attach to. No hidden recursion, no privileged
-internal API.
+And that is precisely how multi-agent works here: your agents run these same
+commands to spawn and coordinate sub-agents, so every session an agent creates
+is one you can list, capture, and attach to. No hidden recursion, no
+privileged internal API.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/agent-tree-dark.png">
