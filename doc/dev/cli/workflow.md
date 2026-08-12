@@ -248,6 +248,28 @@ route's synchronous `ssh-add` discovery is imported, not reconstructed) and
 `cli/test/integration/task/read-starvation.integration.ts`. Both are skipped
 with a stated reason when `cli/dist` is unbuilt.
 
+`tasks-read-starvation.test.ts` seeds its four fixtures from this repository's
+own `plan/tasks` when it is there, and from a generated tree of the same scale
+when it is not — **which it is not in a worktree or on CI, since `plan/` is a
+separate repository.** Every test name says which (`[repository data]` /
+`[synthetic data]`), because the two are not interchangeable: the generated tree
+is uniform where the real graph is not, and a limit that only the real graph
+reaches will pass on the stand-in. To reproduce the primary checkout's condition
+from a worktree, copy the real store in — a **copy**, never a symlink, and
+excluded so it cannot be staged:
+
+```bash
+wt=$(git rev-parse --show-toplevel)
+cp -a /abs/primary/checkout/plan/tasks "$wt/plan/tasks"
+printf 'plan/\n' >> "$(git rev-parse --git-path info/exclude)"
+(cd "$wt/cli" && npm run build:bundle)   # the fixture skips itself without cli/dist
+(cd "$wt/app/server" && npx vitest run --project unit \
+   src/routes/__tests__/tasks-read-starvation.test.ts --reporter=verbose)
+```
+
+The numbers are load-sensitive enough that a single run in either direction is
+not evidence — record `ps -eo pcpu,pid,comm --sort=-pcpu | head` beside them.
+
 ### One runner, two projects
 
 Everything runs under Vitest. `cli-sqlite-hop` moved the last six files —
