@@ -176,18 +176,28 @@ starting point, not a doctrine.
 
 `yaco-app` — or `npm run start:app` from a clone — then open
 <http://localhost:3001>. Single user, file-based state, no database. It is
-deliberately a *simple* IDE — editor, file explorer, cross-file search, git and
-diff views, terminals, voice input — plus the parts a traditional IDE doesn't
-have:
+deliberately a *simple* IDE — editor, file explorer, cross-file search, git
+and diff views, terminals — plus the parts a traditional IDE doesn't have:
 
 - **Sessions that outlive the browser.** Every terminal is a tmux session:
   close the tab, restart the server, reattach later — from the app or a plain
   terminal.
-- **The agent tree.** Parent and child agent sessions rendered as the tree they
-  are, with notifications when a session or task needs you.
-- **Skill-aware markdown.** Design docs are first-class, with editing built for
-  the `/design` and `/discuss` review loops.
-- **The task graph, live.** The plan under `plan/tasks/` rendered as a graph.
+- **The agent tree.** Parent and child agent sessions rendered as the tree
+  they are.
+- **It tells you when it's your turn.** An agent finished, a session is
+  waiting on your reply, a task closed — pushed to the notification bell,
+  the session's badge, and your browser's notifications. It can even read
+  them aloud.
+- **The whole workspace on your phone.** Over Tailscale or however you
+  connect: touch layout, a terminal key bar, voice input. Kick off a task
+  from anywhere and get the notification when it's done.
+- **Voice input built for prompting.** Record, transcribe, auto-format the
+  rambling into clean prose, review — then insert into the editor or paste
+  straight into an agent's terminal.
+- **Skill-aware markdown.** Design docs are first-class, with editing built
+  for the `/design` and `/discuss` review loops — plus opt-in inline
+  suggestions for prose.
+- **The task graph, live.** The plan under `plan/` rendered as a graph.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/walkthrough-dark.gif">
@@ -200,14 +210,19 @@ have:
 <td width="42%"><picture><source media="(prefers-color-scheme: dark)" srcset="doc/assets/mobile-dark.png"><img src="doc/assets/mobile-light.png" alt="The same agent session on a phone, with a terminal key bar" width="100%"></picture></td>
 </tr>
 <tr>
-<td><b>It tells you when it's your turn.</b> Sessions and tasks raise their own
-notifications, routed to the one that needs you.</td>
-<td><b>And it's the same workspace on a phone</b> — terminal key bar, voice
-input, everything.</td>
+<td>The notification panel: finished tasks, and sessions waiting on a
+reply — each one routes to the session that needs you.</td>
+<td>The same agent session, phone-sized — terminal key bar and voice input
+included.</td>
 </tr>
 </table>
 
 More screenshots: [doc/main/app/tour.md](doc/main/app/tour.md).
+
+Everything above runs with zero configuration, except the AI text helpers:
+voice transcription needs a signed-in Codex CLI or a `GROQ_API_KEY`;
+transcript auto-formatting and inline suggestions need the `GROQ_API_KEY`.
+Set it in the server's environment (or `.env`).
 
 ## Customizing
 
