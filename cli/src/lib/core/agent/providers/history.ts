@@ -158,15 +158,13 @@ function parseEntryTimestamp(line: string): string | null {
   } catch { return null; }
 }
 
-/** The first record's timestamp, which is the row's `created`.
+/** The first record's timestamp, which is the row's `created`. Falls back to the
+ *  file's birthtime for a log whose opening record is larger than the head.
  *
- *  Record-parsed, unlike `parseLastTimestamp` below, and that asymmetry is the
- *  point: what makes matching raw bytes sound is taking the *last* match — see
- *  `lastStringField`. A *first* match could be a structural key nested inside
- *  the first record's payload, so there is no byte-level answer to "the first
- *  record's timestamp", and a log whose opening record is larger than the head
- *  falls back to the file's birthtime. That costs a display field; the ordering
- *  key below is the one that must not fall back. */
+ *  Record-parsed, like `parseLastTimestamp` and unlike `parseCwd`: what makes
+ *  matching raw bytes sound is taking the *last* match of a field nothing
+ *  content-bearing follows, and neither half of that holds here. A *first* match
+ *  could be a structural key nested inside the opening record's payload. */
 function parseFirstTimestamp(text: string): string | null {
   for (const line of text.split("\n")) {
     if (!line) continue;
@@ -299,8 +297,9 @@ function claudeProjectDir(projectPath: string): string {
 
 const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
 
-/** The **last** value a slice carries for a top-level string field, matched in
- *  the raw bytes rather than in a parsed record.
+/** The literal `cwd` a Claude log records — what decides whether the log is this
+ *  project's — read out of the raw bytes of a slice rather than out of a parsed
+ *  record, as the **last** match the slice carries.
  *
  *  Records are not always available to parse: a single Claude record can be
  *  larger than the slice, and then no whole line inside it parses at all. A log
@@ -309,24 +308,30 @@ const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
  *  records over `TAIL_BYTES` — so a rule that has to parse one loses the field
  *  entirely. What must fit in the slice is the field, not the record around it.
  *
- *  Taking the *last* match is what makes reading raw bytes sound, and only for a
- *  field nothing content-bearing follows. Text a user pasted cannot be mistaken
- *  for a field at all — a quote inside a JSON string is escaped, and `\"cwd\"`
- *  does not match this pattern. A **nested key** can, a tool result carrying its
- *  own `cwd` being unescaped and structural; but every such payload is written
- *  before the record's `cwd`, after which the only keys are `sessionId`,
- *  `version`, `gitBranch`, `slug` and `sessionKind`. So the last match in a slice
- *  is the record's own — checked against parsing rather than argued from the
- *  format: 157 523 of 157 523 cwd-bearing records agree, as does a whole-file
- *  parse of all 1 053 logs.
+ *  Taking the *last* match is what makes reading raw bytes sound, and it works
+ *  because nothing content-bearing follows this particular field. Text a user
+ *  pasted cannot be mistaken for it at all — a quote inside a JSON string is
+ *  escaped, and `\"cwd\"` does not match this pattern. A **nested key** can, a
+ *  tool result carrying its own `cwd` being unescaped and structural; but every
+ *  such payload is written before the record's `cwd`, after which the only keys
+ *  are `sessionId`, `version`, `gitBranch`, `slug` and `sessionKind`. So the last
+ *  match in a slice is the record's own — checked against parsing rather than
+ *  argued from the format: 157 523 of 157 523 cwd-bearing records agree, as does
+ *  a whole-file parse of all 1 053 logs.
  *
- *  `cwd` is the only field that qualifies. There is no "first match" counterpart
- *  (-> `parseFirstTimestamp`) and no timestamp counterpart
- *  (-> `parseLastTimestamp`); both are read from parsed records. */
-function lastStringField(text: string, field: RegExp): string | null {
+ *  **This is deliberately not a general "read a field from bytes" helper.** The
+ *  serialization order above is the whole justification and it holds for one
+ *  field; a timestamp has no such anchor on either side (-> `parseLastTimestamp`),
+ *  and a *first* match has none at all (-> `parseFirstTimestamp`). Both are read
+ *  from parsed records. Keeping the loop welded to `cwd` is what stops the next
+ *  caller inheriting an invariant that was never theirs.
+ *
+ *  A session that changed directory mid-run resolves to where it ended, the same
+ *  newest-wins rule `updatedAt` follows. */
+function parseCwd(text: string): string | null {
   let last: string | null = null;
-  field.lastIndex = 0;
-  for (let m = field.exec(text); m !== null; m = field.exec(text)) last = m[1] ?? null;
+  CWD_FIELD.lastIndex = 0;
+  for (let m = CWD_FIELD.exec(text); m !== null; m = CWD_FIELD.exec(text)) last = m[1] ?? null;
   if (last === null) return null;
   try {
     // Through JSON so an escaped quote or backslash comes back as the byte it
@@ -334,13 +339,6 @@ function lastStringField(text: string, field: RegExp): string | null {
     const decoded = JSON.parse(`"${last}"`);
     return typeof decoded === "string" && decoded ? decoded : null;
   } catch { return null; }
-}
-
-/** The literal `cwd` a Claude log records — what decides whether the log is this
- *  project's. A session that changed directory mid-run resolves to where it
- *  ended, the same newest-wins rule `updatedAt` follows. */
-function parseCwd(text: string): string | null {
-  return lastStringField(text, CWD_FIELD);
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
