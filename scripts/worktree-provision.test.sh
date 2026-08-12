@@ -520,7 +520,7 @@ assert_eq "a workspace's emptied nested tree keeps no stale links" "" \
 
 # --------------------------------------------------------------------------
 # 19. A one-segment workspace name — the other half of the shape the script
-#     accepts, and what this repo publishes since `@yaco/cli` became `yaco-cli`.
+#     accepts, and — since the packages went unscoped — the shape it now takes.
 #     Its self-link sits one level down, in the SAME directory as every
 #     third-party package, so depth no longer separates the two and only
 #     symlink-vs-real does. Every scoped case above leaves that untested.

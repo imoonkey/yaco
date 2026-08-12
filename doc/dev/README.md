@@ -40,12 +40,17 @@ That is a false-green generator in both directions, and it cost three workers in
 the `cli-node-sdk` milestone real time plus one confidently wrong conclusion.
 
 **Do not go back to sharing the tree whole.** The script mirrors it instead: a real
-`node_modules` directory whose entries are links into main's tree, with `.bin` and
-the workspace scope directories rebuilt one level down. Each link is recreated with
-its target copied verbatim, so the relative ones re-anchor inside the worktree and
-the rest stay on main — `.bin/vitest` runs main's vitest, `.bin/yaco` runs the
-worktree's CLI. `node_modules/.package-lock.json` is a link to main's, which is the
-tree it describes. Cost: ~550 symlinks, no copied bytes.
+`node_modules` directory whose entries are links into main's tree, with `.bin` — and
+any scope directory hosting a workspace package — rebuilt one level down. Each link
+is recreated with its target copied verbatim, so the relative ones re-anchor inside
+the worktree and the rest stay on main — `.bin/vitest` runs main's vitest,
+`.bin/yaco` runs the worktree's CLI. `node_modules/.package-lock.json` is a link to
+main's, which is the tree it describes. Cost: ~550 symlinks, no copied bytes.
+
+Since the packages went unscoped, this repo contributes no such scope directory:
+its self-links sit one level down, beside every third-party package, and only
+symlink-vs-real separates them. The script already accepted both name shapes;
+`scripts/worktree-provision.test.sh` §19 is what runs the one-segment half.
 
 | Situation | What to do |
 |---|---|
