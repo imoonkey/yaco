@@ -1,5 +1,69 @@
 # Progress
 
+## 2026-08-12: the single-file starvation limit at repository size, and a fixture that names its data
+
+**What changed:**
+- `tasks-read-starvation.test.ts` asserts the read cutover's unqualified
+  starvation condition on the **directory** store at both sizes, and wall time
+  only on the **single file** store at both sizes. The repository-sized
+  single-file case previously asserted the condition and went red on the primary
+  checkout at 505 tasks; it now has the shape the ten-times case already had —
+  stall printed, not bounded — plus the anti-vacuity assertions the ten-times
+  case had been missing.
+- The two loops are keyed on topology, so the exception is a canonical case
+  rather than one bespoke `it()` beside a loop.
+- `sourceFiles()` resolves at module load instead of in `beforeAll`, and every
+  test name carries `[repository data]` or `[synthetic data]`.
+- `doc/main/cli/read-path.md` restates the single-file exception as covering
+  every measured size, with the control tables; `doc/dev/cli/workflow.md` gains
+  the recipe for reproducing the primary checkout's condition from a worktree.
+
+**Why:**
+- The condition is not met at repository size on one file, and no threshold there
+  measures the implementation. Share of each route's wall time inside its single
+  worst unyielding chunk: the subprocess route is 8-12 % on **every** topology
+  and size — its chunk is `spawnSync('ssh-add')` plus one compact-envelope parse
+  and does not depend on layout — while the in-process route is 18-22 % on a
+  directory and **58-66 % on one file**, because its chunk *is* the parse of the
+  store and one file divides into nothing. So the assertion there compares the
+  input's size against a constant in the route being retired.
+- The harness's `p95` at 10 and 4 rounds is the maximum sample, and on one file
+  at repository size the in-process route's *median* worst chunk is the smaller
+  of the two (11.7-12.5 vs 15.7-16.6 ms) while its maximum is the larger — a GC
+  tail on a 0.84 MB parse that the subprocess route pays inside its child.
+- A first control (`readFileSync` + `JSON.parse`) was measured, used to argue the
+  bound would admit a fully blocking route, and **discarded after review**: it
+  stalls less because it does less than the route, not because 16 ms is a
+  ceiling. So was a second claim, that a GC-tailed maximum says nothing about
+  starvation — GC in the app process blocks the app's event loop. The write-up
+  keeps both and says why they were dropped.
+- Regression cover for blocking added *after* the read stays on the two directory
+  fixtures and on the CLI-side gate. What the dropped bound stops covering is
+  named rather than absorbed: synchronous per-file work inside the reader that
+  scales with tasks-per-file: a directory bundle holds ~7 tasks and the work is
+  divided across the chunked read, one file runs it over all 505 in a turn, and
+  every remaining gate uses directory trees. The bound that would catch it cannot
+  be a millisecond, and the scale-free ratio is 0.7x at repository size against
+  1.8x at ten times — a gate to design, carried as a follow-up in the artifact.
+- The fixture preferred `plan/tasks` and silently substituted a generated tree
+  when absent — which it is in every worktree and on CI, since `plan/` is a
+  separate repository. That is how an unmet condition stayed green everywhere it
+  was checked and red only on the primary checkout. Failing hard was rejected:
+  CI legitimately has no `plan/`, and a gate that cannot run on CI gets deleted.
+
+**Key files:** `app/server/src/routes/__tests__/tasks-read-starvation.test.ts`,
+`doc/main/cli/read-path.md`, `doc/dev/cli/workflow.md`
+**Verification:** `scripts/verify.sh` green in a worktree with a **copy** of the
+primary checkout's `plan/tasks` in place, so the fixture measured `repository`
+data (two Claude sessions at ~32 % CPU throughout — load recorded in the
+artifact). Mutant: 100 ms of busy-wait inserted into the in-process route turns
+both directory fixtures red on exactly the starvation assertion and leaves both
+single-file ones green; restored from a pre-mutation copy. Data-source label
+confirmed both ways by moving `plan/` aside and re-running.
+**Commit:** `fc9e526a`..`71a584a8`
+**Next:** the primary-checkout `scripts/verify.sh` confirmation (AC5) at merge time.
+**Blockers:** None
+
 ## 2026-08-12: the agent wrapper gets one writer, and a rename instead of a rewrite
 
 **What changed:**
