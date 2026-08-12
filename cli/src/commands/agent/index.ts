@@ -52,7 +52,7 @@ import { handleHooksInstall } from "./hooks/install.ts";
 const HELP = `yaco agent — tmux-backed agent sessions
 
 Usage:
-  yaco agent start <provider> [yaco-flags] [--wait [--timeout-ms <ms>]] [-- ...passthrough]
+  yaco agent start <provider> [-n|--name <handle>] [--wait [--timeout-ms <ms>]] [--json] [-- ...passthrough]
   yaco agent send <name> "message" [--wait [--timeout-ms <ms>]]
   yaco agent send <name> --stdin                (read message from stdin)
   yaco agent wait <name> (--from-start | --cursor <token> --offset <bytes>) [--timeout-ms <ms>] [--json]
@@ -75,8 +75,12 @@ Usage:
 
 Providers (start): ${Object.keys(PROVIDERS).join(", ")}
 
-In \`start\`, everything after \`--\` is forwarded verbatim to the provider CLI
-(yaco flags like \`--json\` only bind before \`--\`).
+\`start\` binds exactly four yaco flags: \`-n\`/\`--name <handle>\` (also
+\`--name=<handle>\`), \`--json\`, \`--wait\` and \`--timeout-ms\`. EVERY other token,
+before or after \`--\`, is forwarded verbatim to the provider CLI. So a mistyped
+yaco flag is handed to the provider, and a provider that rejects it exits
+immediately — reported here as "died during bootstrap", with its own message
+left in a tmux pane that is already gone.
 
 Use top-level shortcuts \`yaco claude ...\` / \`yaco codex ...\` to start a
 session in one step. \`yaco agent <provider>\` (without 'start') is rejected.

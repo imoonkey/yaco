@@ -57,6 +57,14 @@ describe("parseStartArgs — `--` passthrough contract", () => {
     expect(r.passthrough).toEqual(["--model", "opus"]);
   });
 
+  it("forwards an unrecognized flag to the provider rather than rejecting it", () => {
+    // The trap this pairs with the help text about: `--handle` is not a yaco
+    // flag, so it reaches the provider CLI, which exits on it — and all the
+    // caller sees from yaco is that the session died during bootstrap.
+    const r = parseStartArgs(["codex", "--handle", "rv-1", "a prompt"]);
+    expect(r.passthrough).toEqual(["--handle", "rv-1", "a prompt"]);
+  });
+
   it("consumes --wait and --timeout-ms even after `--`, never forwarding them", () => {
     // The 'never forwarded to claude/codex' contract holds regardless of `--`
     // position: a post-`--` occurrence is still a YACO-side flag.
@@ -73,6 +81,27 @@ describe("parseStartArgs — `--` passthrough contract", () => {
     expect(r.wait).toBe(true);
     expect(r.json).toBe(false);
     expect(r.passthrough).toEqual(["--json"]);
+  });
+});
+
+describe("yaco agent --help names every flag `start` binds", () => {
+  /** A flag `start` binds but does not name is a flag nobody can find: the
+   *  parser forwards everything it does not recognize to the provider CLI, so
+   *  the difference between "yaco flag" and "provider flag" is invisible from
+   *  the outside and the help text is the only place it is written down.
+   *  `--name` went years unlisted, and reaching for the wrong spelling cost a
+   *  reviewer session five silent provider exits. */
+  const BOUND = ["-n", "--name", "--json", "--wait", "--timeout-ms"];
+
+  it.each(BOUND)("%s appears in the help", (flag) => {
+    const r = runCli(["agent", "--help"], { env: { ...process.env, NO_COLOR: "1" } });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(flag);
+  });
+
+  it("says that anything else is forwarded to the provider", () => {
+    const r = runCli(["agent", "--help"], { env: { ...process.env, NO_COLOR: "1" } });
+    expect(r.stdout).toMatch(/forwarded verbatim to the provider CLI/);
   });
 });
 
