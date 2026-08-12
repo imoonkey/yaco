@@ -512,35 +512,46 @@ function plantSkillLink(
   actions.push(`relink skill ${name}`);
 }
 
-/** Whether this checkout's `node_modules` is its own to rewrite.
+/** Who owns this checkout's `node_modules` — and `"unknown"` is a real answer,
+ *  because the consequence of guessing wrong runs one way.
  *
- *  A linked worktree's is not. `scripts/worktree-provision.sh` builds it as a
- *  *mirror*: every third-party package, and `.package-lock.json` itself, is a
- *  symlink into the main checkout's tree. `npm install` there is a reconciler
- *  pointed at somebody else's data — it would write through those symlinks and
- *  rewrite the main checkout's node_modules from the worktree's branch. So the
- *  step is skipped, and the tool that owns the mirror is named instead.
+ *  A linked worktree does not own its own. `scripts/worktree-provision.sh`
+ *  builds it as a *mirror*: every third-party package, and `.package-lock.json`
+ *  itself, is a symlink into the main checkout's tree. `npm install` there is a
+ *  reconciler pointed at somebody else's data — it would write through those
+ *  symlinks and rewrite the main checkout's node_modules from the worktree's
+ *  branch. The caller skips anything but a confirmed owner.
  *
- *  Asked of git's topology, not of the filesystem: `--git-dir` is the worktree's
- *  own `…/.git/worktrees/<name>` and `--git-common-dir` the repository they all
- *  share, and only a linked worktree makes those two differ. `.git` being a file
- *  looks like the same question and is not — a submodule and a repository
- *  created with `--separate-git-dir` both carry a `gitdir:` file while owning
- *  their `node_modules` outright, and skipping their install would break the
- *  very thing this step exists to fix.
+ *  Two steps, because git can only answer the second one. Whether a repository
+ *  is here at all is a filesystem fact and needs no subprocess: no `.git` entry,
+ *  no repository, and an export owns whatever it has. Once there IS one, only
+ *  git's topology can classify it — `--git-dir` is a linked worktree's own
+ *  `…/.git/worktrees/<name>` and `--git-common-dir` is the repository they all
+ *  share, and nothing else makes those two differ.
  *
- *  A directory git cannot answer for is nobody's worktree: an exported tarball
- *  owns whatever it has. */
-function ownsItsNodeModules(repoRoot: string): boolean {
+ *  `.git` being a *file* looks like the same question and is not: a submodule
+ *  and a repository created with `--separate-git-dir` both carry a `gitdir:`
+ *  file while owning their `node_modules` outright, and skipping their install
+ *  would break the very thing this step exists to fix.
+ *
+ *  So a repository git cannot read — no `git` on PATH, dubious-ownership
+ *  refusal, damaged metadata, output that will not parse — is `"unknown"`, not
+ *  "owner". Reading a failed probe as ownership is how a real worktree with a
+ *  broken git would walk straight into the write-through it is protected from. */
+type NodeModulesOwner = "self" | "linked-worktree" | "unknown";
+function nodeModulesOwner(repoRoot: string): NodeModulesOwner {
+  if (!existsSync(join(repoRoot, ".git"))) return "self";
   const r = spawnSync("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
     cwd: repoRoot,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
   });
-  if (r.status !== 0) return true;
+  if (r.status !== 0) return "unknown";
   const [gitDir, commonDir] = r.stdout.trim().split("\n");
-  if (!gitDir || !commonDir) return true;
-  return realpathOr(resolve(repoRoot, gitDir)) === realpathOr(resolve(repoRoot, commonDir));
+  if (!gitDir || !commonDir) return "unknown";
+  return realpathOr(resolve(repoRoot, gitDir)) === realpathOr(resolve(repoRoot, commonDir))
+    ? "self"
+    : "linked-worktree";
 }
 
 /** One `npm install` at the workspace ROOT — never inside a member (no-op when
@@ -560,20 +571,30 @@ function ownsItsNodeModules(repoRoot: string): boolean {
  *  Declaring it makes the published bundle require a package that is never
  *  published. The linking belongs here, in the install.
  *
- *  Two things disqualify a root, and both report the skip rather than performing
- *  it silently. Repository identity is the first, the same question
+ *  A root has to clear two questions, and every skip is reported rather than
+ *  performed silently. Repository identity is the first, the same one
  *  {@link upsertRegistry} asks — `npm install` at whatever directory a package
- *  user happened to be standing in is not a step, it is an accident. A linked
- *  worktree is the second: see {@link ownsItsNodeModules}. */
+ *  user happened to be standing in is not a step, it is an accident. Who owns
+ *  the `node_modules` is the second: see {@link nodeModulesOwner}, which only
+ *  clears a confirmed owner. */
 function installWorkspaceDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
   if (!isYacoCheckout(repoRoot)) {
     actions.push(`skipped npm install: ${repoRoot} is not a yaco checkout`);
     return;
   }
-  if (!ownsItsNodeModules(repoRoot)) {
+  const owner = nodeModulesOwner(repoRoot);
+  if (owner === "linked-worktree") {
     actions.push(
       `skipped npm install: ${repoRoot} is a linked worktree ` +
         `(run \`bash scripts/worktree-provision.sh\` from it instead)`,
+    );
+    return;
+  }
+  if (owner === "unknown") {
+    actions.push(
+      `skipped npm install: cannot read the git topology of ${repoRoot}, ` +
+        `so whether its node_modules is a worktree mirror is unknown ` +
+        `(\`git -C ${repoRoot} rev-parse --git-dir --git-common-dir\` says why)`,
     );
     return;
   }

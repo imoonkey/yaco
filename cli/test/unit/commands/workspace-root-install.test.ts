@@ -8,7 +8,9 @@
  *    does not — only npm can say;
  *  - a linked worktree is excluded and a lookalike is not — only git can say,
  *    because a submodule and a `--separate-git-dir` repository carry the same
- *    `gitdir:` file a worktree does while owning their `node_modules` outright.
+ *    `gitdir:` file a worktree does while owning their `node_modules` outright;
+ *    and a repository git cannot read is excluded too, since a probe that
+ *    failed is not a statement of ownership.
  *
  *  It lives in the unit project, which `scripts/verify.sh` runs, rather than in
  *  `test/integration/` which it does not — a regression test outside the gate
@@ -19,13 +21,22 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runInstall } from "../../../src/commands/install.ts";
 
 const ORIG = {
+  PATH: process.env["PATH"],
   HOME: process.env["HOME"],
   YACO_HOME: process.env["YACO_HOME"],
   YACO_BIN_DIR: process.env["YACO_BIN_DIR"],
@@ -186,9 +197,39 @@ describe("which checkouts own their node_modules", () => {
     expect(sidecarLink(separate)).toBe(realpathSync(join(separate, "packages", "sidecar")));
   }, 120_000);
 
-  it("installs where git cannot answer at all — an export owns whatever it has", async () => {
+  it("installs where there is no repository at all — an export owns whatever it has", async () => {
+    // No `.git` entry, so no repository, so nothing to classify. Decided from
+    // the filesystem: git is never asked, and cannot fail.
+    expect(existsSync(join(repoRoot, ".git"))).toBe(false);
+
     const r = await install(repoRoot);
 
     expect(r.actions).toContain(`npm install in ${repoRoot}`);
+  }, 120_000);
+
+  // The two ways the probe can fail. Both must skip: a repository whose
+  // topology cannot be read might be a worktree, and reading a failed probe as
+  // ownership is exactly how a real one would walk into the write-through.
+
+  it("skips a repository whose git metadata cannot be read", async () => {
+    writeFileSync(join(repoRoot, ".git"), "this is not a gitfile\n");
+
+    const r = await install(repoRoot);
+
+    expect(r.actions.some((a) => a.startsWith(`skipped npm install: cannot read the git topology of ${repoRoot}`)))
+      .toBe(true);
+    expect(sidecarLink(repoRoot)).toBeUndefined();
+  }, 120_000);
+
+  it("skips a repository when there is no git on $PATH to ask", async () => {
+    stageRepo(repoRoot);
+    process.env["PATH"] = join(sandbox, "empty-bin");
+    mkdirSync(process.env["PATH"], { recursive: true });
+
+    const r = await install(repoRoot);
+
+    expect(r.actions.some((a) => a.startsWith(`skipped npm install: cannot read the git topology of ${repoRoot}`)))
+      .toBe(true);
+    expect(sidecarLink(repoRoot)).toBeUndefined();
   }, 120_000);
 });

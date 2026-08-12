@@ -92,16 +92,27 @@ rather than done silently:
 | Condition | Why |
 |---|---|
 | `isYacoCheckout(repoRoot)` is false | `npm install` in whatever directory a package user happened to be standing in is not a step, it is an accident. Repository identity, the same question the registry step asks — not the presence of an `app/` directory |
-| `repoRoot` is a **linked worktree** | its `node_modules` is not its own. `scripts/worktree-provision.sh` builds it as a *mirror*: every third-party package, and `.package-lock.json` itself, is a symlink into the main checkout's tree, so `npm install` there is a reconciler pointed at somebody else's data — it would write through those symlinks and rewrite the main checkout's `node_modules` from the worktree's branch. The action names `scripts/worktree-provision.sh` instead |
+| `repoRoot` does not **own its `node_modules`** | a linked worktree's is not its own. `scripts/worktree-provision.sh` builds it as a *mirror*: every third-party package, and `.package-lock.json` itself, is a symlink into the main checkout's tree, so `npm install` there is a reconciler pointed at somebody else's data — it would write through those symlinks and rewrite the main checkout's `node_modules` from the worktree's branch. The action names `scripts/worktree-provision.sh` instead |
 
-The second is asked of git's **topology**, not of the filesystem:
-`git rev-parse --git-dir --git-common-dir`, and only a linked worktree makes the
-two differ (its own `…/.git/worktrees/<name>` against the repository they all
-share). `.git` being a file looks like the same question and is not — a
-submodule and a repository created with `--separate-git-dir` both carry a
-`gitdir:` file while owning their `node_modules` outright, and skipping their
-install would break the very thing this step exists to fix. A directory git
-cannot answer for — a tarball, an export — owns whatever it has.
+`nodeModulesOwner()` answers the second, and **`unknown` is one of its three
+answers** — only a confirmed `self` proceeds. Two steps, because git can answer
+only the second:
+
+1. **Is a repository here at all?** A filesystem fact needing no subprocess: no
+   `.git` entry, no repository, and an export owns whatever it has.
+2. **What kind?** `git rev-parse --git-dir --git-common-dir`. Only a linked
+   worktree makes the two differ — its own `…/.git/worktrees/<name>` against the
+   repository they all share.
+
+`.git` being a *file* looks like step 2's question and is not: a submodule and a
+repository created with `--separate-git-dir` both carry a `gitdir:` file while
+owning their `node_modules` outright, and skipping their install would break the
+very thing this step exists to fix.
+
+A repository git cannot read — no `git` on `$PATH`, a dubious-ownership refusal,
+damaged metadata, output that will not parse — is **`unknown`, and skips**.
+Reading a failed probe as ownership is how a real worktree with a broken git
+would walk straight into the write-through it is protected from.
 
 ## Global links are additive
 
