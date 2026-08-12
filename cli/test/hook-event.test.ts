@@ -41,16 +41,53 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
   };
 }
 
-/** Spawn a detached child that overwrites the state file mid-debounce.
+/** Delay between `fire()` and the rival's write. The child has already execed by
+ *  then, so this is a signal-to-write delay, not a process launch: it only has to
+ *  outlast the microseconds the debounce needs to take its baseline read, and stay
+ *  well inside STOP_DEBOUNCE_MS. */
+const RIVAL_WRITE_DELAY_MS = STOP_DEBOUNCE_MS / 4;
+
+/** Children armed by armRivalWrite, awaited by settleRivals() before the temp dir goes. */
+const rivals: ReturnType<typeof spawn>[] = [];
+
+/** Arm a rival writer: a separate process that overwrites the state file mid-debounce.
  *  The debounce's sleepSync blocks this thread but not other processes, which is
- *  exactly the race the debounce defends against (two provider hooks
- *  running concurrently as separate processes). */
-function scheduleRivalWrite(handle: string, afterMs: number, newState: SessionState): void {
+ *  exactly the race the debounce defends against (two provider hooks running
+ *  concurrently as separate processes).
+ *
+ *  Resolves once the child has printed `ready` — it has execed and is parked on a
+ *  blocking read — so the process launch is paid for BEFORE the window opens.
+ *  `fire()` hands it the payload; it writes RIVAL_WRITE_DELAY_MS later, by temp
+ *  file + rename, the same atomic shape writeState uses. */
+async function armRivalWrite(
+  handle: string,
+  newState: SessionState,
+): Promise<{ fire: () => void }> {
   const path = statePath(handle);
-  const payload = JSON.stringify(newState);
-  const script = `sleep ${(afterMs / 1000).toFixed(3)} && printf '%s' '${payload.replace(/'/g, "'\\''")}' > "${path}"`;
-  const child = spawn("bash", ["-c", script], { stdio: "ignore", detached: true });
-  child.unref();
+  const script = [
+    `printf 'ready\\n'`,
+    // No payload (stdin closed by settleRivals) → never armed, write nothing.
+    `IFS= read -r payload || exit 0`,
+    // Hold the window delay in bash itself; `sleep` would be another process launch.
+    `read -r -t ${(RIVAL_WRITE_DELAY_MS / 1000).toFixed(3)} _`,
+    `printf '%s' "$payload" > "${path}.rival"`,
+    `mv "${path}.rival" "${path}"`,
+  ].join("\n");
+  const child = spawn("bash", ["-c", script], { stdio: ["pipe", "pipe", "ignore"] });
+  rivals.push(child);
+  await new Promise<void>((resolve) => child.stdout!.once("data", () => resolve()));
+  return { fire: () => void child.stdin!.write(JSON.stringify(newState) + "\n") };
+}
+
+/** Let every armed rival finish before its temp dir is removed. A child still in
+ *  flight when afterEach rmSync's the dir is the ENOTEMPTY this suite used to hit,
+ *  and a detached one outlives the whole file. */
+async function settleRivals(): Promise<void> {
+  await Promise.all(rivals.splice(0).map((child) => new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.on("exit", () => resolve());
+    child.stdin!.end();
+  })));
 }
 
 describe("applyHookEvent", () => {
@@ -551,7 +588,8 @@ describe("Stop debounce — runHookEventForHandle", () => {
     process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleRivals();
     if (ORIGINAL === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
     else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL;
     rmSync(dir, { recursive: true, force: true });
@@ -575,12 +613,12 @@ describe("Stop debounce — runHookEventForHandle", () => {
       sessionId: "turn-N",
     }));
 
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
 
     const after = readState(handle);
@@ -596,12 +634,12 @@ describe("Stop debounce — runHookEventForHandle", () => {
       sessionId: "turn-N",
     }));
 
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "StopFailure", { hook_event_name: "StopFailure" });
 
     const after = readState(handle);
@@ -622,7 +660,8 @@ describe("Provider idle notice — Stop final message tail", () => {
     process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
     process.env["HOME"] = home;
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await settleRivals();
     if (ORIGINAL_SESSIONS_DIR === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
     else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL_SESSIONS_DIR;
     if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
@@ -672,12 +711,12 @@ describe("Provider idle notice — Stop final message tail", () => {
     writeState(makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N" }));
     const transcript_path = writeTranscript("This must not be captured.");
     // A fresher event lands mid-debounce → the Stop backs off without writing.
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
 
     const after = readState(handle);
