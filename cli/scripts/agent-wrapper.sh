@@ -8,6 +8,45 @@ sn="${1:?wrapper requires handle as first arg}"
 created_at="${2:?wrapper requires createdAt as second arg}"
 shift 2
 
+# A report from a previous generation of this handle is not about this run.
+rm -f "$sd/.exit-$sn"
+
+# The provider's own last words, salvaged from the pane that is about to
+# vanish. This runs from the EXIT trap, while the pane still exists — the
+# wrapper IS its process — which is the only moment the output behind a "died
+# during bootstrap" is still readable; from outside, tmux has already destroyed
+# it. Written beside the state file as `.exit-<handle>`: createdAt (the same
+# generation discriminator the crash tombstone uses), the exit code, then up to
+# 40 lines of text. `yaco agent start` reads it and removes it.
+#
+# Being inside the pane is necessary but not sufficient, because the pane's
+# screen is not the pty. tmux fills the screen from an asynchronous read of the
+# pty master, while `capture-pane` reads the screen directly, so a capture taken
+# the instant the provider exits can miss the very bytes it exited to print —
+# and those are the diagnostic. What makes it ordered rather than merely likely
+# is that the read is FIFO over one stream: a marker emitted AFTER the
+# provider's last byte can only appear on the screen once everything ahead of it
+# has been parsed in. So we emit one and wait for it to come back, then cut the
+# capture at it. Bounded at ~0.5s, after which we take what is there — this path
+# is already a failure, and a partial message beats none.
+write_exit_report() {
+  wer_name="$1"; wer_ec="$2"; wer_ca="$3"
+  wer_mark="yaco-exit-marker-$$-${RANDOM}"
+  printf '\n%s\n' "$wer_mark"
+  wer_raw=""
+  wer_tries=0
+  while [ "$wer_tries" -lt 10 ]; do
+    wer_raw=$(tmux capture-pane -p -t "${TMUX_PANE:-=$sn}" 2>/dev/null) || break
+    case "$wer_raw" in *"$wer_mark"*) break ;; esac
+    sleep 0.05
+    wer_tries=$((wer_tries + 1))
+  done
+  wer_out=$(printf '%s\n' "$wer_raw" \
+    | sed -e "/$wer_mark/,\$d" -e 's/[[:space:]]*$//' \
+    | grep -v '^$' | tail -n 40)
+  printf '%s\n%s\n%s\n' "$wer_ca" "$wer_ec" "$wer_out" > "$sd/.exit-$wer_name"
+}
+
 # Generation-scoped kill discriminator. True only when a `.killing-<handle>`
 # sentinel exists AND its stored createdAt matches THIS generation — so a stale
 # sentinel left by a crashed CLI cannot suppress a future same-handle crash.
@@ -76,6 +115,7 @@ trap '
       sleep 0.3
       rm -f "$sd/$name.json" "$sd/$name".json.*.tmp
     else
+      write_exit_report "$name" "$ec" "$created_at"
       $YACO_BIN agent mark-crashed "$name" --exit "$ec" --created-at "$created_at" \
         || crash_fallback "$name" "$ec" "$created_at"
     fi

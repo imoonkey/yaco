@@ -55,9 +55,45 @@ export function deleteState(handle: string): void {
   cleanupBreadcrumbs(handle);
 }
 
+/** Where the wrapper's EXIT trap leaves what the pane held when the session
+ *  died abnormally. See `scripts/agent-wrapper.sh#write_exit_report`. */
+export function exitReportPath(handle: string): string {
+  return join(sessionsRoot(), `.exit-${handle}`);
+}
+
+/** What the provider printed before it exited, and the code it exited with. */
+export interface ExitReport {
+  exitCode: number;
+  output: string;
+}
+
+/** The exit report for THIS generation of `handle`, or null when there is
+ *  none.
+ *
+ *  `createdAt` is the generation discriminator, exactly as it is for the crash
+ *  tombstone: a handle is reusable, and a report left by an earlier session of
+ *  the same name describes a different run. A file that is absent, truncated,
+ *  foreign, or whose exit code is not a number reads as "no report" — this
+ *  enriches an error message, so it must never be able to raise one. */
+export function readExitReport(handle: string, createdAt: string): ExitReport | null {
+  let raw: string;
+  try {
+    raw = readFileSync(exitReportPath(handle), "utf-8");
+  } catch {
+    return null;
+  }
+  const [generation, code, ...rest] = raw.split("\n");
+  if (generation !== createdAt) return null;
+  if (!code || !/^-?\d+$/.test(code)) return null;
+  return { exitCode: Number(code), output: rest.join("\n").trim() };
+}
+
 /** Remove any breadcrumb pointing to or from this handle. */
 function cleanupBreadcrumbs(handle: string): void {
   const dir = sessionsRoot();
+  try {
+    unlinkSync(exitReportPath(handle));
+  } catch { /* absent */ }
   try {
     for (const f of readdirSync(dir)) {
       if (!f.startsWith(".renamed-")) continue;
@@ -79,6 +115,13 @@ export function cleanupOrphanBreadcrumbs(): void {
   if (!existsSync(dir)) return;
   try {
     for (const f of readdirSync(dir)) {
+      // An exit report explains a session. Its state file outlives the wrapper
+      // that wrote it (the crash branch tombstones, it does not delete), so a
+      // report with no state file left is one nobody can still be waiting on.
+      if (f.startsWith(".exit-")) {
+        if (!existsSync(statePath(f.slice(".exit-".length)))) unlinkSync(join(dir, f));
+        continue;
+      }
       if (!f.startsWith(".renamed-")) continue;
       const target = readFileSync(join(dir, f), "utf-8").trim();
       if (!existsSync(statePath(target))) unlinkSync(join(dir, f));

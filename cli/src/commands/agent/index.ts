@@ -22,9 +22,10 @@ import { ok, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { PROVIDERS } from "../../lib/core/agent/providers.ts";
+import { getProvider } from "../../lib/core/agent/providers/index.ts";
 import { validateName } from "../../lib/core/agent/model.ts";
 import { waitForInputEmptyThenSend } from "../../lib/core/agent/tmux.ts";
-import { start, extractResume } from "./start.ts";
+import { start, extractResume, requireProviderExecutable } from "./start.ts";
 import { send } from "./send.ts";
 import { capture } from "./capture.ts";
 import { kill } from "./kill.ts";
@@ -79,8 +80,11 @@ Providers (start): ${Object.keys(PROVIDERS).join(", ")}
 \`--name=<handle>\`), \`--json\`, \`--wait\` and \`--timeout-ms\`. EVERY other token,
 before or after \`--\`, is forwarded verbatim to the provider CLI. So a mistyped
 yaco flag is handed to the provider, and a provider that rejects it exits
-immediately — reported here as "died during bootstrap", with its own message
-left in a tmux pane that is already gone.
+immediately — reported here as "died during bootstrap (<provider> exited <n>)"
+followed by what the provider itself printed, salvaged from the pane.
+
+A provider whose executable is not on \$PATH is refused before any session is
+created, naming it (\`yaco doctor\` reports which providers are available).
 
 Use top-level shortcuts \`yaco claude ...\` / \`yaco codex ...\` to start a
 session in one step. \`yaco agent <provider>\` (without 'start') is rejected.
@@ -240,6 +244,12 @@ export async function runStart(
       `unknown provider: ${provider}. Available: ${Object.keys(PROVIDERS).join(", ")}`,
     );
   }
+  // Before the `--wait` preflight, not only inside start(). `--wait --resume`
+  // resolves a cursor out of the provider's own logs first, and on a machine
+  // with no provider that fails as "cannot resolve resume cursor" — true, and
+  // not the reason. The executable is the first thing that is wrong, so it is
+  // the first thing checked. start() keeps its own copy for direct callers.
+  requireProviderExecutable(getProvider(provider));
 
   if (wait) {
     // Pick the wait origin BEFORE launching. A resumed session must wait from a

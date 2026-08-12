@@ -83,6 +83,14 @@ when the state file is gone, `createdAt` no longer matches (handle reused), or a
 generation-matching kill sentinel exists. Otherwise `setStatus(state,"crashed")`
 + `exitCode` + fresh `statusEnteredAt`.
 
+The **exit report** (`.exit-<handle>`) rides the same branch: before
+`mark-crashed`, the trap captures its pane and writes `createdAt`, the exit code,
+and up to 40 lines of what the provider printed. Same generation guard —
+`readExitReport` returns null for any other `createdAt` — and `deleteState`
+removes it with the handle's other breadcrumbs. It exists because a bootstrap
+death otherwise has no channel at all: the pane is gone before anyone outside can
+read it. -> See: [lifecycle.md](lifecycle.md#sequence-diagram-5-wrapper-exit--handle-reuse-guard)
+
 The **kill sentinel** (`kill-sentinel.ts`, mirrored by the wrapper's
 `kill_sentinel_matches` shell helper): `kill.ts` drops `.killing-<handle>` holding
 the generation's `createdAt` before `killSession`, in `try { … } finally { remove
