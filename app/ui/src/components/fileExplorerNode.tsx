@@ -86,8 +86,9 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
-    // Multi-select via Ctrl/Cmd or Shift — react-arborist's own handler only
-    // checks metaKey, so we route both modifiers here and skip preview/toggle.
+    // This replaces react-arborist's row click entirely (a plain click previews a
+    // file or expands a directory instead of activating), so a modifier click has
+    // to select and return before reaching the preview/toggle path below.
     if (e.metaKey || e.ctrlKey) {
       if (node.isSelected) node.deselect()
       else node.selectMulti()

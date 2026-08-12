@@ -1,5 +1,50 @@
 # Progress
 
+## 2026-08-12: react-arborist — the dependency range now says what the source needs
+
+**What changed:**
+- `app/ui/package.json`: `react-arborist` `^3.4.3` → `^3.16.0`. The root `package-lock.json` diff
+  is exactly one line (the recorded workspace range); the resolved package is unchanged at 3.16.0.
+- Deleted `app/ui/package-lock.json`, tracked and stale since 2026-06-03.
+- Rewrote the `fileExplorerNode.tsx#handleClick` comment and the matching paragraph in
+  `doc/main/app/ui/workspace/explorer-and-changes.md`. The override is unchanged.
+
+**Why:**
+- `2d71bd82` fixed the *lock* that resolved react-arborist 3.8.0 against source written for
+  3.16.0's `CreateHandler`. It left the range that permitted it. Proven both ways in a fresh
+  clone with the lock pinned back to 3.8.0: under `^3.4.3`, `npm ci` accepts it and `app/ui`
+  `npx tsc -b` fails `TS2322` — the original breakage, reproduced; under `^3.16.0`, `npm ci`
+  refuses with `EUSAGE … lock file's react-arborist@3.8.0 does not satisfy react-arborist@3.16.0`
+  before touching `node_modules`. A silent broken tree became a loud install error that names
+  the package.
+- The nested lock was **removed, not refreshed**. It has no consumer — CI and `tools/install.sh`
+  read the root lock only, and npm 11 resolves `npm ci` run from inside `app/ui` to the workspace
+  root (`npm prefix`/`npm root` both report the repo root), so no install path could ever read it.
+  A refreshed copy would stay permanently inert while remaining free to drift and mislead the next
+  reader. `app/server/package-lock.json` went the same way in `c434b30d`.
+- The comment claimed react-arborist's handler "only checks `metaKey`". `NodeApi.handleClick` in
+  3.16.0 takes `(metaKey || ctrlKey)` then `shiftKey`. The override survives for a different
+  reason: this handler replaces the row click wholesale — a plain click previews a file or expands
+  a directory instead of activating — so a modifier click has to select and return before that
+  path.
+
+**Key files:** `app/ui/package.json`, `package-lock.json`, `app/ui/package-lock.json` (deleted),
+`app/ui/src/components/fileExplorerNode.tsx`, `doc/main/app/ui/workspace/explorer-and-changes.md`
+
+**Verification:** `scripts/verify.sh` green; `npx tsc -b --force` in `app/ui` exit 0 (lint and
+vitest both pass type errors, so this is its own step). Install contract exercised only in fresh
+`git clone`s under `~/ld-workspace/`, never in the worktree, whose `node_modules` is a symlink
+mirror: root `npm ci` → `tsc -b` → `npm run build -w app/ui` all exit 0 with react-arborist 3.16.0;
+`cd app/ui && npm ci` yields the same tree and regenerates no nested lock; the 3.8.0 before/after
+above. `file-multiselect.spec.ts` 2/2 green. Cross-provider Codex review (`rv-arborist`): APPROVE,
+0 critical / 0 high, 2 low both fixed; it independently reconfirmed all five claims.
+Artifacts: `plan/all/ui-arborist-contract-cleanup/`.
+
+**Commit:** `d7b5bdf7..HEAD`
+**Next:** The modifier branches could delegate to `node.handleClick(e)` instead of hand-rolling
+selection — smaller, and it would inherit `disableMultiSelection`. Deliberately not done here: it
+is a behaviour change, not a comment fix.
+
 ## 2026-08-12: the single-file starvation limit at repository size, and a fixture that names its data
 
 **What changed:**
