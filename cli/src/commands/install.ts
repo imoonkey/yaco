@@ -28,6 +28,8 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
+  rmSync,
   statSync,
   symlinkSync,
   unlinkSync,
@@ -243,7 +245,27 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
   actions.push(`removed legacy symlink ${p}`);
 }
 
-/** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale. */
+/** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale.
+ *
+ *  The write is a rename, not a rewrite, because this file is *executing* while
+ *  we replace it. Every live agent session is a `bash agent-wrapper.sh` holding
+ *  the inode open at a byte offset — bash reads a script incrementally and seeks
+ *  back to just past the command it consumed — so refilling that same inode
+ *  (which is what `writeFileSync` on an existing path does: O_TRUNC) moves the
+ *  meaning of every offset past the edit and the running shell silently resumes
+ *  parsing mid-token of unrelated text. A rename swaps the directory entry only:
+ *  the old inode stays intact for the shells still on it, and every session that
+ *  starts afterwards opens the new one.
+ *
+ *  The hazard is confined to exactly the deploys that matter — the content-equality
+ *  check above returns early whenever the wrapper did NOT change, and a wrapper
+ *  that changed is precisely one whose offsets shifted.
+ *
+ *  Three details the rename depends on: the temp is a *sibling*, because rename()
+ *  fails EXDEV across filesystems and $TMPDIR is routinely a different one; the
+ *  mode is set *before* the rename, or a session starting in the gap execs a
+ *  non-executable file; and the temp is removed on the failure path, so a partial
+ *  write leaves nothing behind for a later run to trip over. */
 function installAgentWrapper(actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
   const content = readAgentWrapperScript();
@@ -259,8 +281,15 @@ function installAgentWrapper(actions: string[], dryRun: boolean): void {
     return;
   }
   ensureYacoHome();
-  writeFileSync(path, content);
-  chmodSync(path, 0o755);
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, content);
+    chmodSync(tmp, 0o755);
+    renameSync(tmp, path);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
   actions.push(`wrote ${path}`);
 }
 
