@@ -183,6 +183,18 @@ accepted with its reason.
   traversal, cutover 1 discharged it, and the empty list stays as the shape of
   the check: a new synchronous traversal in an exported closure fails the audit.
   -> See: [exports.md](exports.md#the-tracked-debt-and-how-it-was-paid)
+- **A log whose last record exceeds the tail is ordered by its file mtime, and
+  that can cost it the window.** `updatedAt` is the cap key, so the fallback does
+  not merely mislabel such a row — it moves it, and a row moved below the cap is
+  one the window never sees. It is *not* fixable by reading further: records on
+  the reference home reach 1.3 MB and 48 exceed 512 KB, so no bounded read
+  guarantees a complete last record, and a byte match has no sound anchor (above).
+  Two things keep it a limit rather than a defect: it never fires on the
+  reference home — 0 of 1 055 logs have a tail without a parseable record — and
+  for an append-only log the mtime is a fair proxy for its last write. What it
+  needs to bite is a log with a huge final record *and* an mtime that disagrees
+  with its contents, which means one restored or copied without its times.
+  -> Task `history-oversized-record-order`.
 - **The history read is capped, not cheap.** Its cap is `limit + 1` rows per
   provider, so a project with more sessions than the window pays a two-phase
   Claude read — `stat` and a tail for *every* log — before the window is chosen.
@@ -313,15 +325,15 @@ Three things the widening had to get right:
   slice. On the reference home the furthest a last `cwd` sits from the end of a
   file is 20 KB against a 64 KB window, and byte-matching agrees with a
   whole-file parse on all 1 053 logs.
-- **`updatedAt` is matched the same way, and for a sharper reason.** It is the
-  key the provider cap and the merge both sort by, so a log whose records are
-  larger than the slices does not merely display an approximate time when the
-  reader falls back to the file's mtime — it *moves*, and a row moved below the
-  cap is a row the window never sees. `created` keeps its record parse and its
-  birthtime fallback, because what makes byte-matching sound is taking the
-  **last** match: a *first* match could be a structural key nested inside the
-  first record's payload, so there is no byte-level answer to "the first
-  record's timestamp". One field is display, the other is the window.
+- **`cwd` is the only field read that way, and the timestamps say why.** What
+  makes a byte match sound is taking the **last** one, for a field nothing
+  content-bearing follows — after `cwd` the only keys are `sessionId`, `version`,
+  `gitBranch`, `slug` and `sessionKind`. A timestamp fails that on both sides:
+  `toolUseResult`, a tool's raw output and so arbitrary JSON, is serialized
+  *between* the record's timestamp and its cwd on 48 075 records of the
+  reference home, and `message` precedes the timestamp on all but 106 of 50 000
+  sampled records. No positional rule separates a record's own timestamp from
+  its content, so both timestamps stay record-parsed.
 - **A path is a subtree of itself and of nothing shorter.** The prefix every
   descendant starts with is the project path plus exactly one separator; the
   filesystem root already carries its own, and a second would match no absolute

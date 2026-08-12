@@ -179,15 +179,26 @@ function parseFirstTimestamp(text: string): string | null {
 /** The last record's timestamp — the row's `updatedAt`, and therefore the key
  *  the provider cap and the merge both sort by.
  *
- *  Matched in the raw bytes for the same reason `cwd` is: a single record can be
- *  larger than the slice, and then no whole line in it parses. Here the stakes
- *  are higher than attribution — falling back to the file's mtime does not merely
- *  mislabel a row, it *moves* it, and a row moved below the provider cap is a row
- *  the window never sees. Agrees with the parsed field on 166 907 of 166 907
- *  timestamp-bearing records on the reference home. */
+ *  Record-parsed, and deliberately **not** matched in raw bytes the way `cwd` is,
+ *  because a timestamp has no anchor that makes a byte match sound. What makes
+ *  the `cwd` rule work is that nothing content-bearing is serialized after it; a
+ *  timestamp fails that on both sides. `toolUseResult` — a tool's raw output,
+ *  which can be any JSON — is written *between* the record's timestamp and its
+ *  cwd, on 48 075 records of the reference home, so a nested `timestamp` inside
+ *  one would win a last-match. And `message` precedes the timestamp on all but
+ *  106 of 50 000 sampled records, so it does not reliably fall on one side
+ *  either. No positional rule separates the record's own field from its content.
+ *
+ *  So a log whose last record is larger than this slice keeps the reader's
+ *  pre-existing last resort, the file's mtime — which for an append-only log is
+ *  a fair proxy, and never fires on the reference home (0 of 1 055 files).
+ *  -> See: `doc/main/cli/read-path.md`, the limits on the record. */
 function parseLastTimestamp(text: string): string | null {
-  const ts = lastStringField(text, TIMESTAMP_FIELD);
-  return ts !== null && !Number.isNaN(Date.parse(ts)) ? ts : null;
+  for (const line of linesFromEnd(text)) {
+    const ts = parseEntryTimestamp(line);
+    if (ts) return ts;
+  }
+  return null;
 }
 
 /** The first meaningful user message in the head of a Claude JSONL file.
@@ -287,7 +298,6 @@ function claudeProjectDir(projectPath: string): string {
 }
 
 const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
-const TIMESTAMP_FIELD = /"timestamp"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
 
 /** The **last** value a slice carries for a top-level string field, matched in
  *  the raw bytes rather than in a parsed record.
@@ -299,19 +309,20 @@ const TIMESTAMP_FIELD = /"timestamp"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
  *  records over `TAIL_BYTES` — so a rule that has to parse one loses the field
  *  entirely. What must fit in the slice is the field, not the record around it.
  *
- *  Taking the *last* match is what makes reading raw bytes sound. Text a user
- *  pasted cannot be mistaken for a field at all — a quote inside a JSON string
- *  is escaped, and `\"cwd\"` does not match this pattern. A **nested key** can,
- *  a tool result carrying its own `cwd` or `timestamp` being unescaped and
- *  structural; but it sits inside `message`, and Claude writes `message` before
- *  both of these fields, with nothing content-bearing after them. So the last
- *  match in a slice is the record's own — checked against parsing rather than
- *  argued from the format: 157 523 of 157 523 cwd-bearing records and 166 907 of
- *  166 907 timestamp-bearing records on the reference home agree, as does a
- *  whole-file parse of all 1 053 logs.
+ *  Taking the *last* match is what makes reading raw bytes sound, and only for a
+ *  field nothing content-bearing follows. Text a user pasted cannot be mistaken
+ *  for a field at all — a quote inside a JSON string is escaped, and `\"cwd\"`
+ *  does not match this pattern. A **nested key** can, a tool result carrying its
+ *  own `cwd` being unescaped and structural; but every such payload is written
+ *  before the record's `cwd`, after which the only keys are `sessionId`,
+ *  `version`, `gitBranch`, `slug` and `sessionKind`. So the last match in a slice
+ *  is the record's own — checked against parsing rather than argued from the
+ *  format: 157 523 of 157 523 cwd-bearing records agree, as does a whole-file
+ *  parse of all 1 053 logs.
  *
- *  There is deliberately no "first match" counterpart: the argument above only
- *  holds at the end of a record. -> See: `parseFirstTimestamp`. */
+ *  `cwd` is the only field that qualifies. There is no "first match" counterpart
+ *  (-> `parseFirstTimestamp`) and no timestamp counterpart
+ *  (-> `parseLastTimestamp`); both are read from parsed records. */
 function lastStringField(text: string, field: RegExp): string | null {
   let last: string | null = null;
   field.lastIndex = 0;
