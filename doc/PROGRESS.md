@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-08-12: the tmux server gets a scope of its own, not the first session's
+
+**What changed:**
+- **The cgroup escape moved from the session to the server.** `cgroupEscapePrefix()` wrapped *every* `tmux new-session` in `systemd-run --user --scope`, which reads as one scope per session and is not. tmux has one server, and that server forks every pane: only the invocation that finds no server actually starts one, and every later session lands in that server's cgroup whatever scope its own short-lived client ran in. The wrap therefore never isolated a session — it only decided which session's anonymous `run-p<pid>-i<id>.scope` the whole machine's fleet would live in. The prefix now names a fixed `--unit=yaco-tmux-server` with an explicit `--description`, and `isTmuxServerRunning()` gates it to the server-starting invocation.
+- **The singleton unit is raced for, and the loser's retry is conditioned on the evidence that makes it right** — the session confirmed absent via `checkSessionAlive`'s tri-state (a probe that could not answer is not an absence) *and* a server now running, which is the winner's, already escaped. The retry carries `tmux -N`, which forbids starting a server: if the winner's last session ends in that window the retry fails instead of founding an unescaped replacement inside the service. Both refinements came from review.
+- `newSessionCommand()` was extracted so the un-escaped command line can be pinned character-for-character — the no-`systemd-run` path (macOS, the laptop) must not move a byte, and now a test says so rather than a reading of the diff.
+
+**Why:**
+- Twice on 2026-08-11 every agent session on the desktop vanished at once, and the live cgroup showed why it could: **34 processes and ten agent sessions — including the operator's own — in one scope described as a single `claude-node-cli-sdk` command line**, with that scope's `Consumed 14min 43s CPU / 4.1G memory peak` billed to it.
+- **The scope's death was the effect, not the cause** — established, not assumed. A scope stopped by systemd logs `Stopping` and `Stopped` before the resource line; a scope that merely emptied logs the resource line alone. Both were reproduced on a private socket to fix the signature; the crash record has only the resource line, so systemd never stopped that unit — the tmux server exited and the scope emptied behind it. Ruled out with evidence: a memory limit (`MemoryMax=infinity`), the kernel OOM killer, `systemd-oomd`, a cron or timer at that minute, and a server crash (the socket had been unlinked, which a `SIGKILL`ed tmux cannot do). **What made the server exit is not established and no guard is proposed on a suspicion.**
+- So this change would not have prevented either outage, and says so in its QA artifact. It is still owed: a cgroup shared by every session must not be identified with, described as, or accounted to one arbitrary session. The residual single point of failure — one tmux server on the default socket for all sessions — is named as the follow-up, not smuggled in here.
+
+**Key files:** `cli/src/lib/core/agent/tmux.ts` · `cli/test/unit/agent/{tmux-server-scope,tmux-escape-fallback}.test.ts` · `doc/main/cli/architecture.md` · `plan/all/tmux-server-shared-scope/{qa,review}-cgroup-escape.md`
+**Verification:** `scripts/verify.sh` green (cli 92 files / 1462 tests, pack smoke, server 877, ui lint, build); golden matrix byte-identical. Proven by construction on a private tmux socket inside throwaway transient units: three sessions created through the real `createSession`, all in one `yaco-tmux-server.scope`, **zero** anonymous scopes, then the session that started the server ended — server and scope alive, the other two executing commands and returning output. Restart survival re-proven with a negative control (same probe, `systemd-run` off `$PATH` → server dies with the service). E2E through the built CLI: three `yaco agent start`, `agent list`, `agent kill` of the server-starting session. Cross-provider Codex review, 3 rounds, APPROVE, 0 unresolved Critical/High.
+**Commit:** `533df9fe`..`8e573a12`
+**Next:** give yaco its own tmux socket. That, not the scope, is what makes one `kill-server` reachable by any of ten unsandboxed agents able to end every session at once.
+**Blockers:** None
+
 ## 2026-08-12: `agent start` says which provider is missing, and repeats what the provider said
 
 **What changed:**

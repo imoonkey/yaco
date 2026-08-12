@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: 2026-08-10 (cli-order-determinism)
+> Last updated: 2026-08-12 (tmux-server-shared-scope)
 
 ## Overview
 
