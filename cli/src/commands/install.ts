@@ -512,6 +512,25 @@ function plantSkillLink(
   actions.push(`relink skill ${name}`);
 }
 
+/** Whether this checkout's `node_modules` is its own to rewrite.
+ *
+ *  A linked worktree's is not. `scripts/worktree-provision.sh` builds it as a
+ *  *mirror*: every third-party package, and `.package-lock.json` itself, is a
+ *  symlink into the main checkout's tree. `npm install` there is a reconciler
+ *  pointed at somebody else's data — it would write through those symlinks and
+ *  rewrite the main checkout's node_modules from the worktree's branch. So the
+ *  step is skipped, and the tool that owns the mirror is named instead.
+ *
+ *  Git's own marker decides: `.git` is a FILE in a linked worktree (it holds
+ *  `gitdir: …`) and a directory in the checkout that owns the repository. */
+function ownsItsNodeModules(repoRoot: string): boolean {
+  try {
+    return !statSync(join(repoRoot, ".git")).isFile();
+  } catch {
+    return true; // no .git at all — a tarball or an export, not a worktree
+  }
+}
+
 /** One `npm install` at the workspace ROOT — never inside a member (no-op when
  *  --cli-only, skipped when there is no checkout).
  *
@@ -529,12 +548,21 @@ function plantSkillLink(
  *  Declaring it makes the published bundle require a package that is never
  *  published. The linking belongs here, in the install.
  *
- *  The guard is repository identity, the same question {@link upsertRegistry}
- *  asks — `npm install` at whatever directory a package user happened to be
- *  standing in is not a step, it is an accident. */
+ *  Two things disqualify a root, and both report the skip rather than performing
+ *  it silently. Repository identity is the first, the same question
+ *  {@link upsertRegistry} asks — `npm install` at whatever directory a package
+ *  user happened to be standing in is not a step, it is an accident. A linked
+ *  worktree is the second: see {@link ownsItsNodeModules}. */
 function installWorkspaceDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
   if (!isYacoCheckout(repoRoot)) {
     actions.push(`skipped npm install: ${repoRoot} is not a yaco checkout`);
+    return;
+  }
+  if (!ownsItsNodeModules(repoRoot)) {
+    actions.push(
+      `skipped npm install: ${repoRoot} is a linked worktree ` +
+        `(run \`bash scripts/worktree-provision.sh\` from it instead)`,
+    );
     return;
   }
   if (dryRun) {

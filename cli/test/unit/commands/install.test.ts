@@ -912,6 +912,30 @@ describe("runInstall — the workspace-root npm install", () => {
     expect(r.actions).toContain(`skipped npm install: ${nowhere} is not a yaco checkout`);
   });
 
+  it("skips it in a linked worktree, whose node_modules belongs to the main checkout", async () => {
+    // `scripts/worktree-provision.sh` builds a worktree's node_modules as a
+    // mirror of symlinks into the main checkout, `.package-lock.json` included,
+    // so npm run there reconciles the main checkout's tree from this branch.
+    const log = stageNpmShim();
+    writeFileSync(join(repoRoot, ".git"), "gitdir: /elsewhere/.git/worktrees/wt\n");
+
+    const r = await runInstall(baseOpts({ cliOnly: false }));
+
+    expect(invocations(log)).toEqual([]);
+    expect(r.actions.some((a) => a.startsWith(`skipped npm install: ${repoRoot} is a linked worktree`)))
+      .toBe(true);
+  });
+
+  it("runs in a checkout that owns its repository, where .git is a directory", async () => {
+    const log = stageNpmShim();
+    mkdirSync(join(repoRoot, ".git"), { recursive: true });
+
+    const r = await runInstall(baseOpts({ cliOnly: false }));
+
+    expect(invocations(log)).toEqual([`${realpathSync(repoRoot)}\tinstall`]);
+    expect(r.actions).toContain(`npm install in ${repoRoot}`);
+  });
+
   it("--cli-only runs no npm install at all", async () => {
     const log = stageNpmShim();
     const r = await runInstall(baseOpts({ cliOnly: true }));

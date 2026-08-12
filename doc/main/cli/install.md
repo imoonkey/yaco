@@ -86,10 +86,17 @@ workspace specifiers off `app/server`'s own source and asserts each resolves
 inside the checkout, so `scripts/verify.sh` fails at `server test` when the
 linking is missing.
 
-The guard is repository identity — `isYacoCheckout(repoRoot)`, the same question
-the registry step asks — not the presence of an `app/` directory. `npm install`
-in whatever directory a package user happened to be standing in is not a step,
-it is an accident.
+Two things disqualify a root, and both are **reported as a skipped action**
+rather than done silently:
+
+| Condition | Why |
+|---|---|
+| `isYacoCheckout(repoRoot)` is false | `npm install` in whatever directory a package user happened to be standing in is not a step, it is an accident. Repository identity, the same question the registry step asks — not the presence of an `app/` directory |
+| `repoRoot` is a **linked worktree** | its `node_modules` is not its own. `scripts/worktree-provision.sh` builds it as a *mirror*: every third-party package, and `.package-lock.json` itself, is a symlink into the main checkout's tree, so `npm install` there is a reconciler pointed at somebody else's data — it would write through those symlinks and rewrite the main checkout's `node_modules` from the worktree's branch. The action names `scripts/worktree-provision.sh` instead |
+
+Git's own marker decides the second: `.git` is a **file** in a linked worktree
+(it holds `gitdir: …`) and a directory in the checkout that owns the repository.
+No `.git` at all — a tarball, an export — counts as owning its own tree.
 
 ## Global links are additive
 
