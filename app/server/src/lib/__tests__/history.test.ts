@@ -84,7 +84,7 @@ function writeClaudeLog(project: string, sessionId: string, prompt: string, modi
   const dir = join(home, '.claude', 'projects', encodeClaudeCwd(project))
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, `${sessionId}.jsonl`), [
-    JSON.stringify({ type: 'user', timestamp: '2026-06-04T00:00:00.000Z', message: { content: prompt } }),
+    JSON.stringify({ type: 'user', cwd: project, timestamp: '2026-06-04T00:00:00.000Z', message: { content: prompt } }),
     JSON.stringify({ type: 'custom-title', customTitle: `title for ${sessionId}` }),
     JSON.stringify({
       type: 'assistant',

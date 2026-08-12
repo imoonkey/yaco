@@ -201,19 +201,28 @@ waiver wearing its clothes:
 | site | query | bound |
 |---|---|---|
 | `providers/codex-thread.ts` | `SELECT title, first_user_message FROM threads WHERE id = ?` — the summary read's per-session lookup, which it cannot drop (on the reference home `first_user_message` is empty for most recent threads, and `title` is the last-resort label) | 0.3 ms p50 **and** max, 40 warm samples, 11.1 MB / 2 297 rows |
-| `providers/codex-thread-window.ts` | the history window's `… FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?` | 3.0 ms p50, 5.4 p95, 8.3 max, 40 warm samples, 11.1 MB / 2 301 rows, 587 matching |
+| `providers/codex-thread-window.ts` | the history window's `… FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?` | 8.6–9.1 ms p50, worst of three runs 15.4 p95 / 23.0 max, 40 warm samples, 11.2 MB / 2 322 rows, 867 matching |
 
 **The second one's `LIMIT` bounds what crosses into JavaScript, not what SQLite
 examines**, and the probe is what settled that: Codex's composite `cwd` indexes
 order by its *millisecond* columns while the read orders by the
 second-resolution `updated_at`, whose own index carries neither `archived` nor
-`cwd`. So the plan is a `SEARCH … USING INDEX idx_threads_archived_cwd_recency_at_ms`
-followed by `USE TEMP B-TREE FOR ORDER BY`. What the cap buys is the fan-out it
-feeds — one rollout tail-read per returned row, 587 down to 201 — and the bound
-above is on the whole statement either way. The synthetic fixture had the
-opposite belief compiled into it, an index named `…_updated_at_ms` that indexed
-`updated_at`, and so measured a plan production does not run; it now carries
-Codex's real columns and index set.
+`cwd` — and a project is a *subtree* of cwds, which is a range over `cwd` rather
+than the equality those composite indexes are keyed on. So the plan is a
+`SEARCH … USING INDEX idx_threads_archived` followed by `USE TEMP B-TREE FOR
+ORDER BY`. What the cap buys is the fan-out it feeds — one rollout tail-read per
+returned row, 867 down to 201 — and the bound above is on the whole statement
+either way. The synthetic fixture had the opposite belief compiled into it, an
+index named `…_updated_at_ms` that indexed `updated_at`, and so measured a plan
+production does not run; it now carries Codex's real columns and index set.
+
+Widening the exact cwd to its subtree ([read-path.md](read-path.md#a-project-is-a-subtree))
+is what moved this off `idx_threads_archived_cwd_recency_at_ms` and roughly
+tripled the statement — it was 3.0 ms p50 / 8.3 max over the busiest single cwd.
+That is a re-judgement of an admission, not a test to update, so the prepared
+statement, the emitted JavaScript and the bound were re-pinned together from a
+fresh probe. The bound that governs remains the design's own, and the route
+comparison below is where it is checked.
 
 What is admitted is **the code that was measured**. Adding `DatabaseSync` to
 the walker's `BOUNDED_SYNC` list would have admitted `.all()` over a whole table

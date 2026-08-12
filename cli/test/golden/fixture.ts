@@ -60,9 +60,9 @@ const TASKS = {
 /** One Claude JSONL: a user prompt, an end_turn assistant reply carrying a usage
  *  record. Timestamps are literals so `stat` never reaches the output — a golden
  *  capture must not encode when it ran. */
-function claudeLog(prompt: string, modified: string): string {
+function claudeLog(prompt: string, modified: string, cwd: string): string {
   return [
-    JSON.stringify({ type: "user", timestamp: CREATED, message: { content: prompt } }),
+    JSON.stringify({ type: "user", cwd, timestamp: CREATED, message: { content: prompt } }),
     JSON.stringify({
       type: "assistant",
       timestamp: modified,
@@ -122,7 +122,7 @@ export function buildSandbox(): Sandbox {
   const claudeProjectDir = join(home, ".claude", "projects", encodeClaudeCwd(projects.alpha));
   mkdirSync(claudeProjectDir, { recursive: true });
   for (const log of CLAUDE_LOGS) {
-    writeFileSync(join(claudeProjectDir, `${log.sessionId}.jsonl`), claudeLog(log.prompt, log.modified));
+    writeFileSync(join(claudeProjectDir, `${log.sessionId}.jsonl`), claudeLog(log.prompt, log.modified, projects.alpha));
   }
   writeFileSync(
     join(claudeProjectDir, "sessions-index.json"),

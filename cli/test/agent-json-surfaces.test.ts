@@ -152,6 +152,7 @@ describe("agent history/summaries data envelopes", () => {
         join(projectDir, `${sessionId}.jsonl`),
         JSON.stringify({
           type: "user",
+          cwd: projectPath,
           timestamp,
           message: { content: `prompt ${i} ${largeText}` },
         }) + "\n",
@@ -185,7 +186,7 @@ describe("agent history/summaries data envelopes", () => {
       const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString();
       writeFileSync(
         join(projectDir, `${sessionId}.jsonl`),
-        JSON.stringify({ type: "user", timestamp, message: { content: `prompt ${i}` } }) + "\n",
+        JSON.stringify({ type: "user", cwd: projectPath, timestamp, message: { content: `prompt ${i}` } }) + "\n",
       );
     }
 
@@ -208,7 +209,7 @@ describe("agent history/summaries data envelopes", () => {
       const timestamp = new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString();
       writeFileSync(
         join(projectDir, `${sessionId}.jsonl`),
-        JSON.stringify({ type: "user", timestamp, message: { content: `prompt ${i}` } }) + "\n",
+        JSON.stringify({ type: "user", cwd: projectPath, timestamp, message: { content: `prompt ${i}` } }) + "\n",
       );
     }
 

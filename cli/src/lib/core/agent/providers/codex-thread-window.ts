@@ -27,25 +27,46 @@ export interface CodexThreadWindowRow {
   rollout_path: string | null;
 }
 
-/** The newest `limit` non-archived threads for `cwd`, newest first; empty when
- *  the database is absent or unreadable.
+/** The newest `limit` non-archived threads whose cwd is `cwd` **or below it**,
+ *  newest first; empty when the database is absent or unreadable.
+ *
+ *  The subtree is the point: a session belongs to a project when its cwd is the
+ *  project path or a descendant, which is the predicate the live session list
+ *  applies, and an agent working in `<project>/.worktrees/<slug>` is otherwise
+ *  listed while it runs and gone once it is only history. `providers/history.ts`
+ *  carries the whole rule; this is its SQL half.
+ *
+ *  The descendant test is `substr` against the literal `<cwd>/` rather than a
+ *  `LIKE` prefix, because `LIKE` is a pattern language and a path is not a
+ *  pattern: `%` and `_` are legal in a path and are wildcards in `LIKE` (an
+ *  unescaped `_` would match any character and admit a neighbour), and SQLite's
+ *  `LIKE` folds ASCII case while a POSIX path does not. `substr` needs no
+ *  escaping and no `ESCAPE` clause, and `length()` is taken by SQLite rather
+ *  than by JavaScript so the prefix length is counted in the same units the
+ *  comparison uses. The prefix carries exactly one trailing separator: the
+ *  filesystem root already ends in its own, and appending a second would match
+ *  no absolute path at all.
  *
  *  **`LIMIT` bounds what crosses into JavaScript, not what SQLite examines**, and
  *  the measured bound is a bound on the whole statement either way. Codex's
  *  composite `cwd` indexes order by its *millisecond* columns while this reads
  *  the second-resolution `updated_at`, whose own index carries neither `archived`
- *  nor `cwd` — so the plan is
- *  `SEARCH threads USING INDEX idx_threads_archived_cwd_recency_at_ms
- *  (archived=? AND cwd=?)` followed by `USE TEMP B-TREE FOR ORDER BY`: every
- *  matching row is sorted inside SQLite, and `LIMIT` takes the top of that sort.
- *  What the cap therefore buys is the *fan-out* — one rollout tail-read per
- *  returned row, 587 down to 201 on the reference home — not a smaller scan.
+ *  nor `cwd`; and a subtree is a range over `cwd`, not the equality those
+ *  composite indexes are keyed on. So the plan is `SEARCH threads USING INDEX
+ *  idx_threads_archived (archived=?)` followed by `USE TEMP B-TREE FOR ORDER BY`:
+ *  every non-archived row is examined and the matches are sorted inside SQLite,
+ *  and `LIMIT` takes the top of that sort. What the cap therefore buys is the
+ *  *fan-out* — one rollout tail-read per returned row — not a smaller scan. The
+ *  measured figures live with the admission that judged them
+ *  (`RULE_5_SQLITE` in `test/unit/export-audit.test.ts`), so a growing corpus
+ *  cannot leave a stale count behind here.
  *
  *  `id` breaks the `updated_at` tie: SQLite leaves the order of tied rows to the
  *  query plan, so without it both the row order and the window boundary would be
  *  undefined. */
 export function codexThreadWindow(cwd: string, limit: number): CodexThreadWindowRow[] {
   if (!existsSync(codexDbPath())) return [];
+  const prefix = cwd.endsWith("/") ? cwd : `${cwd}/`;
   try {
     const db = new DatabaseSync(codexDbPath(), { readOnly: true });
     try {
@@ -55,10 +76,10 @@ export function codexThreadWindow(cwd: string, limit: number): CodexThreadWindow
       return db
         .prepare(
           `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
-           FROM threads WHERE cwd = ? AND archived = 0
+           FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0
            ORDER BY updated_at DESC, id ASC LIMIT ?`,
         )
-        .all(cwd, limit) as unknown as CodexThreadWindowRow[];
+        .all(cwd, prefix, prefix, limit) as unknown as CodexThreadWindowRow[];
     } finally {
       db.close();
     }

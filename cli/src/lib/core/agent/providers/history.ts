@@ -7,6 +7,14 @@
  *  never opens `~/.claude` or `~/.codex` itself and there is one implementation
  *  behind both call mechanisms.
  *
+ *  **A project is a subtree, not a path.** A session belongs to this project
+ *  when its cwd is the project path or a descendant of it — the predicate the
+ *  live session list already applies (`isPathDescendantOrEqual`). Both providers
+ *  key their own storage on an exact cwd, so each reader widens it in the terms
+ *  its storage offers: Claude by directory (`claudeProjectDirs`), Codex in the
+ *  query. Without it an agent running in `<project>/.worktrees/<slug>` is listed
+ *  while it runs and gone the moment it is only history.
+ *
  *  **Every provider scan is capped at the window.** The merge sorts newest-first
  *  and `--since` filters on the same `updatedAt`, so the rows past any cutoff are
  *  a *prefix* of each provider's own newest-first order: "the newest `cap` rows
@@ -33,10 +41,11 @@
  *  -> See: `doc/main/cli/exports.md` (the six eligibility rules this obeys). */
 
 import { open, readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { encodeClaudeCwd } from "../../project/encode.ts";
+import { isPathDescendantOrEqual, normalizeProjectPath } from "../projection.ts";
 import { readOrigins } from "../origin-read.ts";
 import { PENDING_SESSION_ID, type SpawnedBy } from "../model.ts";
 import { codexThreadWindow } from "./codex-thread-window.ts";
@@ -149,6 +158,13 @@ function parseEntryTimestamp(line: string): string | null {
   } catch { return null; }
 }
 
+/** The first record's timestamp, which is the row's `created`. Falls back to the
+ *  file's birthtime for a log whose opening record is larger than the head.
+ *
+ *  Record-parsed, like `parseLastTimestamp` and unlike `parseCwd`: what makes
+ *  matching raw bytes sound is taking the *last* match of a field nothing
+ *  content-bearing follows, and neither half of that holds here. A *first* match
+ *  could be a structural key nested inside the opening record's payload. */
 function parseFirstTimestamp(text: string): string | null {
   for (const line of text.split("\n")) {
     if (!line) continue;
@@ -158,6 +174,23 @@ function parseFirstTimestamp(text: string): string | null {
   return null;
 }
 
+/** The last record's timestamp — the row's `updatedAt`, and therefore the key
+ *  the provider cap and the merge both sort by.
+ *
+ *  Record-parsed, and deliberately **not** matched in raw bytes the way `cwd` is,
+ *  because a timestamp has no anchor that makes a byte match sound. What makes
+ *  the `cwd` rule work is that nothing content-bearing is serialized after it; a
+ *  timestamp fails that on both sides. `toolUseResult` — a tool's raw output,
+ *  which can be any JSON — is written *between* the record's timestamp and its
+ *  cwd, on 48 075 records of the reference home, so a nested `timestamp` inside
+ *  one would win a last-match. And `message` precedes the timestamp on all but
+ *  106 of 50 000 sampled records, so it does not reliably fall on one side
+ *  either. No positional rule separates the record's own field from its content.
+ *
+ *  So a log whose last record is larger than this slice keeps the reader's
+ *  pre-existing last resort, the file's mtime — which for an append-only log is
+ *  a fair proxy, and never fires on the reference home (0 of 1 055 files).
+ *  -> See: `doc/main/cli/read-path.md`, the limits on the record. */
 function parseLastTimestamp(text: string): string | null {
   for (const line of linesFromEnd(text)) {
     const ts = parseEntryTimestamp(line);
@@ -244,11 +277,68 @@ interface ClaudeIndexEntry {
   isSidechain?: boolean;
 }
 
+function claudeProjectsRoot(): string {
+  return join(userHome(), ".claude", "projects");
+}
+
+/** A normalized project path with exactly one trailing separator — the literal
+ *  string every descendant cwd starts with. The filesystem root already carries
+ *  its separator, and appending a second would match nothing. */
+function descendantPrefix(projectPath: string): string {
+  return projectPath.endsWith(sep) ? projectPath : projectPath + sep;
+}
+
 function claudeProjectDir(projectPath: string): string {
   // Claude Code keys ~/.claude/projects/<encoded-cwd>/ with the same lossy
   // encoder used for project-move directory renames (non-alphanumerics → "-"),
   // so a path like `/repo/.worktrees/x` resolves to `-repo--worktrees-x`.
-  return join(userHome(), ".claude", "projects", encodeClaudeCwd(projectPath));
+  return join(claudeProjectsRoot(), encodeClaudeCwd(projectPath));
+}
+
+const CWD_FIELD = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+/** The literal `cwd` a Claude log records — what decides whether the log is this
+ *  project's — read out of the raw bytes of a slice rather than out of a parsed
+ *  record, as the **last** match the slice carries.
+ *
+ *  Records are not always available to parse: a single Claude record can be
+ *  larger than the slice, and then no whole line inside it parses at all. A log
+ *  whose first record is 20 KB and whose last is 70 KB has no complete line in
+ *  either the head or the tail — the reference home already holds 219 individual
+ *  records over `TAIL_BYTES` — so a rule that has to parse one loses the field
+ *  entirely. What must fit in the slice is the field, not the record around it.
+ *
+ *  Taking the *last* match is what makes reading raw bytes sound, and it works
+ *  because nothing content-bearing follows this particular field. Text a user
+ *  pasted cannot be mistaken for it at all — a quote inside a JSON string is
+ *  escaped, and `\"cwd\"` does not match this pattern. A **nested key** can, a
+ *  tool result carrying its own `cwd` being unescaped and structural; but every
+ *  such payload is written before the record's `cwd`, after which the only keys
+ *  are `sessionId`, `version`, `gitBranch`, `slug` and `sessionKind`. So the last
+ *  match in a slice is the record's own — checked against parsing rather than
+ *  argued from the format: 157 523 of 157 523 cwd-bearing records agree, as does
+ *  a whole-file parse of all 1 053 logs.
+ *
+ *  **This is deliberately not a general "read a field from bytes" helper.** The
+ *  serialization order above is the whole justification and it holds for one
+ *  field; a timestamp has no such anchor on either side (-> `parseLastTimestamp`),
+ *  and a *first* match has none at all (-> `parseFirstTimestamp`). Both are read
+ *  from parsed records. Keeping the loop welded to `cwd` is what stops the next
+ *  caller inheriting an invariant that was never theirs.
+ *
+ *  A session that changed directory mid-run resolves to where it ended, the same
+ *  newest-wins rule `updatedAt` follows. */
+function parseCwd(text: string): string | null {
+  let last: string | null = null;
+  CWD_FIELD.lastIndex = 0;
+  for (let m = CWD_FIELD.exec(text); m !== null; m = CWD_FIELD.exec(text)) last = m[1] ?? null;
+  if (last === null) return null;
+  try {
+    // Through JSON so an escaped quote or backslash comes back as the byte it
+    // stands for, exactly as parsing the record would have given it.
+    const decoded = JSON.parse(`"${last}"`);
+    return typeof decoded === "string" && decoded ? decoded : null;
+  } catch { return null; }
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
@@ -282,6 +372,9 @@ interface ClaudeTail {
   updatedAt: string;
   title: string | null;
   tokens: number | null;
+  /** The literal cwd this log records — what decides whether it is this
+   *  project's. Null when the log records none anywhere it was read. */
+  cwd: string | null;
 }
 
 /** Phase 1 for one Claude log: `stat` plus a single tail read, which is all the
@@ -296,9 +389,12 @@ interface ClaudeTail {
  *  would. Hence: read the tail of every log, and the head of only the window.
  *
  *  When the file is no larger than `TAIL_BYTES` the tail *is* the whole file, so
- *  it already covers the head. Only a larger log whose last 64 KB carries no
- *  timestamp at all falls back to its head, and only that log pays a second
- *  read here. */
+ *  it already covers the head. Only a larger log missing its timestamp or its
+ *  cwd in the last 64 KB falls back to its head, and only that log pays a second
+ *  read here.
+ *
+ *  The cwd is taken from the same slice, which is what makes per-log attribution
+ *  free: every log the union reaches is tail-read anyway. */
 async function claudeTail(
   dir: string,
   file: string,
@@ -322,8 +418,11 @@ async function claudeTail(
   const tailLength = Math.min(size, TAIL_BYTES);
   const tail = await readSlice(path, size - tailLength, tailLength);
   let fromLog = parseLastTimestamp(tail);
-  if (fromLog === null && size > TAIL_BYTES) {
-    fromLog = parseLastTimestamp(await readSlice(path, 0, HEAD_BYTES));
+  let cwd = parseCwd(tail);
+  if ((fromLog === null || cwd === null) && size > TAIL_BYTES) {
+    const head = await readSlice(path, 0, HEAD_BYTES);
+    fromLog ??= parseLastTimestamp(head);
+    cwd ??= parseCwd(head);
   }
 
   return {
@@ -336,6 +435,7 @@ async function claudeTail(
     updatedAt: entry?.modified || fromLog || mtime,
     title: parseLastTitle(tail),
     tokens: parseLastClaudeTokens(tail),
+    cwd,
   };
 }
 
@@ -356,22 +456,120 @@ async function claudeRow(tail: ClaudeTail): Promise<HistorySession> {
   };
 }
 
-async function claudeList(projectPath: string, cap: number): Promise<HistorySession[]> {
-  const dir = claudeProjectDir(projectPath);
+/** One Claude directory that belongs to the project, read once: its logs and
+ *  its index. */
+interface ClaudeLogDir {
+  dir: string;
+  files: string[];
+  index: Map<string, ClaudeIndexEntry>;
+}
 
+/** Read one directory's logs and index, or null when it holds no logs. */
+async function claudeLogDir(dir: string): Promise<ClaudeLogDir | null> {
   // The order a raw directory read produces is undefined; it does not reach the
-  // output, because `byUpdatedAtThenSessionId` decides the window and a session
-  // id is unique, so no pair of rows can tie under it.
+  // output, because `byUpdatedAtThenSessionId` decides the window and
+  // `newestPerSession` has already made the session id unique across the
+  // directories, so no pair of rows can tie under it.
   let files: string[];
   try {
     files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
-  } catch { return []; }
-  if (files.length === 0) return [];
+  } catch { return null; }
+  if (files.length === 0) return null;
+  return { dir, files, index: await loadClaudeIndex(dir) };
+}
 
-  const index = await loadClaudeIndex(dir);
-  const tails = await chunked(files, (file) => claudeTail(dir, file, index));
-  const window = tails
-    .filter((t): t is ClaudeTail => t !== null)
+/** Every Claude directory that *may* hold sessions of `projectPath` — its own,
+ *  and every name that could encode a descendant cwd.
+ *
+ *  A session is this project's when its cwd is the project path or below it,
+ *  which is the predicate the live session list already applies
+ *  (`listByPath`, `resolveProjectForPath`). History used to read one exact
+ *  directory instead, so an agent working in `<project>/.worktrees/<slug>` was
+ *  listed while it ran and vanished the moment it was only history.
+ *
+ *  This is deliberately a *superset*: the name cannot decide membership, because
+ *  `encodeClaudeCwd` maps every non-alphanumeric to `-` and has no inverse, so
+ *  the sibling `<project>-backups` shares the prefix with
+ *  `<project>/.worktrees/x` and two distinct cwds can even collide onto one
+ *  directory. What decides is the cwd each log records (`claudeList`); this only
+ *  narrows how many logs have to be read. Nor could the filesystem decide it: a
+ *  worktree's directory is deleted when it merges, long before its history stops
+ *  mattering — which is the history this scan exists to find.
+ *
+ *  A project at the filesystem root has no separator to append, and every
+ *  absolute path encodes with the leading `-` its own encoding is: at root the
+ *  prefix is that `-` and the superset is every directory, which is what a
+ *  project containing everything means. */
+async function claudeProjectDirs(projectPath: string): Promise<string[]> {
+  const own = claudeProjectDir(projectPath);
+  let names: string[];
+  try {
+    names = await readdir(claudeProjectsRoot());
+  } catch { return [own]; }
+
+  // A Set because at the root the project's own encoded name is `-`, which is
+  // also the prefix every descendant carries: without it the root directory
+  // would be read twice.
+  const prefix = encodeClaudeCwd(descendantPrefix(projectPath));
+  return [...new Set([own, ...names.filter((n) => n.startsWith(prefix)).map((n) => join(claudeProjectsRoot(), n))])];
+}
+
+/** One tail per session id. A thread resumed under a second cwd is logged under
+ *  both, and the union — unlike the single directory this replaced — sees both.
+ *  The newest wins; the path breaks a tie, so the surviving row never depends on
+ *  the order the directories happened to be read in. */
+function newestPerSession(tails: ClaudeTail[]): ClaudeTail[] {
+  const best = new Map<string, ClaudeTail>();
+  for (const tail of tails) {
+    const prev = best.get(tail.sessionId);
+    if (!prev) {
+      best.set(tail.sessionId, tail);
+      continue;
+    }
+    const rank = updatedAtRank(tail.updatedAt);
+    const prevRank = updatedAtRank(prev.updatedAt);
+    if (rank > prevRank || (rank === prevRank && tail.path < prev.path)) best.set(tail.sessionId, tail);
+  }
+  return [...best.values()];
+}
+
+/** Whether one log belongs to the project.
+ *
+ *  Per log, never per directory: a directory is a *lossy* key, so one that holds
+ *  a descendant's logs can hold an unrelated cwd's too, and letting the first
+ *  log read decide for its neighbours would both admit and drop history
+ *  according to `readdir` order. Each log records the cwd that settles it.
+ *
+ *  A log that records none anywhere it was read is **out**, wherever it sits.
+ *  The directory it was filed under is not the evidence to fall back to — it is
+ *  the same lossy encoding, `/repo/demo` and `/repo:demo` being one name — so
+ *  falling back there would keep exactly the leak per-log attribution removes.
+ *  Nothing real is lost by failing closed, and the margin is measured rather
+ *  than assumed: a Claude log records its cwd on every user and assistant
+ *  record, and because `parseCwd` reads bytes rather than records, what has to
+ *  fit in the tail is the field, not the record around it. Across the reference
+ *  home's 1 053 logs — 298 of them over `TAIL_BYTES`, the largest 3.8 MB — the
+ *  furthest the last `cwd` sits from the end of a file is 20 KB, a third of the
+ *  window. The only logs this drops are ones that never reached a turn. */
+function belongsToProject(tail: ClaudeTail, projectPath: string): boolean {
+  return tail.cwd !== null && isPathDescendantOrEqual(tail.cwd, projectPath);
+}
+
+async function claudeList(rawProjectPath: string, cap: number): Promise<HistorySession[]> {
+  const projectPath = normalizeProjectPath(rawProjectPath);
+  const dirs = (await chunked(await claudeProjectDirs(projectPath), claudeLogDir))
+    .filter((d): d is ClaudeLogDir => d !== null);
+
+  // One fan-out over every log of every directory, so the width stays
+  // `READ_CONCURRENCY` however many directories the project spans — and so the
+  // cap is taken once, over the union. A per-directory cap would let one busy
+  // worktree crowd the project's own sessions out of the window, and the window
+  // would stop being a prefix of the merged newest-first order.
+  const logs = dirs.flatMap((d) => d.files.map((file) => ({ d, file })));
+  const tails = await chunked(logs, ({ d, file }) => claudeTail(d.dir, file, d.index));
+  const window = newestPerSession(
+    tails.filter((t): t is ClaudeTail => t !== null && belongsToProject(t, projectPath)),
+  )
     .sort(byUpdatedAtThenSessionId)
     .slice(0, cap);
 
@@ -419,7 +617,7 @@ async function loadCodexThreadNames(): Promise<Map<string, string>> {
  *  one epoch unit, which is what Codex writes; `epochToISO`'s seconds-or-ms
  *  guard is for reading a value, not for ordering a mixed table. */
 async function codexList(projectPath: string, cap: number): Promise<HistorySession[]> {
-  const rows = codexThreadWindow(projectPath.replace(/\/+$/, ""), cap);
+  const rows = codexThreadWindow(normalizeProjectPath(projectPath), cap);
   if (rows.length === 0) return [];
 
   const threadNames = await loadCodexThreadNames();

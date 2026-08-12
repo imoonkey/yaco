@@ -183,12 +183,26 @@ accepted with its reason.
   traversal, cutover 1 discharged it, and the empty list stays as the shape of
   the check: a new synchronous traversal in an exported closure fails the audit.
   -> See: [exports.md](exports.md#the-tracked-debt-and-how-it-was-paid)
+- **A log whose last record exceeds the tail is ordered by its file mtime, and
+  that can cost it the window.** `updatedAt` is the cap key, so the fallback does
+  not merely mislabel such a row — it moves it, and a row moved below the cap is
+  one the window never sees. It is *not* fixable by reading further: records on
+  the reference home reach 1.3 MB and 48 exceed 512 KB, so no bounded read
+  guarantees a complete last record, and a byte match has no sound anchor (above).
+  Two things keep it a limit rather than a defect: it never fires on the
+  reference home — 0 of 1 055 logs have a tail without a parseable record — and
+  for an append-only log the mtime is a fair proxy for its last write. What it
+  needs to bite is a log with a huge final record *and* an mtime that disagrees
+  with its contents, which means one restored or copied without its times.
+  -> Task `history-oversized-record-order`.
 - **The history read is capped, not cheap.** Its cap is `limit + 1` rows per
   provider, so a project with more sessions than the window pays a two-phase
   Claude read — `stat` and a tail for *every* log — before the window is chosen.
   What the cap bounds is the expensive half: the head reads and the Codex rollout
-  tails, 587 down to 201 on the reference home. Nothing bounds the number of logs
-  a project directory can hold. -> See: [above](#5--history-tab--readprojecthistory)
+  tails, 867 down to 201 on the reference home. Nothing bounds the number of logs
+  a project's directories hold, and since the read covers the project's whole
+  subtree that is now every worktree it has ever had, live or deleted.
+  -> See: [above](#a-project-is-a-subtree)
 
 ## What still spawns
 
@@ -215,11 +229,19 @@ row a provider holds read before the window is applied. The reader that ships
 caps each provider at the window and reads in chunked instalments, and the
 harness measures it against the one it replaced:
 
-| Route (real provider home: 11.1 MB `state_5.sqlite`, 2 301 Codex threads, 81 Claude logs) | p95 starvation | wall p50 |
+| Route (real provider home: 11.2 MB `state_5.sqlite`, 2 322 Codex threads, 115 Claude logs across 37 directories) | p95 starvation | wall p50 |
 |---|---:|---:|
-| a child that prints an empty envelope — the spawn alone | 27.9 ms | 71 ms |
-| subprocess — the retired route | 26.8 ms | 206 ms |
-| **the shipped reader called in process** | **12.4 ms** | **119 ms** |
+| a child that prints an empty envelope — the spawn alone | 28.8 ms | 76 ms |
+| subprocess — the retired route | 28.2 ms | 272 ms |
+| **the shipped reader called in process** | **23.1 ms** | **182 ms** |
+
+Those are the figures after the read was widened from one cwd to the project's
+whole subtree (below); the cutover measured 12.4 ms against 26.8 ms on 81 logs
+and one directory. **The bound is the comparison, not the millisecond**, and the
+comparison is what the widening had to preserve: two runs of the same three
+routes on the same home put in-process at 18.1 ms against 30.5 and at 23.1
+against 28.2, so the margin moves with the machine while the ordering does not.
+It is re-run on the real home whenever the scan's shape changes.
 
 **Which run a figure comes from is part of the figure**, and getting that wrong
 was worth ~80 ms here. A forked route inherits the parent process's native
@@ -235,7 +257,10 @@ The control is `cli/test/bench/history-retired-control.ts`, the previous module
 checked in verbatim, and its job is separation rather than a bound: run beside
 the shipped reader it is **over** the bound on all three fixtures (64.5 · 66.7 ·
 345.1 ms) where the shipped reader is within (11.4 · 13.9 · 31.7 ms). That
-separation is what makes the table above mean anything.
+separation is what makes the table above mean anything. Since the subtree
+widening it is no longer like-for-like — the control still reads the single
+directory it was written against while the shipped reader reads the project's
+whole subtree — so it now reads as a *lower* bound on the gap.
 
 Two decisions the benchmark could not answer:
 
@@ -260,6 +285,71 @@ Codex thread-name index, sidechain filtering and live tagging. Three parsers
 were made to scan backward and stop at the first hit, which is why the restored
 work is affordable — the last match found scanning backward is the last match,
 so a 64 KB tail costs a `JSON.parse` rather than a scan.
+
+#### A project is a subtree
+
+A session belongs to a project when its cwd is the project path **or a
+descendant of it**. That is not a new rule — it is the one the live session list
+has always applied (`listByPath`'s prefix match, `resolveProjectForPath` /
+`isPathDescendantOrEqual`). History keyed on an exact cwd instead, so an agent
+working in `<project>/.worktrees/<slug>` — every `/orchestrate` worker and
+reviewer — was listed while it ran and vanished the moment it was only history.
+The two halves of one question answered with two scoping rules; history was the
+odd one out.
+
+Each provider widens in the terms its own storage offers:
+
+| | how the subtree is found | what it costs on the reference home |
+|---|---|---|
+| Claude | one directory per cwd, so candidates are found by encoded-name prefix in `~/.claude/projects` and every log is then **attributed by the `cwd` it records** | 1 → 37 directories, 76 → 115 tail reads, plus one `readdir` of the root |
+| Codex | the predicate goes into SQL, as `substr(cwd, 1, length(?)) = ?` against the literal `<cwd>/` | 588 → 867 rows matched, 3.0 → 8.6–9.1 ms p50 |
+
+Three things the widening had to get right:
+
+- **The name decides nothing; it only narrows what has to be read.**
+  `encodeClaudeCwd` maps every non-alphanumeric to `-` and has no inverse, so
+  the sibling project `<project>-backups` shares the prefix with
+  `<project>/.worktrees/x` — and two distinct cwds can collide onto *one*
+  directory, which is why attribution is per log and never per directory: one
+  log deciding for its neighbours would admit and drop history according to
+  `readdir` order. Nor can the filesystem answer: a worktree's directory is
+  deleted when it merges, long before its history stops mattering — which is the
+  very history this scan exists to find. The cwd comes out of the tail slice the
+  log is read for anyway, so exact attribution costs no extra read.
+  A log that records no cwd in those bytes belongs to **nothing** — there is no
+  directory to fall back to, because the project's own encoded name is the same
+  lossy encoding as any other and `/repo:demo` files into `/repo/demo`'s
+  directory. What has to fit in the slice is the *field*, not the record around
+  it: the cwd is matched in the raw bytes, taking the last match, because Claude
+  writes `cwd` after `message` and a single record can be larger than the whole
+  slice. On the reference home the furthest a last `cwd` sits from the end of a
+  file is 20 KB against a 64 KB window, and byte-matching agrees with a
+  whole-file parse on all 1 053 logs.
+- **`cwd` is the only field read that way, and the timestamps say why.** What
+  makes a byte match sound is taking the **last** one, for a field nothing
+  content-bearing follows — after `cwd` the only keys are `sessionId`, `version`,
+  `gitBranch`, `slug` and `sessionKind`. A timestamp fails that on both sides:
+  `toolUseResult`, a tool's raw output and so arbitrary JSON, is serialized
+  *between* the record's timestamp and its cwd on 48 075 records of the
+  reference home, and `message` precedes the timestamp on all but 106 of 50 000
+  sampled records. No positional rule separates a record's own timestamp from
+  its content, so both timestamps stay record-parsed.
+- **A path is a subtree of itself and of nothing shorter.** The prefix every
+  descendant starts with is the project path plus exactly one separator; the
+  filesystem root already carries its own, and a second would match no absolute
+  path at all. Both providers derive it the same way, and `/` is a path
+  `addProject` accepts.
+- **The cap is taken once, over the union**, and the scan stays one fan-out at
+  `READ_CONCURRENCY` however many directories a project spans. A per-directory
+  cap would let one busy worktree crowd the project's own sessions out, and the
+  window would stop being a prefix of the merged newest-first order — the
+  property the whole cap argument rests on. The union also makes one row
+  reachable twice, since a thread resumed under a second cwd is logged under
+  both, so the tails are deduplicated newest-first with the path breaking a tie.
+
+The subtree is matched **literally**, not as a pattern: `%` and `_` are legal in
+a path and are wildcards in SQL `LIKE`, which also folds ASCII case where a POSIX
+path does not.
 
 -> See: [exports.md](exports.md#the-queries-rule-5-has-judged) for the judged
 query and its bound, and
