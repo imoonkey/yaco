@@ -87,9 +87,8 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
     // This replaces react-arborist's row click entirely (a plain click previews a
-    // file or expands a directory instead of activating), so the library's own
-    // Ctrl/Cmd and Shift selection branches have to be reproduced here and return
-    // before the preview/toggle path below.
+    // file or expands a directory instead of activating), so a modifier click has
+    // to select and return before reaching the preview/toggle path below.
     if (e.metaKey || e.ctrlKey) {
       if (node.isSelected) node.deselect()
       else node.selectMulti()
