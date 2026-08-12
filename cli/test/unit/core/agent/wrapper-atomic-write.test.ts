@@ -72,7 +72,14 @@ vi.mock("fs", async (importOriginal) => {
   const writeFileSync = ((path: unknown, data: unknown, opts?: unknown) => {
     if (isWrapperTemp(path)) {
       ctl.writeFlags.push((opts as { flag?: string } | undefined)?.flag);
-      if (ctl.failAt === "write") boom("write");
+      if (ctl.failAt === "write") {
+        // Leave a PARTIAL temp behind before throwing, the way a real ENOSPC
+        // does: the exclusive create succeeds, then the write dies with the
+        // file already on disk. Throwing before touching the filesystem would
+        // make the cleanup these tests claim to pin unnecessary.
+        (fs.writeFileSync as (...a: unknown[]) => void)(path, String(data).slice(0, 32), opts);
+        boom("write");
+      }
     }
     return (fs.writeFileSync as (...a: unknown[]) => void)(path, data, opts);
   }) as typeof fs.writeFileSync;

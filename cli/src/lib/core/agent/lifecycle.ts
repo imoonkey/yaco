@@ -87,10 +87,11 @@ export function readAgentWrapperScript(): string {
  *  directory entry only: the old inode stays intact for the shells still on it,
  *  and every session started afterwards opens the new one.
  *
- *  The content check above is what keeps this rare: it returns early whenever the
- *  wrapper did NOT change, so only a real upgrade is ever exposed. An upgrade
- *  that happens to keep the file the same length is exposed too — the offsets
- *  hold but the bytes at them do not — it just fails less spectacularly.
+ *  The content check above is what kept this rare rather than constant: it
+ *  returns early whenever the wrapper did NOT change, so only a real upgrade was
+ *  ever exposed. How badly depends on the edit — what the parked shell reads at
+ *  its offset afterwards is whatever the new file has there — which is why the
+ *  rename is unconditional rather than something the writer reasons about.
  *
  *  Four details the rename depends on. The temp is a *sibling*, because rename()
  *  fails EXDEV across filesystems and $TMPDIR is routinely a different one. It
