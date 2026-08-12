@@ -1,10 +1,10 @@
-# Path Resolvers (`@yaco/cli/core/paths`)
+# Path Resolvers (`yaco-cli/core/paths`)
 
 The path resolvers under `cli/src/lib/core/paths/` are the single source of
 truth for **where YACO state lives** — both the runtime root
 (`${YACO_HOME:-~/.yaco}`) and the repo-relative paths declared in
 `<repo>/yaco.toml [paths]`. Everything that needs a canonical YACO path
-imports from this module (or from `@yaco/cli/core/paths` over the workspace
+imports from this module (or from `yaco-cli/core/paths` over the workspace
 exports map).
 
 ## Files
@@ -15,7 +15,7 @@ exports map).
 | `yaco-paths.ts` | `readYacoProjectPaths(repoRoot) → {plan, tasks, active, archive, backlog, worktrees}`, `DEFAULT_PROJECT_PATHS` | Reads `<repoRoot>/yaco.toml [paths]`; merges over defaults |
 | `project-registry.ts` | `readProjects`, `writeProjects`, `addProject`, `removeProject`, `projectsRegistryPath`, `ensureYacoHome` | Sync I/O + validated add/remove behavior for `${YACO_HOME}/projects.json` |
 | `toml.ts` | `parseScopedToml`, `ParsedTomlSections` | Minimal handwritten TOML reader scoped to `[section]` + `key = "string"` pairs; re-exported from the barrel (the app server reads `[colocated] repos` through it). A parse failure raises `CliError(ENV, "yaco.toml:<line>: …")` with no `details` — the class it used to throw was a second error type on an exported surface, and the message is unchanged. -> See: [exports.md](exports.md) |
-| `index.ts` | Re-exports the public surface | Always import through this barrel. Published as `@yaco/cli/core/paths`; the registry writers are exported on purpose — the app server is the CLI's peer on `projects.json`, not a reader of it. -> See: [exports.md](exports.md) |
+| `index.ts` | Re-exports the public surface | Always import through this barrel. Published as `yaco-cli/core/paths`; the registry writers are exported on purpose — the app server is the CLI's peer on `projects.json`, not a reader of it. -> See: [exports.md](exports.md) |
 
 ## Resolution rules
 
@@ -87,7 +87,7 @@ End-to-end shape is locked in by `test/unit/core/paths/paths-cli.test.ts`.
 - `app/server/src/lib/channels/enabled.ts` — `channelsDir`
 - `app/server/src/lib/colocatedRepos.ts` — `parseScopedToml`
 
-New consumers should always go through `@yaco/cli/core/paths` rather than
+New consumers should always go through `yaco-cli/core/paths` rather than
 duplicating the helpers.
 
 ## Related

@@ -1,5 +1,5 @@
 {
-  "name": "@yaco/codex-transcribe",
+  "name": "yaco-codex-transcribe",
   "version": "0.0.0",
   "type": "module",
   "private": true,

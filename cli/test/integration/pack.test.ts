@@ -4,7 +4,7 @@
  *  in, where a wrong path can still resolve by accident — a missing packaged
  *  asset is a sibling directory away, and `src/` is right there. This file is
  *  the one that removes the checkout: `npm pack` produces exactly the bytes an
- *  `npm install -g @yaco/cli` delivers, and every assertion below is made
+ *  `npm install -g yaco-cli` delivers, and every assertion below is made
  *  against the installed copy, from a working directory with no yaco above it.
  *
  *  It is a gate step (`npm run test:pack`), not just a test, because the failure
@@ -95,7 +95,7 @@ beforeAll(() => {
 
   const packed = spawnSync(
     "npm",
-    ["pack", "--workspace", "@yaco/cli", "--pack-destination", join(sandbox, "stage")],
+    ["pack", "--workspace", "yaco-cli", "--pack-destination", join(sandbox, "stage")],
     { cwd: REPO_ROOT, encoding: "utf-8", timeout: 300_000 },
   );
   if (packed.status !== 0) throw new Error(`npm pack failed:\n${packed.stderr}`);
@@ -117,7 +117,7 @@ beforeAll(() => {
   if (installed.status !== 0) {
     throw new Error(`npm install of the tarball failed:\n${installed.stderr}`);
   }
-  installedPackage = join(prefix, "lib", "node_modules", "@yaco", "cli");
+  installedPackage = join(prefix, "lib", "node_modules", "yaco-cli");
   homeAfterInstall = readdirSync(home);
 }, 600_000);
 
@@ -194,7 +194,7 @@ describe("an installed tarball, with no checkout above it", () => {
     // `node_modules` as cwd so bare-specifier resolution finds the installed
     // package, and no `--conditions`: exactly what a published consumer does.
     const program = EXPORT_SPECIFIERS.map(
-      (s) => `if (Object.keys(await import(${JSON.stringify(`@yaco/cli${s.slice(1)}`)})).length === 0) throw new Error(${JSON.stringify(s)});`,
+      (s) => `if (Object.keys(await import(${JSON.stringify(`yaco-cli${s.slice(1)}`)})).length === 0) throw new Error(${JSON.stringify(s)});`,
     ).join("\n");
     const r = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
       cwd: join(prefix, "lib", "node_modules"),
@@ -234,7 +234,7 @@ describe("an installed tarball, with no checkout above it", () => {
   });
 
   it("configures the machine and exits 0 with no checkout to configure it from", () => {
-    // The install a user gets from `npm i -g @yaco/cli` alone: doctor included,
+    // The install a user gets from `npm i -g yaco-cli` alone: doctor included,
     // because install throws on any failing check and that is what a package
     // user's first command would hit. What is skipped here is skipped because
     // there is nothing to do, not because it was turned off.

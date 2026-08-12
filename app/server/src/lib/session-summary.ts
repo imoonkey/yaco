@@ -1,5 +1,5 @@
-import { readSessionSummaries } from '@yaco/cli/core/agent/summaries'
-import { isErr } from '@yaco/cli/core/result'
+import { readSessionSummaries } from 'yaco-cli/core/agent/summaries'
+import { isErr } from 'yaco-cli/core/result'
 import type { AgentSession } from './agent'
 import { PENDING_SESSION_ID } from './constants'
 
@@ -29,7 +29,7 @@ export function invalidateSummaryCache(): void {
 
 /** Resolve display summaries for a session list, returning a `handle -> summary`
  *  map. Cache hits are served directly; the misses are read in process through
- *  `@yaco/cli/core/agent/summaries` — the same function `yaco agent summaries`
+ *  `yaco-cli/core/agent/summaries` — the same function `yaco agent summaries`
  *  runs, given exactly the sessions this server is missing rather than a project
  *  path it would have to re-enumerate. */
 export async function resolveSessionSummaries(

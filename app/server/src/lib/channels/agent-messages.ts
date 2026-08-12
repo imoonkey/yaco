@@ -3,7 +3,7 @@
  *  `/last n` used to cost `1 + n` CLI subprocesses — one `yaco agent messages
  *  <h> --role assistant --type text --json` sweep for the indices, then one
  *  `--index <i>` per kept row, each child re-reading and re-parsing the same
- *  provider log. It is now one read through `@yaco/cli/core/agent/messages`,
+ *  provider log. It is now one read through `yaco-cli/core/agent/messages`,
  *  which is the implementation `yaco agent messages` itself runs, so the
  *  filtering and index semantics are not a second copy.
  *
@@ -17,9 +17,9 @@
 
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readMessageRows, validateName } from '@yaco/cli/core/agent/messages'
-import { isErr } from '@yaco/cli/core/result'
-import { CliError } from '@yaco/cli/core/errors'
+import { readMessageRows, validateName } from 'yaco-cli/core/agent/messages'
+import { isErr } from 'yaco-cli/core/result'
+import { CliError } from 'yaco-cli/core/errors'
 import { AGENT_SESSIONS_DIR } from '../constants'
 import { validateSessionName } from '../session-names'
 import type { AgentSessionState } from '../agent'

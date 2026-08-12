@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { join } from 'node:path'
-import { channelScopeDir } from '@yaco/cli/core/paths'
+import { channelScopeDir } from 'yaco-cli/core/paths'
 
 const LOAD_DELAY_MS = 300
 const DESTROY_DELAY_MS = 300

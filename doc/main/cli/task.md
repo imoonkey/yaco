@@ -1,4 +1,4 @@
-# Task Subcommand (`@yaco/cli/core/task`)
+# Task Subcommand (`yaco-cli/core/task`)
 
 > Last updated: 2026-08-11 (milestone-derived-state: a milestone's state is derived from its children on load; prior task-read-cutover, read-export-gate, oss-doc-cleanup)
 
@@ -12,7 +12,7 @@ treated as a single-file task store.
 
 The pure library lives under `cli/src/lib/core/task/`. The **read half** —
 model, graph analysis, the composed `readTaskList`, and the (asynchronous) store
-loads — is published over the workspace exports map as `@yaco/cli/core/task`; the writers, the lock, `archive.ts` and `link.ts` are
+loads — is published over the workspace exports map as `yaco-cli/core/task`; the writers, the lock, `archive.ts` and `link.ts` are
 not, because task mutation is one authority (lock + repository gate + write) and
 it stays behind the CLI subprocess boundary. CLI handlers in
 `cli/src/commands/task/` import those modules directly and wrap the library with
@@ -31,7 +31,7 @@ locking, payload parsing, and the `--json` envelope.
 | `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
 | `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
-| `index.ts` | Re-exports a selected **read** surface, not whole modules: all of `graph.ts`; `model.ts` minus `AGENT_HANDLE_RE`; `validation.ts` minus `isObject`/`Json`; `store.ts` minus `saveTasks`/`saveTaskStore`. `test/unit/export-audit.test.ts` pins the exact list | The published `@yaco/cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
+| `index.ts` | Re-exports a selected **read** surface, not whole modules: all of `graph.ts`; `model.ts` minus `AGENT_HANDLE_RE`; `validation.ts` minus `isObject`/`Json`; `store.ts` minus `saveTasks`/`saveTaskStore`. `test/unit/export-audit.test.ts` pins the exact list | The published `yaco-cli/core/task`. Reads go through this barrel; a writer, the lock or a link mutation is imported from its own module by `cli/src/commands/task/*` — the export audit fails if one re-enters the barrel. |
 
 ## Reading
 
@@ -296,7 +296,7 @@ filtered map.
 ## Path resolution (the bug we fixed)
 
 Every subcommand resolves the task store via `readYacoProjectPaths(repoRoot)`
-from `@yaco/cli/core/paths`. This honors `<repoRoot>/yaco.toml
+from `yaco-cli/core/paths`. This honors `<repoRoot>/yaco.toml
 [paths].tasks`. The legacy Python script hardcoded `plan/tasks.json`; the
 current default is the recursive directory store `plan/tasks`.
 
@@ -367,4 +367,4 @@ the canonical model.
 
 - `agent-config/global/skills/yaco-task/SKILL.md` now drives the `yaco task ...` surface directly (the legacy `update-tasks.py` was deleted in yc-cleanup-legacy).
 - `agent-config/global/skills/orchestrate/SKILL.md` links a worker to its task with `yaco task attach <id> w-<id>` after dispatch; it no longer writes the legacy `agent` field through `yaco task set`.
-- Any other caller (`app/server`, etc.) should use the TS surface, either through the CLI envelope or the `@yaco/cli/core/task` export. The web UI only displays links in v1, so no app-server attach/detach route exists.
+- Any other caller (`app/server`, etc.) should use the TS surface, either through the CLI envelope or the `yaco-cli/core/task` export. The web UI only displays links in v1, so no app-server attach/detach route exists.

@@ -61,7 +61,7 @@ const buildCompress = (): PluginOption => {
 }
 
 export default defineConfig({
-  // The built UI ships inside `@yaco/app` and the server resolves it from that
+  // The built UI ships inside `yaco-app` and the server resolves it from that
   // package's root (`app/server/src/package-root.ts`), so vite writes it there
   // directly. Building into `app/ui/dist` and copying at pack time would leave
   // `build:watch` — a long-running service — writing to a directory nothing

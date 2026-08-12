@@ -167,7 +167,7 @@ function checkYacoHome(): CheckResult {
 /** `registry` (stable check name): ${YACO_HOME}/projects.json is readable.
  *
  *  An absent file is a legitimate zero state — `yaco install` writes the "yaco"
- *  entry only when it ran against a checkout, and an `npm i -g @yaco/cli` user
+ *  entry only when it ran against a checkout, and an `npm i -g yaco-cli` user
  *  registers their own repos with `yaco project add` when they have one. So it
  *  skips, and a file that is there but unreadable still fails.
  *
@@ -203,7 +203,7 @@ function checkSkillsLink(): CheckResult {
   let manifestIsDir = false;
   try { manifestIsDir = statSync(skillsDir).isDirectory(); } catch { /* missing */ }
   if (!manifestIsDir) {
-    return fail(name, `${skillsDir} missing or not a directory — this @yaco/cli installation is incomplete (reinstall it)`);
+    return fail(name, `${skillsDir} missing or not a directory — this yaco-cli installation is incomplete (reinstall it)`);
   }
   let st;
   try {

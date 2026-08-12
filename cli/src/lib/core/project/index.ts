@@ -1,4 +1,4 @@
-/** Barrel for the `@yaco/cli/core/project` surface (not currently published
+/** Barrel for the `yaco-cli/core/project` surface (not currently published
  *  through `package.json#exports`, but kept consistent with `core/worktree`
  *  so the file map mirrors). */
 

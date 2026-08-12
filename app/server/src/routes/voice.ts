@@ -5,7 +5,7 @@ import {
   CodexTranscribeError,
   inspectCodexTranscribe,
   transcribeCodex,
-} from '@yaco/codex-transcribe'
+} from 'yaco-codex-transcribe'
 import {
   VOICE_MAX_UPLOAD_BYTES,
   VOICE_MAX_TRANSCRIPT_CHARS,

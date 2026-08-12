@@ -1,4 +1,4 @@
-/** Public surface for @yaco/cli/core/task — the model, pure graph analysis, the
+/** Public surface for yaco-cli/core/task — the model, pure graph analysis, the
  *  composed task-list read, and the read half of the task store.
  *
  *  `readTaskList` is what an in-process consumer wants: an explicit repo root

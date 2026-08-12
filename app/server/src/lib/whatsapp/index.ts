@@ -7,7 +7,7 @@ import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
 import { loadWweb, type WwebModule } from './load'
-import { channelScopeDir } from '@yaco/cli/core/paths'
+import { channelScopeDir } from 'yaco-cli/core/paths'
 
 const SESSION_DIR = join(channelScopeDir('whatsapp'), 'session')
 // LocalAuth nests another "session" directory inside SESSION_DIR for the

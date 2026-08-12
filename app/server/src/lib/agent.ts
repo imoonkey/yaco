@@ -9,7 +9,7 @@ import {
   resolveProjectForPath,
   toSessionRow,
   type AgentSessionRow,
-} from '@yaco/cli/core/agent'
+} from 'yaco-cli/core/agent'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
@@ -22,7 +22,7 @@ import {
 } from './constants'
 
 /** Re-exported for route code (sessions.ts) that filters by project subtree. */
-export { isPathDescendantOrEqual } from '@yaco/cli/core/agent'
+export { isPathDescendantOrEqual } from 'yaco-cli/core/agent'
 
 /** Why a session is `blocked` (waiting on the user). Present iff status is
  *  `blocked`; written together with status by the CLI projection. */
@@ -112,7 +112,7 @@ async function readStateFiles(): Promise<AgentSessionState[]> {
 
 /** Read sessions from `<AGENT_SESSIONS_DIR>/*.json` state files
  *  (primary source of truth; see constants.ts AGENT_SESSIONS_DIR). Projection
- *  uses the shared @yaco/cli/core/agent helper so app hot reads and the CLI
+ *  uses the shared yaco-cli/core/agent helper so app hot reads and the CLI
  *  agree on the row shape — without pulling reconcile into the hot path. */
 export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<AgentSession[]> {
   const sessions: AgentSession[] = []

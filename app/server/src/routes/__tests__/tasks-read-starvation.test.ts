@@ -5,8 +5,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 
-import { readTaskList } from '@yaco/cli/core/task'
-import { isErr } from '@yaco/cli/core/result'
+import { readTaskList } from 'yaco-cli/core/task'
+import { isErr } from 'yaco-cli/core/result'
 import { buildChildProcessEnv } from '../../lib/ssh-auth'
 
 /** The event-loop gate for the task-GET read cutover, and the harness that

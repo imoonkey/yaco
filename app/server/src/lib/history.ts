@@ -1,5 +1,5 @@
-import { readProjectHistory } from '@yaco/cli/core/agent'
-import { isErr } from '@yaco/cli/core/result'
+import { readProjectHistory } from 'yaco-cli/core/agent'
+import { isErr } from 'yaco-cli/core/result'
 import type { AgentSession } from './agent'
 import { PENDING_SESSION_ID } from './constants'
 
@@ -17,7 +17,7 @@ export interface HistorySession {
   liveSessionName: string | null
 }
 
-/** Get merged project session history from `@yaco/cli`'s `readProjectHistory`,
+/** Get merged project session history from `yaco-cli`'s `readProjectHistory`,
  *  sorted and capped by the CLI. It replaces the `yaco agent history --json`
  *  spawn this route used to pay; the CLI command is now an argv-and-render
  *  adapter over the same function, so there is one implementation rather than

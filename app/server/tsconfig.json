@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // `@yaco/cli` exports TypeScript source under a `development` condition and
+    // `yaco-cli` exports TypeScript source under a `development` condition and
     // emitted JS under `default`. The server runs the source through tsx, so a
     // CLI edit needs no rebuild — and its typecheck has to resolve the same
     // files the runtime does, or it would type-check a build that may not exist.

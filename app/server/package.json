@@ -1,5 +1,5 @@
 {
-  "name": "@yaco/app",
+  "name": "yaco-app",
   "version": "0.1.0",
   "type": "module",
   "description": "YACO web app — the Hono server for agent sessions, terminals and task graphs, and the built React UI it serves.",
@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "@yaco/cli": "^0.1.0",
+    "yaco-cli": "^0.1.0",
     "chokidar": "^3.6.0",
     "dotenv": "^17.3.1",
     "groq-sdk": "^1.1.1",
@@ -57,8 +57,5 @@
     "esbuild": "^0.28.0",
     "tsx": "^4.19.0",
     "vitest": "^4.1.1"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

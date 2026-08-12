@@ -13,7 +13,7 @@
  *  ships — `src/package-root.ts` when the server runs from source under `tsx`,
  *  and inlined into `dist/yaco-app.mjs` when it runs from an install — so `../`
  *  is the package root in both, and callers name assets instead of counting
- *  directories. Same construction as `@yaco/cli`'s `src/package-root.ts`: the
+ *  directories. Same construction as `yaco-cli`'s `src/package-root.ts`: the
  *  mechanism is shared, the constant cannot be, because each package's root is
  *  its own.
  */

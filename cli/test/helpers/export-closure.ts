@@ -148,14 +148,14 @@ function runtimeSpecifiers(file: ts.SourceFile): string[] {
   return out;
 }
 
-/** `@yaco/cli/core/task` -> the source file the audit knows that name by.
+/** `yaco-cli/core/task` -> the source file the audit knows that name by.
  *
  *  A self-import resolves through the package map to `dist/**.d.ts`, which is
  *  outside the source root and would otherwise be dropped as if it were a
  *  third-party leaf — even though shipped Node loads the corresponding JS. */
 function resolveSelfImport(spec: string): string | null {
-  if (!spec.startsWith("@yaco/cli/")) return null;
-  const subpath = `.${spec.slice("@yaco/cli".length)}`;
+  if (!spec.startsWith("yaco-cli/")) return null;
+  const subpath = `.${spec.slice("yaco-cli".length)}`;
   const entry = packageExports().find((e) => e.subpath === subpath);
   if (!entry) throw new Error(`self-import of an undeclared subpath: ${spec}`);
   return resolve(CLI_ROOT, entry.source);

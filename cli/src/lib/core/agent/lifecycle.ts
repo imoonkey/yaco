@@ -61,7 +61,7 @@ export function readAgentWrapperScript(): string {
   if (!existsSync(path)) {
     throw new CliError(
       ErrCode.INTERNAL,
-      `cannot locate ${path} — the @yaco/cli install is incomplete; reinstall it`,
+      `cannot locate ${path} — the yaco-cli install is incomplete; reinstall it`,
     );
   }
   return readFileSync(path, "utf-8");

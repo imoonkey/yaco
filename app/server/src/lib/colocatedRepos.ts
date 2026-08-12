@@ -26,7 +26,7 @@ import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { readdir, readFile, realpath, stat } from 'fs/promises'
 import { join } from 'path'
-import { parseScopedToml } from '@yaco/cli/core/paths'
+import { parseScopedToml } from 'yaco-cli/core/paths'
 import { getProjectGitignore } from './gitignore'
 import { GIT_MAX_BUFFER } from './constants'
 

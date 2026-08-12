@@ -68,7 +68,7 @@ async function expectError(
   throw new Error(`Expected CodexTranscribeError with code ${code}`)
 }
 
-describe.sequential('@yaco/codex-transcribe', () => {
+describe.sequential('yaco-codex-transcribe', () => {
   let root: string
   let codexHome: string
   let defaultHome: string

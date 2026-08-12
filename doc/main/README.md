@@ -6,7 +6,7 @@ Root navigation hub for the YACO monorepo.
 
 1. [architecture.md](architecture.md) — monorepo component ownership and cross-boundary contracts.
 2. [app/README.md](app/README.md) — Workflow web app/server map.
-3. [cli/README.md](cli/README.md) — `@yaco/cli` dispatcher and agent runtime map.
+3. [cli/README.md](cli/README.md) — `yaco-cli` dispatcher and agent runtime map.
 4. [agent-config/README.md](agent-config/README.md) — global agent config and skill map.
 5. [../dev/README.md](../dev/README.md) — development workflow map.
 

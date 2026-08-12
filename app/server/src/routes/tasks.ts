@@ -1,6 +1,6 @@
 /** Task routes.
  *
- *  The GET is in process: `@yaco/cli/core/task#readTaskList` is the same
+ *  The GET is in process: `yaco-cli/core/task#readTaskList` is the same
  *  function `yaco task list --workset all --json` renders, so this route reads
  *  the graph without paying a ~100 ms spawn per request.
  *
@@ -13,8 +13,8 @@
 
 import { execFile } from 'child_process'
 import { Hono } from 'hono'
-import { readTaskList } from '@yaco/cli/core/task'
-import { isErr } from '@yaco/cli/core/result'
+import { readTaskList } from 'yaco-cli/core/task'
+import { isErr } from 'yaco-cli/core/result'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
 import { emitRefresh } from '../lib/notify'

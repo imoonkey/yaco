@@ -5,7 +5,7 @@ let mockTranscriptionCreate: ReturnType<typeof vi.fn>
 const mockInspectCodexTranscribe = vi.fn()
 const mockTranscribeCodex = vi.fn()
 
-vi.mock('@yaco/codex-transcribe', () => {
+vi.mock('yaco-codex-transcribe', () => {
   class CodexTranscribeError extends Error {
     readonly code: string
     readonly retryAfter?: string
@@ -80,7 +80,7 @@ vi.mock('../../lib/tts', () => ({
 
 // Import after mocks are set up
 import Groq from 'groq-sdk'
-import { CodexTranscribeError } from '@yaco/codex-transcribe'
+import { CodexTranscribeError } from 'yaco-codex-transcribe'
 import { voiceRoutes } from '../voice'
 import { resolveFormatterModels } from '../../lib/voice-formatter'
 import { VOICE_MAX_TRANSCRIPT_CHARS, VOICE_MAX_FILEPATH_CHARS, VOICE_MAX_SPEAK_CHARS } from '../../lib/constants'
@@ -584,7 +584,7 @@ describe('POST /format', () => {
     'app/server/src/lib/voice-prompts.ts',
     '.env',
     'a-b/c_d.test.tsx',
-    '@yaco/cli/core/paths.ts',
+    'yaco-cli/core/paths.ts',
   ])('accepts normal repo-relative path %s', async (filePath) => {
     mockFormatWithFallback.mockResolvedValue({
       text: 'done',

@@ -1,4 +1,4 @@
-/** Public surface for @yaco/cli/core/agent — pure helpers plus the one project
+/** Public surface for yaco-cli/core/agent — pure helpers plus the one project
  *  history read.
  *
  *  The CLI-only liveness pipeline (the `resolveSession` pure read and

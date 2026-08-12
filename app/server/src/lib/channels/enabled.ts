@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { channelsDir } from '@yaco/cli/core/paths'
+import { channelsDir } from 'yaco-cli/core/paths'
 
 export const CHANNEL_IDS = ['wechat', 'whatsapp'] as const
 export type ChannelId = typeof CHANNEL_IDS[number]

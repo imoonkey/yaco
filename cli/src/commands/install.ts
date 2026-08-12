@@ -1,7 +1,7 @@
 /** `yaco install` — canonical, idempotent installer.
  *
  *  Two-stage bootstrap per design:
- *    1. the package lands on the machine — `npm install -g @yaco/cli`, or
+ *    1. the package lands on the machine — `npm install -g yaco-cli`, or
  *       `tools/install.sh`, which packs that same tarball, installs it into
  *       $BIN_DIR's prefix and `exec`s `"$BIN_DIR/yaco" install "$@"`. Landing is
  *       inert: it writes files and the `yaco` executable, nothing else.
@@ -284,7 +284,7 @@ function realpathOr(p: string): string {
  *  would answer yes for any repo that happens to carry an `agent-config/` tree —
  *  someone's dotfiles, another agent-configuration project — and register it
  *  under a reserved name it does not own. */
-const CLI_PACKAGE_NAME = "@yaco/cli";
+const CLI_PACKAGE_NAME = "yaco-cli";
 function isYacoCheckout(repoRoot: string): boolean {
   try {
     const manifest = readFileSync(join(repoRoot, "cli", "package.json"), "utf-8");
@@ -357,7 +357,7 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
  *  manifest). ~/.agents/skills stays a whole-directory symlink to it.
  *
  *  The manifest is a package asset, located the same way every other one is, so
- *  `npm i -g @yaco/cli` installs the skills too and no checkout is involved.
+ *  `npm i -g yaco-cli` installs the skills too and no checkout is involved.
  *  Resolving it from `repoRoot` instead is what made the CLI alone deliver a
  *  third of the product: the skills are what the commands exist to drive.
  *
@@ -375,7 +375,7 @@ function installGlobalLinks(force: boolean, actions: string[], dryRun: boolean):
   if (!isDirectory(skillsDir)) {
     throw new CliError(
       ErrCode.ENV,
-      `missing ${skillsDir} — this @yaco/cli installation is incomplete (reinstall it)`,
+      `missing ${skillsDir} — this yaco-cli installation is incomplete (reinstall it)`,
     );
   }
   const claudeSkills = join(home, ".claude", "skills");
@@ -581,7 +581,7 @@ export async function runInstall(opts: InstallOptions): Promise<InstallReport> {
   // names the prefix it just installed into.
   //
   // The default (`~/.local/bin`) is a guess, and exporting a guess here made it
-  // outrank a real installation: `npm i -g @yaco/cli` into an nvm prefix,
+  // outrank a real installation: `npm i -g yaco-cli` into an nvm prefix,
   // followed by `yaco install`, wrote every hook command back to a stale
   // `~/.local/bin/yaco` left over from an older bootstrap. Left unset, the
   // resolver falls through to the executable actually on PATH — the one the

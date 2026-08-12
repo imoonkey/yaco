@@ -11,9 +11,9 @@
  */
 
 import { resolve } from 'path'
-import { readYacoProjectPaths } from '@yaco/cli/core/paths'
-import { loadTaskStore } from '@yaco/cli/core/task'
-import { clampNotice } from '@yaco/cli/core/agent'
+import { readYacoProjectPaths } from 'yaco-cli/core/paths'
+import { loadTaskStore } from 'yaco-cli/core/task'
+import { clampNotice } from 'yaco-cli/core/agent'
 import { loadProjects } from './projects'
 import { readAllSessionsFromStateFiles } from './agent'
 import { getPinnedSessions, getUnreadWatermarks, getDismissedActGenerations, removeDismissedActGenerations } from './ui-state'

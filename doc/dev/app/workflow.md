@@ -281,7 +281,7 @@ After a build, the backend can serve the built UI directly at `http://localhost:
 **The build output lives under `app/server`, not `app/ui`.** `build.outDir` is
 `../server/ui`, because the server resolves the UI from its own package root and
 that one path has to be right both in a checkout and inside the published
-`@yaco/app` -> See: [doc/main/app/packaging.md](../../main/app/packaging.md#the-package-root).
+`yaco-app` -> See: [doc/main/app/packaging.md](../../main/app/packaging.md#the-package-root).
 
 `ui/package.json`'s build script is `tsc -b && vite build`. Compression is a `closeBundle` plugin (`compress-dist` in `vite.config.ts`, implemented in `scripts/compress-dist.ts`) rather than a step chained after `vite build` — **a chained npm step never runs under `vite build --watch`**, which is how desktop keeps its served bundle current (see [Long-running services](#long-running-services-systemd--launchd--tailscale)). The plugin follows the **resolved** `outDir` rather than naming one, so the e2e build (`--outDir dist-e2e`) compresses the directory it just wrote instead of the one nobody is serving. It writes brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
 
@@ -317,11 +317,11 @@ cd app/ui && npm run lint                                # ESLint
 ```
 
 **In a worktree, build the CLI before `npm test`.** A few server tests spawn a plain
-`node --import tsx` child, which resolves `@yaco/cli/*` to `cli/dist/` rather than the
+`node --import tsx` child, which resolves `yaco-cli/*` to `cli/dist/` rather than the
 source — unbuilt, that is `ERR_MODULE_NOT_FOUND`. `scripts/verify.sh` orders `cli build`
 ahead of `server test`; a bare `npm test` here does not.
 -> See: [dev/README.md](../README.md#worktrees-share-the-dependencies-never-the-workspace-links)
-for why a worktree resolves `@yaco/*` to its own checkout at all.
+for why a worktree resolves its workspace packages to its own checkout at all.
 
 E2E env knobs: `E2E_WORKERS=N` tunes parallelism (default 6; lower on a busy box);
 `E2E_SKIP_BUILD=1` reuses the existing `dist-e2e` instead of rebuilding (fast

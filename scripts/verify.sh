@@ -38,8 +38,8 @@ run_step "cli test"       cli        npm run test
 # yaco above it. Nothing above it can see a broken `files` allowlist or an
 # exports target that resolves only because `src/` happens to be next door.
 run_step "cli pack smoke" cli        npm run test:pack
-run_step "codex transcribe typecheck" . npm run typecheck --workspace @yaco/codex-transcribe
-run_step "codex transcribe test"      . npm test --workspace @yaco/codex-transcribe
+run_step "codex transcribe typecheck" . npm run typecheck --workspace yaco-codex-transcribe
+run_step "codex transcribe test"      . npm test --workspace yaco-codex-transcribe
 run_step "server test"    app/server npm test
 run_step "ui lint"        app/ui     npm run lint
 run_step "build"          .          npm run build

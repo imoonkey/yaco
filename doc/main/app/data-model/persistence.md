@@ -14,13 +14,13 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`@yaco/cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/attention-engine.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`yaco-cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/attention-engine.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
 ### `${YACO_HOME:-~/.yaco}/` layout
 
-All workflow-owned runtime state lives under the YACO runtime root. The root is resolved by `@yaco/cli/core/paths` (`getYacoHome()`): honors `process.env.YACO_HOME` verbatim when non-empty, otherwise defaults to `~/.yaco`. The yaco agent session-state directory is rooted here too at `${YACO_HOME:-~/.yaco}/sessions/`, resolved via `sessionsDir()` — exported from the same workspace package; the agent runtime (`cli/src/lib/core/agent/`) owns writes via per-event hooks, and workflow tracks the YACO default only. `YACO_AGENT_SESSIONS_DIR` is the agent-CLI-side override (test/escape hatch) and is NOT honored on the workflow read path.
+All workflow-owned runtime state lives under the YACO runtime root. The root is resolved by `yaco-cli/core/paths` (`getYacoHome()`): honors `process.env.YACO_HOME` verbatim when non-empty, otherwise defaults to `~/.yaco`. The yaco agent session-state directory is rooted here too at `${YACO_HOME:-~/.yaco}/sessions/`, resolved via `sessionsDir()` — exported from the same workspace package; the agent runtime (`cli/src/lib/core/agent/`) owns writes via per-event hooks, and workflow tracks the YACO default only. `YACO_AGENT_SESSIONS_DIR` is the agent-CLI-side override (test/escape hatch) and is NOT honored on the workflow read path.
 
 ```
 ${YACO_HOME:-~/.yaco}/
@@ -92,7 +92,7 @@ The `payload` carries projection metadata (`sessionName`/`taskId`/`agents`/
 content (the question / permission command / idle final message / task
 title). `notice` makes this log **bounded content retention**, not pure metadata:
 it is sanitized + clamped to ≤2000 chars at capture (`clampNotice`,
-`@yaco/cli/core/agent`) — it carries the (near-)full final message for the voice
+`yaco-cli/core/agent`) — it carries the (near-)full final message for the voice
 read-back — precisely because it becomes durable here. Because
 `appendEvent` is idempotent by id, the edge's notice is fixed at first append —
 the debounced session edge appends the fresh snapshot at fire time (it re-reads
@@ -108,7 +108,7 @@ Future emit sites (owned by `orchestrate`, which runs outside the server process
 
 - `dispatched`, `verified`, `verification_failed`, `human_review_requested` — to be appended by the `orchestrate` flow when it transitions task state, per design.md §Dispatch And Completion. Schema is in place; the writer module (`server/src/lib/eventsLog.ts#appendEvent`) is available for the orchestrate runner to call directly. Tracked separately from `yc-events-jsonl`.
 
-Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `projectEventsFile(projectId)` from `@yaco/cli/core/paths`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
+Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `projectEventsFile(projectId)` from `yaco-cli/core/paths`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
 
 **A malformed line is skipped, never fatal.** `readEvents` parses line by line and drops
 one that fails `JSON.parse`, so a single bad write cannot poison the stream — the events

@@ -6,7 +6,7 @@
  *  hoisted into a shared `node_modules` — so a path that only resolves inside a
  *  checkout, and a dependency the manifest never declared, both still work.
  *  This file removes the checkout: `npm pack` produces the bytes an
- *  `npm install -g @yaco/app` delivers, the install runs under its own HOME and
+ *  `npm install -g yaco-app` delivers, the install runs under its own HOME and
  *  prefix, and the server is started from a working directory with no yaco
  *  above it.
  *
@@ -77,8 +77,8 @@ beforeAll(async () => {
     'npm',
     [
       'pack',
-      '--workspace', '@yaco/cli',
-      '--workspace', '@yaco/app',
+      '--workspace', 'yaco-cli',
+      '--workspace', 'yaco-app',
       '--pack-destination', join(sandbox, 'stage'),
     ],
     { cwd: REPO_ROOT, encoding: 'utf-8', timeout: 900_000 },
@@ -96,7 +96,7 @@ beforeAll(async () => {
     .filter(Boolean)
     .map((p) => p.replace(/^package\//, ''))
 
-  // Both tarballs in one install: `@yaco/app` requires `@yaco/cli` by version
+  // Both tarballs in one install: `yaco-app` requires `yaco-cli` by version
   // range, and nothing has published it yet, so the co-installed tarball is
   // what has to satisfy that edge.
   const installed = spawnSync(
@@ -116,7 +116,7 @@ beforeAll(async () => {
   if (installed.status !== 0) {
     throw new Error(`npm install of the tarballs failed:\n${installed.stderr}`)
   }
-  installedApp = join(prefix, 'lib', 'node_modules', '@yaco', 'app')
+  installedApp = join(prefix, 'lib', 'node_modules', 'yaco-app')
   homeAfterInstall = readdirSync(home)
 
   const port = await freePort()
@@ -154,19 +154,19 @@ describe('the packed app', () => {
 
   it('depends on the published CLI at a shared version, not on a workspace', () => {
     expect(APP_MANIFEST.version).toBe(CLI_MANIFEST.version)
-    expect(APP_MANIFEST.dependencies['@yaco/cli']).toBe(`^${CLI_MANIFEST.version}`)
+    expect(APP_MANIFEST.dependencies['yaco-cli']).toBe(`^${CLI_MANIFEST.version}`)
     // Unpublished workspaces are inlined by the bundle, never required from a
     // consumer's registry — `npm install` would 404 on them.
     const required = Object.keys({
       ...APP_MANIFEST.dependencies,
       ...APP_MANIFEST.optionalDependencies,
     })
-    expect(required.filter((n) => n.startsWith('@yaco/') && n !== '@yaco/cli')).toEqual([])
+    expect(required.filter((n) => n.startsWith('yaco-') && n !== 'yaco-cli')).toEqual([])
   })
 
   it('resolves the co-installed CLI rather than reaching for the registry', () => {
     const cli = JSON.parse(
-      readFileSync(join(prefix, 'lib/node_modules/@yaco/cli/package.json'), 'utf-8'),
+      readFileSync(join(prefix, 'lib/node_modules/yaco-cli/package.json'), 'utf-8'),
     )
     expect(cli.version).toBe(CLI_MANIFEST.version)
   })

@@ -1,6 +1,6 @@
 # Main Documentation
 
-> Navigation hub for `@yaco/cli` — `yaco` unified dispatcher + agent runtime.
+> Navigation hub for `yaco-cli` — `yaco` unified dispatcher + agent runtime.
 
 ## Reading Order
 
@@ -9,10 +9,10 @@
 3. **[lifecycle.md](lifecycle.md)** — Visual state diagrams (state file status, tmux lifecycle, name sync) and sequence flows (start, resume, wrapper EXIT).
 4. **[providers.md](providers.md)** — Supported providers (Claude, Codex), hook availability, assumption tables, verified behaviors.
 5. **[state-contract.md](state-contract.md)** — Persisted (state file) and runtime (CLI JSON) contracts, guarantees, limitations, and the persisted ≠ runtime gap.
-6. **[paths.md](paths.md)** — Path resolvers under `cli/src/lib/core/paths/` (exported as `@yaco/cli/core/paths`): runtime root, `yaco.toml [paths]` reader, project registry, `project current` cwd→owner resolve, scoped TOML parser, `yaco paths` CLI surface.
+6. **[paths.md](paths.md)** — Path resolvers under `cli/src/lib/core/paths/` (exported as `yaco-cli/core/paths`): runtime root, `yaco.toml [paths]` reader, project registry, `project current` cwd→owner resolve, scoped TOML parser, `yaco paths` CLI surface.
 7. **[exports.md](exports.md)** — What `cli/package.json#exports` may publish for in-process use: the six export-eligibility rules, the TypeScript-compiler closure audit that enforces them (`cli/test/unit/export-audit.test.ts`), the four per-export pins (files, unwalked specifiers, exported names, error classes), and what the rules cost the `core/task` and `core/worktree` barrels.
 8. **[read-path.md](read-path.md)** — The read/lifecycle split: the three conditions that admit a CLI read into `app/server`'s process, the five landed cutovers with their measured before/after and accepted limits, what still spawns, and how to roll any one route back.
-9. **[task.md](task.md)** — `yaco task` subcommand surface and `cli/src/lib/core/task/` (exported as `@yaco/cli/core/task`): graph model, validation, store, archive, locking, single-record `task get` / `task list --state` reads — TS port of update-tasks.py.
+9. **[task.md](task.md)** — `yaco task` subcommand surface and `cli/src/lib/core/task/` (exported as `yaco-cli/core/task`): graph model, validation, store, archive, locking, single-record `task get` / `task list --state` reads — TS port of update-tasks.py.
 10. **[worktree.md](worktree.md)** — `yaco worktree {create,merge,cleanup}` surface and `cli/src/lib/core/worktree/`: slug-keyed `.worktrees/<slug>` provisioning, the shared slug↔path↔branch convention export, rebase + ff-merge or PR mode, conservative cleanup — TS port of the orchestrate shell helpers.
 11. **[align.md](align.md)** — `yaco align {init,wait,handoff,status}` surface and `cli/src/commands/align/`: the whole `status.txt` handoff protocol internalized behind four verbs (grammar + `transition` state machine + `final/` vote inference in one module), with `wait` preserving the process-owning exit-code contract (0/1/2, `align.timeout`/`align.error`).
 12. **[init.md](init.md)** — `yaco init links` surface and `cli/src/commands/init.ts`: four multi-tool symlinks, ENV-gated CLAUDE.md precondition, no-clobber refusal at target paths — TS port of `init-symlinks.sh`.

@@ -6,12 +6,12 @@
  *  `package.json` rather than spelled out in a flag so the two cannot drift —
  *  a dependency added without a matching flag would otherwise be silently
  *  inlined, and its native or lazily-`import()`ed pieces do not survive that.
- *  `@yaco/codex-transcribe` is inlined precisely *by not being a dependency*,
+ *  `yaco-codex-transcribe` is inlined precisely *by not being a dependency*,
  *  which is also the only correct published manifest: it is not published.
  *
  *  Each name is externalised twice. esbuild matches an external entry against
  *  the import path literally, so `hono` alone leaves `hono/cors`, `dotenv/config`
- *  and `@yaco/cli/core/paths` to be bundled — the `/*` sibling is what covers
+ *  and `yaco-cli/core/paths` to be bundled — the `/*` sibling is what covers
  *  the subpath exports the server actually imports. Node builtins need no entry;
  *  `platform: "node"` externalises them.
  *

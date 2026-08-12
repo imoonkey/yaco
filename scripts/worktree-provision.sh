@@ -6,18 +6,19 @@
 #
 # The third-party tree is branch-independent and stays SHARED with the main
 # checkout. The workspace self-links inside it are not: npm writes them relative
-# (`@yaco/cli -> ../../cli`), and a relative symlink resolves against its physical
-# location — so sharing node_modules whole made a worktree resolve `@yaco/*` to
-# the MAIN checkout's source, i.e. to a different branch.
+# (`yaco-cli -> ../cli`), and a relative symlink resolves against its physical
+# location — so sharing node_modules whole made a worktree resolve every
+# workspace package to the MAIN checkout's source, i.e. to a different branch.
 #
 # So node_modules is MIRRORED, not symlinked: a real directory whose entries are
-# links into main's tree, with `.bin` and the workspace scope directories rebuilt
-# one level down. Every link is recreated with its target copied verbatim, which
-# re-anchors the relative ones inside this worktree and leaves the rest on main:
+# links into main's tree, with `.bin` and any scope directory that hosts a
+# workspace package rebuilt one level down. Every link is recreated with its
+# target copied verbatim, which re-anchors the relative ones inside this worktree
+# and leaves the rest on main:
 #
 #   .bin/vitest -> ../vitest/vitest.mjs   ->  <wt>/node_modules/vitest -> main's
-#   .bin/yaco   -> ../@yaco/cli/bin/...   ->  <wt>/node_modules/@yaco/cli -> <wt>/cli
-#   @yaco/cli   -> ../../cli              ->  <wt>/cli
+#   .bin/yaco   -> ../yaco-cli/bin/...    ->  <wt>/node_modules/yaco-cli -> <wt>/cli
+#   yaco-cli    -> ../cli                 ->  <wt>/cli
 #
 # The mirror is a snapshot: a package installed into main AFTER a worktree exists
 # is missing from it. That fails loudly (`Cannot find module`) — re-run this

@@ -1,4 +1,4 @@
-# cli (`@yaco/cli`)
+# cli (`yaco-cli`)
 
 Node 24 CLI hosting the `yaco` unified dispatcher and the tmux-backed agent
 runtime.

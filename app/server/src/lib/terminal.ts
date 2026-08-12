@@ -8,7 +8,7 @@ import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
-import { shellSessionsDir } from '@yaco/cli/core/paths'
+import { shellSessionsDir } from 'yaco-cli/core/paths'
 
 export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
 

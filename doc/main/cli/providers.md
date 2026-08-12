@@ -27,7 +27,7 @@ New code imports from `providers/` directly.
 A provider's **identity** — `{id, label, executable}` — lives one level up, in
 `src/lib/core/agent/provider-catalog.ts`, and the adapters spread it rather than
 declaring their own literals. That is what lets `app/server` hold the startable
-catalog in process (`@yaco/cli/core/agent#providerCatalog`) without loading an
+catalog in process (`yaco-cli/core/agent#providerCatalog`) without loading an
 adapter: the registry reaches tmux, hook installation and the session lifecycle,
 none of which an exported closure may contain. There is one definition, so the
 two cannot disagree; `test/providers.test.ts` asserts it anyway, which is what
@@ -256,7 +256,7 @@ The read itself is **shared, not command-owned**. `readMessageRows(session,
 filter)` in `providers/message-read.ts` does one read of the log, indexes every
 message, and returns the rows a filter keeps; the command adds only the
 projections (`--meta`, `--index`, `--summary`, rendering). `app/server` calls the
-same function in process through `@yaco/cli/core/agent/messages`, so the
+same function in process through `yaco-cli/core/agent/messages`, so the
 filtering and index semantics have exactly one implementation. `/messages` still
 spawns: it is one child rather than `1+n`, and what it returns is the command's
 own text rendering, which lives in the command layer.
@@ -319,7 +319,7 @@ the rules `prompt-label.ts` also applies to history rows.
 `readSessionSummaries(targets)` in `providers/summary-read.ts` is the one
 implementation. `yaco agent summaries --path <p>` enumerates the project's state
 files and hands them in; `app/server` hands in exactly the sessions its cache is
-missing, in process through `@yaco/cli/core/agent/summaries`. Sessions are
+missing, in process through `yaco-cli/core/agent/summaries`. Sessions are
 explicit inputs, which is what keeps the module clear of the state-file
 enumeration an exported closure may not reach, and what makes two concurrent
 calls on different projects structurally unable to cross.
