@@ -250,8 +250,13 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
 function installAgentWrapper(actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
   if (dryRun) {
+    // Read the packaged wrapper even though only the update branch compares
+    // against it: a plan is a promise about the real run, and a package that
+    // cannot produce this file fails there. Reporting `write` for it would be
+    // planning an action install cannot carry out.
+    const content = readAgentWrapperScript();
     if (!existsSync(path)) actions.push(`write ${path}`);
-    else if (readFileSync(path, "utf-8") !== readAgentWrapperScript()) actions.push(`update ${path}`);
+    else if (readFileSync(path, "utf-8") !== content) actions.push(`update ${path}`);
     return;
   }
   if (ensureAgentWrapperScript()) actions.push(`wrote ${path}`);

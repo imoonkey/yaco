@@ -96,7 +96,7 @@ export function readAgentWrapperScript(): string {
  *  is created exclusively (`wx`), so the write can never follow a symlink or
  *  truncate a file this process did not make. Its mode is set *before* the
  *  rename, or a session starting in the gap execs a non-executable file. And it
- *  does not survive a failure path. */
+ *  does not survive a failure path — with the one exception `wx` itself names. */
 export function ensureAgentWrapperScript(): boolean {
   const path = agentWrapperPath();
   const content = readAgentWrapperScript();
@@ -109,7 +109,10 @@ export function ensureAgentWrapperScript(): boolean {
     chmodSync(tmp, 0o755);
     renameSync(tmp, path);
   } catch (e) {
-    rmSync(tmp, { force: true });
+    // EEXIST is the one failure that says the temp is not ours to remove: `wx`
+    // refused precisely because something was already at that path, so this
+    // call never created it. Every other failure is our own half-written temp.
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") rmSync(tmp, { force: true });
     throw e;
   }
   return true;

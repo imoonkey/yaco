@@ -48,6 +48,10 @@ interface RenameCall {
  *  nothing — the mock is otherwise a straight pass-through. */
 const ctl = vi.hoisted(() => ({
   failAt: null as null | "write" | "chmod" | "rename",
+  /** Make the package look like it ships no wrapper, so reading it throws. */
+  hidePackagedWrapper: false,
+  /** Pin the temp file's random suffix, so a test can collide with it. */
+  uuid: null as string | null,
   renames: [] as RenameCall[],
   writeFlags: [] as (string | undefined)[],
 }));
@@ -78,13 +82,27 @@ vi.mock("fs", async (importOriginal) => {
     if (ctl.failAt === "rename") boom("rename");
     return fs.renameSync(from, to);
   }) as typeof fs.renameSync;
-  const patched = { ...fs, writeFileSync, chmodSync, renameSync };
+  const existsSync = ((p: unknown) => {
+    if (ctl.hidePackagedWrapper && typeof p === "string" && p.endsWith("scripts/agent-wrapper.sh")) {
+      return false;
+    }
+    return (fs.existsSync as (a: unknown) => boolean)(p);
+  }) as typeof fs.existsSync;
+  const patched = { ...fs, writeFileSync, chmodSync, renameSync, existsSync };
+  return { ...patched, default: patched };
+});
+
+vi.mock("crypto", async (importOriginal) => {
+  const crypto = await importOriginal<typeof import("crypto")>();
+  const randomUUID = (() => ctl.uuid ?? crypto.randomUUID()) as typeof crypto.randomUUID;
+  const patched = { ...crypto, randomUUID };
   return { ...patched, default: patched };
 });
 
 const { ensureAgentWrapperScript, ensureHooks, readAgentWrapperScript } = await import(
   "../../../../src/lib/core/agent/lifecycle.ts"
 );
+const { runInstall } = await import("../../../../src/commands/install.ts");
 
 const ORIG = {
   HOME: process.env["HOME"],
@@ -97,6 +115,8 @@ let wrapper: string;
 
 function reset(): void {
   ctl.failAt = null;
+  ctl.hidePackagedWrapper = false;
+  ctl.uuid = null;
   ctl.renames = [];
   ctl.writeFlags = [];
 }
@@ -183,6 +203,39 @@ describe("ensureAgentWrapperScript — failure paths", () => {
       expect(readdirSync(yacoHome)).toEqual([]);
     });
   }
+});
+
+describe("ensureAgentWrapperScript — a temp it did not create", () => {
+  it("refuses the path and leaves it alone", () => {
+    // `wx` exists to make this case harmless rather than destructive. Whatever
+    // sits at the temp path, it is not ours — the refused exclusive create is
+    // the proof — and removing it on the way out would throw away the very file
+    // the flag just protected.
+    const stale = stageStaleWrapper();
+    ctl.uuid = "squatter-0000-0000-0000-000000000000";
+    const squatter = `${wrapper}.${process.pid}.${ctl.uuid.slice(0, 8)}.tmp`;
+    writeFileSync(squatter, "someone else's file\n");
+
+    expect(() => ensureAgentWrapperScript()).toThrow(/EEXIST/);
+
+    expect(readFileSync(squatter, "utf-8")).toBe("someone else's file\n");
+    expect(readFileSync(wrapper, "utf-8")).toBe(stale.content);
+  });
+});
+
+describe("installAgentWrapper --dry-run", () => {
+  it("does not plan a write the real run could not perform", () => {
+    // A plan is a promise about the real run. With no packaged wrapper to
+    // install, the real run throws — so reporting `write` would be a plan
+    // install cannot carry out.
+    ctl.hidePackagedWrapper = true;
+    return expect(
+      runInstall({
+        cliOnly: true, skipHooks: true, noRegistry: true, skipLinks: true,
+        skipDoctor: true, dryRun: true, force: false, json: false,
+      }),
+    ).rejects.toThrow(/cannot locate/);
+  });
 });
 
 describe("the `yaco agent start` path", () => {
