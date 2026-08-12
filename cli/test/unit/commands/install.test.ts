@@ -18,6 +18,7 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -56,6 +57,7 @@ const ORIG = {
 let sandbox: string;
 let repoRoot: string;
 let binDir: string;
+let shimBin: string;
 
 function makeShim(path: string): void {
   mkdirSync(join(path, "..", "."), { recursive: true });
@@ -91,7 +93,7 @@ beforeEach(() => {
   process.env["YACO_REPO_ROOT"] = repoRoot;
   // Make doctor's PATH-based checks (tmux, git, claude, codex, yaco) hermetic
   // by prepending a shim bin onto PATH.
-  const shimBin = join(sandbox, "shim-bin");
+  shimBin = join(sandbox, "shim-bin");
   mkdirSync(shimBin, { recursive: true });
   for (const c of ["yaco", "tmux", "git", "claude", "codex"]) {
     makeShim(join(shimBin, c));
@@ -864,6 +866,70 @@ describe("runInstall — no checkout at all (the `npm i -g yaco-cli` user)", () 
     // The skills came out of the package, so this one is answerable and passes.
     expect(status("skills-link")).toBe("pass");
     expect(r.doctor!.summary.fail).toBe(0);
+  });
+});
+
+describe("runInstall — the workspace-root npm install", () => {
+  /** Put an `npm` on PATH that runs nothing and records where it was run.
+   *
+   *  A recorded cwd is the whole assertion here: which directory npm is invoked
+   *  in is the entire behaviour under test, and a real `npm install` in a test
+   *  would take minutes and reach the network. `pwd -P`, not `$PWD` — the child
+   *  inherits the parent's stale `PWD` in its environment. */
+  function stageNpmShim(): string {
+    const log = join(sandbox, "npm-invocations.log");
+    const npm = join(shimBin, "npm");
+    writeFileSync(npm, `#!/bin/sh\nprintf '%s\\t%s\\n' "$(pwd -P)" "$*" >> ${log}\nexit 0\n`);
+    chmodSync(npm, 0o755);
+    return log;
+  }
+
+  function invocations(log: string): string[] {
+    if (!existsSync(log)) return [];
+    return readFileSync(log, "utf-8").split("\n").filter((l) => l.length > 0);
+  }
+
+  it("runs at the workspace root and nowhere else — the root is what links packages/*, so the app must NOT declare them", async () => {
+    // Installing in `app/server` + `app/ui` instead left `yaco-codex-transcribe`
+    // unresolvable on a clean clone. Declaring it as an app dependency is the
+    // wrong repair: app/server/scripts/build.mjs externalises exactly the
+    // declared dependencies and inlines this one because it is not declared.
+    const log = stageNpmShim();
+    const r = await runInstall(baseOpts({ cliOnly: false }));
+
+    expect(invocations(log)).toEqual([`${realpathSync(repoRoot)}\tinstall`]);
+    expect(r.actions).toContain(`npm install in ${repoRoot}`);
+  });
+
+  it("skips it when the repo root is not a yaco checkout, and says so", async () => {
+    const log = stageNpmShim();
+    const nowhere = join(sandbox, "nowhere");
+    mkdirSync(nowhere, { recursive: true });
+
+    const r = await runInstall(baseOpts({ cliOnly: false, repoRoot: nowhere }));
+
+    expect(invocations(log)).toEqual([]);
+    expect(r.actions).toContain(`skipped npm install: ${nowhere} is not a yaco checkout`);
+  });
+
+  // Which checkouts are excluded is settled against real git repositories in
+  // workspace-root-install.test.ts — the predicate reads git's topology, and a
+  // shimmed `git` on this suite's PATH could only answer for a fixture.
+
+  it("--cli-only runs no npm install at all", async () => {
+    const log = stageNpmShim();
+    const r = await runInstall(baseOpts({ cliOnly: true }));
+
+    expect(invocations(log)).toEqual([]);
+    expect(r.actions.some((a) => a.startsWith("npm install"))).toBe(false);
+  });
+
+  it("--dry-run names the root it would install in, and installs nothing", async () => {
+    const log = stageNpmShim();
+    const r = await runInstall(baseOpts({ cliOnly: false, dryRun: true }));
+
+    expect(invocations(log)).toEqual([]);
+    expect(r.actions).toContain(`npm install in ${repoRoot}`);
   });
 });
 

@@ -8,8 +8,8 @@ import { validateName, setStatus, PENDING_SESSION_ID, type SessionState, type Ru
 import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
 import { readProjects } from "../../lib/core/paths/index.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
+import { which } from "../../lib/core/which.ts";
 import { basename } from "node:path";
-import { execSync } from "child_process";
 import { statSync } from "node:fs";
 
 export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
@@ -269,15 +269,6 @@ export async function reconcileSession(handle: string, cachedAlive?: boolean | n
   return detail.state;
 }
 
-function checkCliAvailable(cmd: string): boolean {
-  try {
-    execSync(`which ${cmd}`, { stdio: "pipe", timeout: 3000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 interface StatusOptions {
   json?: boolean;
   /** When true, persist a stale-status correction / metadata backfill and GC a
@@ -410,7 +401,7 @@ export async function list(options: ListOptions = {}): Promise<string> {
     const lines: string[] = ["No active sessions.", "", "Health:"];
     lines.push(`  tmux: ${isTmuxAvailable() ? "ok" : "not found"}`);
     for (const provider of listProviders()) {
-      lines.push(`  ${provider.id}: ${checkCliAvailable(provider.executable) ? "ok" : "not found"}`);
+      lines.push(`  ${provider.id}: ${which(provider.executable) ? "ok" : "not found"}`);
     }
     return lines.join("\n");
   }

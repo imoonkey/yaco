@@ -60,7 +60,7 @@ Usage:
   yaco install [options]
 
 Options:
-  --cli-only       Skip app/server and app/ui npm install
+  --cli-only       Skip the workspace-root npm install (the app's dependencies)
   --skip-hooks     Skip merging provider hooks into ~/.claude + ~/.codex
                    (the wrapper script is still written)
   --no-registry    Do not upsert this repo into \${YACO_HOME}/projects.json
@@ -512,25 +512,108 @@ function plantSkillLink(
   actions.push(`relink skill ${name}`);
 }
 
-/** Run npm install in app/server and app/ui (no-op when --cli-only). */
-function installAppDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
-  for (const sub of ["app/server", "app/ui"] as const) {
-    const dir = join(repoRoot, sub);
-    if (!existsSync(dir)) continue;
-    if (dryRun) {
-      actions.push(`npm install in ${dir}`);
-      continue;
-    }
-    const r = spawnSync("npm", ["install"], {
-      cwd: dir,
-      stdio: "inherit",
-      env: { ...process.env },
-    });
-    if (r.status !== 0) {
-      throw new CliError(ErrCode.IO, `npm install failed in ${dir} (exit ${r.status})`);
-    }
-    actions.push(`npm install in ${dir}`);
+/** Who owns this checkout's `node_modules` — and `"unknown"` is a real answer,
+ *  because the consequence of guessing wrong runs one way.
+ *
+ *  A linked worktree does not own its own. `scripts/worktree-provision.sh`
+ *  builds it as a *mirror*: every third-party package, and `.package-lock.json`
+ *  itself, is a symlink into the main checkout's tree. `npm install` there is a
+ *  reconciler pointed at somebody else's data — it would write through those
+ *  symlinks and rewrite the main checkout's node_modules from the worktree's
+ *  branch. The caller skips anything but a confirmed owner.
+ *
+ *  Two steps, because git can only answer the second one. Whether a repository
+ *  is here at all is a filesystem fact and needs no subprocess: no `.git` entry,
+ *  no repository, and an export owns whatever it has. Once there IS one, only
+ *  git's topology can classify it — `--git-dir` is a linked worktree's own
+ *  `…/.git/worktrees/<name>` and `--git-common-dir` is the repository they all
+ *  share, and nothing else makes those two differ.
+ *
+ *  `.git` being a *file* looks like the same question and is not: a submodule
+ *  and a repository created with `--separate-git-dir` both carry a `gitdir:`
+ *  file while owning their `node_modules` outright, and skipping their install
+ *  would break the very thing this step exists to fix.
+ *
+ *  So a repository git cannot read — no `git` on PATH, dubious-ownership
+ *  refusal, damaged metadata, output that will not parse — is `"unknown"`, not
+ *  "owner". Reading a failed probe as ownership is how a real worktree with a
+ *  broken git would walk straight into the write-through it is protected from. */
+type NodeModulesOwner = "self" | "linked-worktree" | "unknown";
+function nodeModulesOwner(repoRoot: string): NodeModulesOwner {
+  if (!existsSync(join(repoRoot, ".git"))) return "self";
+  const r = spawnSync("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (r.status !== 0) return "unknown";
+  // Exactly two lines, both non-empty. Destructuring the head of the output
+  // would read a third line as absent and call an unrecognizable answer `self` —
+  // the one classification that reaches npm.
+  const lines = r.stdout.trim().split("\n");
+  if (lines.length !== 2 || !lines[0] || !lines[1]) return "unknown";
+  return realpathOr(resolve(repoRoot, lines[0])) === realpathOr(resolve(repoRoot, lines[1]))
+    ? "self"
+    : "linked-worktree";
+}
+
+/** One `npm install` at the workspace ROOT — never inside a member (no-op when
+ *  --cli-only, skipped when there is no checkout).
+ *
+ *  The root is the only place that links `packages/*` into `node_modules`.
+ *  Installing in `app/server` and `app/ui` alone left `yaco-codex-transcribe` —
+ *  imported bare by `app/server/src/routes/voice.ts`, declared by nobody —
+ *  unresolvable, so `npm run start:app` and `scripts/verify.sh` both died on a
+ *  clean clone. Invisible on every developer box, each of which has had a root
+ *  install run in it at least once. Running at the root loses nothing: both app
+ *  packages are workspace members, so the one install covers them too.
+ *
+ *  DO NOT "fix" that package by declaring it as an app dependency instead:
+ *  `app/server/scripts/build.mjs` externalises exactly the *declared*
+ *  dependencies and inlines this one precisely because it is not declared.
+ *  Declaring it makes the published bundle require a package that is never
+ *  published. The linking belongs here, in the install.
+ *
+ *  A root has to clear two questions, and every skip is reported rather than
+ *  performed silently. Repository identity is the first, the same one
+ *  {@link upsertRegistry} asks — `npm install` at whatever directory a package
+ *  user happened to be standing in is not a step, it is an accident. Who owns
+ *  the `node_modules` is the second: see {@link nodeModulesOwner}, which only
+ *  clears a confirmed owner. */
+function installWorkspaceDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
+  if (!isYacoCheckout(repoRoot)) {
+    actions.push(`skipped npm install: ${repoRoot} is not a yaco checkout`);
+    return;
   }
+  const owner = nodeModulesOwner(repoRoot);
+  if (owner === "linked-worktree") {
+    actions.push(
+      `skipped npm install: ${repoRoot} is a linked worktree ` +
+        `(run \`bash scripts/worktree-provision.sh\` from it instead)`,
+    );
+    return;
+  }
+  if (owner === "unknown") {
+    actions.push(
+      `skipped npm install: cannot read the git topology of ${repoRoot}, ` +
+        `so whether its node_modules is a worktree mirror is unknown ` +
+        `(\`git -C ${repoRoot} rev-parse --git-dir --git-common-dir\` says why)`,
+    );
+    return;
+  }
+  if (dryRun) {
+    actions.push(`npm install in ${repoRoot}`);
+    return;
+  }
+  const r = spawnSync("npm", ["install"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: { ...process.env },
+  });
+  if (r.status !== 0) {
+    throw new CliError(ErrCode.IO, `npm install failed in ${repoRoot} (exit ${r.status})`);
+  }
+  actions.push(`npm install in ${repoRoot}`);
 }
 
 /** Run the doctor checks in-process and bail if any are failing.
@@ -617,7 +700,7 @@ export async function runInstall(opts: InstallOptions): Promise<InstallReport> {
   removeLegacySymlink(join(binDir, "multmux"), actions, opts.dryRun);
 
   if (!opts.cliOnly) {
-    installAppDeps(repoRoot, actions, opts.dryRun);
+    installWorkspaceDeps(repoRoot, actions, opts.dryRun);
   }
 
   // The registry entry names the yaco source repo as a project. An `npm i -g`

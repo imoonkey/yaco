@@ -9,11 +9,18 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { createSession, hasSession, isTmuxAvailable } from "../../src/lib/core/agent/tmux.ts";
-import { writeState, readState, ensureStateDir, type SessionState } from "../../src/lib/core/agent/session-state.ts";
+import {
+  writeState,
+  readState,
+  ensureStateDir,
+  exitReportPath,
+  readExitReport,
+  type SessionState,
+} from "../../src/lib/core/agent/session-state.ts";
 import { kill } from "../../src/commands/agent/kill.ts";
 import { list } from "../../src/commands/agent/status.ts";
 import { CLI_ENTRY } from "../helpers/cli-process.ts";
@@ -30,6 +37,8 @@ const DEAD_PID = 2_000_000_000;
 let sandbox: string;
 let shim: string;
 let crashScript: string;
+let rejectScript: string;
+let burstScript: string;
 let sleepScript: string;
 let savedHome: string | undefined;
 let savedYacoPath: string | undefined;
@@ -80,6 +89,25 @@ beforeAll(() => {
   // is interpolated into tmux new-session.
   crashScript = join(sandbox, "crash.sh");
   writeFileSync(crashScript, "#!/bin/bash\nsleep 0.4\nexit 139\n", { mode: 0o755 });
+  // A provider that rejects an argument and exits — the shape of `yaco claude
+  // --nmae foo`, where the forwarded token is the provider's to complain about.
+  rejectScript = join(sandbox, "reject.sh");
+  writeFileSync(
+    rejectScript,
+    "#!/bin/bash\necho \"fake-provider: error: unknown option '--nmae'\" >&2\nexit 2\n",
+    { mode: 0o755 },
+  );
+  burstScript = join(sandbox, "burst.sh");
+  writeFileSync(
+    burstScript,
+    // ~250KB then an immediate exit: enough to have scrolled the screen many
+    // times over and to put the most pressure on the tail. Stress, not proof —
+    // see the note on the assertion below.
+    "#!/bin/bash\nfor i in $(seq 1 4000); do " +
+      "echo \"noise line $i ----------------------------------------\"; done\n" +
+      "echo 'LAST-LINE-BEFORE-EXIT' >&2\nexit 3\n",
+    { mode: 0o755 },
+  );
   sleepScript = join(sandbox, "sleep.sh");
   writeFileSync(sleepScript, "#!/bin/bash\nexec sleep 30\n", { mode: 0o755 });
   execSync(`mkdir -p ${TEST_CWD}`);
@@ -127,6 +155,63 @@ describe("crash contract (real tmux)", () => {
     execSync("sleep 0.6");
     // Deleted (intentional kill), NOT left as a crashed tombstone.
     expect(readState(h)).toBeNull();
+  });
+
+  itt("an agent that rejects an argument leaves its own message behind, not just an exit code", () => {
+    // The defect this covers: yaco forwards every unbound token to the provider
+    // by design, so a mistyped flag is the PROVIDER's complaint — and it used
+    // to be written to a pane tmux destroyed before anyone could read it. The
+    // wrapper salvages it from inside the pane while the pane still exists.
+    const h = uniq("reject");
+    writeState(makeState(h));
+    createSession(h, wrapped(h, `bash ${rejectScript}`), TEST_CWD);
+
+    expect(waitFor(() => !hasSession(h), 12000)).toBe(true);
+    execSync("sleep 0.6"); // let the EXIT trap finish writing
+
+    const report = readExitReport(h, CREATED_AT);
+    expect(report).not.toBeNull();
+    expect(report!.exitCode).toBe(2);
+    expect(report!.output).toContain("unknown option '--nmae'");
+  });
+
+  itt("the last bytes written before the exit are in the report, not lost to the pane read", () => {
+    // ~250KB then an immediate exit: the screen has scrolled far past where the
+    // burst began, and the bytes most at risk are the last ones written.
+    //
+    // Honest scope: this asserts the OUTCOME, and it does not by itself prove
+    // the barrier in `write_exit_report` is what produces it — a wrapper with a
+    // single unsynchronized capture also passes it, here, today. The barrier is
+    // justified by construction (capture-pane reads the screen; the screen is
+    // filled by an asynchronous read of the pty), not by this test failing
+    // without it. What this test does catch is a regression that loses the tail
+    // for any reason at all, including the marker leaking into the report.
+    const h = uniq("tail");
+    writeState(makeState(h));
+    createSession(h, wrapped(h, `bash ${burstScript}`), TEST_CWD);
+
+    expect(waitFor(() => !hasSession(h), 12000)).toBe(true);
+    execSync("sleep 0.6");
+
+    const report = readExitReport(h, CREATED_AT);
+    expect(report).not.toBeNull();
+    expect(report!.exitCode).toBe(3);
+    expect(report!.output).toContain("LAST-LINE-BEFORE-EXIT");
+    // The marker is the barrier, not content — it must never reach the reader.
+    expect(report!.output).not.toContain("yaco-exit-marker");
+  });
+
+  itt("an intentional kill leaves no exit report — there is no error to explain", () => {
+    const h = uniq("kill-noreport");
+    writeState(makeState(h));
+    createSession(h, wrapped(h, `bash ${sleepScript}`), TEST_CWD);
+    expect(waitFor(() => hasSession(h), 6000)).toBe(true);
+
+    kill(h);
+
+    expect(waitFor(() => !hasSession(h), 8000)).toBe(true);
+    execSync("sleep 0.6");
+    expect(existsSync(exitReportPath(h))).toBe(false);
   });
 
   itt("list --reconcile preserves a crashed tombstone (dead pid, no tmux session)", async () => {

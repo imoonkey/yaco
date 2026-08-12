@@ -1,6 +1,7 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-11 (providers skips when no agent CLI is installed;
+> Last updated: 2026-08-12 (`agent start` refuses a missing provider through the
+> same `which` this check uses; providers skips when no agent CLI is installed;
 > registry skips; skills-link resolves from the package)
 
 `yaco doctor` runs the eleven required health checks against the current
@@ -132,6 +133,14 @@ The condition stays visible rather than being dropped: the detail names every
 provider that is missing and what to do about it, `SKIP` prints in text mode,
 and `yaco install` prints its doctor lines including the skips. What is gone is
 only the exception. `README.md` states the prerequisite up front.
+
+And the skip is not the end of it: `yaco agent start` refuses the same missing
+provider, with the same message, using the same probe —
+[`which.ts`](../../../cli/src/lib/core/which.ts) is one function, shared by this
+check, the provider lines of `agent status`, and the start path. Install
+tolerating an absent provider while `doctor` keeps it visible would be hollow if
+the first command after it still died anonymously. -> See:
+[lifecycle.md](lifecycle.md#bootstrap-failure-what-start-can-name-and-what-only-the-provider-can)
 
 **One provider is enough, and the partial case is a pass, not a skip.** With
 `claude` present and `codex` absent the check passes and names the missing one in

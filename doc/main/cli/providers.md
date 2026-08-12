@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-08-11 (session summaries are a shared in-process read; provider identity is one catalog; prior: Codex `Stop` fills idle `notice` from the rollout `final_answer`)
+> Last updated: 2026-08-12 (`start` prechecks the provider executable; prior: session summaries are a shared in-process read; provider identity is one catalog; prior: Codex `Stop` fills idle `notice` from the rollout `final_answer`)
 
 ## Supported Providers
 
@@ -144,6 +144,7 @@ needed.
 - Top-level: `yaco claude [args...]` / `yaco codex [args...]` is shorthand for `yaco agent start <provider> [args...]`. The dispatcher recognizes the provider name as the area token and delegates to `runStart`.
 - Mid-layer: `yaco agent claude ...` is REJECTED with USAGE (exit 2). The canonical form is `yaco agent start <provider>`.
 - Passthrough split: in `start`, yaco-side flags (`--json`) bind only before a standalone `--`; everything after is forwarded verbatim to the provider. Backward-compatible when `--` is omitted (any unrecognized flag flows through to the provider, as before).
+- Precheck: `start` refuses a provider whose `executable` is not on `$PATH` — `CliError(ENV)`, exit 3, before any state file or tmux session exists. It is the same `which` behind `doctor`'s `providers` check. Anything else the provider rejects (a forwarded mistyped flag included) can only be reported after it exits, from the pane the wrapper salvages. -> See: [lifecycle.md](lifecycle.md#bootstrap-failure-what-start-can-name-and-what-only-the-provider-can)
 
 An empty prompt opens an idle session (no initial task).
 
