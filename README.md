@@ -81,7 +81,7 @@ Re-run the install step after upgrading, pulling, or editing a skill.
 ### First session
 
 ```bash
-cd /path/to/any/repo
+cd <any-repo>
 yaco claude "give me a tour of this repo"
 ```
 
