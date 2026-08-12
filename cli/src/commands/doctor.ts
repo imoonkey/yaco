@@ -373,10 +373,21 @@ async function checkTaskGraph(repoRoot: string): Promise<CheckResult> {
     }
     const store = await loadTaskStore(tasksPath);
     const report = validateGraph(store.tasks);
-    if (!report.ok) {
+    if (report.malformed) {
       const problems = report.details ?? {};
       const count = Object.values(problems).flat().length;
       return fail("task-graph", `${count} integrity problem(s) in ${tasksPath}`);
+    }
+    // A stale blockReason is not breakage: the graph loads, and the next write
+    // to that task drops it. Failing here would make one leftover field throw
+    // `yaco install` — see ValidationReport.malformed. Named, not fatal.
+    const stale = report.details?.staleBlockReason.length ?? 0;
+    if (stale > 0) {
+      return pass(
+        "task-graph",
+        `${tasksPath} ok — ${stale} task(s) carry a stale blockReason ` +
+          "(`yaco task validate` lists them)",
+      );
     }
     return pass("task-graph", `${tasksPath} ok`);
   } catch (e) {

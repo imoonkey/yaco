@@ -42,7 +42,10 @@ export async function runValidate(opts: ValidateOpts): Promise<Result<unknown>> 
     const reason =
       report.ok && staleLocks.length > 0
         ? "cross-host stale lock present (never auto-broken)"
-        : "task graph has integrity problems";
+        : report.malformed
+          ? "task graph has integrity problems"
+          : "task graph carries stale blockReason values — clear each with " +
+            `yaco task set <id> --data '{"blockReason":null}'`;
     return err(ErrCode.INVALID, reason, details);
   }
 

@@ -89,6 +89,14 @@ describe("validateTypes", () => {
     expect(() => validateTypes({ blockReason: "bad" })).toThrow(/blockReason must be/);
   });
 
+  it("allows null blockReason (delete signal)", () => {
+    expect(() => validateTypes({ blockReason: null })).not.toThrow();
+  });
+
+  it("still rejects empty-string blockReason — null is the only clear", () => {
+    expect(() => validateTypes({ blockReason: "" })).toThrow(/blockReason must be/);
+  });
+
   it("rejects bad worktree slug", () => {
     expect(() => validateTypes({ worktree: "-bad-" })).toThrow(/worktree must be a valid slug/);
   });
