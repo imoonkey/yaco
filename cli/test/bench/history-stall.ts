@@ -381,7 +381,10 @@ function spawnRoute(argv: string[], env: NodeJS.ProcessEnv, envDiscovery: boolea
 function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
   if (!existsSync(dbPath)) throw new Error(`no database at ${dbPath}`);
   const SQL = "SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path" +
-    " FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?";
+    " FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0" +
+    " ORDER BY updated_at DESC, id ASC LIMIT ?";
+  /** The shipped query's parameters for one project path. */
+  const args = (cwd: string): [string, string, string, number] => [cwd, `${cwd}/`, `${cwd}/`, limit];
 
   const opened = new DatabaseSync(dbPath, { readOnly: true });
   let rows: number;
@@ -390,15 +393,24 @@ function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
   let forCwd: number;
   try {
     rows = (opened.prepare("SELECT count(*) AS n FROM threads").get() as { n: number }).n;
-    // The busiest cwd, so the probe measures the worst window this database
-    // holds rather than an average one.
+    // The busiest *subtree*, so the probe measures the worst window this
+    // database holds rather than an average one — and the worst window is now
+    // a project's own threads plus every descendant cwd's, which is what the
+    // shipped query matches.
     const busiest = opened
-      .prepare("SELECT cwd, count(*) AS n FROM threads WHERE archived = 0 GROUP BY cwd ORDER BY n DESC LIMIT 1")
+      .prepare(
+        `SELECT p.cwd AS cwd,
+                (SELECT count(*) FROM threads t
+                  WHERE t.archived = 0
+                    AND (t.cwd = p.cwd OR substr(t.cwd, 1, length(p.cwd || '/')) = p.cwd || '/')) AS n
+           FROM (SELECT DISTINCT cwd FROM threads WHERE archived = 0) p
+          ORDER BY n DESC LIMIT 1`,
+      )
       .get() as { cwd: string; n: number } | undefined;
     if (!busiest) throw new Error(`no non-archived threads in ${dbPath}`);
     cwd = busiest.cwd;
     forCwd = busiest.n;
-    plan = (opened.prepare(`EXPLAIN QUERY PLAN ${SQL}`).all(cwd, limit) as { detail: string }[])
+    plan = (opened.prepare(`EXPLAIN QUERY PLAN ${SQL}`).all(...args(cwd)) as { detail: string }[])
       .map((r) => r.detail).join(" / ");
   } finally {
     opened.close();
@@ -407,7 +419,7 @@ function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
   // Warm the page cache the way a steady server has it warm.
   for (let i = 0; i < 3; i++) {
     const db = new DatabaseSync(dbPath, { readOnly: true });
-    db.prepare(SQL).all(cwd, limit);
+    db.prepare(SQL).all(...args(cwd));
     db.close();
   }
 
@@ -416,7 +428,7 @@ function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
   for (let i = 0; i < samples; i++) {
     const started = now();
     const db = new DatabaseSync(dbPath, { readOnly: true });
-    returned = (db.prepare(SQL).all(cwd, limit) as unknown[]).length;
+    returned = (db.prepare(SQL).all(...args(cwd)) as unknown[]).length;
     db.close();
     times.push(now() - started);
   }
@@ -424,7 +436,7 @@ function sqliteProbe(dbPath: string, limit: number, samples = 40): void {
   console.log(`
 database     ${dbPath}
 size         ${(statSync(dbPath).size / 1024 / 1024).toFixed(1)} MB, ${rows} rows in \`threads\`
-cwd          ${cwd} — ${forCwd} non-archived threads, ${returned} returned at LIMIT ${limit}
+cwd          ${cwd} — ${forCwd} non-archived threads in its subtree, ${returned} returned at LIMIT ${limit}
 query        ${SQL}
 plan         ${plan}
 cost         open + all + close, ${times.length} samples, warm`);

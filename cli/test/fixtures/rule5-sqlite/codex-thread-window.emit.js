@@ -9,9 +9,9 @@ export function codexThreadWindow(cwd, limit) {
         try {
             return db
                 .prepare(`SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
-           FROM threads WHERE cwd = ? AND archived = 0
+           FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0
            ORDER BY updated_at DESC, id ASC LIMIT ?`)
-                .all(cwd, limit);
+                .all(cwd, `${cwd}/`, `${cwd}/`, limit);
         }
         finally {
             db.close();

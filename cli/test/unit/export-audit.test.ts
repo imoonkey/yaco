@@ -445,23 +445,31 @@ const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
     bench: "test/bench/summary-stall.ts",
   },
   // The history window's query. It is a *statement* bound rather than a scan
-  // bound, and the probe prints the plan that makes that so: Codex's composite
-  // `cwd` indexes order by its millisecond columns while this reads the
-  // second-resolution `updated_at`, so SQLite filters through an index and
-  // sorts the matches in a temp B-tree. `LIMIT` bounds what crosses into
-  // JavaScript — and therefore the per-row rollout tail-reads — not the rows
-  // examined. Measured whole, which is what the admission has to be.
+  // bound, and the probe prints the plan that makes that so: a project is a
+  // subtree of cwds, and a range over `cwd` is not the equality Codex's
+  // composite `cwd` indexes are keyed on, so SQLite walks `archived` and sorts
+  // the matches in a temp B-tree. `LIMIT` bounds what crosses into JavaScript —
+  // and therefore the per-row rollout tail-reads — not the rows examined.
+  // Measured whole, which is what the admission has to be.
+  //
+  // Widening the exact cwd to its subtree moved the plan off
+  // `idx_threads_archived_cwd_recency_at_ms` and roughly tripled the statement:
+  // it was 3.0 ms p50 / 8.3 ms max over the busiest single cwd. The bound that
+  // governs is still the design's — "starved no longer by the in-process read
+  // than by the complete subprocess route it replaces" — and a spawn alone is
+  // tens of milliseconds, so the re-measured figure stays well inside it.
   "src/lib/core/agent/providers/codex-thread-window.ts import DatabaseSync": {
     bound:
-      "the newest 201 non-archived threads of the busiest cwd (SEARCH threads " +
-      "USING INDEX idx_threads_archived_cwd_recency_at_ms (archived=? AND cwd=?) / " +
-      "USE TEMP B-TREE FOR ORDER BY, 587 rows matched) on an 11.1 MB, 2 301-row " +
-      "database: 3.0 ms p50, 5.4 ms p95, 8.3 ms max over 40 warm samples, open " +
-      "and close included. " +
+      "the newest 201 non-archived threads of the busiest cwd *subtree* (SEARCH " +
+      "threads USING INDEX idx_threads_archived (archived=?) / USE TEMP B-TREE " +
+      "FOR ORDER BY, 867 rows matched) on an 11.2 MB, 2 322-row database: " +
+      "9.1 ms p50, 11.5 ms p95, 11.7 ms max over 40 warm samples, open and " +
+      "close included. " +
       "Reproduce with `node test/bench/history-stall.ts --sqlite-probe --home ~`.",
     prepares: [
       "SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path " +
-      "FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC, id ASC LIMIT ?",
+      "FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0 " +
+      "ORDER BY updated_at DESC, id ASC LIMIT ?",
     ],
     emitted: "test/fixtures/rule5-sqlite/codex-thread-window.emit.js",
     bench: "test/bench/history-stall.ts",

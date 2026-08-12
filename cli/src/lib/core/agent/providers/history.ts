@@ -7,6 +7,14 @@
  *  never opens `~/.claude` or `~/.codex` itself and there is one implementation
  *  behind both call mechanisms.
  *
+ *  **A project is a subtree, not a path.** A session belongs to this project
+ *  when its cwd is the project path or a descendant of it — the predicate the
+ *  live session list already applies (`isPathDescendantOrEqual`). Both providers
+ *  key their own storage on an exact cwd, so each reader widens it in the terms
+ *  its storage offers: Claude by directory (`claudeProjectDirs`), Codex in the
+ *  query. Without it an agent running in `<project>/.worktrees/<slug>` is listed
+ *  while it runs and gone the moment it is only history.
+ *
  *  **Every provider scan is capped at the window.** The merge sorts newest-first
  *  and `--since` filters on the same `updatedAt`, so the rows past any cutoff are
  *  a *prefix* of each provider's own newest-first order: "the newest `cap` rows
@@ -37,6 +45,7 @@ import { join } from "node:path";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { encodeClaudeCwd } from "../../project/encode.ts";
+import { isPathDescendantOrEqual, normalizeProjectPath } from "../projection.ts";
 import { readOrigins } from "../origin-read.ts";
 import { PENDING_SESSION_ID, type SpawnedBy } from "../model.ts";
 import { codexThreadWindow } from "./codex-thread-window.ts";
@@ -244,11 +253,50 @@ interface ClaudeIndexEntry {
   isSidechain?: boolean;
 }
 
+function claudeProjectsRoot(): string {
+  return join(userHome(), ".claude", "projects");
+}
+
 function claudeProjectDir(projectPath: string): string {
   // Claude Code keys ~/.claude/projects/<encoded-cwd>/ with the same lossy
   // encoder used for project-move directory renames (non-alphanumerics → "-"),
   // so a path like `/repo/.worktrees/x` resolves to `-repo--worktrees-x`.
-  return join(userHome(), ".claude", "projects", encodeClaudeCwd(projectPath));
+  return join(claudeProjectsRoot(), encodeClaudeCwd(projectPath));
+}
+
+/** The literal `cwd` a Claude log records, from a slice of its head. */
+function parseCwd(text: string): string | null {
+  for (const line of text.split("\n")) {
+    if (!line.includes('"cwd"')) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (typeof entry.cwd === "string" && entry.cwd) return entry.cwd;
+    } catch { /* partial line at a read boundary — skip */ }
+  }
+  return null;
+}
+
+/** Whether a directory found by the encoded-name prefix really holds sessions of
+ *  this project, decided by the first `cwd` its logs record.
+ *
+ *  The name cannot decide it. `encodeClaudeCwd` maps every non-alphanumeric to
+ *  `-`, so `<project>/.worktrees/x` and the unrelated sibling `<project>-backups`
+ *  both begin with the project's own encoded name, and the encoding has no
+ *  inverse. Nor can the filesystem: a worktree's directory is deleted the moment
+ *  it merges, long before its history stops mattering — which is the very
+ *  history this scan exists to find. What a log records is therefore the only
+ *  sound answer, and it is read rather than inferred.
+ *
+ *  One log decides for the whole directory, because a directory *is* one encoded
+ *  cwd: two paths that collide onto one name land in one directory in Claude's
+ *  own writer, so no reader can separate them. A directory whose logs record no
+ *  cwd at all is rejected — unattributable history stays out. */
+async function recordsCwdUnder(dir: string, files: string[], projectPath: string): Promise<boolean> {
+  for (const file of files) {
+    const cwd = parseCwd(await readSlice(join(dir, file), 0, HEAD_BYTES));
+    if (cwd) return isPathDescendantOrEqual(cwd, projectPath);
+  }
+  return false;
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
@@ -356,22 +404,89 @@ async function claudeRow(tail: ClaudeTail): Promise<HistorySession> {
   };
 }
 
-async function claudeList(projectPath: string, cap: number): Promise<HistorySession[]> {
-  const dir = claudeProjectDir(projectPath);
+/** One Claude directory that belongs to the project, read once: its logs and
+ *  its index. */
+interface ClaudeLogDir {
+  dir: string;
+  files: string[];
+  index: Map<string, ClaudeIndexEntry>;
+}
 
+/** Read one candidate directory, or null when it holds no logs or turns out not
+ *  to be this project's. The project's own directory is taken as its own by
+ *  definition — it is the name Claude writes this cwd under. */
+async function claudeLogDir(dir: string, projectPath: string): Promise<ClaudeLogDir | null> {
   // The order a raw directory read produces is undefined; it does not reach the
-  // output, because `byUpdatedAtThenSessionId` decides the window and a session
-  // id is unique, so no pair of rows can tie under it.
+  // output, because `byUpdatedAtThenSessionId` decides the window and
+  // `newestPerSession` has already made the session id unique across the
+  // directories, so no pair of rows can tie under it.
   let files: string[];
   try {
     files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
-  } catch { return []; }
-  if (files.length === 0) return [];
+  } catch { return null; }
+  if (files.length === 0) return null;
+  if (dir !== claudeProjectDir(projectPath) && !await recordsCwdUnder(dir, files, projectPath)) {
+    return null;
+  }
+  return { dir, files, index: await loadClaudeIndex(dir) };
+}
 
-  const index = await loadClaudeIndex(dir);
-  const tails = await chunked(files, (file) => claudeTail(dir, file, index));
-  const window = tails
-    .filter((t): t is ClaudeTail => t !== null)
+/** Every Claude directory whose sessions belong to `projectPath` — its own, and
+ *  each descendant cwd's.
+ *
+ *  A session is this project's when its cwd is the project path or below it,
+ *  which is the predicate the live session list already applies
+ *  (`listByPath`, `resolveProjectForPath`). History used to read one exact
+ *  directory instead, so an agent working in `<project>/.worktrees/<slug>` was
+ *  listed while it ran and vanished the moment it was only history.
+ *
+ *  Claude stores one directory per cwd, so the descendants have to be found by
+ *  name and then confirmed by content — see `recordsCwdUnder`. */
+async function claudeProjectDirs(projectPath: string): Promise<string[]> {
+  const own = claudeProjectDir(projectPath);
+  let names: string[];
+  try {
+    names = await readdir(claudeProjectsRoot());
+  } catch { return [own]; }
+
+  const prefix = `${encodeClaudeCwd(projectPath)}-`;
+  return [own, ...names.filter((n) => n.startsWith(prefix)).map((n) => join(claudeProjectsRoot(), n))];
+}
+
+/** One tail per session id. A thread resumed under a second cwd is logged under
+ *  both, and the union — unlike the single directory this replaced — sees both.
+ *  The newest wins; the path breaks a tie, so the surviving row never depends on
+ *  the order the directories happened to be read in. */
+function newestPerSession(tails: ClaudeTail[]): ClaudeTail[] {
+  const best = new Map<string, ClaudeTail>();
+  for (const tail of tails) {
+    const prev = best.get(tail.sessionId);
+    if (!prev) {
+      best.set(tail.sessionId, tail);
+      continue;
+    }
+    const rank = updatedAtRank(tail.updatedAt);
+    const prevRank = updatedAtRank(prev.updatedAt);
+    if (rank > prevRank || (rank === prevRank && tail.path < prev.path)) best.set(tail.sessionId, tail);
+  }
+  return [...best.values()];
+}
+
+async function claudeList(rawProjectPath: string, cap: number): Promise<HistorySession[]> {
+  const projectPath = normalizeProjectPath(rawProjectPath);
+  const dirs = (await chunked(
+    await claudeProjectDirs(projectPath),
+    (dir) => claudeLogDir(dir, projectPath),
+  )).filter((d): d is ClaudeLogDir => d !== null);
+
+  // One fan-out over every log of every directory, so the width stays
+  // `READ_CONCURRENCY` however many directories the project spans — and so the
+  // cap is taken once, over the union. A per-directory cap would let one busy
+  // worktree crowd the project's own sessions out of the window, and the window
+  // would stop being a prefix of the merged newest-first order.
+  const logs = dirs.flatMap((d) => d.files.map((file) => ({ d, file })));
+  const tails = await chunked(logs, ({ d, file }) => claudeTail(d.dir, file, d.index));
+  const window = newestPerSession(tails.filter((t): t is ClaudeTail => t !== null))
     .sort(byUpdatedAtThenSessionId)
     .slice(0, cap);
 
@@ -419,7 +534,7 @@ async function loadCodexThreadNames(): Promise<Map<string, string>> {
  *  one epoch unit, which is what Codex writes; `epochToISO`'s seconds-or-ms
  *  guard is for reading a value, not for ordering a mixed table. */
 async function codexList(projectPath: string, cap: number): Promise<HistorySession[]> {
-  const rows = codexThreadWindow(projectPath.replace(/\/+$/, ""), cap);
+  const rows = codexThreadWindow(normalizeProjectPath(projectPath), cap);
   if (rows.length === 0) return [];
 
   const threadNames = await loadCodexThreadNames();

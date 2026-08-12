@@ -42,8 +42,10 @@ function writeClaudeSession(sessionId: string, lines: object[], projectPath = PR
   writeFileSync(join(dir, `${sessionId}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
 }
 
-function userLine(text: string, timestamp: string): object {
-  return { type: "user", message: { content: text }, timestamp };
+/** A user record as Claude writes it — including the `cwd`, which is what
+ *  attributes a log directory to a project (see `recordsCwdUnder`). */
+function userLine(text: string, timestamp: string, cwd = PROJECT): object {
+  return { type: "user", cwd, message: { content: text }, timestamp };
 }
 
 interface CodexFixtureRow {
@@ -173,6 +175,56 @@ describe("claude history list", () => {
   });
 });
 
+/** A project is a subtree: a session belongs to it when its cwd is the project
+ *  path or below it — the rule the live session list already applies. Claude
+ *  stores one directory per cwd, so the descendants are found by encoded-name
+ *  prefix and then confirmed by the `cwd` their logs record, because the
+ *  encoding is lossy and has no inverse. */
+describe("claude history list — the project subtree", () => {
+  const WORKTREE = `${PROJECT}/.worktrees/feat`;
+  /** A sibling project, not a descendant — and its encoded name begins with the
+   *  project's own, which is exactly what a name-only match gets wrong. */
+  const SIBLING = `${PROJECT}-backups`;
+
+  it("includes a session whose cwd is a worktree under the project", async () => {
+    writeClaudeSession("root-1", [userLine("root task", "2026-06-04T10:00:00.000Z")]);
+    writeClaudeSession("wt-1", [userLine("worker task", "2026-06-04T11:00:00.000Z", WORKTREE)], WORKTREE);
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["wt-1", "root-1"]);
+  });
+
+  it("excludes a sibling project whose encoded name shares the prefix", async () => {
+    expect(encodeClaudeCwd(SIBLING).startsWith(`${encodeClaudeCwd(PROJECT)}-`)).toBe(true);
+    writeClaudeSession("root-1", [userLine("root task", "2026-06-04T10:00:00.000Z")]);
+    writeClaudeSession("sib-1", [userLine("sibling task", "2026-06-04T11:00:00.000Z", SIBLING)], SIBLING);
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["root-1"]);
+    expect((await readClaude(SIBLING)).map((r) => r.sessionId)).toEqual(["sib-1"]);
+  });
+
+  it("excludes a prefix-matching directory whose logs record no cwd", async () => {
+    writeClaudeSession("root-1", [userLine("root task", "2026-06-04T10:00:00.000Z")]);
+    // No `cwd` anywhere in the log: unattributable, so it stays out rather than
+    // being admitted on the strength of its name.
+    writeClaudeSession(
+      "anon-1",
+      [{ type: "user", message: { content: "who am i" }, timestamp: "2026-06-04T11:00:00.000Z" }],
+      WORKTREE,
+    );
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["root-1"]);
+  });
+
+  it("keeps the newest single row for a thread logged under two cwds", async () => {
+    writeClaudeSession("dup-1", [userLine("first run", "2026-06-04T10:00:00.000Z")]);
+    writeClaudeSession("dup-1", [userLine("resumed run", "2026-06-04T12:00:00.000Z", WORKTREE)], WORKTREE);
+
+    const rows = await readClaude(PROJECT);
+    expect(rows.map((r) => r.sessionId)).toEqual(["dup-1"]);
+    expect(rows[0]!.summary).toBe("resumed run");
+  });
+});
+
 describe("codex history list", () => {
   it("reads non-archived threads for the project cwd, newest first", async () => {
     createCodexDb([
@@ -187,6 +239,34 @@ describe("codex history list", () => {
     expect(rows[0]!.provider).toBe("codex");
     expect(rows[0]!.summary).toBe("newer task");
     expect(rows[0]!.gitBranch).toBe("main");
+  });
+
+  /** The same subtree rule the Claude reader applies by directory, in SQL. */
+  it("reads threads from the project subtree but not from a sibling", async () => {
+    createCodexDb([
+      { id: "cx-root", first: "root", created: epochSec("2026-06-01T00:00:00Z"), updated: epochSec("2026-06-01T00:00:00Z"), cwd: PROJECT },
+      { id: "cx-wt", first: "worker", created: epochSec("2026-06-02T00:00:00Z"), updated: epochSec("2026-06-02T00:00:00Z"), cwd: `${PROJECT}/.worktrees/feat` },
+      { id: "cx-sibling", first: "sibling", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T00:00:00Z"), cwd: `${PROJECT}-backups` },
+      { id: "cx-wt-archived", first: "archived worker", created: epochSec("2026-06-04T00:00:00Z"), updated: epochSec("2026-06-04T00:00:00Z"), cwd: `${PROJECT}/.worktrees/feat`, archived: 1 },
+    ]);
+
+    expect((await readCodex(PROJECT)).map((r) => r.sessionId)).toEqual(["cx-wt", "cx-root"]);
+  });
+
+  /** The subtree is matched literally, not as a pattern: `_` is a
+   *  single-character wildcard in `LIKE` and would admit a neighbour differing
+   *  in exactly that spot, and `LIKE` folds ASCII case while a POSIX path does
+   *  not. */
+  it("matches the subtree literally, not as a pattern", async () => {
+    const wild = "/repo/de_o";
+    createCodexDb([
+      { id: "cx-wild", first: "wild", created: epochSec("2026-06-01T00:00:00Z"), updated: epochSec("2026-06-01T00:00:00Z"), cwd: `${wild}/sub` },
+      { id: "cx-demo", first: "demo", created: epochSec("2026-06-02T00:00:00Z"), updated: epochSec("2026-06-02T00:00:00Z"), cwd: `${PROJECT}/sub` },
+      { id: "cx-upper", first: "upper", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T00:00:00Z"), cwd: "/repo/DEMO/sub" },
+    ]);
+
+    expect((await readCodex(wild)).map((r) => r.sessionId)).toEqual(["cx-wild"]);
+    expect((await readCodex(PROJECT)).map((r) => r.sessionId)).toEqual(["cx-demo"]);
   });
 
   it("reads tokens from the rollout tail (total_tokens, used as-is)", async () => {
@@ -371,22 +451,31 @@ describe("the per-provider cap", () => {
    *  run opposite to their in-log timestamps. That is deliberate: `updatedAt` is
    *  the log's own last timestamp, so a cap taken on mtime would select the
    *  reverse of the window the merge chooses, and every assertion below would
-   *  fail. It is the property that decides whether a cap is sound at all. */
+   *  fail. It is the property that decides whether a cap is sound at all.
+   *
+   *  Every other session of each provider is written under a worktree cwd
+   *  instead of the project root, so both scans span the subtree. That is what
+   *  makes these the tests of a cap taken *once over the union*: a per-directory
+   *  or per-cwd cap would let one side crowd out the other, and the capped
+   *  window would stop equalling the uncapped one. */
+  const WORKTREE = `${PROJECT}/.worktrees/feat`;
+
   function buildInterleavedHistory(): void {
     const codex: CodexFixtureRow[] = [];
     for (let i = 59; i >= 0; i--) {
+      const cwd = Math.floor(i / 2) % 2 === 0 ? WORKTREE : PROJECT;
       if (i % 2 === 0) {
         writeClaudeSession(`cl-${String(i).padStart(2, "0")}`, [
-          userLine(`claude prompt ${i}`, at(0)),
+          userLine(`claude prompt ${i}`, at(0), cwd),
           { type: "assistant", timestamp: at(i) },
-        ]);
+        ], cwd);
       } else {
         codex.push({
           id: `cx-${String(i).padStart(2, "0")}`,
           first: `codex prompt ${i}`,
           created: epochSec(at(0)),
           updated: epochSec(at(i)),
-          cwd: PROJECT,
+          cwd,
         });
       }
     }
