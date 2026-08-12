@@ -328,6 +328,30 @@ Test split:
 
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, the milestone state derivation (in-flight `running`, all-cancelled `cancelled`, a stale recorded value corrected on read, the old parent re-derived after a reparent, `set` refused on a milestone), --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
+### Testing a window that `sleepSync` holds open
+
+The Stop debounce (`hook-event.ts#runHookEventForHandle`) blocks the thread for 120 ms and
+then re-reads the state file, so a test that has to mutate that file *during* the window
+cannot use a timer — the event loop is parked. It needs a second process, and that is where
+the trap is: the process launch itself competes for the window. `test/hook-event.test.ts`
+paid ~10 ms of `fork`/`exec` inside a 60 ms head-room and went red on CI roughly a third of
+the time on a contended core.
+
+`armRivalWrite()` is the shape to copy for any test like this:
+
+1. spawn the writer and **wait for it to say `ready`** — the launch is paid for before the
+   window opens;
+2. `fire()` hands it the payload over stdin, then the window opens; the writer holds a fixed
+   `STOP_DEBOUNCE_MS / 4` delay and writes **in-process** (node, `writeFileSync` +
+   `renameSync`), so nothing forks inside the window — not even `mv`;
+3. `confirmLandedInWindow()` asserts the write's own timestamp fell inside the window. Without
+   it the test can pass for the wrong reason: a writer landing *after* a broken debounce
+   committed `idle` looks identical to a back-off;
+4. children are tracked and `settleRivals()` is awaited in `afterEach` before `rmSync` —
+   a detached late writer used to leave `ENOTEMPTY` on the temp dir.
+
+Raising the window or the offset instead only lowers the failure rate and leaves the race.
+
 `YACO_TASK_LOCK_TIMEOUT_MS=<ms>` overrides the default 10s task-lock retry budget — handy when locally reproducing cross-host lock contention without a long wait. It is read at the command edge (`cli/src/commands/task/lock-timeout.ts`) and threaded down explicitly, so it applies to every command that takes the lock and to none of the library below it.
 
 ### Golden matrix

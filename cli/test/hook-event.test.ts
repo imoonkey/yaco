@@ -41,16 +41,119 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
   };
 }
 
-/** Spawn a detached child that overwrites the state file mid-debounce.
+/** Delay between `fire()` and the rival's write. The child is already running by
+ *  then and writes in-process, so this is a signal-to-write delay, not a process
+ *  launch: it only has to outlast the microseconds the debounce needs to take its
+ *  baseline read, and stay well inside STOP_DEBOUNCE_MS. */
+const RIVAL_WRITE_DELAY_MS = STOP_DEBOUNCE_MS / 4;
+
+/** Children armed by armRivalWrite, awaited by settleRivals() before the temp dir goes. */
+const rivals: ReturnType<typeof spawn>[] = [];
+
+interface RivalWriter {
+  /** Hand the child its payload. Returns once the byte is queued; call it
+   *  immediately before the code that opens the debounce window. */
+  fire: () => void;
+  /** Resolve once the rival's write is on disk, asserting it actually landed
+   *  inside the window it was aimed at. Without this the test can pass for the
+   *  wrong reason: a rival that lands *after* a broken Stop committed `idle` but
+   *  before the assertion re-reads the file looks exactly like a back-off. */
+  confirmLandedInWindow: () => Promise<void>;
+}
+
+/** Arm a rival writer: a separate process that overwrites the state file mid-debounce.
  *  The debounce's sleepSync blocks this thread but not other processes, which is
- *  exactly the race the debounce defends against (two provider hooks
- *  running concurrently as separate processes). */
-function scheduleRivalWrite(handle: string, afterMs: number, newState: SessionState): void {
-  const path = statePath(handle);
-  const payload = JSON.stringify(newState);
-  const script = `sleep ${(afterMs / 1000).toFixed(3)} && printf '%s' '${payload.replace(/'/g, "'\\''")}' > "${path}"`;
-  const child = spawn("bash", ["-c", script], { stdio: "ignore", detached: true });
-  child.unref();
+ *  exactly the race the debounce defends against (two provider hooks running
+ *  concurrently as separate processes).
+ *
+ *  Resolves once the child has printed `ready` — it has execed, loaded, and is
+ *  waiting on stdin — so the whole process launch is paid for BEFORE the window
+ *  opens. Nothing inside the window forks: the child writes and renames in-process
+ *  (node, not a shell), the same atomic shape writeState uses. */
+async function armRivalWrite(handle: string, newState: SessionState): Promise<RivalWriter> {
+  const script = `
+    const { writeFileSync, renameSync } = require("fs");
+    const path = ${JSON.stringify(statePath(handle))};
+    let buf = "";
+    process.stdout.write("ready\\n");
+    // Stdin closed without a payload (never fired) → exit without writing.
+    process.stdin.on("end", () => process.exit(0));
+    process.stdin.on("data", (chunk) => {
+      buf += chunk;
+      if (!buf.includes("\\n")) return;
+      const payload = buf.trim();
+      setTimeout(() => {
+        writeFileSync(path + ".rival", payload);
+        renameSync(path + ".rival", path);
+        process.stdout.write(Date.now() + "\\n");   // the landing witness
+      }, ${RIVAL_WRITE_DELAY_MS});
+    });
+  `;
+  const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "pipe"] });
+  rivals.push(child);
+  const lines = readLines(child);
+  await lines();                                    // "ready"
+
+  let firedAt = 0;
+  return {
+    fire: () => {
+      firedAt = Date.now();
+      child.stdin!.write(JSON.stringify(newState) + "\n");
+    },
+    confirmLandedInWindow: async () => {
+      const landing = Number(await lines()) - firedAt;
+      expect(landing).toBeGreaterThan(0);
+      expect(landing).toBeLessThan(STOP_DEBOUNCE_MS);
+    },
+  };
+}
+
+/** Read the child's stdout one line at a time: each call resolves with the next line.
+ *  A child that dies before its next line rejects the read with whatever it put on
+ *  stderr — otherwise a failed write would hang the reader until the vitest timeout
+ *  and report nothing about why. */
+function readLines(child: ReturnType<typeof spawn>): () => Promise<string> {
+  const pending: string[] = [];
+  const waiting: { resolve: (line: string) => void; reject: (e: Error) => void }[] = [];
+  let buf = "";
+  let dead: Error | null = null;
+  let stderr = "";
+  child.stderr!.on("data", (chunk) => { stderr += chunk; });
+  child.stdout!.on("data", (chunk) => {
+    buf += chunk;
+    for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      const next = waiting.shift();
+      if (next) next.resolve(line);
+      else pending.push(line);
+    }
+  });
+  const die = (reason: string) => {
+    dead = new Error(`rival writer ${reason}${stderr ? `: ${stderr.trim()}` : ""}`);
+    while (waiting.length) waiting.shift()!.reject(dead);
+  };
+  child.on("error", (e) => die(`failed to start: ${e.message}`));
+  // `close`, not `exit`: it fires after stdout is drained, so a line already in
+  // flight is never lost to a rejection.
+  child.on("close", (code, signal) => die(`exited (code ${code}, signal ${signal})`));
+  return () => new Promise<string>((resolve, reject) => {
+    const line = pending.shift();
+    if (line !== undefined) resolve(line);
+    else if (dead) reject(dead);
+    else waiting.push({ resolve, reject });
+  });
+}
+
+/** Let every armed rival finish before its temp dir is removed. A child still in
+ *  flight when afterEach rmSync's the dir is the ENOTEMPTY this suite used to hit,
+ *  and a detached one outlives the whole file. */
+async function settleRivals(): Promise<void> {
+  await Promise.all(rivals.splice(0).map((child) => new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.on("exit", () => resolve());
+    child.stdin!.end();
+  })));
 }
 
 describe("applyHookEvent", () => {
@@ -551,7 +654,8 @@ describe("Stop debounce — runHookEventForHandle", () => {
     process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleRivals();
     if (ORIGINAL === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
     else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL;
     rmSync(dir, { recursive: true, force: true });
@@ -575,13 +679,14 @@ describe("Stop debounce — runHookEventForHandle", () => {
       sessionId: "turn-N",
     }));
 
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
@@ -596,13 +701,14 @@ describe("Stop debounce — runHookEventForHandle", () => {
       sessionId: "turn-N",
     }));
 
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "StopFailure", { hook_event_name: "StopFailure" });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
@@ -622,7 +728,8 @@ describe("Provider idle notice — Stop final message tail", () => {
     process.env["YACO_AGENT_SESSIONS_DIR"] = dir;
     process.env["HOME"] = home;
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await settleRivals();
     if (ORIGINAL_SESSIONS_DIR === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
     else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL_SESSIONS_DIR;
     if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
@@ -672,13 +779,14 @@ describe("Provider idle notice — Stop final message tail", () => {
     writeState(makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N" }));
     const transcript_path = writeTranscript("This must not be captured.");
     // A fresher event lands mid-debounce → the Stop backs off without writing.
-    scheduleRivalWrite(
+    const rival = await armRivalWrite(
       handle,
-      Math.floor(STOP_DEBOUNCE_MS / 2),
       makeState({ handle, provider: "claude", status: "processing", sessionId: "turn-N+1" }),
     );
 
+    rival.fire();
     await runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop", transcript_path });
+    await rival.confirmLandedInWindow();
 
     const after = readState(handle);
     expect(after?.status).toBe("processing");
