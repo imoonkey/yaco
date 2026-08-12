@@ -94,7 +94,7 @@ async function inProcess(
 
 function claudeLog(i: number): string {
   return [
-    JSON.stringify({ type: "user", timestamp: at(0), message: { content: `claude prompt ${i}` } }),
+    JSON.stringify({ type: "user", cwd: PROJECT, timestamp: at(0), message: { content: `claude prompt ${i}` } }),
     JSON.stringify({ type: "custom-title", customTitle: `title ${i}` }),
     JSON.stringify({
       type: "assistant",

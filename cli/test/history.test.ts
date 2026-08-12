@@ -227,16 +227,21 @@ describe("claude history list — the project subtree", () => {
     expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["mine"]);
   });
 
-  it("keeps a log of the project's own directory that records no cwd", async () => {
-    // The directory name is exact here, not a prefix guess, so it is the
-    // evidence a log without a `cwd` falls back to — dropping these would lose
-    // sessions that history has always shown.
-    writeClaudeSession(
-      "anon-own",
-      [{ type: "user", message: { content: "no cwd anywhere" }, timestamp: "2026-06-04T10:00:00.000Z" }],
-    );
+  it("drops a log that records no cwd, including from the project's own directory", async () => {
+    // There is no directory to fall back to: the project's own name is the same
+    // lossy encoding as any other, so `/repo:demo` files into it too. A log that
+    // cannot be attributed is out wherever it sits — which costs nothing real,
+    // since a Claude log records its cwd on every turn.
+    const collides = "/repo:demo";
+    expect(encodeClaudeCwd(collides)).toBe(encodeClaudeCwd(PROJECT));
+    const noCwd = (text: string, timestamp: string): object =>
+      ({ type: "user", message: { content: text }, timestamp });
 
-    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["anon-own"]);
+    writeClaudeSession("anon-own", [noCwd("filed under the project", "2026-06-04T10:00:00.000Z")]);
+    writeClaudeSession("anon-collided", [noCwd("filed through the collision", "2026-06-04T11:00:00.000Z")], collides);
+    writeClaudeSession("real", [userLine("attributable", "2026-06-04T12:00:00.000Z")]);
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["real"]);
   });
 
   /** Two different cwds can encode to one directory name, so the directory is a
@@ -257,12 +262,17 @@ describe("claude history list — the project subtree", () => {
     }
   });
 
-  it("scans the subtree of a project at the filesystem root", async () => {
+  it("scans the subtree of a project at the filesystem root, root itself included", async () => {
     // `/` is a path `addProject` accepts and `isPathDescendantOrEqual` answers
-    // for, and it is the one path that already carries its own separator.
+    // for, and it is the one path that already carries its own separator — so it
+    // is also the one path whose own encoded directory (`-`) is its own
+    // descendant prefix, which is why the candidate list is deduplicated.
     writeClaudeSession("root-fs", [userLine("everything", "2026-06-04T10:00:00.000Z", "/repo/x")], "/repo/x");
+    writeClaudeSession("root-itself", [userLine("at the root", "2026-06-04T11:00:00.000Z", "/")], "/");
 
-    expect((await readClaude("/")).map((r) => r.sessionId)).toEqual(["root-fs"]);
+    const rows = await readClaude("/");
+    expect(rows.map((r) => r.sessionId)).toEqual(["root-itself", "root-fs"]);
+    expect(rows.map((r) => r.summary)).toEqual(["at the root", "everything"]);
   });
 
   it("keeps the newest single row for a thread logged under two cwds", async () => {

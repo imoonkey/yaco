@@ -245,7 +245,10 @@ The control is `cli/test/bench/history-retired-control.ts`, the previous module
 checked in verbatim, and its job is separation rather than a bound: run beside
 the shipped reader it is **over** the bound on all three fixtures (64.5 · 66.7 ·
 345.1 ms) where the shipped reader is within (11.4 · 13.9 · 31.7 ms). That
-separation is what makes the table above mean anything.
+separation is what makes the table above mean anything. Since the subtree
+widening it is no longer like-for-like — the control still reads the single
+directory it was written against while the shipped reader reads the project's
+whole subtree — so it now reads as a *lower* bound on the gap.
 
 Two decisions the benchmark could not answer:
 

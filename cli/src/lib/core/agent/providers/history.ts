@@ -449,8 +449,11 @@ async function claudeProjectDirs(projectPath: string): Promise<string[]> {
     names = await readdir(claudeProjectsRoot());
   } catch { return [own]; }
 
+  // A Set because at the root the project's own encoded name is `-`, which is
+  // also the prefix every descendant carries: without it the root directory
+  // would be read twice.
   const prefix = encodeClaudeCwd(descendantPrefix(projectPath));
-  return [own, ...names.filter((n) => n.startsWith(prefix)).map((n) => join(claudeProjectsRoot(), n))];
+  return [...new Set([own, ...names.filter((n) => n.startsWith(prefix)).map((n) => join(claudeProjectsRoot(), n))])];
 }
 
 /** One tail per session id. A thread resumed under a second cwd is logged under
@@ -479,18 +482,19 @@ function newestPerSession(tails: ClaudeTail[]): ClaudeTail[] {
  *  log read decide for its neighbours would both admit and drop history
  *  according to `readdir` order. Each log records the cwd that settles it.
  *
- *  A log that records no cwd anywhere it was read falls back to the only other
- *  evidence there is — the directory Claude filed it under, which is exact for
- *  the project's own encoded name and merely a prefix for any other. */
-function belongsToProject(tail: ClaudeTail, projectPath: string, ownDir: string): boolean {
-  return tail.cwd === null
-    ? tail.path.startsWith(ownDir + sep)
-    : isPathDescendantOrEqual(tail.cwd, projectPath);
+ *  A log that records none anywhere it was read is **out**, wherever it sits.
+ *  The directory it was filed under is not the evidence to fall back to — it is
+ *  the same lossy encoding, `/repo/demo` and `/repo:demo` being one name — so
+ *  falling back there would keep exactly the leak per-log attribution removes.
+ *  Nothing real is lost by failing closed: a Claude log records its cwd on every
+ *  user and assistant record, so the only logs this drops are ones that never
+ *  reached a turn (0 of 1 051 logs on the reference home lack one). */
+function belongsToProject(tail: ClaudeTail, projectPath: string): boolean {
+  return tail.cwd !== null && isPathDescendantOrEqual(tail.cwd, projectPath);
 }
 
 async function claudeList(rawProjectPath: string, cap: number): Promise<HistorySession[]> {
   const projectPath = normalizeProjectPath(rawProjectPath);
-  const ownDir = claudeProjectDir(projectPath);
   const dirs = (await chunked(await claudeProjectDirs(projectPath), claudeLogDir))
     .filter((d): d is ClaudeLogDir => d !== null);
 
@@ -502,7 +506,7 @@ async function claudeList(rawProjectPath: string, cap: number): Promise<HistoryS
   const logs = dirs.flatMap((d) => d.files.map((file) => ({ d, file })));
   const tails = await chunked(logs, ({ d, file }) => claudeTail(d.dir, file, d.index));
   const window = newestPerSession(
-    tails.filter((t): t is ClaudeTail => t !== null && belongsToProject(t, projectPath, ownDir)),
+    tails.filter((t): t is ClaudeTail => t !== null && belongsToProject(t, projectPath)),
   )
     .sort(byUpdatedAtThenSessionId)
     .slice(0, cap);

@@ -102,7 +102,7 @@ describe("claude project-log enumeration", () => {
       for (const id of writeOrder) {
         writeFileSync(
           join(projectDir, `${id}.jsonl`),
-          JSON.stringify({ type: "user", timestamp: "2026-06-01T09:00:00.000Z", message: { content: id } }) + "\n",
+          JSON.stringify({ type: "user", cwd: projectPath, timestamp: "2026-06-01T09:00:00.000Z", message: { content: id } }) + "\n",
         );
       }
 
