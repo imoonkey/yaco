@@ -60,7 +60,7 @@ Usage:
   yaco install [options]
 
 Options:
-  --cli-only       Skip app/server and app/ui npm install
+  --cli-only       Skip the workspace-root npm install (the app's dependencies)
   --skip-hooks     Skip merging provider hooks into ~/.claude + ~/.codex
                    (the wrapper script is still written)
   --no-registry    Do not upsert this repo into \${YACO_HOME}/projects.json
@@ -512,25 +512,44 @@ function plantSkillLink(
   actions.push(`relink skill ${name}`);
 }
 
-/** Run npm install in app/server and app/ui (no-op when --cli-only). */
-function installAppDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
-  for (const sub of ["app/server", "app/ui"] as const) {
-    const dir = join(repoRoot, sub);
-    if (!existsSync(dir)) continue;
-    if (dryRun) {
-      actions.push(`npm install in ${dir}`);
-      continue;
-    }
-    const r = spawnSync("npm", ["install"], {
-      cwd: dir,
-      stdio: "inherit",
-      env: { ...process.env },
-    });
-    if (r.status !== 0) {
-      throw new CliError(ErrCode.IO, `npm install failed in ${dir} (exit ${r.status})`);
-    }
-    actions.push(`npm install in ${dir}`);
+/** One `npm install` at the workspace ROOT — never inside a member (no-op when
+ *  --cli-only, skipped when there is no checkout).
+ *
+ *  The root is the only place that links `packages/*` into `node_modules`.
+ *  Installing in `app/server` and `app/ui` alone left `yaco-codex-transcribe` —
+ *  imported bare by `app/server/src/routes/voice.ts`, declared by nobody —
+ *  unresolvable, so `npm run start:app` and `scripts/verify.sh` both died on a
+ *  clean clone. Invisible on every developer box, each of which has had a root
+ *  install run in it at least once. Running at the root loses nothing: both app
+ *  packages are workspace members, so the one install covers them too.
+ *
+ *  DO NOT "fix" that package by declaring it as an app dependency instead:
+ *  `app/server/scripts/build.mjs` externalises exactly the *declared*
+ *  dependencies and inlines this one precisely because it is not declared.
+ *  Declaring it makes the published bundle require a package that is never
+ *  published. The linking belongs here, in the install.
+ *
+ *  The guard is repository identity, the same question {@link upsertRegistry}
+ *  asks — `npm install` at whatever directory a package user happened to be
+ *  standing in is not a step, it is an accident. */
+function installWorkspaceDeps(repoRoot: string, actions: string[], dryRun: boolean): void {
+  if (!isYacoCheckout(repoRoot)) {
+    actions.push(`skipped npm install: ${repoRoot} is not a yaco checkout`);
+    return;
   }
+  if (dryRun) {
+    actions.push(`npm install in ${repoRoot}`);
+    return;
+  }
+  const r = spawnSync("npm", ["install"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: { ...process.env },
+  });
+  if (r.status !== 0) {
+    throw new CliError(ErrCode.IO, `npm install failed in ${repoRoot} (exit ${r.status})`);
+  }
+  actions.push(`npm install in ${repoRoot}`);
 }
 
 /** Run the doctor checks in-process and bail if any are failing.
@@ -617,7 +636,7 @@ export async function runInstall(opts: InstallOptions): Promise<InstallReport> {
   removeLegacySymlink(join(binDir, "multmux"), actions, opts.dryRun);
 
   if (!opts.cliOnly) {
-    installAppDeps(repoRoot, actions, opts.dryRun);
+    installWorkspaceDeps(repoRoot, actions, opts.dryRun);
   }
 
   // The registry entry names the yaco source repo as a project. An `npm i -g`
