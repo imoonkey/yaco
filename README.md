@@ -118,10 +118,11 @@ that has never been installed bootstraps the CLI workspace's dependencies first
 ### First session
 
 ```bash
-npm run start:app                          # 1. build + serve on http://localhost:3001
+yaco-app                                     # 1. serve on http://localhost:3001
+                                             #    from a clone: npm run start:app
 yaco project add myrepo /abs/path/to/myrepo  # 2. register a repo (new terminal)
 cd /abs/path/to/myrepo
-yaco claude "give me a tour of this repo"  # 3. start an agent in it
+yaco claude "give me a tour of this repo"    # 3. start an agent in it
 ```
 
 That session is now both a handle in the CLI and a terminal tab in the app you
@@ -215,10 +216,11 @@ starting point, not a doctrine.
 
 ## Layer 3 — the app
 
-`npm run start:app`, then open <http://localhost:3001>. Single user, file-based
-state, no database. It is deliberately a *simple* IDE — editor, file explorer,
-cross-file search, git and diff views, terminals, voice input — plus the parts
-a traditional IDE doesn't have:
+`yaco-app` — or `npm run start:app` from a clone — then open
+<http://localhost:3001>. Single user, file-based state, no database. It is
+deliberately a *simple* IDE — editor, file explorer, cross-file search, git and
+diff views, terminals, voice input — plus the parts a traditional IDE doesn't
+have:
 
 - **Sessions that outlive the browser.** Every terminal is a tmux session:
   close the tab, restart the server, reattach later — from the app or a plain

@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-12: the npm install path, walked once on a machine that had never seen YACO
+
+**What changed:**
+- **The install path works, and this is the first evidence of it.** `cli-node-sdk` replaced the Bun binary with an npm package on 2026-08-11, and both installs since were upgrades over the old binary — both hit `npm error EEXIST`, a state no clean machine can be in. A hand-built sandbox (empty `HOME`, a `PATH` assembled from three hand-placed symlinks plus `/usr/bin`, its own install prefix) ran `tools/install.sh` verbatim: **exit 0 in 32 seconds**, CLI on `PATH`, 22 skills linked, both provider hooks merged, repo registered, doctor **9 pass / 0 fail**. `bash scripts/verify.sh` in that same clone: green, 1m51s.
+- **The `doctor-providers-stranger` contract holds on the path it was written for.** With neither `claude` nor `codex` on `$PATH`, `yaco install` exits 0 and reports `SKIP providers`, verbatim in the wording the README quotes.
+- **Three things stop a stranger anyway.** `git clone https://github.com/imoonkey/yaco.git` fails — the repo is **private** (anonymous: web 404, git endpoint 401), invisible from the dev box because its git config pins a `gh auth git-credential` helper for that host. Both packages are 404 on npm — and the publication has an **order constraint** that was not known before: the app package declares the CLI package as a runtime dependency, the only unpublished dependency of its eleven, so the app cannot install until the CLI is published first. (Publication moved to unscoped `yaco-cli` / `yaco-app` mid-task, since the `@yaco` org is not registrable; both unscoped names are free, and the constraint survives the rename.)
+- **`npm run start:app` cannot work on a clean clone** — `Cannot find package '@yaco/codex-transcribe'`. `installAppDeps()` runs `npm install` in `app/server` and `app/ui` but never at the workspace root, and the root install is the only thing that links `packages/*` into `node_modules/@yaco/`; `@yaco/codex-transcribe` is imported bare by `app/server/src/routes/voice.ts` and declared as a dependency by nobody. Proven in both directions — a root `npm install` creates the link and the identical command then serves the app shell. `verify.sh` cannot catch it: it invokes the package by workspace name, which npm resolves from the globs without the link. Unseen until now because every dev checkout has had a root install run in it once.
+- **The first agent command on a provider-less machine fails opaquely.** `yaco claude "…"` → `error [INTERNAL]: Session "claude-pewter-mocha-fox-42ce45" died during bootstrap`, never naming `claude`. `agent start` does not precheck `which(provider.executable)`, though `doctor` and `yaco agent list` both already do and both say `not found` on that same machine.
+- **The app package itself is sound.** Packed and run with no checkout anywhere: `YACO server running`, `/api/health` 200, `/` 200. Its entry point is the `yaco-app` binary, which the README had never named while telling npm-only readers to start layer 3 with a repo script — fixed where it does not collide with the rename worker's lines.
+
+**Why:**
+- The task record's own rule is what earned this re-run: a prior task changed the install path, so the old evidence that install works no longer applied. It was worth it — the run found one real bug in the app install, one in the agent start path, and a publication ordering constraint, none of which a developer box can see. Every one of them is a thing that only exists in the absence of state, which is why the sandbox had to be built *up* from nothing: `dirname(node)` on this machine carries a `claude`, a `codex` and a `yaco`, and the Node distribution's own `bin/` carries a second `codex`.
+
+**Verification:** Full evidence, per-criterion, with the harness and the unedited logs: `plan/active/oss-release-v0.1/oss-clean-machine-install-v2/qa-oss-clean-machine-install-v2.md`.
+
+**Key files:** `README.md`, `doc/PROGRESS.md`
+**Next:** two follow-up tasks, both outside this task's scope — the workspace-root install gap (`cli/src/commands/install.ts:515`) and the provider precheck in `agent start` (`cli/src/commands/agent/start.ts:434`). Publication order for the release: `yaco-cli` before `yaco-app`, and the repo has to go public.
+**Blockers:** None for the install path itself.
+
 ## 2026-08-11: a worktree now tests its own CLI, and says so out loud when it can't
 
 **What changed:**
