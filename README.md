@@ -51,82 +51,46 @@ Linux or macOS, with:
 
 - **[Claude Code](https://claude.com/claude-code) (`claude`) or
   [Codex](https://developers.openai.com/codex/cli) (`codex`) on your `PATH`** —
-  one is enough. YACO ships no agent, so this is the one prerequisite it cannot
-  supply and the thing every agent command drives. You can install it after
-  YACO: `yaco install` completes either way, and reports the gap rather than
-  failing on it — `SKIP providers  no provider executable on $PATH (claude,
-  codex) — install one before starting agents`. Until you close it, `yaco
-  doctor` keeps printing that line and no agent session can run.
-- **Node.js ≥ 24.15 + npm**, **tmux**, **git**. The CLI declares that floor in
-  `engines.node` and its launcher rejects anything below it — `node:sqlite` is
-  silent from 24.15 and warns on stderr before it, and empty stderr is an
-  asserted contract.
-- Linux only: `make`, `python3`, and a C/C++ compiler — `node-pty`, which backs
-  every terminal, compiles from source on Linux
-  (`sudo apt install make python3 build-essential`).
+  one is enough. YACO ships no agent; you can install one later, but no
+  session can run without it.
+- **Node.js ≥ 24.15 + npm**, **tmux**, **git**.
+- Linux only: `make`, `python3`, and a C/C++ compiler
+  (`sudo apt install make python3 build-essential`) — `node-pty` compiles from
+  source.
 
 ### Install
 
-**From npm — no clone.** The CLI carries the 22 skills inside it, so this is a
-complete layers 1 + 2 install:
+Two ways to install — pick one.
+
+**From npm**, to use YACO — the CLI ships all 22 skills:
 
 ```bash
-npm install -g yaco-cli
+npm install -g yaco-cli yaco-app
 yaco install
 ```
 
-`npm install -g` is inert: it puts files and the `yaco` executable on disk and
-touches nothing else. `yaco install` is the separate, explicit step that
-configures the machine — it merges provider hooks into `~/.claude` and
-`~/.codex`, writes the agent wrapper, plants one symlink per skill into
-`~/.claude/skills` (alongside — never replacing — the skills you already have),
-and finishes with `yaco doctor`. Everything it plants comes out of the installed
-package, so nothing points at a directory that could go away. Add
-`npm install -g yaco-app` for layer 3. Re-run `yaco install` after either
-upgrade.
-
-Doctor reports what you have not set up yet — the project registry, the task
-graph, an agent CLI — as **SKIP** rather than failing, so this install completes
-on a machine that is only part of the way there. Register your own repos with
-`yaco project add <name> <path>` when you have one; every line doctor skips
-names what it is waiting for.
-
-**From a clone — the way to change YACO.** The skills are the layer most people
-will want to edit, and an installed package is a read-only copy of them, so
-**modifying YACO's behaviour means cloning it**:
+**From a clone**, to change it — skills included:
 
 ```bash
-git clone https://github.com/imoonkey/yaco.git
-cd yaco
+git clone https://github.com/imoonkey/yaco.git && cd yaco
 tools/install.sh
 ```
 
-This packs `yaco-cli` and installs that same tarball into
-`${YACO_BIN_DIR:-~/.local/bin}`'s prefix (make sure the bin dir is on your
-`PATH`), then runs `yaco install` for you and additionally npm-installs the app
-and registers this repo as a project. Re-run it after `git pull` — and after
-editing a skill, since what `yaco install` links to is the copy inside the built
-package (`--cli-only` skips the app's npm installs). The steps are not
-transactional: if one fails, the earlier ones already ran, so read the error and
-re-run.
-
-It installs the tarball rather than linking the checkout deliberately: what
-lands on your `PATH` is byte-for-byte the artifact npm would deliver. A clone
-that has never been installed bootstraps the CLI workspace's dependencies first
-— a few seconds, no native compilation.
+Re-run the install step after upgrading, pulling, or editing a skill.
 
 ### First session
 
 ```bash
-yaco-app                                     # 1. serve on http://localhost:3001
-                                             #    from a clone: npm run start:app
-yaco project add myrepo /abs/path/to/myrepo  # 2. register a repo (new terminal)
-cd /abs/path/to/myrepo
-yaco claude "give me a tour of this repo"    # 3. start an agent in it
+cd /path/to/any/repo
+yaco claude "give me a tour of this repo"
 ```
 
-That session is now both a handle in the CLI and a terminal tab in the app you
-can type into directly.
+That's it — a tmux-backed session that outlives your terminal, managed with
+`yaco agent list` / `capture` / `send` / `kill`.
+
+For the browser IDE, run `yaco-app` (from a clone: `npm run start:app`), open
+<http://localhost:3001>, and add your repo as a project — the session you just
+started is already there as a terminal tab.
 
 ## Layer 1 — the agent CLI
 
