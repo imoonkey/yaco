@@ -11,15 +11,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   chmodSync,
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -170,6 +173,50 @@ describe("runInstall — basic shape", () => {
     expect(body).toContain("YACO_AGENT_SESSIONS_DIR");
     const st = lstatSync(path);
     expect((st.mode & 0o111)).not.toBe(0);
+  });
+
+  it("replaces a stale wrapper by rename, leaving the running inode intact", async () => {
+    // The property the whole change exists for. A live session is a
+    // `bash agent-wrapper.sh` holding this inode open at a byte offset; the open
+    // fd below stands in for it. Refilling the same inode (writeFileSync's
+    // O_TRUNC) makes that fd see the NEW bytes at the OLD offsets, which is a
+    // running shell silently parsing mid-token of unrelated text. A rename only
+    // swaps the directory entry, so the fd keeps reading exactly what the shell
+    // holding it was launched on.
+    await runInstall(baseOpts());
+    const path = join(process.env["YACO_HOME"]!, "agent-wrapper.sh");
+    const stale = "#!/usr/bin/env bash\n# a wrapper an older install left here\n";
+    writeFileSync(path, stale);
+    const fd = openSync(path, "r");
+    const staleIno = statSync(path).ino;
+    try {
+      const r = await runInstall(baseOpts());
+      expect(r.actions).toContain(`wrote ${path}`);
+      // The old inode: still the bytes the "session" started on.
+      expect(readFileSync(fd, "utf-8")).toBe(stale);
+      // The name: now a different inode carrying the packaged wrapper.
+      expect(statSync(path).ino).not.toBe(staleIno);
+      expect(readFileSync(path, "utf-8")).toContain("YACO_AGENT_SESSIONS_DIR");
+    } finally {
+      closeSync(fd);
+    }
+  });
+
+  it("leaves no temp file behind in ${YACO_HOME}", async () => {
+    await runInstall(baseOpts());
+    const yacoHome = process.env["YACO_HOME"]!;
+    expect(readdirSync(yacoHome).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("writes the wrapper only when its content actually changed", async () => {
+    await runInstall(baseOpts());
+    const path = join(process.env["YACO_HOME"]!, "agent-wrapper.sh");
+    const ino = statSync(path).ino;
+    const again = await runInstall(baseOpts());
+    expect(again.actions).not.toContain(`wrote ${path}`);
+    // Unchanged content must not even swap the inode: a rename is harmless to a
+    // running shell, but it is still not a no-op for anything watching the path.
+    expect(statSync(path).ino).toBe(ino);
   });
 
   it("creates ~/.claude/skills as a real dir with one link per shipped skill", async () => {

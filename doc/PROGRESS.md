@@ -1,5 +1,53 @@
 # Progress
 
+## 2026-08-12: the agent wrapper gets one writer, and a rename instead of a rewrite
+
+**What changed:**
+- `${YACO_HOME}/agent-wrapper.sh` is now replaced by write-temp → chmod 0755 →
+  `rename`, never by `writeFileSync` onto the live path.
+- It has exactly **one writer**. `ensureManagedScript()` in
+  `agent/lifecycle.ts` was a second, truncating implementation that
+  `ensureHooks()` — every `yaco agent start` — went through; it had one caller
+  and is gone. `ensureAgentWrapperScript()` absorbs it and returns whether it
+  wrote, so `install.ts` keeps its `wrote <path>` reporting and nothing else.
+- The temp is a sibling, created exclusively (`wx`) with a random suffix, chmod'd
+  before the rename, and removed on every failure past the exclusive create —
+  EEXIST at the create itself is exempt, being the proof the file is not ours.
+- `--dry-run` reads the packaged wrapper unconditionally again, so it cannot plan
+  a `write` the real run would throw on.
+
+**Why:**
+- `writeFileSync` on an existing path is `O_TRUNC` — it refills the *same inode*.
+  Every live session is a `bash agent-wrapper.sh` holding that inode open at a
+  byte offset, and the wrapper does not `exec` the provider (`bash -lic 'exec
+  "$@"' _ "$@"`), so the outer shell is parked at the file's EOF offset for the
+  whole session. Growing the file underneath it changes what every later offset
+  means. Observed 2026-08-12 deploying `agent-start-provider-precheck`, which
+  grew the wrapper 5032 → 7083 B; that deploy was safe only because the file had
+  been pre-placed by hand with `cp` + `mv -f`.
+- Constructed on private tmux sockets, both writers side by side, three shapes.
+  At the real wrapper's scale the truncating write made the parked shell
+  re-execute a command it had already run and then execute a *different
+  version's* tail — **exit 0**, one line of stderr. In the real control flow it
+  died with a syntax error and **exit 2**, which is the code the wrapper's own
+  EXIT trap hands to `mark-crashed`: a healthy session tombstones itself as
+  crashed. The rename case was intact in every run.
+
+**Key files:** `cli/src/lib/core/agent/lifecycle.ts`,
+`cli/src/commands/install.ts`,
+`cli/test/unit/core/agent/wrapper-atomic-write.test.ts`,
+`cli/test/unit/commands/install.test.ts`, `doc/main/cli/install.md`
+**Verification:** `scripts/verify.sh` ✓; cli typecheck clean; 1491 unit tests;
+14 hermetic `tools/install.sh` integration tests; the AC2 construction
+(`plan/all/install-wrapper-atomic-write/ac2-*.sh`), deterministic across repeats;
+ten mutants each killed by the assertion that claims it. Independent Codex review
+(`rv-wrapper-atomic`), five rounds, **approve / 0 unresolved critical+high**.
+**Commit:** `bf2b855f..5f1c21a0`
+**Next:** none required. Recorded but not fixed: the provider hook configs are
+still truncate-then-write, so a crash mid-write destroys the user's *unrelated*
+`~/.claude/settings.json` entries. That is a durability argument, not this
+concurrency one.
+
 ## 2026-08-12: a block reason that can come off, and stops outliving `blocked`
 
 **What changed:**
