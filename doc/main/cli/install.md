@@ -326,8 +326,9 @@ Iterates the provider registry (`listProviders()` from
 adapters that declare hooks — Claude's resolves to `ensureClaudeHooks`, Codex's
 to `ensureCodexHooks` (both in `lib/core/agent/lifecycle.ts`). `install.ts`
 plants the wrapper once via `installAgentWrapper` and then calls the adapters'
-`hooks.install()` directly rather than `ensureHooks()`, which would write the
-wrapper a second time; the merge stays keyed off each adapter's
+`hooks.install()` directly rather than `ensureHooks()`, which would re-read and
+re-check the wrapper once per provider (not rewrite it — the content check
+returns early); the merge stays keyed off each adapter's
 `hooks.configPath()`. Adding a provider widens the merge loop with no
 install.ts edit.
 
