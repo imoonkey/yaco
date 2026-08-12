@@ -4,8 +4,8 @@
 
 **Global (one-time):**
 ```bash
-cd agent-config
-./setup.sh
+tools/install.sh   # from a clone — packs and installs yaco-cli, then configures
+yaco install       # from the npm package — configures only
 ```
 
 **Per-project:**
@@ -13,7 +13,12 @@ cd agent-config
 /init-all
 ```
 
--> See: [setup.sh](../../../agent-config/setup.sh), [init-all/SKILL.md](../../../agent-config/global/skills/init-all/SKILL.md)
+The `~/.claude/skills/<name>` links point at the **installed package**, not at this
+directory: `cli/scripts/sync-agent-config.mjs` copies `global/` into the CLI package
+at build time. Every skill edit therefore needs `cd cli && npm run reinstall`, a
+one-line change no less than a new skill.
+
+-> See: [tools/install.sh](../../../tools/install.sh), [init-all/SKILL.md](../../../agent-config/global/skills/init-all/SKILL.md)
 
 ## Key Skills
 

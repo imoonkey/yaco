@@ -3,7 +3,21 @@
   "version": "0.1.0",
   "type": "module",
   "description": "YACO web app — the Hono server for agent sessions, terminals and task graphs, and the built React UI it serves.",
+  "keywords": [
+    "yaco",
+    "coding-agent",
+    "agent-orchestration",
+    "claude-code",
+    "codex",
+    "tmux",
+    "web-ide",
+    "local-first"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/imoonkey/yaco#readme",
+  "bugs": {
+    "url": "https://github.com/imoonkey/yaco/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/imoonkey/yaco.git",

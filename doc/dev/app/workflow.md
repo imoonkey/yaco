@@ -147,8 +147,8 @@ inherit no ceiling from here and can use the whole machine.
 governs every process in the unit: `yaco-server` also hosts the WhatsApp puppeteer
 Chrome fleet (~950 MB RSS across 7 processes), and `ui-build` peaks near 1.3 GB
 during a full rebuild — limits derived from the Node RSS alone kill both. An OOM'd
-`ui-build` is the worst case: vite empties `dist/` per rebuild, so a mid-build kill
-can leave `/` serving nothing.
+`ui-build` is the worst case: vite empties `../server/ui` per rebuild, so a mid-build
+kill can leave `/` serving nothing.
 
 ```bash
 # what to size from — cgroup peak and its anon/file split, not `ps` RSS
@@ -196,7 +196,7 @@ Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` 
 Two consequences, both pointing the same way — **use `:8741` while iterating on UI code**:
 
 - `/` has no HMR and no live reload. A rebuild needs a browser refresh; plain `Cmd+R` suffices, because `index.html` is served `no-cache` and every asset it names is content-hashed and `immutable` (a hard refresh is never needed).
-- Vite empties `dist` on each watch rebuild, so for ~13 s per UI source change (~1 s build + ~12 s brotli over 170 files) `/` can 404 or serve uncompressed assets.
+- Vite empties `../server/ui` on each watch rebuild, so for ~13 s per UI source change (~1 s build + ~12 s brotli over 170 files) `/` can 404 or serve uncompressed assets.
 
 Vite keeps host validation enabled; `app/ui/vite.config.ts` allows `laptop`, `desktop`, and the `.tailnet-example.ts.net` tailnet domain.
 

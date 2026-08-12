@@ -20,7 +20,7 @@ const isolated = yacoHome !== null
 // Isolated → the API server serves the UI too, so target IT. Reuse → vite.
 const BASE_URL = `http://127.0.0.1:${isolated ? API_PORT : UI_PORT}`
 
-// e2e builds into its OWN dist so it never clobbers app/ui/dist (which
+// e2e builds into its OWN dist so it never clobbers ../server/ui (which
 // `npm run start:app` serves). Absolute path for the server's YACO_UI_DIST.
 const E2E_UI_DIST = fileURLToPath(new URL('./dist-e2e', import.meta.url))
 

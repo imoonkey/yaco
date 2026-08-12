@@ -3,7 +3,22 @@
   "version": "0.1.0",
   "type": "module",
   "description": "YACO command-line interface — the yaco dispatcher for agent sessions, task graphs, worktrees, and project paths.",
+  "keywords": [
+    "yaco",
+    "coding-agent",
+    "agent-orchestration",
+    "claude-code",
+    "codex",
+    "tmux",
+    "task-graph",
+    "git-worktree",
+    "cli"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/imoonkey/yaco#readme",
+  "bugs": {
+    "url": "https://github.com/imoonkey/yaco/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/imoonkey/yaco.git",
