@@ -182,22 +182,19 @@ and diff views, terminals — plus the parts a traditional IDE doesn't have:
 - **Sessions that outlive the browser.** Every terminal is a tmux session:
   close the tab, restart the server, reattach later — from the app or a plain
   terminal.
-- **The agent tree.** Parent and child agent sessions rendered as the tree
-  they are.
-- **It tells you when it's your turn.** An agent finished, a session is
-  waiting on your reply, a task closed — pushed to the notification bell,
-  the session's badge, and your browser's notifications. It can even read
-  them aloud.
+- **The agent tree — and it tells you when it's your turn.** Parent and child
+  sessions rendered as the tree they are; an agent finishing or waiting on
+  your reply is pushed to the notification bell, the session's badge, and
+  your browser's notifications. It can even read them aloud.
 - **The whole workspace on your phone.** Over Tailscale or however you
   connect: touch layout, a terminal key bar, voice input. Kick off a task
   from anywhere and get the notification when it's done.
 - **Voice input built for prompting.** Record, transcribe, auto-format the
   rambling into clean prose, review — then insert into the editor or paste
   straight into an agent's terminal.
-- **Skill-aware markdown.** Design docs are first-class, with editing built
-  for the `/design` and `/discuss` review loops — plus opt-in inline
-  suggestions for prose.
-- **The task graph, live.** The plan under `plan/` rendered as a graph.
+- **Plans and design docs, first-class.** The task graph under `plan/`
+  rendered live, and markdown editing built for the `/design` and `/discuss`
+  review loops — plus opt-in inline suggestions for prose.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/walkthrough-dark.gif">
