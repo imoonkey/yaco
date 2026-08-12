@@ -194,7 +194,14 @@ accepted with its reason.
   for an append-only log the mtime is a fair proxy for its last write. What it
   needs to bite is a log with a huge final record *and* an mtime that disagrees
   with its contents, which means one restored or copied without its times.
-  -> Task `history-oversized-record-order`.
+  **Accepted, not owed** — task `history-oversized-record-order` is cancelled.
+  The mtime is not a consolation prize: for an append-only log the file's last
+  write time *is* its last record's time, and it comes from the filesystem clock
+  where the in-log value comes from the client's. What would reopen this is not
+  bigger logs but mtime coming unstuck from content — copying or restoring a
+  provider home (rsync without `-t`, `cp` without `-p`) rewrites every mtime at
+  once, and then *every* log's ordering key is wrong, which is a different
+  problem from this one.
 - **The history read is capped, not cheap.** Its cap is `limit + 1` rows per
   provider, so a project with more sessions than the window pays a two-phase
   Claude read — `stat` and a tail for *every* log — before the window is chosen.
