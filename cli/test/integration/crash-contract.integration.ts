@@ -38,6 +38,7 @@ let sandbox: string;
 let shim: string;
 let crashScript: string;
 let rejectScript: string;
+let burstScript: string;
 let sleepScript: string;
 let savedHome: string | undefined;
 let savedYacoPath: string | undefined;
@@ -94,6 +95,17 @@ beforeAll(() => {
   writeFileSync(
     rejectScript,
     "#!/bin/bash\necho \"fake-provider: error: unknown option '--nmae'\" >&2\nexit 2\n",
+    { mode: 0o755 },
+  );
+  burstScript = join(sandbox, "burst.sh");
+  writeFileSync(
+    burstScript,
+    // ~250KB, which tmux cannot ingest in one read callback — so the tail of it
+    // is still pending on the pty when the process exits. Without an ordering
+    // barrier the capture lands mid-stream and the last line is not there yet.
+    "#!/bin/bash\nfor i in $(seq 1 4000); do " +
+      "echo \"noise line $i ----------------------------------------\"; done\n" +
+      "echo 'LAST-LINE-BEFORE-EXIT' >&2\nexit 3\n",
     { mode: 0o755 },
   );
   sleepScript = join(sandbox, "sleep.sh");
@@ -161,6 +173,32 @@ describe("crash contract (real tmux)", () => {
     expect(report).not.toBeNull();
     expect(report!.exitCode).toBe(2);
     expect(report!.output).toContain("unknown option '--nmae'");
+  });
+
+  itt("the last bytes written before the exit are in the report, not lost to the pane read", () => {
+    // ~250KB then an immediate exit: the screen has scrolled far past where the
+    // burst began, and the bytes most at risk are the last ones written.
+    //
+    // Honest scope: this asserts the OUTCOME, and it does not by itself prove
+    // the barrier in `write_exit_report` is what produces it — a wrapper with a
+    // single unsynchronized capture also passes it, here, today. The barrier is
+    // justified by construction (capture-pane reads the screen; the screen is
+    // filled by an asynchronous read of the pty), not by this test failing
+    // without it. What this test does catch is a regression that loses the tail
+    // for any reason at all, including the marker leaking into the report.
+    const h = uniq("tail");
+    writeState(makeState(h));
+    createSession(h, wrapped(h, `bash ${burstScript}`), TEST_CWD);
+
+    expect(waitFor(() => !hasSession(h), 12000)).toBe(true);
+    execSync("sleep 0.6");
+
+    const report = readExitReport(h, CREATED_AT);
+    expect(report).not.toBeNull();
+    expect(report!.exitCode).toBe(3);
+    expect(report!.output).toContain("LAST-LINE-BEFORE-EXIT");
+    // The marker is the barrier, not content — it must never reach the reader.
+    expect(report!.output).not.toContain("yaco-exit-marker");
   });
 
   itt("an intentional kill leaves no exit report — there is no error to explain", () => {

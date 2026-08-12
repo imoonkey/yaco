@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { requireProviderExecutable, start } from "../../../../src/commands/agent/start.ts";
+import { runStart } from "../../../../src/commands/agent/index.ts";
 import { getProvider } from "../../../../src/lib/core/agent/providers/index.ts";
 import { which } from "../../../../src/lib/core/which.ts";
 import { CliError, ErrCode } from "../../../../src/lib/core/errors.ts";
@@ -91,6 +92,20 @@ describe("requireProviderExecutable", () => {
     expect(e.message).toContain("codex not found on $PATH");
     expect(e.message).toContain("Codex CLI");
     expect(e.message).toContain("yaco doctor");
+  });
+});
+
+describe("runStart — the executable is checked before every preflight", () => {
+  it("names the missing executable rather than the resume cursor it could not resolve", async () => {
+    // `--wait --resume` resolves a cursor out of the provider's own logs before
+    // launching. With no provider installed that fails too, as "cannot resolve
+    // resume cursor" — true, and not the reason. The first thing that is wrong
+    // is the executable.
+    process.env["PATH"] = pathWith();
+    await expect(
+      runStart(["codex", "--resume", "some-id", "--wait"], { json: false }),
+    ).rejects.toThrowError(/^codex not found on \$PATH/);
+    expect(readdirSync(sessionsDir)).toEqual([]);
   });
 });
 
