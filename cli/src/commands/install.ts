@@ -21,19 +21,15 @@
  *  ~/.codex/hooks.json (the canonical merge implementation lives there).
  */
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
-  renameSync,
-  rmSync,
   statSync,
   symlinkSync,
   unlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -44,7 +40,6 @@ import { ok, type Result } from "../lib/core/result.ts";
 import { dual } from "../lib/core/render.ts";
 import {
   agentWrapperPath,
-  ensureYacoHome,
   getYacoHome,
   projectsRegistryPath,
   readProjects,
@@ -52,7 +47,7 @@ import {
   type Project,
 } from "../lib/core/paths/index.ts";
 import { listSkillNames, PACKAGED_SKILLS_DIR } from "../package-root.ts";
-import { readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
+import { ensureAgentWrapperScript, readAgentWrapperScript } from "../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
@@ -245,52 +240,21 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
   actions.push(`removed legacy symlink ${p}`);
 }
 
-/** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale.
+/** Plant the agent-wrapper.sh script under ${YACO_HOME} if missing or stale.
  *
- *  The write is a rename, not a rewrite, because this file is *executing* while
- *  we replace it. Every live agent session is a `bash agent-wrapper.sh` holding
- *  the inode open at a byte offset — bash reads a script incrementally and seeks
- *  back to just past the command it consumed — so refilling that same inode
- *  (which is what `writeFileSync` on an existing path does: O_TRUNC) moves the
- *  meaning of every offset past the edit and the running shell silently resumes
- *  parsing mid-token of unrelated text. A rename swaps the directory entry only:
- *  the old inode stays intact for the shells still on it, and every session that
- *  starts afterwards opens the new one.
- *
- *  The hazard is confined to exactly the deploys that matter — the content-equality
- *  check above returns early whenever the wrapper did NOT change, and a wrapper
- *  that changed is precisely one whose offsets shifted.
- *
- *  Three details the rename depends on: the temp is a *sibling*, because rename()
- *  fails EXDEV across filesystems and $TMPDIR is routinely a different one; the
- *  mode is set *before* the rename, or a session starting in the gap execs a
- *  non-executable file; and the temp is removed on the failure path, so a partial
- *  write leaves nothing behind for a later run to trip over. */
+ *  The write itself belongs to {@link ensureAgentWrapperScript} — the one writer
+ *  of that file, shared with the `yaco agent start` path, which replaces it by
+ *  rename because live sessions are executing it. What this adds is the
+ *  reporting `yaco install` owes: which action it took, and what it *would* take
+ *  under --dry-run. */
 function installAgentWrapper(actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
-  const content = readAgentWrapperScript();
-  if (existsSync(path)) {
-    const current = readFileSync(path, "utf-8");
-    if (current === content) return;
-    if (dryRun) {
-      actions.push(`update ${path}`);
-      return;
-    }
-  } else if (dryRun) {
-    actions.push(`write ${path}`);
+  if (dryRun) {
+    if (!existsSync(path)) actions.push(`write ${path}`);
+    else if (readFileSync(path, "utf-8") !== readAgentWrapperScript()) actions.push(`update ${path}`);
     return;
   }
-  ensureYacoHome();
-  const tmp = `${path}.${process.pid}.tmp`;
-  try {
-    writeFileSync(tmp, content);
-    chmodSync(tmp, 0o755);
-    renameSync(tmp, path);
-  } catch (e) {
-    rmSync(tmp, { force: true });
-    throw e;
-  }
-  actions.push(`wrote ${path}`);
+  if (ensureAgentWrapperScript()) actions.push(`wrote ${path}`);
 }
 
 /** Best-effort realpath that gracefully degrades to the input when the path

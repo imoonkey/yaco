@@ -10,9 +10,10 @@
  *  reads it from disk and writes it to `${YACO_HOME}/agent-wrapper.sh` on
  *  install. No embedded shell strings.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, unlinkSync, rmdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, chmodSync, unlinkSync, rmdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { randomUUID } from "crypto";
 import { parse as parseToml } from "smol-toml";
 import { packagedAssetPath, yacoExecutable } from "../../../package-root.ts";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
@@ -68,9 +69,50 @@ export function readAgentWrapperScript(): string {
 }
 
 /** Ensure the runtime wrapper exists under ${YACO_HOME}, refreshed from the
- *  packaged copy. */
-function ensureAgentWrapperScript(): void {
-  ensureManagedScript(agentWrapperPath(), readAgentWrapperScript());
+ *  packaged copy. Returns whether it wrote, so `yaco install` can report the
+ *  action; a wrapper already matching the packaged copy is a no-op.
+ *
+ *  The single writer of this file. `yaco install` plants it and every
+ *  `yaco agent start` refreshes it (via {@link ensureHooks}), and a second
+ *  implementation is how one of those paths keeps the bug the other one fixed.
+ *
+ *  The write is a rename, not a rewrite, because this file is *executing* while
+ *  we replace it. Every live agent session is a `bash agent-wrapper.sh` holding
+ *  the inode open at a byte offset — bash reads a script incrementally and seeks
+ *  back to just past the command it consumed — and the wrapper does not `exec`,
+ *  so that outer shell sits parked at the file's EOF offset for the whole
+ *  session. Refilling the same inode (which is what `writeFileSync` on an
+ *  existing path does: O_TRUNC) moves the meaning of every offset past the edit,
+ *  and the shell resumes parsing mid-token of unrelated text. A rename swaps the
+ *  directory entry only: the old inode stays intact for the shells still on it,
+ *  and every session started afterwards opens the new one.
+ *
+ *  The hazard is confined to exactly the deploys that matter — the content check
+ *  returns early whenever the wrapper did NOT change, and a wrapper that changed
+ *  is precisely one whose offsets shifted.
+ *
+ *  Four details the rename depends on. The temp is a *sibling*, because rename()
+ *  fails EXDEV across filesystems and $TMPDIR is routinely a different one. It
+ *  is created exclusively (`wx`), so the write can never follow a symlink or
+ *  truncate a file this process did not make. Its mode is set *before* the
+ *  rename, or a session starting in the gap execs a non-executable file. And it
+ *  does not survive a failure path. */
+export function ensureAgentWrapperScript(): boolean {
+  const path = agentWrapperPath();
+  const content = readAgentWrapperScript();
+  if (existsSync(path) && readFileSync(path, "utf-8") === content) return false;
+  const yacoHome = getYacoHome();
+  if (!existsSync(yacoHome)) mkdirSync(yacoHome, { recursive: true });
+  const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  try {
+    writeFileSync(tmp, content, { flag: "wx" });
+    chmodSync(tmp, 0o755);
+    renameSync(tmp, path);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
+  return true;
 }
 
 function makeHookEntry(event: string, async_: boolean, timeout?: number): Record<string, unknown> {
@@ -149,17 +191,6 @@ const CODEX_HOOK_EVENTS = [
   "PostCompact",
   "Stop",
 ] as const;
-
-/** Write a managed script to the YACO runtime root if missing or outdated. */
-function ensureManagedScript(path: string, content: string): void {
-  const yacoHome = getYacoHome();
-  if (!existsSync(yacoHome)) mkdirSync(yacoHome, { recursive: true });
-  const needsWrite = !existsSync(path) || readFileSync(path, "utf-8") !== content;
-  if (needsWrite) {
-    writeFileSync(path, content);
-    chmodSync(path, 0o755);
-  }
-}
 
 /** True if any hook in this group is a yaco-managed entry. Every yaco hook,
  *  whatever executable it names, runs `agent hook-event <Event>`. */
