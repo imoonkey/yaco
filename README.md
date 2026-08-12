@@ -102,33 +102,28 @@ yaco agent send <handle> "…" # reply to it
 yaco agent kill <handle>     # end it
 ```
 
-Add `--wait` to block until the agent finishes and print its reply; arguments
-after a bare `--` pass through to the provider CLI. And that is precisely how
-multi-agent works here: your agents run these same commands to spawn and
-coordinate sub-agents, so every session an agent creates is one you can list,
-capture, and attach to. No hidden recursion, no privileged internal API.
+Add `--wait` to block until the agent finishes and print its reply. And that
+is precisely how multi-agent works here: your agents run these same commands
+to spawn and coordinate sub-agents, so every session an agent creates is one
+you can list, capture, and attach to. No hidden recursion, no privileged
+internal API.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="doc/assets/agent-tree-dark.png">
   <img src="doc/assets/agent-tree-light.png" alt="yaco agent list and yaco agent status in a terminal, beside the app's session tree showing an orchestrator and the worker it spawned in a worktree" width="100%">
 </picture>
 
-The same sessions, from the CLI and from the app. `spawnedBy: agent` and
-`parentSession` are all the lineage there is — here an orchestrator that started
-a worker in its own worktree, and whatever that worker starts in turn.
+The same sessions, from the CLI and from the app — here an orchestrator and
+the worker it started in its own worktree.
 
 ## Layer 2 — skills and the workflow
 
 Twenty-two skills in
 [`agent-config/global/skills/`](agent-config/global/skills/) encode the
 development loop — and drive the `yaco` subcommands built for it: `yaco task`
-(a per-repo task graph under `plan/`), `yaco worktree` (each task gets its own
-checkout at `.worktrees/<slug>` on branch `task/<slug>`), `yaco plan`,
-`yaco gate`. They ship **inside `yaco-cli`**, and the installer plants them as
-**per-skill symlinks** into `~/.claude/skills`, alongside — never replacing —
-the skills you already have. From a clone, those links point at the copy in the
-built package rather than at your working tree, so re-run `tools/install.sh`
-after editing one.
+(a per-repo task graph under `plan/`), `yaco worktree` (one task, one
+checkout), `yaco plan`, `yaco gate`. They install alongside — never
+replacing — the skills you already have.
 
 A milestone typically flows like this — drawn linear, lived with loops:
 
@@ -225,25 +220,12 @@ and maintained exactly this way.
 
 ## Your `plan/` directory
 
-YACO keeps each project's task graph and design docs in `<repo>/plan/`, next to
-the code, committed with the rest of the repo by default — a visible design
-history in a public repo is a feature. If yours shouldn't be public:
-
-```bash
-yaco plan init          # optionally: --remote <url>
-```
-
-This promotes `plan/` into a separate git repo colocated inside the working
-tree and hides it from the host repo via `.git/info/exclude` — your editor,
-`rg`, and YACO still see the files exactly where they were. It is idempotent
-and must be re-run on every fresh clone. Two things it deliberately does not
-do: it cannot untrack files the host repo already committed (run
-`git rm -r --cached plan` yourself — and history keeps them until rewritten),
-and `--remote` records an origin without pushing — creating and verifying a
-private remote is on you. (YACO's own `plan/` is private because it holds a
-personal corpus of agent interactions; that's the exception, not the
-recommendation.) Paths are configurable in `yaco.toml` under `[paths]`;
-`yaco paths project --json` reports what's in effect.
+YACO keeps each project's task graph and design docs in `<repo>/plan/`, next
+to the code and committed with it by default — a visible design history is a
+feature. If yours shouldn't be public, `yaco plan init` promotes `plan/` into
+a separate, colocated git repo that the host repo ignores; every file stays
+exactly where it was. Details and caveats:
+[doc/main/cli/plan.md](doc/main/cli/plan.md).
 
 ## Repository layout
 
@@ -263,10 +245,8 @@ recommendation.) Paths are configurable in `yaco.toml` under `[paths]`;
 bash scripts/verify.sh
 ```
 
-runs the standard gate — CLI tests, the `yaco-codex-transcribe` typecheck and
-tests, server tests, UI lint and build — stopping at the first failure. The
-suites it deliberately skips (UI component tests, Playwright e2e, CLI
-integration) and their side effects are covered in
+runs the standard gate — CLI, server, and UI checks, stopping at the first
+failure. What it covers and deliberately skips is in
 [doc/dev/README.md](doc/dev/README.md). Commits follow
 [Conventional Commits](https://www.conventionalcommits.org/).
 

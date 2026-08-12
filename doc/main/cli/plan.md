@@ -58,6 +58,10 @@ yaco plan init [--remote <url>] [--force] [--cwd <path>] [--json]
 Idempotent: a second run reports nothing changed and never duplicates the
 `info/exclude` or `.ignore` entries.
 
+It cannot untrack plan files the host repo already committed — run
+`git rm -r --cached <plan>` yourself, and host history keeps them until
+rewritten.
+
 ## Default layout: in-place
 
 `git init <plan>` turns the existing `<project>/<plan>` directory into a real
