@@ -96,7 +96,7 @@ started is already there as a terminal tab.
 
 ```bash
 yaco claude "fix the flaky checkout test" [--wait]   # or: yaco codex …
-yaco agent list --all                 # every session, across every project
+yaco agent list [--all]               # sessions here — or everywhere
 yaco agent capture <handle>           # recent output
 yaco agent send <handle> "…" [--wait] # reply — --wait blocks for the response
 yaco agent kill <handle>              # end it
