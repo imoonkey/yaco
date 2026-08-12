@@ -8,6 +8,23 @@ sn="${1:?wrapper requires handle as first arg}"
 created_at="${2:?wrapper requires createdAt as second arg}"
 shift 2
 
+# A report from a previous generation of this handle is not about this run.
+rm -f "$sd/.exit-$sn"
+
+# The provider's own last words, salvaged from the pane that is about to
+# vanish. This trap runs while the pane still exists — the wrapper IS its
+# process — which is the only moment the output behind a "died during
+# bootstrap" is still readable; from outside, tmux has already destroyed it.
+# Written beside the state file as `.exit-<handle>`: createdAt (the same
+# generation discriminator the crash tombstone uses), the exit code, then up to
+# 40 lines of text. `yaco agent start` reads it and removes it.
+write_exit_report() {
+  wer_name="$1"; wer_ec="$2"; wer_ca="$3"
+  wer_out=$(tmux capture-pane -p -t "${TMUX_PANE:-=$sn}" 2>/dev/null \
+    | sed -e 's/[[:space:]]*$//' | grep -v '^$' | tail -n 40)
+  printf '%s\n%s\n%s\n' "$wer_ca" "$wer_ec" "$wer_out" > "$sd/.exit-$wer_name"
+}
+
 # Generation-scoped kill discriminator. True only when a `.killing-<handle>`
 # sentinel exists AND its stored createdAt matches THIS generation — so a stale
 # sentinel left by a crashed CLI cannot suppress a future same-handle crash.
@@ -76,6 +93,7 @@ trap '
       sleep 0.3
       rm -f "$sd/$name.json" "$sd/$name".json.*.tmp
     else
+      write_exit_report "$name" "$ec" "$created_at"
       $YACO_BIN agent mark-crashed "$name" --exit "$ec" --created-at "$created_at" \
         || crash_fallback "$name" "$ec" "$created_at"
     fi

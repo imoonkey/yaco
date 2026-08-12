@@ -32,9 +32,9 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
 
 import { listSkillNames, PACKAGED_SKILLS_DIR, packagedAssetPath } from "../package-root.ts";
+import { which } from "../lib/core/which.ts";
 import { ok, type Result } from "../lib/core/result.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { emit } from "../lib/core/json.ts";
@@ -107,16 +107,6 @@ function fail(name: string, detail: string): CheckResult {
 }
 function skip(name: string, detail: string): CheckResult {
   return { name, status: "skip", detail };
-}
-
-function which(cmd: string): string | null {
-  // Pass env explicitly so process.env mutations (notably PATH overrides in
-  // tests) propagate into the child — bun's spawnSync otherwise caches the
-  // process-start PATH and ignores later writes to process.env.PATH.
-  const r = spawnSync("which", [cmd], { encoding: "utf-8", env: { ...process.env } });
-  if (r.status !== 0) return null;
-  const out = (r.stdout ?? "").trim();
-  return out.length > 0 ? out : null;
 }
 
 function isExecutable(path: string): boolean {

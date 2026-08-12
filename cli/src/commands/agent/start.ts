@@ -24,8 +24,18 @@ import {
   type SpawnedBy,
 } from "../../lib/core/agent/model.ts";
 import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
+import { CliError, ErrCode } from "../../lib/core/errors.ts";
+import { which } from "../../lib/core/which.ts";
 import { recordOriginIfResolved } from "../../lib/core/agent/origin.ts";
-import { deleteState, readState, writeState, listStateHandles, resolveRenamedHandle } from "../../lib/core/agent/session-state.ts";
+import {
+  deleteState,
+  readExitReport,
+  readState,
+  writeState,
+  listStateHandles,
+  resolveRenamedHandle,
+  type ExitReport,
+} from "../../lib/core/agent/session-state.ts";
 import { sleepSync } from "../../lib/core/sleep.ts";
 
 const READY_TIMEOUT_MS = 30000;
@@ -309,6 +319,47 @@ export function reclaimRequestedHandleIfDead(requestedHandle: string): void {
   }
 }
 
+/** Refuse to start a provider whose executable is not installed.
+ *
+ *  The same `which` `doctor` and `agent status` report from, so a machine where
+ *  they say `claude: not found` is exactly the machine that refuses here. It
+ *  runs before the handle is resolved and before any state file or tmux session
+ *  exists, so a refusal leaves nothing behind to clean up — and it is the only
+ *  bootstrap failure yaco can name in advance. Everything else the provider
+ *  rejects (a mistyped yaco flag, forwarded verbatim by design) can only be
+ *  reported after the fact, from what the pane held when it died. */
+export function requireProviderExecutable(prov: TuiProvider): void {
+  if (which(prov.executable)) return;
+  throw new CliError(
+    ErrCode.ENV,
+    `${prov.executable} not found on $PATH — install the ${prov.label} CLI ` +
+      `(\`yaco doctor\` reports which providers are available)`,
+  );
+}
+
+/** What a session that died during bootstrap is allowed to say.
+ *
+ *  `start` binds four yaco flags and forwards every other token to the provider
+ *  CLI verbatim — deliberately, because that is what lets a caller pass
+ *  arbitrary provider arguments through. The consequence is that a mistyped
+ *  yaco flag is a PROVIDER error, and the provider is the only one who can
+ *  describe it. yaco cannot validate it away without taking passthrough with
+ *  it, so the fix is not validation but carriage: the wrapper salvages the
+ *  pane, and this turns it into the message.
+ *
+ *  With no report — a wrapper that could not capture, a tmux that was already
+ *  gone — the sentence is byte-identical to the one this always produced. */
+export function bootstrapDeathMessage(
+  handle: string,
+  executable: string,
+  report: ExitReport | null,
+): string {
+  const died = `Session "${handle}" died during bootstrap`;
+  if (!report) return died;
+  const withCode = `${died} (${executable} exited ${report.exitCode})`;
+  return report.output ? `${withCode}:\n${report.output}` : withCode;
+}
+
 export function start(provider: string, passthroughArgs: string[] | string, name?: string): SessionState {
   // Support legacy string prompt for backward compat
   const args: string[] = typeof passthroughArgs === "string"
@@ -316,6 +367,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     : passthroughArgs;
 
   const prov = getProvider(provider);
+  requireProviderExecutable(prov);
   const cwd = process.cwd();
 
   // Extract --resume <id> from passthrough args (flag or positional form)
@@ -433,8 +485,13 @@ export function start(provider: string, passthroughArgs: string[] | string, name
 
   // G9: If session died during bootstrap, throw instead of returning phantom state
   if (checkSessionAlive(resolvedName) === false) {
+    // Read the report BEFORE deleteState, which removes it with the rest of the
+    // handle's breadcrumbs. Race-free: the wrapper writes it from inside its
+    // EXIT trap, and the tmux session outlives the wrapper — so a session tmux
+    // confirms is gone is one whose report is already on disk.
+    const report = readExitReport(resolvedName, state.createdAt);
     deleteState(resolvedName);
-    throw new Error(`Session "${resolvedName}" died during bootstrap`);
+    throw new Error(bootstrapDeathMessage(resolvedName, prov.executable, report));
   }
 
   return synced ?? (readState(resolvedName) ?? { ...state, pid: pid ?? 0, sessionId });
