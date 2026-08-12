@@ -189,6 +189,7 @@ const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseR
       "create dir {SANDBOX}/home/.claude/skills",
       ...shippedSkills().map((name) => `symlink skill ${name}`),
       "symlink {SANDBOX}/home/.agents/skills -> {SANDBOX}/home/.claude/skills",
+      "skipped npm install: {SANDBOX} is not a yaco checkout",
       "skipped registry: {SANDBOX} is not a yaco checkout (`yaco project add` registers your own repos)",
       "run yaco doctor",
     ]);

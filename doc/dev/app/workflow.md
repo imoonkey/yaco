@@ -79,7 +79,7 @@ Use the monorepo root installer:
 
 ```bash
 tools/install.sh            # full install/update
-tools/install.sh --cli-only # skip Workflow npm installs; update CLI/config only
+tools/install.sh --cli-only # skip the workspace-root npm install; update CLI/config only
 yaco doctor                 # validate local install
 ```
 

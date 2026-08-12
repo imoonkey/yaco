@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-08-11 (skills in the package; install without a checkout)
+> Last updated: 2026-08-12 (the app install runs at the workspace root)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design: **the package lands, then it configures the machine.**
@@ -45,7 +45,7 @@ install is identical either way:
 
 | Step | Without a checkout |
 |---|---|
-| `npm install` in `app/server` + `app/ui` | the directories are absent, so the loop already skips them; a package user's app carries its own dependencies |
+| `npm install` at the workspace root | skipped — `isYacoCheckout` is false, and a package user's app carries its own dependencies. See [The app install runs at the workspace root](#the-app-install-runs-at-the-workspace-root) |
 | upsert `{id:"yaco", path: repoRoot}` | reported as a `skipped registry:` action. The entry names *the yaco repo itself*; a package user has no such repo and registers their own with `yaco project add` |
 
 `isYacoCheckout(repoRoot)` decides, and it asks for **repository identity**, not
@@ -61,6 +61,58 @@ exit 0 (install throws on *any* failing doctor check). `providers` skips on the
 same rule for a state that is a machine's rather than a repo's — no agent CLI
 installed yet, which install cannot fix and a user is allowed to be in. -> See:
 [doctor.md](doctor.md#providers-skip--the-machine-with-no-agent-cli-yet)
+
+## The app install runs at the workspace root
+
+One `npm install`, at `repoRoot`, never inside a member. The root is the only
+place that links `packages/*` into `node_modules`, and both app packages are
+workspace members, so the one install covers them too.
+
+Installing in `app/server` and `app/ui` instead — what this step used to do —
+left `yaco-codex-transcribe` unresolvable on a clean clone: it is imported
+**bare** by `app/server/src/routes/voice.ts` and declared as a dependency by
+nobody, so `npm run start:app` and `scripts/verify.sh` both died on `Cannot find
+package`. Nobody saw it, because every developer checkout has had a root
+`npm install` run in it at least once. It does not affect
+`npm install -g yaco-cli`, whose tarball carries the code inlined.
+
+**Do not repair that package by declaring it as an app dependency.**
+`app/server/scripts/build.mjs` externalises exactly the *declared* dependencies
+and inlines this one precisely because it is not declared. Declaring it would
+make the published `dist/yaco-app.mjs` `import` a package that is never
+published. The linking belongs to the install, not to the manifest.
+`app/server/test/workspace-resolution.test.ts` is the detector: it reads the
+workspace specifiers off `app/server`'s own source and asserts each resolves
+inside the checkout, so `scripts/verify.sh` fails at `server test` when the
+linking is missing.
+
+Two things disqualify a root, and both are **reported as a skipped action**
+rather than done silently:
+
+| Condition | Why |
+|---|---|
+| `isYacoCheckout(repoRoot)` is false | `npm install` in whatever directory a package user happened to be standing in is not a step, it is an accident. Repository identity, the same question the registry step asks — not the presence of an `app/` directory |
+| `repoRoot` does not **own its `node_modules`** | a linked worktree's is not its own. `scripts/worktree-provision.sh` builds it as a *mirror*: every third-party package, and `.package-lock.json` itself, is a symlink into the main checkout's tree, so `npm install` there is a reconciler pointed at somebody else's data — it would write through those symlinks and rewrite the main checkout's `node_modules` from the worktree's branch. The action names `scripts/worktree-provision.sh` instead |
+
+`nodeModulesOwner()` answers the second, and **`unknown` is one of its three
+answers** — only a confirmed `self` proceeds. Two steps, because git can answer
+only the second:
+
+1. **Is a repository here at all?** A filesystem fact needing no subprocess: no
+   `.git` entry, no repository, and an export owns whatever it has.
+2. **What kind?** `git rev-parse --git-dir --git-common-dir`. Only a linked
+   worktree makes the two differ — its own `…/.git/worktrees/<name>` against the
+   repository they all share.
+
+`.git` being a *file* looks like step 2's question and is not: a submodule and a
+repository created with `--separate-git-dir` both carry a `gitdir:` file while
+owning their `node_modules` outright, and skipping their install would break the
+very thing this step exists to fix.
+
+A repository git cannot read — no `git` on `$PATH`, a dubious-ownership refusal,
+damaged metadata, output that will not parse — is **`unknown`, and skips**.
+Reading a failed probe as ownership is how a real worktree with a broken git
+would walk straight into the write-through it is protected from.
 
 ## Global links are additive
 
@@ -139,7 +191,7 @@ yaco install [--cli-only] [--skip-hooks] [--no-registry] [--skip-links]
 
 | Flag | Effect |
 |------|--------|
-| `--cli-only` | Skip `npm install` in `app/server` + `app/ui` |
+| `--cli-only` | Skip the workspace-root `npm install` (the app's dependencies) |
 | `--skip-hooks` | Skip the `~/.claude/settings.json` + `~/.codex/hooks.json` merge (wrapper script is still written) |
 | `--no-registry` | Do not upsert this repo into `${YACO_HOME}/projects.json` |
 | `--skip-links` | Do not write the `~/.claude/skills` per-skill links or the `~/.agents/skills` symlink |
@@ -366,7 +418,18 @@ known doctor-fail is being repaired in a follow-up step.
   from review pass 1: idempotency, dry-run, hook merge semantics (subprocess
   to bypass `mock.module`), legacy bin cleanup, canonical hook command
   (subprocess), registry safety, `--json` stderr discipline, `--repo`
-  wire-through.
+  wire-through. The workspace-root install is asserted through an `npm` shim on
+  `$PATH` that runs nothing and records the directory it was run in: the
+  recorded set must be exactly `[repoRoot]`, which is both halves of the
+  contract — the root is installed, and no member is.
+- `cli/test/unit/commands/workspace-root-install.test.ts` — the same two claims
+  against the real tools, because a shim cannot settle either: **npm** on a
+  network-free fixture workspace (a root install links `packages/*`, the member
+  install it replaced does not), and **git** on real repositories (a linked
+  worktree is skipped; a `--separate-git-dir` checkout, which carries the same
+  `gitdir:` file, is not). In the unit project, which `scripts/verify.sh` runs —
+  `test/integration/` is outside the gate, and a regression test outside the
+  gate is decoration.
 - `cli/test/integration/install.test.ts` — `tools/install.sh` end-to-end from
   a clean `$BIN_DIR` (builds + chains + exits 0) plus the static AC1 grep on
   `install.sh` content.
