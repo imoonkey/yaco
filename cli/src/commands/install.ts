@@ -547,9 +547,12 @@ function nodeModulesOwner(repoRoot: string): NodeModulesOwner {
     stdio: ["ignore", "pipe", "ignore"],
   });
   if (r.status !== 0) return "unknown";
-  const [gitDir, commonDir] = r.stdout.trim().split("\n");
-  if (!gitDir || !commonDir) return "unknown";
-  return realpathOr(resolve(repoRoot, gitDir)) === realpathOr(resolve(repoRoot, commonDir))
+  // Exactly two lines, both non-empty. Destructuring the head of the output
+  // would read a third line as absent and call an unrecognizable answer `self` —
+  // the one classification that reaches npm.
+  const lines = r.stdout.trim().split("\n");
+  if (lines.length !== 2 || !lines[0] || !lines[1]) return "unknown";
+  return realpathOr(resolve(repoRoot, lines[0])) === realpathOr(resolve(repoRoot, lines[1]))
     ? "self"
     : "linked-worktree";
 }

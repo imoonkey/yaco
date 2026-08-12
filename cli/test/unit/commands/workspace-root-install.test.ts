@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -213,6 +214,24 @@ describe("which checkouts own their node_modules", () => {
 
   it("skips a repository whose git metadata cannot be read", async () => {
     writeFileSync(join(repoRoot, ".git"), "this is not a gitfile\n");
+
+    const r = await install(repoRoot);
+
+    expect(r.actions.some((a) => a.startsWith(`skipped npm install: cannot read the git topology of ${repoRoot}`)))
+      .toBe(true);
+    expect(sidecarLink(repoRoot)).toBeUndefined();
+  }, 120_000);
+
+  it("skips a repository whose git answers successfully but unrecognizably", async () => {
+    // A `git` that exits 0 and says something else. Two of these lines look
+    // like the expected pair, and reading only the head of the output would
+    // call that `self` — the one classification that reaches npm.
+    stageRepo(repoRoot);
+    const fakeBin = join(sandbox, "fake-bin");
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(join(fakeBin, "git"), "#!/bin/sh\nprintf '.git\\n.git\\nunexpected\\n'\nexit 0\n");
+    chmodSync(join(fakeBin, "git"), 0o755);
+    process.env["PATH"] = `${fakeBin}:${ORIG.PATH ?? ""}`;
 
     const r = await install(repoRoot);
 
