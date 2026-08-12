@@ -87,9 +87,10 @@ export function readAgentWrapperScript(): string {
  *  directory entry only: the old inode stays intact for the shells still on it,
  *  and every session started afterwards opens the new one.
  *
- *  The hazard is confined to exactly the deploys that matter — the content check
- *  returns early whenever the wrapper did NOT change, and a wrapper that changed
- *  is precisely one whose offsets shifted.
+ *  The content check above is what keeps this rare: it returns early whenever the
+ *  wrapper did NOT change, so only a real upgrade is ever exposed. An upgrade
+ *  that happens to keep the file the same length is exposed too — the offsets
+ *  hold but the bytes at them do not — it just fails less spectacularly.
  *
  *  Four details the rename depends on. The temp is a *sibling*, because rename()
  *  fails EXDEV across filesystems and $TMPDIR is routinely a different one. It
@@ -106,13 +107,23 @@ export function ensureAgentWrapperScript(): boolean {
   const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
   try {
     writeFileSync(tmp, content, { flag: "wx" });
+  } catch (e) {
+    // The one place EEXIST can mean "not ours": `wx` refused because something
+    // was already at that path, so this call never created it and removing it
+    // would throw away the file the flag just protected. Any other failure here
+    // may still have left our own empty or partial temp behind.
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") rmSync(tmp, { force: true });
+    throw e;
+  }
+  try {
     chmodSync(tmp, 0o755);
     renameSync(tmp, path);
   } catch (e) {
-    // EEXIST is the one failure that says the temp is not ours to remove: `wx`
-    // refused precisely because something was already at that path, so this
-    // call never created it. Every other failure is our own half-written temp.
-    if ((e as NodeJS.ErrnoException).code !== "EEXIST") rmSync(tmp, { force: true });
+    // Past the exclusive create, the temp is ours whatever went wrong — and
+    // rename(2) has its own uses for EEXIST, so reading the code here rather
+    // than the step would strand a temp on a failure that is not about
+    // ownership at all.
+    rmSync(tmp, { force: true });
     throw e;
   }
   return true;

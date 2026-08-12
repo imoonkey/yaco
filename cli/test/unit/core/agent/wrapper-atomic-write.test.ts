@@ -16,10 +16,11 @@
  *  - the temp is a SIBLING of the target. rename(2) fails EXDEV across
  *    filesystems, and $TMPDIR is routinely a different one — which on a box
  *    where /tmp is the same device is a bug no outcome assertion can see.
- *  - a failure at ANY of the three steps leaves no temp behind and leaves the
- *    file live sessions are executing exactly as it was. The truncating version
- *    could promise neither: by the time anything can fail, the old content is
- *    already gone.
+ *  - every failure AFTER the exclusive create leaves no temp behind, whatever
+ *    its errno, and leaves the file live sessions are executing exactly as it
+ *    was. (Before it, an EEXIST is the deliberate exception: that file is not
+ *    ours to delete.) The truncating version could promise none of this — by the
+ *    time anything can fail, the old content is already gone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -48,6 +49,8 @@ interface RenameCall {
  *  nothing — the mock is otherwise a straight pass-through. */
 const ctl = vi.hoisted(() => ({
   failAt: null as null | "write" | "chmod" | "rename",
+  /** errno for the injected failure. EEXIST is the one the writer reads. */
+  failCode: "EIO",
   /** Make the package look like it ships no wrapper, so reading it throws. */
   hidePackagedWrapper: false,
   /** Pin the temp file's random suffix, so a test can collide with it. */
@@ -57,8 +60,8 @@ const ctl = vi.hoisted(() => ({
 }));
 
 function boom(step: string): never {
-  const e = new Error(`EIO: injected failure at ${step}`) as NodeJS.ErrnoException;
-  e.code = "EIO";
+  const e = new Error(`${ctl.failCode}: injected failure at ${step}`) as NodeJS.ErrnoException;
+  e.code = ctl.failCode;
   throw e;
 }
 
@@ -115,6 +118,7 @@ let wrapper: string;
 
 function reset(): void {
   ctl.failAt = null;
+  ctl.failCode = "EIO";
   ctl.hidePackagedWrapper = false;
   ctl.uuid = null;
   ctl.renames = [];
@@ -201,6 +205,22 @@ describe("ensureAgentWrapperScript — failure paths", () => {
       expect(() => ensureAgentWrapperScript()).toThrow(/injected failure at/);
       expect(existsSync(wrapper)).toBe(false);
       expect(readdirSync(yacoHome)).toEqual([]);
+    });
+  }
+});
+
+describe("ensureAgentWrapperScript — EEXIST after the exclusive create", () => {
+  for (const step of ["chmod", "rename"] as const) {
+    it(`still removes the temp when ${step} is what reports it`, () => {
+      // rename(2) has its own uses for EEXIST. Past the exclusive create the
+      // temp is ours whatever the errno says, so reading the code instead of
+      // the step would strand it on a failure that is not about ownership.
+      const stale = stageStaleWrapper();
+      ctl.failAt = step;
+      ctl.failCode = "EEXIST";
+      expect(() => ensureAgentWrapperScript()).toThrow(/injected failure at/);
+      expect(readdirSync(yacoHome).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+      expect(readFileSync(wrapper, "utf-8")).toBe(stale.content);
     });
   }
 });
