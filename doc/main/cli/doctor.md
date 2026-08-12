@@ -1,6 +1,7 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-11 (providers skips when no agent CLI is installed;
+> Last updated: 2026-08-12 (`agent start` refuses a missing provider through the
+> same `which` this check uses; providers skips when no agent CLI is installed;
 > registry skips; skills-link resolves from the package)
 
 `yaco doctor` runs the eleven required health checks against the current

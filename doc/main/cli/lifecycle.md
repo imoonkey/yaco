@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-11 (Crash contract: a non-zero agent exit tombstones the session as `crashed`+`exitCode` via `mark-crashed` or an inline fail-closed fallback; a generation-scoped `.killing` sentinel distinguishes an intentional kill; GC + `start` reclaim skip a `crashed` tombstone. `setStatus` stamps `statusEnteredAt` on every transition.)
+> Last updated: 2026-08-12 (Bootstrap failure has two channels: an absent executable is refused before anything is created; everything else the provider rejects is carried out of the dying pane as `.exit-<handle>`. Prior — crash contract: a non-zero agent exit tombstones the session as `crashed`+`exitCode` via `mark-crashed` or an inline fail-closed fallback; a generation-scoped `.killing` sentinel distinguishes an intentional kill; GC + `start` reclaim skip a `crashed` tombstone. `setStatus` stamps `statusEnteredAt` on every transition.)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 

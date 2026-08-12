@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-08-11 (session summaries are a shared in-process read; provider identity is one catalog; prior: Codex `Stop` fills idle `notice` from the rollout `final_answer`)
+> Last updated: 2026-08-12 (`start` prechecks the provider executable; prior: session summaries are a shared in-process read; provider identity is one catalog; prior: Codex `Stop` fills idle `notice` from the rollout `final_answer`)
 
 ## Supported Providers
 
