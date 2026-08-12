@@ -16,6 +16,7 @@ import { stripAnsi } from "../src/lib/core/agent/model.ts";
 const ORIGINAL_YACO_AGENT_SESSIONS_DIR = process.env.YACO_AGENT_SESSIONS_DIR;
 const ORIGINAL_YACO_HOME = process.env.YACO_HOME;
 const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_PATH = process.env.PATH;
 let testStateDir: string;
 
 beforeAll(() => {
@@ -24,6 +25,18 @@ beforeAll(() => {
   process.env.YACO_HOME = join(testStateDir, "home");
   process.env.HOME = join(testStateDir, "user-home");
   mkdirSync(process.env.HOME, { recursive: true });
+  // These tests drive `start()`, which refuses a provider whose executable is
+  // not on $PATH before it does anything else. tmux, hooks and session-id are
+  // mocked here, but the precheck spawns a real `which` — so on a box with no
+  // agent CLI installed (CI) every one of them failed with "claude not found".
+  // Prepend shims rather than trusting the ambient $PATH: a suite that passes
+  // only on a developer's own machine is the failure mode, not the fix.
+  const bin = join(testStateDir, "bin");
+  mkdirSync(bin, { recursive: true });
+  for (const name of ["claude", "codex"]) {
+    writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  }
+  process.env.PATH = `${bin}:${ORIGINAL_PATH ?? ""}`;
 });
 
 afterAll(() => {
@@ -33,6 +46,8 @@ afterAll(() => {
   else process.env.YACO_HOME = ORIGINAL_YACO_HOME;
   if (ORIGINAL_HOME === undefined) delete process.env.HOME;
   else process.env.HOME = ORIGINAL_HOME;
+  if (ORIGINAL_PATH === undefined) delete process.env.PATH;
+  else process.env.PATH = ORIGINAL_PATH;
   rmSync(testStateDir, { recursive: true, force: true });
 });
 
