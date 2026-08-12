@@ -515,6 +515,22 @@ describe("blockReason is clearable and cannot outlive `blocked`", () => {
     expect(taskOf("t")["blockReason"]).toBe("external");
   });
 
+  it("keeps the reason across an unrelated update to a still-blocked task", () => {
+    // The other half of "absent means leave it alone": auto-clear must not
+    // widen into dropping a reason on every write to a blocked task.
+    create("t", { state: "blocked", blockReason: "external" });
+    expect(runYaco(repo, ["task", "set", "t", "--data", '{"priority":"high"}', "--json"]).status)
+      .toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("external");
+    expect(taskOf("t")["state"]).toBe("blocked");
+  });
+
+  it("rejects a reason on a NEW task that is not blocked", () => {
+    const r = create("fresh", { blockReason: "external" }); // seed state is `ready`
+    expect(r.status).toBe(1);
+    expect(parseJson(r.stderr).error!.message).toMatch(/blockReason requires state 'blocked'/);
+  });
+
   it("clears the reason on an explicit null while the task stays blocked", () => {
     create("t", { state: "blocked", blockReason: "external" });
     const r = runYaco(repo, ["task", "set", "t", "--data", '{"blockReason":null}', "--json"]);
@@ -580,6 +596,25 @@ describe("blockReason is clearable and cannot outlive `blocked`", () => {
     const m = taskOf("m");
     expect(m["state"]).toBe("ready"); // rolled up from the new child
     expect("blockReason" in m).toBe(false);
+  });
+
+  // Repair is `task set`-scoped on purpose. `attach`/`detach` re-read the raw
+  // file and write only the agents delta precisely so they don't persist
+  // normalization of fields they were not asked about (see link.ts) — the same
+  // scope milestone-state normalization has. Pinned so nobody "fixes" it
+  // without deciding to.
+  it("leaves a legacy stale pair for `task set`, not for attach", () => {
+    create("t", { state: "blocked", blockReason: "human-review" });
+    const file = defaultTasksFile(repo, "t");
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    raw["t"].state = "ready";
+    writeFileSync(file, JSON.stringify(raw, null, 2) + "\n");
+
+    expect(runYaco(repo, ["task", "attach", "t", "w-1", "--json"]).status).toBe(0);
+    expect(taskOf("t")["blockReason"]).toBe("human-review");
+    // ...and `task set` is what clears it.
+    runYaco(repo, ["task", "set", "t", "--data", '{"priority":"low"}', "--json"]);
+    expect("blockReason" in taskOf("t")).toBe(false);
   });
 
   it("validate fails on a stale pair and names the fix; the graph still loads", () => {

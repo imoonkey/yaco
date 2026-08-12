@@ -274,12 +274,16 @@ export function validateGraph(
       problems.missingAC.push(tid);
     }
 
-    // `blockReason` exists only alongside `state: "blocked"`. `task set` keeps
-    // that invariant on every write, so what lands here is a task written
-    // before it existed — or one edited outside the CLI. Reported so a graph
-    // can be swept once, not repaired on read: the reason is authored data,
-    // not derivable like a milestone's state, so dropping it here would make
-    // every reader disagree with the file.
+    // `blockReason` exists only alongside `state: "blocked"`. `task set` is the
+    // only writer of either field and it enforces the pair, so the invariant is
+    // closed: from a graph without a disagreement, no command can produce one.
+    // What lands here is a task written before the invariant existed, or edited
+    // outside the CLI — and only `task set` repairs it, the same scope
+    // milestone-state normalization has (see the note in `link.ts`).
+    //
+    // Reported so a graph can be swept once, not repaired on read: the reason
+    // is authored data, not derivable like a milestone's state, so dropping it
+    // here would make every reader disagree with the file.
     if (t.blockReason !== undefined && t.state !== "blocked") {
       problems.staleBlockReason.push({
         id: tid,
