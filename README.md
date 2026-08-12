@@ -95,7 +95,7 @@ started is already there as a terminal tab.
 ## Layer 1 — the agent CLI
 
 ```bash
-yaco claude "fix the flaky checkout test" [--wait]   # or: yaco codex …
+yaco claude "fix the flaky test" [--name <handle>] [--wait]  # or: yaco codex …
 yaco agent list [--all]               # sessions here — or everywhere
 yaco agent capture <handle>           # recent output
 yaco agent send <handle> "…" [--wait] # reply — --wait blocks for the response
