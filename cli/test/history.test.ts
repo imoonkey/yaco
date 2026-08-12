@@ -167,7 +167,7 @@ describe("claude history list", () => {
     // Sanity: the encoder collapses '.' as well as '/', so a '/'-only encoder
     // would look in the wrong directory and find nothing.
     expect(encodeClaudeCwd(wt)).toBe("-home-dev-yaco--worktrees-feat");
-    writeClaudeSession("wt-1", [userLine("worktree task", "2026-06-04T12:00:00.000Z")], wt);
+    writeClaudeSession("wt-1", [userLine("worktree task", "2026-06-04T12:00:00.000Z", wt)], wt);
 
     const rows = await readClaude(wt);
     expect(rows.map((r) => r.sessionId)).toEqual(["wt-1"]);
@@ -213,6 +213,56 @@ describe("claude history list — the project subtree", () => {
     );
 
     expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["root-1"]);
+  });
+
+  it("excludes a foreign-cwd log filed under the project's own directory", async () => {
+    // The project's own name is a lossy encoding too, so a different path can be
+    // filed under it. A log that says where it ran is taken at its word — there
+    // is no directory that exempts its contents from attribution.
+    const collides = "/repo:demo";
+    expect(encodeClaudeCwd(collides)).toBe(encodeClaudeCwd(PROJECT));
+    writeClaudeSession("mine", [userLine("mine", "2026-06-04T10:00:00.000Z")]);
+    writeClaudeSession("theirs", [userLine("theirs", "2026-06-04T11:00:00.000Z", collides)], collides);
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["mine"]);
+  });
+
+  it("keeps a log of the project's own directory that records no cwd", async () => {
+    // The directory name is exact here, not a prefix guess, so it is the
+    // evidence a log without a `cwd` falls back to — dropping these would lose
+    // sessions that history has always shown.
+    writeClaudeSession(
+      "anon-own",
+      [{ type: "user", message: { content: "no cwd anywhere" }, timestamp: "2026-06-04T10:00:00.000Z" }],
+    );
+
+    expect((await readClaude(PROJECT)).map((r) => r.sessionId)).toEqual(["anon-own"]);
+  });
+
+  /** Two different cwds can encode to one directory name, so the directory is a
+   *  lossy key and cannot attribute the logs inside it. Whichever log `readdir`
+   *  reaches first must not decide for its neighbours. */
+  it("attributes each log in a collided directory on its own cwd, in either file order", async () => {
+    const descendant = `${PROJECT}/a_b`;
+    const sibling = "/repo/demo-a-b";
+    expect(encodeClaudeCwd(descendant)).toBe(encodeClaudeCwd(sibling));
+
+    for (const [first, second] of [["00", "01"], ["01", "00"]] as const) {
+      rmSync(join(sandbox, ".claude"), { recursive: true, force: true });
+      writeClaudeSession(`${first}-descendant`, [userLine("mine", "2026-06-04T10:00:00.000Z", descendant)], descendant);
+      writeClaudeSession(`${second}-sibling`, [userLine("theirs", "2026-06-04T11:00:00.000Z", sibling)], sibling);
+
+      expect((await readClaude(PROJECT)).map((r) => r.sessionId), `${first} read first`)
+        .toEqual([`${first}-descendant`]);
+    }
+  });
+
+  it("scans the subtree of a project at the filesystem root", async () => {
+    // `/` is a path `addProject` accepts and `isPathDescendantOrEqual` answers
+    // for, and it is the one path that already carries its own separator.
+    writeClaudeSession("root-fs", [userLine("everything", "2026-06-04T10:00:00.000Z", "/repo/x")], "/repo/x");
+
+    expect((await readClaude("/")).map((r) => r.sessionId)).toEqual(["root-fs"]);
   });
 
   it("keeps the newest single row for a thread logged under two cwds", async () => {
@@ -267,6 +317,15 @@ describe("codex history list", () => {
 
     expect((await readCodex(wild)).map((r) => r.sessionId)).toEqual(["cx-wild"]);
     expect((await readCodex(PROJECT)).map((r) => r.sessionId)).toEqual(["cx-demo"]);
+  });
+
+  it("reads the subtree of a project at the filesystem root", async () => {
+    createCodexDb([
+      { id: "cx-root", first: "root itself", created: epochSec("2026-06-01T00:00:00Z"), updated: epochSec("2026-06-01T00:00:00Z"), cwd: "/" },
+      { id: "cx-below", first: "below root", created: epochSec("2026-06-02T00:00:00Z"), updated: epochSec("2026-06-02T00:00:00Z"), cwd: PROJECT },
+    ]);
+
+    expect((await readCodex("/")).map((r) => r.sessionId)).toEqual(["cx-below", "cx-root"]);
   });
 
   it("reads tokens from the rollout tail (total_tokens, used as-is)", async () => {
@@ -457,13 +516,25 @@ describe("the per-provider cap", () => {
    *  instead of the project root, so both scans span the subtree. That is what
    *  makes these the tests of a cap taken *once over the union*: a per-directory
    *  or per-cwd cap would let one side crowd out the other, and the capped
-   *  window would stop equalling the uncapped one. */
-  const WORKTREE = `${PROJECT}/.worktrees/feat`;
+   *  window would stop equalling the uncapped one.
+   *
+   *  **Each of the newest six Claude sessions is also logged under the two cwds
+   *  it did not start in**, each copy seconds older than the original so it
+   *  lands *inside* the window rather than below it. Duplicates are what
+   *  separate *where* the cap is taken from *whether* one exists at all: they
+   *  consume cap slots that survive to the window only if the union is
+   *  deduplicated first, so a cap taken before the dedup starves the window of
+   *  distinct rows and the equalities below go red. Without them every id is
+   *  unique across directories, and a cap taken anywhere recovers the same
+   *  window — which is the strength the first version of this fixture lacked. */
+  const CWDS = [PROJECT, `${PROJECT}/.worktrees/feat`, `${PROJECT}/.worktrees/fix`];
+  /** How many of the newest Claude sessions are logged under every cwd. */
+  const DUPLICATED = 6;
 
   function buildInterleavedHistory(): void {
     const codex: CodexFixtureRow[] = [];
     for (let i = 59; i >= 0; i--) {
-      const cwd = Math.floor(i / 2) % 2 === 0 ? WORKTREE : PROJECT;
+      const cwd = CWDS[Math.floor(i / 2) % CWDS.length]!;
       if (i % 2 === 0) {
         writeClaudeSession(`cl-${String(i).padStart(2, "0")}`, [
           userLine(`claude prompt ${i}`, at(0), cwd),
@@ -480,6 +551,16 @@ describe("the per-provider cap", () => {
       }
     }
     createCodexDb(codex);
+
+    for (let i = 58; i > 58 - DUPLICATED * 2; i -= 2) {
+      const started = CWDS[Math.floor(i / 2) % CWDS.length]!;
+      CWDS.filter((c) => c !== started).forEach((cwd, n) => {
+        writeClaudeSession(`cl-${String(i).padStart(2, "0")}`, [
+          userLine(`stale copy ${i}`, at(0), cwd),
+          { type: "assistant", timestamp: new Date(Date.UTC(2026, 5, 4, 0, i - 1, 40 - n * 20)).toISOString() },
+        ], cwd);
+      });
+    }
   }
 
   /** The same merge over provider scans that were never capped. */
@@ -501,6 +582,18 @@ describe("the per-provider cap", () => {
     expect(window.rows.map((r) => r.updatedAt)).toEqual(
       [59, 58, 57, 56, 55, 54, 53, 52, 51, 50].map(at),
     );
+  });
+
+  it("fills the window from a union that duplicates most of it", async () => {
+    // The premise, asserted rather than assumed: the top of the window really is
+    // mostly sessions the union reaches twice.
+    const window = (await capped({ limit: LIMIT }))!;
+    const duplicated = window.rows.filter((r) => Number(r.sessionId.slice(3)) >= 58 - DUPLICATED * 2);
+    expect(duplicated.length).toBeGreaterThan(LIMIT - DUPLICATED);
+    expect(window.returned).toBe(LIMIT);
+    expect(new Set(window.rows.map((r) => r.sessionId)).size).toBe(LIMIT);
+    // The newest copy wins, so no row carries the stale duplicate's prompt.
+    expect(window.rows.filter((r) => r.summary.startsWith("stale copy"))).toEqual([]);
   });
 
   it("returns exactly what an uncapped scan would, at every --since cutoff", async () => {

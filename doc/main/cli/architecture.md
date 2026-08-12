@@ -205,6 +205,7 @@ construction until this was made explicit.
 | Session handles are enumerated ascending — the order behind `agent list`, `agent summaries`, and every `listByPath` caller | `session-state.ts#listStateHandles` |
 | Claude project logs and Codex rollout day directories are read sorted, so "the first file naming this session" is a defined choice | `providers/history.ts`, `providers/output.ts`, `session-id.ts` |
 | History rows sort by recency, then ascending `sessionId`; an unparseable `updatedAt` ranks after every real timestamp | `providers/history.ts#finalizeHistory` |
+| A session id reachable twice — the Claude scan spans every directory of the project's subtree, and a thread resumed under a second cwd is logged under both — resolves to its newest tail, ties broken by the ascending log path, so no directory-read order reaches the output | `providers/history.ts#newestPerSession` |
 | Every `threads` query orders by its timestamp **and** `id` — `created_at` is second-precision, so concurrent threads tie routinely and SQLite leaves tied rows to the query plan | `providers/history.ts`, `session-id.ts` |
 | Equal-delay rollout selection resolves to the smallest rollout path, not to whichever the directory read reached first | `session-id.ts#scanCodexRollouts` |
 | The packaged skill names are listed once, ascending, for both readers of the manifest — `install` plants a link per name, `doctor` reports the names that have none and shows only the first three | `package-root.ts#listSkillNames` |

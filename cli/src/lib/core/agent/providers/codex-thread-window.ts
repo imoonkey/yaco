@@ -43,7 +43,9 @@ export interface CodexThreadWindowRow {
  *  `LIKE` folds ASCII case while a POSIX path does not. `substr` needs no
  *  escaping and no `ESCAPE` clause, and `length()` is taken by SQLite rather
  *  than by JavaScript so the prefix length is counted in the same units the
- *  comparison uses.
+ *  comparison uses. The prefix carries exactly one trailing separator: the
+ *  filesystem root already ends in its own, and appending a second would match
+ *  no absolute path at all.
  *
  *  **`LIMIT` bounds what crosses into JavaScript, not what SQLite examines**, and
  *  the measured bound is a bound on the whole statement either way. Codex's
@@ -54,14 +56,17 @@ export interface CodexThreadWindowRow {
  *  idx_threads_archived (archived=?)` followed by `USE TEMP B-TREE FOR ORDER BY`:
  *  every non-archived row is examined and the matches are sorted inside SQLite,
  *  and `LIMIT` takes the top of that sort. What the cap therefore buys is the
- *  *fan-out* — one rollout tail-read per returned row, 812 down to 201 on the
- *  reference home — not a smaller scan.
+ *  *fan-out* — one rollout tail-read per returned row — not a smaller scan. The
+ *  measured figures live with the admission that judged them
+ *  (`RULE_5_SQLITE` in `test/unit/export-audit.test.ts`), so a growing corpus
+ *  cannot leave a stale count behind here.
  *
  *  `id` breaks the `updated_at` tie: SQLite leaves the order of tied rows to the
  *  query plan, so without it both the row order and the window boundary would be
  *  undefined. */
 export function codexThreadWindow(cwd: string, limit: number): CodexThreadWindowRow[] {
   if (!existsSync(codexDbPath())) return [];
+  const prefix = cwd.endsWith("/") ? cwd : `${cwd}/`;
   try {
     const db = new DatabaseSync(codexDbPath(), { readOnly: true });
     try {
@@ -74,7 +79,7 @@ export function codexThreadWindow(cwd: string, limit: number): CodexThreadWindow
            FROM threads WHERE (cwd = ? OR substr(cwd, 1, length(?)) = ?) AND archived = 0
            ORDER BY updated_at DESC, id ASC LIMIT ?`,
         )
-        .all(cwd, `${cwd}/`, `${cwd}/`, limit) as unknown as CodexThreadWindowRow[];
+        .all(cwd, prefix, prefix, limit) as unknown as CodexThreadWindowRow[];
     } finally {
       db.close();
     }

@@ -463,8 +463,10 @@ const RULE_5_SQLITE: Record<string, SqliteAdmission> = {
       "the newest 201 non-archived threads of the busiest cwd *subtree* (SEARCH " +
       "threads USING INDEX idx_threads_archived (archived=?) / USE TEMP B-TREE " +
       "FOR ORDER BY, 867 rows matched) on an 11.2 MB, 2 322-row database: " +
-      "9.1 ms p50, 11.5 ms p95, 11.7 ms max over 40 warm samples, open and " +
-      "close included. " +
+      "8.6-9.1 ms p50 over 40 warm samples, open and close included. Three runs " +
+      "of the same probe put the tail at 9.5/10.6, 11.5/11.7 and 15.4/23.0 ms " +
+      "(p95/max) — the p50 is the stable figure and the tail tracks what else " +
+      "the machine is doing, so the admission is read off the worst of them. " +
       "Reproduce with `node test/bench/history-stall.ts --sqlite-probe --home ~`.",
     prepares: [
       "SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path " +

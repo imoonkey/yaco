@@ -41,7 +41,7 @@
  *  -> See: `doc/main/cli/exports.md` (the six eligibility rules this obeys). */
 
 import { open, readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { toErr } from "../../errors.ts";
 import { ok, type Result } from "../../result.ts";
 import { encodeClaudeCwd } from "../../project/encode.ts";
@@ -257,6 +257,13 @@ function claudeProjectsRoot(): string {
   return join(userHome(), ".claude", "projects");
 }
 
+/** A normalized project path with exactly one trailing separator — the literal
+ *  string every descendant cwd starts with. The filesystem root already carries
+ *  its separator, and appending a second would match nothing. */
+function descendantPrefix(projectPath: string): string {
+  return projectPath.endsWith(sep) ? projectPath : projectPath + sep;
+}
+
 function claudeProjectDir(projectPath: string): string {
   // Claude Code keys ~/.claude/projects/<encoded-cwd>/ with the same lossy
   // encoder used for project-move directory renames (non-alphanumerics → "-"),
@@ -264,7 +271,7 @@ function claudeProjectDir(projectPath: string): string {
   return join(claudeProjectsRoot(), encodeClaudeCwd(projectPath));
 }
 
-/** The literal `cwd` a Claude log records, from a slice of its head. */
+/** The literal `cwd` a Claude log records, from a slice of it. */
 function parseCwd(text: string): string | null {
   for (const line of text.split("\n")) {
     if (!line.includes('"cwd"')) continue;
@@ -274,29 +281,6 @@ function parseCwd(text: string): string | null {
     } catch { /* partial line at a read boundary — skip */ }
   }
   return null;
-}
-
-/** Whether a directory found by the encoded-name prefix really holds sessions of
- *  this project, decided by the first `cwd` its logs record.
- *
- *  The name cannot decide it. `encodeClaudeCwd` maps every non-alphanumeric to
- *  `-`, so `<project>/.worktrees/x` and the unrelated sibling `<project>-backups`
- *  both begin with the project's own encoded name, and the encoding has no
- *  inverse. Nor can the filesystem: a worktree's directory is deleted the moment
- *  it merges, long before its history stops mattering — which is the very
- *  history this scan exists to find. What a log records is therefore the only
- *  sound answer, and it is read rather than inferred.
- *
- *  One log decides for the whole directory, because a directory *is* one encoded
- *  cwd: two paths that collide onto one name land in one directory in Claude's
- *  own writer, so no reader can separate them. A directory whose logs record no
- *  cwd at all is rejected — unattributable history stays out. */
-async function recordsCwdUnder(dir: string, files: string[], projectPath: string): Promise<boolean> {
-  for (const file of files) {
-    const cwd = parseCwd(await readSlice(join(dir, file), 0, HEAD_BYTES));
-    if (cwd) return isPathDescendantOrEqual(cwd, projectPath);
-  }
-  return false;
 }
 
 /** Load sessions-index.json as optional per-session enrichment. One file per
@@ -330,6 +314,9 @@ interface ClaudeTail {
   updatedAt: string;
   title: string | null;
   tokens: number | null;
+  /** The literal cwd this log records — what decides whether it is this
+   *  project's. Null when the log records none anywhere it was read. */
+  cwd: string | null;
 }
 
 /** Phase 1 for one Claude log: `stat` plus a single tail read, which is all the
@@ -344,9 +331,12 @@ interface ClaudeTail {
  *  would. Hence: read the tail of every log, and the head of only the window.
  *
  *  When the file is no larger than `TAIL_BYTES` the tail *is* the whole file, so
- *  it already covers the head. Only a larger log whose last 64 KB carries no
- *  timestamp at all falls back to its head, and only that log pays a second
- *  read here. */
+ *  it already covers the head. Only a larger log missing its timestamp or its
+ *  cwd in the last 64 KB falls back to its head, and only that log pays a second
+ *  read here.
+ *
+ *  The cwd is taken from the same slice, which is what makes per-log attribution
+ *  free: every log the union reaches is tail-read anyway. */
 async function claudeTail(
   dir: string,
   file: string,
@@ -370,8 +360,11 @@ async function claudeTail(
   const tailLength = Math.min(size, TAIL_BYTES);
   const tail = await readSlice(path, size - tailLength, tailLength);
   let fromLog = parseLastTimestamp(tail);
-  if (fromLog === null && size > TAIL_BYTES) {
-    fromLog = parseLastTimestamp(await readSlice(path, 0, HEAD_BYTES));
+  let cwd = parseCwd(tail);
+  if ((fromLog === null || cwd === null) && size > TAIL_BYTES) {
+    const head = await readSlice(path, 0, HEAD_BYTES);
+    fromLog ??= parseLastTimestamp(head);
+    cwd ??= parseCwd(head);
   }
 
   return {
@@ -384,6 +377,7 @@ async function claudeTail(
     updatedAt: entry?.modified || fromLog || mtime,
     title: parseLastTitle(tail),
     tokens: parseLastClaudeTokens(tail),
+    cwd,
   };
 }
 
@@ -412,10 +406,8 @@ interface ClaudeLogDir {
   index: Map<string, ClaudeIndexEntry>;
 }
 
-/** Read one candidate directory, or null when it holds no logs or turns out not
- *  to be this project's. The project's own directory is taken as its own by
- *  definition — it is the name Claude writes this cwd under. */
-async function claudeLogDir(dir: string, projectPath: string): Promise<ClaudeLogDir | null> {
+/** Read one directory's logs and index, or null when it holds no logs. */
+async function claudeLogDir(dir: string): Promise<ClaudeLogDir | null> {
   // The order a raw directory read produces is undefined; it does not reach the
   // output, because `byUpdatedAtThenSessionId` decides the window and
   // `newestPerSession` has already made the session id unique across the
@@ -425,14 +417,11 @@ async function claudeLogDir(dir: string, projectPath: string): Promise<ClaudeLog
     files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
   } catch { return null; }
   if (files.length === 0) return null;
-  if (dir !== claudeProjectDir(projectPath) && !await recordsCwdUnder(dir, files, projectPath)) {
-    return null;
-  }
   return { dir, files, index: await loadClaudeIndex(dir) };
 }
 
-/** Every Claude directory whose sessions belong to `projectPath` — its own, and
- *  each descendant cwd's.
+/** Every Claude directory that *may* hold sessions of `projectPath` — its own,
+ *  and every name that could encode a descendant cwd.
  *
  *  A session is this project's when its cwd is the project path or below it,
  *  which is the predicate the live session list already applies
@@ -440,8 +429,19 @@ async function claudeLogDir(dir: string, projectPath: string): Promise<ClaudeLog
  *  directory instead, so an agent working in `<project>/.worktrees/<slug>` was
  *  listed while it ran and vanished the moment it was only history.
  *
- *  Claude stores one directory per cwd, so the descendants have to be found by
- *  name and then confirmed by content — see `recordsCwdUnder`. */
+ *  This is deliberately a *superset*: the name cannot decide membership, because
+ *  `encodeClaudeCwd` maps every non-alphanumeric to `-` and has no inverse, so
+ *  the sibling `<project>-backups` shares the prefix with
+ *  `<project>/.worktrees/x` and two distinct cwds can even collide onto one
+ *  directory. What decides is the cwd each log records (`claudeList`); this only
+ *  narrows how many logs have to be read. Nor could the filesystem decide it: a
+ *  worktree's directory is deleted when it merges, long before its history stops
+ *  mattering — which is the history this scan exists to find.
+ *
+ *  A project at the filesystem root has no separator to append, and every
+ *  absolute path encodes with the leading `-` its own encoding is: at root the
+ *  prefix is that `-` and the superset is every directory, which is what a
+ *  project containing everything means. */
 async function claudeProjectDirs(projectPath: string): Promise<string[]> {
   const own = claudeProjectDir(projectPath);
   let names: string[];
@@ -449,7 +449,7 @@ async function claudeProjectDirs(projectPath: string): Promise<string[]> {
     names = await readdir(claudeProjectsRoot());
   } catch { return [own]; }
 
-  const prefix = `${encodeClaudeCwd(projectPath)}-`;
+  const prefix = encodeClaudeCwd(descendantPrefix(projectPath));
   return [own, ...names.filter((n) => n.startsWith(prefix)).map((n) => join(claudeProjectsRoot(), n))];
 }
 
@@ -472,12 +472,27 @@ function newestPerSession(tails: ClaudeTail[]): ClaudeTail[] {
   return [...best.values()];
 }
 
+/** Whether one log belongs to the project.
+ *
+ *  Per log, never per directory: a directory is a *lossy* key, so one that holds
+ *  a descendant's logs can hold an unrelated cwd's too, and letting the first
+ *  log read decide for its neighbours would both admit and drop history
+ *  according to `readdir` order. Each log records the cwd that settles it.
+ *
+ *  A log that records no cwd anywhere it was read falls back to the only other
+ *  evidence there is — the directory Claude filed it under, which is exact for
+ *  the project's own encoded name and merely a prefix for any other. */
+function belongsToProject(tail: ClaudeTail, projectPath: string, ownDir: string): boolean {
+  return tail.cwd === null
+    ? tail.path.startsWith(ownDir + sep)
+    : isPathDescendantOrEqual(tail.cwd, projectPath);
+}
+
 async function claudeList(rawProjectPath: string, cap: number): Promise<HistorySession[]> {
   const projectPath = normalizeProjectPath(rawProjectPath);
-  const dirs = (await chunked(
-    await claudeProjectDirs(projectPath),
-    (dir) => claudeLogDir(dir, projectPath),
-  )).filter((d): d is ClaudeLogDir => d !== null);
+  const ownDir = claudeProjectDir(projectPath);
+  const dirs = (await chunked(await claudeProjectDirs(projectPath), claudeLogDir))
+    .filter((d): d is ClaudeLogDir => d !== null);
 
   // One fan-out over every log of every directory, so the width stays
   // `READ_CONCURRENCY` however many directories the project spans — and so the
@@ -486,7 +501,9 @@ async function claudeList(rawProjectPath: string, cap: number): Promise<HistoryS
   // would stop being a prefix of the merged newest-first order.
   const logs = dirs.flatMap((d) => d.files.map((file) => ({ d, file })));
   const tails = await chunked(logs, ({ d, file }) => claudeTail(d.dir, file, d.index));
-  const window = newestPerSession(tails.filter((t): t is ClaudeTail => t !== null))
+  const window = newestPerSession(
+    tails.filter((t): t is ClaudeTail => t !== null && belongsToProject(t, projectPath, ownDir)),
+  )
     .sort(byUpdatedAtThenSessionId)
     .slice(0, cap);
 
