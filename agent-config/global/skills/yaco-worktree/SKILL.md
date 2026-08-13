@@ -43,7 +43,8 @@ worktree_path="$(yaco worktree create <slug> --base <target-branch> --json | jq 
 `--base` (default `main`), provisions the shared plan link, runs
 `scripts/worktree-provision.sh` if present (see Provisioning), and **reuses** an existing
 worktree of the same slug. Reuse also repairs a missing plan link without recreating the
-worktree. Without `--json` it prints the path on stdout.
+worktree. An existing path not registered by git fails closed; create never recursively
+deletes it. Without `--json` it prints the path on stdout.
 
 **Cross-repo:** if work spans multiple repos, create a worktree in each repo using the **same
 slug**. Each repo manages its own resolved `[paths].worktrees` directory independently.

@@ -11,8 +11,11 @@
   configured `[paths].worktrees` container. The plan link gets its own
   no-trailing-slash `info/exclude` entry so it stays out of git status.
 - Create physically contains the configured worktree path before any recursive
-  deletion or directory creation, so a symlinked container cannot redirect a
-  stale-path cleanup outside the repository.
+  directory creation, so a symlinked container cannot redirect writes outside
+  the repository. Existing unregistered paths now fail closed rather than being
+  recursively deleted, because configured paths can overlap plan or source.
+- Session-to-worktree enrichment also resolves each project's configured
+  worktree container instead of parsing a literal `.worktrees` segment.
 - `gate.sh` starts evidence discovery at `plan/`, which traverses the shared
   starting-point link without enabling broad `find -L` traversal.
 
@@ -27,11 +30,11 @@
 **Key files:** `cli/src/lib/core/worktree/create.ts`,
 `cli/test/unit/core/worktree/plan-provision.test.ts`, `scripts/gate.sh`,
 `app/server/src/lib/worktree.ts`, `doc/main/cli/worktree.md`
-**Verification:** `scripts/verify.sh` passed all steps; CLI unit 94 files / 1507
-tests; app server 53 files / 878 passed / 1 skipped; focused plan fixture 6/6;
+**Verification:** `scripts/verify.sh` passed all steps; CLI unit 94 files / 1508
+tests; app server 53 files / 878 passed / 1 skipped; focused plan fixture 7/7;
 gate shell fixture 27/27. Every new test was mutation-checked, including removal
 of the destructive temp-root guard and reverting `find plan/`.
-**Commit:** `b15da70b..3da1d22b`
+**Commit:** `b15da70b..3de9e4a7`
 **Next:** None
 
 ## 2026-08-12: the Stop-debounce tests stop racing a process launch

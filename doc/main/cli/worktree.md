@@ -83,8 +83,9 @@ and `app/ui` are unchanged.
 ### `create <slug>`
 
 - Idempotent: an existing configured `<worktrees>/<slug>` registered with git is reused
-  (`reused: true`); a stale directory not in `git worktree list` is removed
-  and recreated.
+  (`reused: true`). Any existing path not registered by git is `CONFLICT`:
+  configuration can overlap the plan store or tracked source, so create never
+  assumes an arbitrary directory is disposable.
 - If only the branch already exists (partial cleanup left it behind), the
   worktree attaches to it. Otherwise `git worktree add -b task/<slug> <base>`
   creates branch + worktree.
