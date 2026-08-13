@@ -5,7 +5,7 @@
  *  tmux/git/claude/codex are hermetic.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -19,9 +19,9 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { listSkillNames, PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
-import { runAllChecks, REQUIRED_CHECKS } from "../../../src/commands/doctor.ts";
+import { runAllChecks, REQUIRED_CHECKS, type CheckResult } from "../../../src/commands/doctor.ts";
 import { runInstall } from "../../../src/commands/install.ts";
-import { runCli } from "../../helpers/cli-process.ts";
+import { CLI_ENTRY, runCli } from "../../helpers/cli-process.ts";
 
 
 const ORIG = {
@@ -331,6 +331,34 @@ describe("runAllChecks — a command that is present but cannot execute", () => 
     expect(Date.now() - started).toBeLessThan(15_000);
     expect(t?.status).toBe("fail");
     expect(t?.detail).toBe(`${join(bin, "tmux")}: \`tmux -V\` did not answer within 3000ms`);
+  });
+
+  it("does not signal its OWN process group when a probe cannot be spawned at all", async () => {
+    // `spawnSync` returns pid 0 when it could not create the child — and
+    // `kill(-0)` is not a no-op, it signals the caller's group. An executable
+    // whose shebang names a missing interpreter passes `which`, passes +x, and
+    // produces exactly that: the same class of broken binary this whole probe
+    // exists to catch would have SIGKILLed yaco and everything sharing its
+    // process group.
+    await installPrereqs();
+    const bin = shimPath();
+    writeFileSync(join(bin, "tmux"), "#!/no/such/interpreter\ntrue\n");
+    chmodSync(join(bin, "tmux"), 0o755);
+    // Run doctor in its OWN group, so that a doctor which does signal its group
+    // takes down only itself — and not the test runner reading this assertion.
+    const r = spawnSync(process.execPath, [CLI_ENTRY, "doctor", "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env },
+      detached: true,
+      timeout: 30_000,
+      // Same @types/node gap the probe itself works around: `detached` is
+      // honored by spawnSync but typed only on the async options.
+    } as SpawnSyncOptionsWithStringEncoding & { detached: boolean });
+    expect(r.signal).toBe(null);
+    const t = JSON.parse(r.stdout).data.checks.find((c: CheckResult) => c.name === "tmux");
+    expect(t.status).toBe("fail");
+    expect(t.detail).toContain("cannot execute");
+    expect(t.detail).toContain("ENOENT");
   });
 
   it("leaves nothing running behind a probe that died on its own", async () => {

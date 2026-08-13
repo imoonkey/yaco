@@ -312,6 +312,13 @@ type ProbeSpawnOptions = SpawnSyncOptionsWithStringEncoding & { detached: boolea
  *  probe leaves nothing behind. A group with no members left is already gone,
  *  which is the ordinary case and arrives here as ESRCH.
  *
+ *  The pid guard is not defensive noise: `spawnSync` returns **0** when it could
+ *  not create the child at all — an executable whose shebang names a missing
+ *  interpreter is exactly that, and it is the same class of broken binary this
+ *  probe exists to catch — and `kill(-0)` is not a no-op, it signals the
+ *  CALLER's process group. Ungated, doctor would SIGKILL yaco and everything
+ *  sharing its group while reporting on a bad shebang.
+ *
  *  Not race-free, and cannot be while the spawn is synchronous: a pgid is
  *  unrecyclable only while its group still has members, so in the microseconds
  *  between `spawnSync` returning an empty group and this kill, a pid wraparound
@@ -319,7 +326,7 @@ type ProbeSpawnOptions = SpawnSyncOptionsWithStringEncoding & { detached: boolea
  *  cost an async spawn — signalling while the leader is provably alive — and
  *  doctor's checks are synchronous. */
 function reapProbeGroup(pid: number | undefined): void {
-  if (typeof pid !== "number") return;
+  if (pid === undefined || !Number.isInteger(pid) || pid <= 1) return;
   try {
     process.kill(-pid, "SIGKILL");
   } catch { /* ESRCH — the group is already gone, which is the normal case */ }
