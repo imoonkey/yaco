@@ -136,8 +136,8 @@ Three outcomes, kept distinct:
 
 | Outcome | tmux / git | providers |
 |---|---|---|
-| exits 0 | `pass`, detail carries **what it printed** — an empty stdout is reported as `no version output`, never as a version | counts as usable |
-| non-zero exit, or killed by a signal | `fail` — `cannot execute — exit 127: <first line it printed>` / `killed by SIGABRT: …` | not usable; `installed but cannot execute: …` |
+| exits 0 | `pass`, detail carries **what it printed** — the first non-empty line of stdout, or of stderr when stdout was empty; `no version output` only when both were, never a version | counts as usable |
+| non-zero exit, or killed by a signal | `fail` — `cannot execute — exit 127: <what it said>` / `killed by SIGABRT: …`, where *what it said* is the first non-empty line of **stderr**, falling back to stdout | not usable; `installed but cannot execute: …` |
 | no answer within **3000 ms** | `fail` — `\`tmux -V\` did not answer within 3000ms` | not usable; `installed but did not answer \`--version\` within 3000ms` |
 
 The bound is the same one `which.ts` spawns under, and a timeout is its own
@@ -154,10 +154,10 @@ not create one — an executable whose shebang names a missing interpreter, whic
 is the same class of breakage this probe exists to catch — and `kill(-0)` signals
 the *caller's* group, so ungating that would have yaco SIGKILL itself.
 
-`binary` and `agent-wrapper` are not probed this way: the first is the `yaco` that
-is already running (an exec of it would prove only that this process exists), and
-the second is a `bash` script the wrapper protocol never invokes with a version
-flag.
+`binary` and `agent-wrapper` are not probed this way, and stay a `which` plus an
+executable-bit test: probing `binary` would mean spawning a second `yaco` — this
+same command — from inside a doctor run, and `agent-wrapper` is a `bash` script
+that the wrapper protocol never invokes with a version flag.
 
 Reporting the version is worth having on its own — skew between two installed
 tmux binaries has already produced a fabricated test result on this project (a

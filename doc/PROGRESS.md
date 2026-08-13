@@ -9,8 +9,9 @@
   no output is reported as `no version output`, never rendered as a version.
 - Failure shapes are unchanged where a user is allowed to be: absent tmux/git
   still FAIL with the same hint, and a provider that is absent *or* present-but-
-  unrunnable still leaves the check at `skip` — install throws on any failing
-  check. The detail now separates `not installed` from
+  unrunnable still leaves the check at `skip` when no usable provider remains
+  (one that works still passes, naming the broken one) — install throws on any
+  failing check. The detail now separates `not installed` from
   `installed but cannot execute: <what running it produced>`.
 - A blown 3000 ms bound is its own outcome (`did not answer within 3000ms`),
   neither folded into "cannot execute" nor into a pass.
