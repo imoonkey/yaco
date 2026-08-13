@@ -170,15 +170,6 @@ function ensurePlanLinkExcluded(worktreeDir: string, primaryPlan: string): void 
   ensureLine(excludePath, `/${primaryPlan}`);
 }
 
-function isSymbolicLink(path: string): boolean {
-  try {
-    return lstatSync(path).isSymbolicLink();
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
 /** Run `<repoRoot>/scripts/worktree-provision.sh` (if present + executable)
  *  after a fresh `git worktree add`. The script receives the new worktree
  *  path as $1 and runs with cwd = worktree path so it can install deps or
