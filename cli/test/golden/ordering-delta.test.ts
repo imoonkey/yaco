@@ -80,7 +80,9 @@ const INTENTIONAL_DELTAS: Record<
       "`registry` stopped asserting a 'yaco' entry — nothing reads one now that " +
       "`skills-link` resolves the manifest from the package rather than through it; " +
       "`providers` skips instead of failing when no agent CLI is on $PATH, because " +
-      "YACO ships no agent and `yaco install` throws on any failing check",
+      "YACO ships no agent and `yaco install` throws on any failing check, and now " +
+      "reports each provider as not installed vs installed-but-unrunnable, because " +
+      "doctor runs what it found instead of trusting the executable bit",
   },
   "install-dry-run-json": {
     fields: ["stdout", "stderr", "exitCode"],
@@ -161,7 +163,8 @@ const ASSERTED_TRANSFORMATIONS: Record<string, (before: CaseResult, after: CaseR
       name: "providers",
       status: "skip",
       detail:
-        "no provider executable on $PATH (claude, codex) — install one before starting agents",
+        "no usable provider (claude not installed; codex not installed) — " +
+        "install one before starting agents",
     });
     const summary = (c: CaseResult) => (JSON.parse(c.stdout) as { data: { summary: unknown } }).data.summary;
     expect(summary(before)).toEqual({ pass: 2, fail: 9 });

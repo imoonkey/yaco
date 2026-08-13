@@ -57,6 +57,54 @@ gate shell fixture 27/27. Every new test was mutation-checked, including removal
 of the destructive temp-root guard and reverting `find plan/`.
 **Commit:** `b15da70b..3de9e4a7`
 **Next:** None
+## 2026-08-13: doctor runs the binaries it found
+
+**What changed:**
+- `yaco doctor`'s `tmux`, `git` and `providers` checks execute what `which`
+  located (`tmux -V`, `--version` elsewhere) instead of trusting the executable
+  bit, and a pass now reports **the version the binary printed** — an exit-0 with
+  no output is reported as `no version output`, never rendered as a version.
+- Failure shapes are unchanged where a user is allowed to be: absent tmux/git
+  still FAIL with the same hint, and a provider that is absent *or* present-but-
+  unrunnable still leaves the check at `skip` when no usable provider remains
+  (one that works still passes, naming the broken one) — install throws on any
+  failing check. The detail now separates `not installed` from
+  `installed but cannot execute: <what running it produced>`.
+- A blown 3000 ms bound is its own outcome (`did not answer within 3000ms`),
+  neither folded into "cannot execute" nor into a pass.
+- Probes run in their own process group, and the group is reaped after **every**
+  outcome — `spawnSync`'s kill reaches only the process it started, and nothing
+  at all kills a binary that crashed by itself, so a `--version` that forked
+  first would outlive the run. Only a real child pid is reaped: `spawnSync`
+  reports pid 0 when it could not spawn (a shebang naming a missing interpreter)
+  and `kill(-0)` signals the caller's own group.
+- `which.ts` is unchanged, deliberately: it stays the single `$PATH` lookup
+  shared with `agent status` and `agent start`, neither of which should execute a
+  binary on every call. No check name was added — the surface is still 11.
+
+**Why:**
+- Found on the laptop while syncing it: `PASS tmux — /usr/local/bin/tmux`, where
+  that path is a Dec-2015 Homebrew symlink into a Cellar whose libevent dylib is
+  gone. Every exec of it dies in dyld. The machine only worked because a newer
+  tmux won the login-shell `$PATH`; over ssh, launchd or cron the dead one wins
+  and `yaco agent start` fails with a raw dyld error naming neither tmux nor
+  yaco. `which()` plus `+x` cannot see the difference — running it can, for
+  milliseconds, and the version it prints is worth having on its own (skew
+  between two installed tmux binaries has already fabricated a test result here).
+
+**Key files:** `cli/src/commands/doctor.ts`, `cli/test/unit/commands/doctor.test.ts`,
+`cli/test/golden/matrix.json`, `cli/test/golden/ordering-delta.test.ts`,
+`doc/main/cli/doctor.md`
+**Verification:** `scripts/verify.sh` green; 41 doctor unit tests, each new one
+mutation-checked (11 mutants, every one killed); golden matrix recaptured with
+exactly one field changed (the `providers` skip detail) and the transformation
+re-pinned; hermetic CLI QA over six states — working, absent, unloadable,
+hanging, unspawnable, no-usable-provider — plus `yaco install --cli-only` exiting
+0 with an unrunnable provider; four rounds of independent codex review
+(1 critical, 2 high, 1 medium, all fixed) ending APPROVE.
+**Commit:** a7c962e9..bd1fab8e
+**Next:** none — the operator's dead `/usr/local/bin/tmux` symlink is theirs to remove.
+**Blockers:** None
 
 ## 2026-08-12: the Stop-debounce tests stop racing a process launch
 
