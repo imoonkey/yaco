@@ -21,10 +21,11 @@
  *       step the tool does not assume.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
+import { ensureLine } from "../../lib/core/ensure-line.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
 import { readYacoProjectPaths } from "../../lib/core/paths/index.ts";
@@ -154,32 +155,6 @@ function ensureExcluded(repoRoot: string, plan: string): boolean {
     );
   }
   return ensureLine(resolve(repoRoot, r.stdout.trim()), `/${plan}/`);
-}
-
-/** Append `entry` as its own line in `filePath` unless already present.
- *  Creates the file if absent; never reorders or rewrites existing lines.
- *  Returns whether it appended.
- *
- *  Presence uses gitignore whitespace rules: trailing whitespace is stripped,
- *  leading whitespace is significant — an indented copy of the entry is not an
- *  effective pattern, so it does not count. A read failure other than
- *  file-absent aborts; treating it as absent would rewrite a file we could not
- *  read. */
-function ensureLine(filePath: string, entry: string): boolean {
-  let current = "";
-  try {
-    current = readFileSync(filePath, "utf-8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new CliError(ErrCode.IO, `could not read ${filePath}: ${(e as Error).message}`);
-    }
-  }
-  if (current.split(/\r?\n/).some((line) => line.trimEnd() === entry)) return false;
-
-  mkdirSync(dirname(filePath), { recursive: true });
-  const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-  writeFileSync(filePath, current + prefix + entry + "\n");
-  return true;
 }
 
 /** Add or reconcile the plan repo's origin. Never pushes. */

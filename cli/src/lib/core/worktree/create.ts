@@ -1,8 +1,8 @@
 /** `yaco worktree create <slug>` — provision `.worktrees/<slug>` on `task/<slug>`.
  *
  *  Idempotent: if the directory exists AND git tracks it, reuse it. If the
- *  directory exists but is stale (not in `git worktree list`), nuke and
- *  recreate. If only the branch already exists (partial cleanup), attach
+ *  directory exists but is stale (not in `git worktree list`), fail closed.
+ *  If only the branch already exists (partial cleanup), attach
  *  the new worktree to it. Otherwise spawn `git worktree add -b ...`.
  *
  *  Ports the parity-checked behavior of
@@ -10,10 +10,21 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  realpathSync,
+  symlinkSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
+import { ensureLine } from "../ensure-line.ts";
+import { readYacoProjectPaths } from "../paths/index.ts";
 import {
   branchExists,
   isWorktreeRegistered,
@@ -42,14 +53,19 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
-  const worktreeDir = worktreePath(repoRoot, slug);
+  const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
+  assertPhysicallyContained(repoRoot, worktreeDir, "worktree path");
 
   if (existsSync(worktreeDir)) {
     const resolvedDir = realpathSync(worktreeDir);
     if (isWorktreeRegistered(repoRoot, resolvedDir)) {
+      provisionPlanStore(repoRoot, worktreeDir);
       return { slug, branch, path: worktreeDir, base, reused: true };
     }
-    rmSync(worktreeDir, { recursive: true, force: true });
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `worktree path exists but is not registered with git: ${worktreeDir}`,
+    );
   }
 
   mkdirSync(dirname(worktreeDir), { recursive: true });
@@ -65,9 +81,93 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
     );
   }
 
+  provisionPlanStore(repoRoot, worktreeDir);
   runProvisionHook(repoRoot, worktreeDir);
 
   return { slug, branch, path: worktreeDir, base, reused: false };
+}
+
+/** Share the primary plan store into one worktree without overwriting any
+ * existing local state. The two configs are read independently: the primary
+ * owns the target, while the worktree branch owns the link location. */
+function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
+  const primaryPlan = readYacoProjectPaths(repoRoot).plan;
+  const worktreePlan = readYacoProjectPaths(worktreeDir).plan;
+  const target = join(repoRoot, primaryPlan);
+  const location = join(worktreeDir, worktreePlan);
+  assertPhysicallyContained(worktreeDir, dirname(location), "plan link parent");
+
+  if (primaryPlan !== worktreePlan) {
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `worktree [paths].plan resolves to ${location}, but the primary plan is ${target}; align the branch configuration, then re-run create`,
+    );
+  }
+
+  let existing: ReturnType<typeof lstatSync> | undefined;
+  try {
+    existing = lstatSync(location);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  if (existing) {
+    if (!existing.isSymbolicLink()) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `plan location already exists and is not a symlink: ${location}`,
+      );
+    }
+    const actual = resolve(dirname(location), readlinkSync(location));
+    if (actual !== resolve(target)) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `stale plan link at ${location}: resolves to ${actual}, expected ${target}`,
+      );
+    }
+    ensurePlanLinkExcluded(worktreeDir, primaryPlan);
+    return;
+  }
+
+  ensurePlanLinkExcluded(worktreeDir, primaryPlan);
+  mkdirSync(dirname(location), { recursive: true });
+  symlinkSync(relative(dirname(location), target), location, "dir");
+}
+
+/** Reject a repo-relative path whose existing ancestor resolves through a
+ * symlink outside its owner. This check precedes both recursive deletion and
+ * directory creation, so neither operation can cross the physical seam. */
+function assertPhysicallyContained(owner: string, candidate: string, label: string): void {
+  const physicalOwner = realpathSync(owner);
+  let ancestor = candidate;
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const physicalAncestor = realpathSync(ancestor);
+  const fromOwner = relative(physicalOwner, physicalAncestor);
+  if (fromOwner === ".." || fromOwner.startsWith(`..${sep}`) || isAbsolute(fromOwner)) {
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `${label} escapes its owner through a symlink: ${candidate} resolves under ${physicalAncestor}, outside ${physicalOwner}`,
+    );
+  }
+}
+
+/** A directory-only `/<plan>/` ignore does not match the symlink itself. Add
+ * the primary plan path without a trailing slash to the host's shared exclude
+ * file, reached through git because linked worktrees redirect it. */
+function ensurePlanLinkExcluded(worktreeDir: string, primaryPlan: string): void {
+  const result = runGit(["rev-parse", "--git-path", "info/exclude"], worktreeDir);
+  if (result.status !== 0) {
+    throw new CliError(
+      ErrCode.IO,
+      `could not resolve info/exclude: ${result.stderr.trim() || "git rev-parse failed"}`,
+    );
+  }
+  const excludePath = resolve(worktreeDir, result.stdout.trim());
+  ensureLine(excludePath, `/${primaryPlan}`);
 }
 
 /** Run `<repoRoot>/scripts/worktree-provision.sh` (if present + executable)

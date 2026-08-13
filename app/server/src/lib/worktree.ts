@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from 'fs'
 import { execFile } from 'child_process'
 import { worktreePath, worktreeBranch } from 'yaco-cli/core/worktree'
+import { readYacoProjectPaths } from 'yaco-cli/core/paths'
 
 export interface WorktreeStatus {
   active: boolean
@@ -110,7 +111,7 @@ export async function worktreeStatus(absPath: string, branch: string): Promise<W
 
 /** Resolve worktree status for a single slug within a project */
 export async function getWorktreeStatus(projectPath: string, slug: string): Promise<WorktreeStatus> {
-  const dir = worktreePath(projectPath, slug)
+  const dir = worktreePath(projectPath, readYacoProjectPaths(projectPath).worktrees, slug)
   const branch = worktreeBranch(slug)
   if (!existsSync(dir)) return inactive(branch)
 
@@ -119,10 +120,12 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
   return worktreeStatus(dir, branch)
 }
 
-/** Extract worktree slug from a session path, if it's inside a .worktrees directory */
-export function extractWorktreeSlug(sessionPath: string): string | undefined {
-  const match = sessionPath.match(/[/\\]\.worktrees[/\\]([^/\\]+)/)
-  return match?.[1]
+/** Extract the first path segment below a project's resolved worktree container. */
+export function extractWorktreeSlug(sessionPath: string, worktreesPath: string): string | undefined {
+  const session = sessionPath.replaceAll('\\', '/').replace(/\/+$/, '')
+  const worktrees = worktreesPath.replaceAll('\\', '/').replace(/\/+$/, '')
+  if (!session.startsWith(`${worktrees}/`)) return undefined
+  return session.slice(worktrees.length + 1).split('/')[0] || undefined
 }
 
 function registeredPaths(entries: WorktreeEntry[]): Set<string> {
@@ -144,10 +147,11 @@ export async function getWorktreeStatuses(
   if (slugs.size === 0) return results
 
   const registered = registeredPaths(await listRegisteredWorktrees(projectPath))
+  const worktrees = readYacoProjectPaths(projectPath).worktrees
 
   await Promise.all(
     [...slugs].map(async (slug) => {
-      const dir = worktreePath(projectPath, slug)
+      const dir = worktreePath(projectPath, worktrees, slug)
       const branch = worktreeBranch(slug)
       if (!existsSync(dir) || !isRegistered(dir, registered)) {
         results.set(slug, inactive(branch))

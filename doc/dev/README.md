@@ -65,6 +65,19 @@ workspace package lands and fails loudly if it is outside the worktree; and
 resolver for every workspace specifier `app/server` imports.
 `scripts/worktree-provision.test.sh` is a hermetic test of the mirror itself.
 
+The plan store follows a different rule: it is repo-global mutable state and is
+shared whole. `yaco worktree create` resolves both checkouts' `[paths].plan` plus
+the primary `[paths].worktrees`, then creates a relative link from the worktree
+plan location to the primary store. Re-running the same create repairs a missing
+link in place. It refuses a real directory or stale link so artifacts are never
+silently overwritten. Do not hand-link the plan location: both names and the
+relative depth must come from the resolvers. Migrate any local plan artifacts
+first, remove the old location, then re-run `yaco worktree create`.
+
+Whole-worktree cleanup unlinks that link safely. Never append the resolved plan
+path and a trailing slash to a recursive remove command: that spelling follows
+the link into the shared task graph. Use `yaco worktree cleanup <slug>`.
+
 **Build the CLI before running `app/server` tests in a fresh worktree.** A few of
 them spawn a plain `node --import tsx` child, which resolves `yaco-cli/*` to
 `cli/dist/` rather than the source — unbuilt, that is now an honest
@@ -106,4 +119,3 @@ code commit correctly stales it. The thin `yaco gate` verb wraps these scripts
 ([`main/cli/gate.md`](../main/cli/gate.md)), and the skills call them: `/verify` runs
 `scripts/verify.sh`, `/implement` self-checks with `yaco gate`, and `/orchestrate`
 gatekeeps on its result. `scripts/gate.test.sh` is a hermetic test of the floor mapping.
-

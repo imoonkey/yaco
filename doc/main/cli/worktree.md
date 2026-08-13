@@ -1,6 +1,6 @@
 # Worktree Subcommand
 
-> Last updated: 2026-08-11 (read-export-gate: the barrel narrows to slug + convention; prior yaco-read-surface)
+> Last updated: 2026-08-12 (worktree-plan-provision)
 
 The `worktree` area provisions, merges, and cleans up git worktrees keyed
 by task slug. It is a pure-TypeScript port of the three legacy shell helpers
@@ -17,11 +17,11 @@ strings, no command-injection surface**.
 
 | File | Surface | Notes |
 |------|---------|-------|
-| `convention.ts` | `worktreePath(repoRoot, slug)`, `worktreeBranch(slug)` | Single source of the slug↔path↔branch convention (`<repoRoot>/.worktrees/<slug>`, `task/<slug>`). Exported via `yaco-cli/core/worktree` and imported by `app/server`. See [convention export](#convention-export). |
+| `convention.ts` | `worktreePath(repoRoot, worktrees, slug)`, `worktreeBranch(slug)` | Joins the resolved `[paths].worktrees` container with the slug; branch remains `task/<slug>`. Exported via `yaco-cli/core/worktree` and imported by `app/server`. See [convention export](#convention-export). |
 | `slug.ts` | `validateSlug` | Lowercase alphanumeric + hyphens, no leading/trailing hyphen. Throws `CliError(USAGE)`. |
 | `git.ts` | `runGit`, `resolveRepoRoot`, `branchExists`, `isDirty`, `isWorktreeRegistered`, `GitResult` | Thin spawn wrapper. Repo root resolved via `git rev-parse --path-format=absolute --git-common-dir` so linked worktrees still target the primary checkout. |
 | `pr.ts` | `createPullRequest` | `gh pr create --fill` with captured stdio. URL extracted by regex from gh's stdout (or stderr fallback). |
-| `create.ts` | `createWorktree`, `CreateResult` | Idempotent create + reuse + branch reattach. Runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) on first create. |
+| `create.ts` | `createWorktree`, `CreateResult` | Idempotent create + reuse + branch reattach. Provisions the shared plan link on create and reuse, then runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) on first create. |
 | `merge.ts` | `mergeWorktree`, `MergeMode`, `MergeResult` | Two modes: `pr` (push + `gh pr create`) and `local` (rebase + ff-merge). |
 | `cleanup.ts` | `cleanupWorktree`, `CleanupResult` | `git worktree remove` + `git branch -d` (conservative; `--force` switches to `-D` and `--force`). Tolerant of partially-cleaned state. |
 | `index.ts` | Re-exports `validateSlug`, `worktreePath`, `worktreeBranch` — nothing else | The published `yaco-cli/core/worktree`. Everything that *does* something to a worktree spawns git or gh synchronously and reads `process.cwd()`, so it fails export eligibility and is imported from its own module by `cli/src/commands/worktree/*`. -> See: [exports.md](exports.md) |
@@ -36,8 +36,9 @@ yaco worktree cleanup <slug> [--force]                           [--json]
 
 - **Slug**: lowercase alphanumeric + hyphens, no leading/trailing hyphen.
 - **Branch** is always `task/<slug>`.
-- **Worktree path** is always `<repoRoot>/.worktrees/<slug>` where `<repoRoot>`
-  is resolved per-invocation from cwd via `git rev-parse --git-common-dir`.
+- **Worktree path** is `<repoRoot>/<resolved [paths].worktrees>/<slug>` where
+  `<repoRoot>` is resolved per-invocation from cwd via `git rev-parse
+  --git-common-dir`. The configured path defaults to `.worktrees`.
   Cross-repo: each invocation owns a single repo; the same slug in two
   separate repos succeeds independently.
 - **Strict flags**: each subcommand rejects any flag outside its allowed set
@@ -47,7 +48,7 @@ yaco worktree cleanup <slug> [--force]                           [--json]
   - `cleanup`: `--force`
 
 There is **no** `yaco worktree list` / `status` command. A worktree is a git
-object, so `git worktree list` and `git -C .worktrees/<slug> status` are its
+object, so `git worktree list` and `git -C <resolved-worktree-path> status` are its
 canonical readers; `worktree merge` already guards a dirty worktree, so agents
 do not need a status verb. `worktree --help` and the `/yaco` skills point ad-hoc
 inspection at those git commands.
@@ -57,17 +58,17 @@ inspection at those git commands.
 The slug↔path↔branch templates live in exactly one place — `convention.ts`:
 
 ```ts
-export const worktreePath = (repoRoot: string, slug: string): string =>
-  join(repoRoot, ".worktrees", slug);
+export const worktreePath = (repoRoot: string, worktrees: string, slug: string): string =>
+  join(repoRoot, worktrees, slug);
 export const worktreeBranch = (slug: string): string => `task/${slug}`;
 ```
 
 Both are re-exported from the `cli/src/lib/core/worktree/index.ts` barrel and
 published over the workspace exports map as `yaco-cli/core/worktree`
 (`cli/package.json#exports`), together with `validateSlug` — and that is the
-whole export. `create.ts`, `merge.ts`, and `cleanup.ts` all use them (and
-`create.ts` derives its `.worktrees` parent dir via
-`dirname(worktreePath(...))`), so the scheme is never re-spelled inside the CLI,
+whole export. `create.ts`, `merge.ts`, and `cleanup.ts` resolve
+`[paths].worktrees` once and pass it into the helper, so the configured
+container is never re-spelled inside the CLI,
 but those three are behind the subprocess boundary rather than on the barrel.
 
 `app/server/src/lib/worktree.ts` imports `worktreePath` / `worktreeBranch` from
@@ -81,9 +82,10 @@ and `app/ui` are unchanged.
 
 ### `create <slug>`
 
-- Idempotent: existing `.worktrees/<slug>` registered with git is reused
-  (`reused: true`); a stale directory not in `git worktree list` is removed
-  and recreated.
+- Idempotent: an existing configured `<worktrees>/<slug>` registered with git is reused
+  (`reused: true`). Any existing path not registered by git is `CONFLICT`:
+  configuration can overlap the plan store or tracked source, so create never
+  assumes an arbitrary directory is disposable.
 - If only the branch already exists (partial cleanup left it behind), the
   worktree attaches to it. Otherwise `git worktree add -b task/<slug> <base>`
   creates branch + worktree.
@@ -98,6 +100,17 @@ and `app/ui` are unchanged.
   [dev/README.md](../../dev/README.md#worktrees-share-the-dependencies-never-the-workspace-links).
   The hook is read from the **repo root**, so an edit to it reaches new
   worktrees only once it lands on the base branch.
+- Before the stack-specific hook, create provisions a **relative** symlink from
+  the worktree's resolved `[paths].plan` location to the primary checkout's
+  resolved plan store. The primary config owns the target; the worktree branch
+  owns the location; `path.relative` owns the depth. Reuse validates or repairs
+  a missing link without recreating the worktree. An existing real directory,
+  a link to another target, or a branch whose `[paths].plan` differs from the
+  primary checkout is `CONFLICT` and is never overwritten.
+- After link validation succeeds, the primary plan name is added to the
+  git-resolved shared `info/exclude` without a trailing slash. A missing exclude
+  file is the normal zero state and is created; failed provisioning writes no
+  branch-local ignore rule.
 
 Result: `{ slug, branch, path, base, reused }`.
 
@@ -135,6 +148,12 @@ skipped. A missing slug entirely returns `removed: { worktree: false,
 branch: false }` with no error.
 
 Result: `{ slug, branch, path, removed: { worktree, branch } }`.
+
+The plan link does not make whole-worktree removal recursive into the shared
+store: `git worktree remove <dir>` and `rm -rf <dir>` unlink it. The spelling
+`rm -rf <dir>/<plan>/` is different: the trailing slash dereferences the link
+and can erase the shared task graph. Never manually clean a plan subpath; use
+`yaco worktree cleanup <slug>`.
 
 ## Error mapping
 
@@ -178,6 +197,9 @@ Result: `{ slug, branch, path, removed: { worktree, branch } }`.
 ## Testing
 
 - Unit: `test/unit/core/worktree/slug.test.ts` — slug acceptance/rejection.
+- Unit: `test/unit/core/worktree/plan-provision.test.ts` — configured plan and
+  worktree paths, task-read parity, relative move safety, reuse repair, stale
+  link reporting, ignore behavior, and guarded destructive-edge fixtures.
 - Integration: `test/integration/worktree/worktree.integration.ts` — full
   lifecycle against a tmpdir-based git repo:
   - `create`: directory + branch parity, idempotent reuse, invalid slug

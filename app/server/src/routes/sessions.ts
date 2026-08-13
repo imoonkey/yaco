@@ -8,6 +8,8 @@ import { closeShellSession, listShellSessions, startShellSession } from '../lib/
 import { extractWorktreeSlug } from '../lib/worktree'
 import { isPathDescendantOrEqual } from '../lib/agent'
 import { emitRefresh } from '../lib/notify'
+import { readYacoProjectPaths } from 'yaco-cli/core/paths'
+import { resolve } from 'node:path'
 
 const app = new Hono()
 
@@ -42,10 +44,16 @@ async function buildSessionsResponse(projectName: string | null): Promise<unknow
   }
 
   const summaries = await resolveSessionSummaries(agentSessions)
+  const worktreesByProject = new Map(projects.map(project => [
+    project.name,
+    resolve(project.path, readYacoProjectPaths(project.path).worktrees),
+  ]))
   const enriched = agentSessions.map(s => ({
     ...s,
     summary: summaries.get(s.name) ?? '',
-    worktree: extractWorktreeSlug(s.sessionPath),
+    worktree: worktreesByProject.has(s.project)
+      ? extractWorktreeSlug(s.sessionPath, worktreesByProject.get(s.project)!)
+      : undefined,
   }))
 
   const filteredShell = projectName
