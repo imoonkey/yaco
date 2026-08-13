@@ -33,27 +33,27 @@ beforeEach(() => {
 
 describe('extractWorktreeSlug', () => {
   it('extracts slug from Unix-style path', () => {
-    expect(extractWorktreeSlug('/home/user/project/.worktrees/fix-login')).toBe('fix-login')
+    expect(extractWorktreeSlug('/home/user/project/sandboxes/fix-login', '/home/user/project/sandboxes')).toBe('fix-login')
   })
 
   it('extracts slug from nested worktree path', () => {
-    expect(extractWorktreeSlug('/project/.worktrees/my-task/src/index.ts')).toBe('my-task')
+    expect(extractWorktreeSlug('/project/worktrees/my-task/src/index.ts', '/project/worktrees')).toBe('my-task')
   })
 
   it('extracts slug from Windows-style backslash path', () => {
-    expect(extractWorktreeSlug('C:\\Users\\dev\\project\\.worktrees\\feat-auth')).toBe('feat-auth')
+    expect(extractWorktreeSlug('C:\\Users\\dev\\project\\boxes\\feat-auth', 'C:\\Users\\dev\\project\\boxes')).toBe('feat-auth')
   })
 
   it('returns undefined for non-worktree path', () => {
-    expect(extractWorktreeSlug('/home/user/project/src/main.ts')).toBeUndefined()
+    expect(extractWorktreeSlug('/home/user/project/src/main.ts', '/home/user/project/boxes')).toBeUndefined()
   })
 
   it('returns undefined for path containing worktrees without dot prefix', () => {
-    expect(extractWorktreeSlug('/project/worktrees/slug')).toBeUndefined()
+    expect(extractWorktreeSlug('/project/worktrees/slug', '/project/boxes')).toBeUndefined()
   })
 
   it('handles path ending at slug with trailing slash', () => {
-    expect(extractWorktreeSlug('/project/.worktrees/slug/')).toBe('slug')
+    expect(extractWorktreeSlug('/project/boxes/slug/', '/project/boxes/')).toBe('slug')
   })
 })
 

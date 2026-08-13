@@ -194,6 +194,22 @@ describe("worktree plan provisioning", () => {
     expect(existsSync(sentinel)).toBe(true);
   });
 
+  it("never deletes an unregistered configured path that overlaps the plan store", () => {
+    const fix = fixture();
+    writeFileSync(
+      join(fix.repo, "yaco.toml"),
+      '[paths]\nplan = "task-vault"\nworktrees = "task-vault"\n',
+    );
+    const sentinel = join(fix.repo, "task-vault", "tasks", "tasks.json");
+
+    const result = runYaco(fix, fix.repo, ["worktree", "create", "tasks", "--json"]);
+    expect(result.status).toBe(1);
+    const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("CONFLICT");
+    expect(envelope.error.message).toMatch(/not registered with git/i);
+    expect(existsSync(sentinel)).toBe(true);
+  });
+
   it("reports a stale link after the worktree branch edits its plan path", () => {
     const fix = fixture();
     const created = data(runYaco(fix, fix.repo, ["worktree", "create", "stale", "--json"]));

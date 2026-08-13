@@ -1,8 +1,8 @@
 /** `yaco worktree create <slug>` — provision `.worktrees/<slug>` on `task/<slug>`.
  *
  *  Idempotent: if the directory exists AND git tracks it, reuse it. If the
- *  directory exists but is stale (not in `git worktree list`), nuke and
- *  recreate. If only the branch already exists (partial cleanup), attach
+ *  directory exists but is stale (not in `git worktree list`), fail closed.
+ *  If only the branch already exists (partial cleanup), attach
  *  the new worktree to it. Otherwise spawn `git worktree add -b ...`.
  *
  *  Ports the parity-checked behavior of
@@ -19,7 +19,6 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
-  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -64,7 +63,10 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
       provisionPlanStore(repoRoot, worktreeDir);
       return { slug, branch, path: worktreeDir, base, reused: true };
     }
-    rmSync(worktreeDir, { recursive: true, force: true });
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `worktree path exists but is not registered with git: ${worktreeDir}`,
+    );
   }
 
   mkdirSync(dirname(worktreeDir), { recursive: true });

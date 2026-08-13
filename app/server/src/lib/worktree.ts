@@ -120,10 +120,12 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
   return worktreeStatus(dir, branch)
 }
 
-/** Extract worktree slug from a session path, if it's inside a .worktrees directory */
-export function extractWorktreeSlug(sessionPath: string): string | undefined {
-  const match = sessionPath.match(/[/\\]\.worktrees[/\\]([^/\\]+)/)
-  return match?.[1]
+/** Extract the first path segment below a project's resolved worktree container. */
+export function extractWorktreeSlug(sessionPath: string, worktreesPath: string): string | undefined {
+  const session = sessionPath.replaceAll('\\', '/').replace(/\/+$/, '')
+  const worktrees = worktreesPath.replaceAll('\\', '/').replace(/\/+$/, '')
+  if (!session.startsWith(`${worktrees}/`)) return undefined
+  return session.slice(worktrees.length + 1).split('/')[0] || undefined
 }
 
 function registeredPaths(entries: WorktreeEntry[]): Set<string> {
