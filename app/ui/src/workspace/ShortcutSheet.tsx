@@ -1,53 +1,79 @@
 import { DialogShell } from '../components/DialogShell'
 
 const isMac = navigator.platform.startsWith('Mac')
-const CMD = isMac ? '⌘' : 'Ctrl'
+const META = isMac ? '⌘' : 'Meta'
+const MOD = isMac ? '⌘' : 'Ctrl'
+const CTRL = isMac ? '⌃' : 'Ctrl'
 
-type Shortcut = { keys: string; label: string }
-type Group = { title: string; shortcuts: Shortcut[] }
+type Shortcut = { readonly keys: string; readonly label: string }
+type Group = { readonly title: string; readonly shortcuts: readonly Shortcut[] }
 
-const GROUPS: Group[] = [
+const GROUPS: readonly Group[] = [
   {
     title: 'Global',
     shortcuts: [
-      { keys: `${CMD} 1–9`, label: 'Switch project' },
-      { keys: `${CMD} ⌃ 1–9`, label: 'Switch session' },
-      { keys: `${CMD} ⌃ ↑ / ↓`, label: 'Prev / next session' },
-      { keys: `${CMD} ⌃ ← / →`, label: 'Prev / next tab' },
+      { keys: `${META} 1–9`, label: 'Switch project' },
+      { keys: `${META} ${CTRL} 1–9`, label: 'Switch session' },
+      { keys: `${META} ${CTRL} ↑ / ↓`, label: 'Prev / next session' },
+      { keys: `${META} ${CTRL} ← / →`, label: 'Prev / next editor tab' },
       { keys: '?', label: 'Shortcut cheatsheet' },
+    ],
+  },
+  {
+    title: 'Workspace',
+    shortcuts: [
+      { keys: `${META} P`, label: 'Quick open' },
+      { keys: `${META} ⇧ F`, label: 'Search all files' },
+      { keys: `${META} B`, label: 'Toggle left sidebar' },
+      { keys: `${META} ⇧ B`, label: 'Toggle right panel' },
+      { keys: `${META} ⇧ T`, label: 'Toggle tasks' },
+      { keys: `${META} \\`, label: 'Split focused group' },
+      { keys: `${META} K ${META} \\`, label: 'Split on other axis' },
+      { keys: `${META} W`, label: 'Close focused tab / group' },
+      { keys: `${META} ⇧ V`, label: 'Cycle editor view' },
+      { keys: 'F5 / Ctrl ⇧ V', label: 'Record voice' },
     ],
   },
   {
     title: 'Editor',
     shortcuts: [
-      { keys: `${CMD} P`, label: 'Quick open' },
-      { keys: `${CMD} S`, label: 'Save' },
-      { keys: `${CMD} F`, label: 'Find' },
-      { keys: `${CMD} ⇧ F`, label: 'Search all files' },
-      { keys: `${CMD} B`, label: 'Toggle sidebar' },
-      { keys: `${CMD} ⇧ B`, label: 'Toggle right panel' },
-      { keys: `${CMD} ⇧ T`, label: 'Toggle tasks' },
-      { keys: `${CMD} \\`, label: 'Split group' },
-      { keys: `${CMD} K ${CMD} \\`, label: 'Split group (other axis)' },
-      { keys: `${CMD} ⏎`, label: 'Open file to the side' },
-      { keys: `${CMD} W`, label: 'Close tab / group' },
+      { keys: `${MOD} S`, label: 'Save' },
+      { keys: `${MOD} F`, label: 'Find' },
+    ],
+  },
+  {
+    title: 'Explorer',
+    shortcuts: [
+      { keys: `${META} ⏎`, label: 'Open selected file to side' },
+      { keys: `${META} C`, label: 'Copy selected path' },
+      { keys: 'F2', label: 'Rename selected file' },
+      { keys: '⏎', label: 'Open selected file' },
     ],
   },
   {
     title: 'Task Graph',
     shortcuts: [
-      { keys: '+ / − / 0', label: 'Zoom in / out / reset' },
-      { keys: 'C', label: 'Collapse all' },
-      { keys: 'Tab', label: 'Next task' },
+      { keys: '/', label: 'Search tasks' },
+      { keys: 'c', label: 'Collapse / expand selected' },
+      { keys: '⇧ C', label: 'Collapse all' },
+      { keys: '⇧ E', label: 'Expand all' },
+      { keys: 'Tab / ⇧ Tab', label: 'Next / previous task' },
       { keys: '← → ↑ ↓', label: 'Navigate' },
+      { keys: 'Home / End', label: 'First / last task' },
       { keys: 'Escape', label: 'Deselect' },
+    ],
+  },
+  {
+    title: 'Terminal',
+    shortcuts: [
+      { keys: isMac ? '⌘ C' : 'Ctrl ⇧ C', label: 'Copy selected text' },
     ],
   },
 ]
 
 export function ShortcutSheet({ onClose }: { onClose: () => void }) {
   return (
-    <DialogShell onClose={onClose} className="rounded-lg p-6 w-full max-w-lg">
+    <DialogShell onClose={onClose} className="rounded-lg p-6 w-full max-w-2xl max-h-[82vh] overflow-y-auto">
       <h2
         className="text-ui-2xl font-semibold mb-4"
         style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}
