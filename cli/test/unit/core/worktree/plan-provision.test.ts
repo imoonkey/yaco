@@ -40,6 +40,12 @@ function guardFixturePath(root: string, target: string): void {
   }
 }
 
+function removeFixturePath(root: string, target: string): void {
+  guardFixturePath(root, target);
+  const removed = spawnSync("/bin/rm", ["-rf", target], { encoding: "utf-8" });
+  if (removed.status !== 0) throw new Error(removed.stderr);
+}
+
 afterEach(() => {
   for (const root of roots) {
     if (!root.startsWith(`${canonicalTmp}${sep}yaco-plan-provision-`)) {
@@ -148,17 +154,44 @@ describe("worktree plan provisioning", () => {
     );
   });
 
-  it("repairs a reused worktree without recreating it", () => {
+  it("repairs a pre-change real plan directory after preserving it, without recreating the worktree", () => {
     const fix = fixture();
     const created = data(runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]));
     const worktree = created["path"] as string;
     const before = lstatSync(worktree).ino;
     unlinkSync(join(worktree, "task-vault"));
+    mkdirSync(join(worktree, "task-vault", "all", "repair"), { recursive: true });
+    writeFileSync(join(worktree, "task-vault", "all", "repair", "qa-orphan.md"), "preserve me\n");
+
+    const refused = runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]);
+    expect(refused.status).toBe(1);
+    expect(existsSync(join(worktree, "task-vault", "all", "repair", "qa-orphan.md"))).toBe(true);
+
+    const preserved = join(fix.root, "preserved-plan");
+    renameSync(join(worktree, "task-vault"), preserved);
 
     const repaired = data(runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]));
     expect(repaired["reused"]).toBe(true);
     expect(lstatSync(worktree).ino).toBe(before);
     expect(realpathSync(join(worktree, "task-vault"))).toBe(join(fix.repo, "task-vault"));
+    expect(existsSync(join(preserved, "all", "repair", "qa-orphan.md"))).toBe(true);
+  });
+
+  it("rejects a configured worktree container that resolves outside the repository", () => {
+    const fix = fixture();
+    const external = join(fix.root, "external-container");
+    mkdirSync(join(external, "escaped"), { recursive: true });
+    const sentinel = join(external, "escaped", "keep.txt");
+    writeFileSync(sentinel, "keep\n");
+    mkdirSync(join(fix.repo, "sandboxes"), { recursive: true });
+    symlinkSync(external, join(fix.repo, "sandboxes", "nested"));
+
+    const result = runYaco(fix, fix.repo, ["worktree", "create", "escaped", "--json"]);
+    expect(result.status).toBe(1);
+    const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("CONFLICT");
+    expect(envelope.error.message).toMatch(/escapes its owner/i);
+    expect(existsSync(sentinel)).toBe(true);
   });
 
   it("reports a stale link after the worktree branch edits its plan path", () => {
@@ -197,7 +230,7 @@ describe("worktree plan provisioning", () => {
 
   it("confines the trailing-slash destructive edge behind the fixture guard", () => {
     const fix = fixture();
-    expect(() => guardFixturePath(fix.root, "/tmp/not-this-fixture")).toThrow(/refusing/);
+    expect(() => removeFixturePath(fix.root, "/tmp/not-this-fixture")).toThrow(/refusing/);
 
     const worktree = join(fix.repo, "sandboxes", "nested", "danger-demo");
     mkdirSync(worktree, { recursive: true });
@@ -206,9 +239,7 @@ describe("worktree plan provisioning", () => {
     const sentinel = join(fix.repo, "task-vault", "trailing-slash-victim.txt");
     writeFileSync(sentinel, "fixture only\n");
 
-    guardFixturePath(fix.root, `${link}/`);
-    const removed = spawnSync("/bin/rm", ["-rf", `${link}/`], { encoding: "utf-8" });
-    expect(removed.status, removed.stderr).toBe(0);
+    removeFixturePath(fix.root, `${link}/`);
     expect(existsSync(sentinel)).toBe(false);
   });
 });

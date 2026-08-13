@@ -23,7 +23,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
@@ -56,6 +56,7 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
   const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
+  assertPhysicallyContained(repoRoot, worktreeDir, "worktree path");
 
   if (existsSync(worktreeDir)) {
     const resolvedDir = realpathSync(worktreeDir);
@@ -94,6 +95,7 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
   const target = join(repoRoot, primaryPlan);
   const location = join(worktreeDir, worktreePlan);
   const previousLocation = join(worktreeDir, primaryPlan);
+  assertPhysicallyContained(worktreeDir, dirname(location), "plan link parent");
 
   if (previousLocation !== location && isSymbolicLink(previousLocation)) {
     throw new CliError(
@@ -130,6 +132,27 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
 
   mkdirSync(dirname(location), { recursive: true });
   symlinkSync(relative(dirname(location), target), location, "dir");
+}
+
+/** Reject a repo-relative path whose existing ancestor resolves through a
+ * symlink outside its owner. This check precedes both recursive deletion and
+ * directory creation, so neither operation can cross the physical seam. */
+function assertPhysicallyContained(owner: string, candidate: string, label: string): void {
+  const physicalOwner = realpathSync(owner);
+  let ancestor = candidate;
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const physicalAncestor = realpathSync(ancestor);
+  const fromOwner = relative(physicalOwner, physicalAncestor);
+  if (fromOwner === ".." || fromOwner.startsWith(`..${sep}`) || isAbsolute(fromOwner)) {
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `${label} escapes its owner through a symlink: ${candidate} resolves under ${physicalAncestor}, outside ${physicalOwner}`,
+    );
+  }
 }
 
 /** A directory-only `/<plan>/` ignore does not match the symlink itself. Add
