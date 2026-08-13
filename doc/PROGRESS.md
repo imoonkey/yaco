@@ -6,7 +6,8 @@
 - Plan init and worktree provisioning now share one line-append helper that
   creates an absent file but fails closed on other read errors.
 - Worktree creation validates its plan location before writing the shared Git
-  exclude and derives that entry only from the primary checkout's plan name.
+  exclude, derives that entry only from the primary checkout's plan name, and
+  rejects a branch-local plan rename that no primary-owned pattern could hide.
 
 **Why:**
 - A missing `.git/info/exclude` is a valid repository zero state. Branch-local

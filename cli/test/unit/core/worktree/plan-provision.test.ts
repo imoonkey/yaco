@@ -140,30 +140,28 @@ describe("worktree plan provisioning", () => {
     expect(readFileSync(exclude, "utf-8")).toBe("/task-vault\n");
   });
 
-  it("uses the primary plan ignore name and leaves a rejected branch-local plan side-effect free", () => {
-    const successful = fixture();
-    expect(git(successful.repo, "switch", "-c", "task/renamed-plan").status).toBe(0);
+  it("rejects branch-local plan names and occupied locations before changing the primary exclude", () => {
+    const renamed = fixture();
+    expect(git(renamed.repo, "switch", "-c", "task/renamed-plan").status).toBe(0);
     writeFileSync(
-      join(successful.repo, "yaco.toml"),
+      join(renamed.repo, "yaco.toml"),
       '[paths]\nplan = "branch-vault"\nworktrees = "sandboxes/nested"\n',
     );
-    expect(git(successful.repo, "add", "yaco.toml").status).toBe(0);
-    expect(git(successful.repo, "commit", "-m", "rename branch plan").status).toBe(0);
-    expect(git(successful.repo, "switch", "main").status).toBe(0);
+    expect(git(renamed.repo, "add", "yaco.toml").status).toBe(0);
+    expect(git(renamed.repo, "commit", "-m", "rename branch plan").status).toBe(0);
+    expect(git(renamed.repo, "switch", "main").status).toBe(0);
 
-    const successfulExclude = join(successful.repo, ".git", "info", "exclude");
-    data(runYaco(successful, successful.repo, ["worktree", "create", "renamed-plan", "--json"]));
-    expect.soft(readFileSync(successfulExclude, "utf-8")).toBe("/task-vault/\n/task-vault\n");
+    const renamedExclude = join(renamed.repo, ".git", "info", "exclude");
+    const renamedBefore = readFileSync(renamedExclude, "utf-8");
+    const renamedResult = runYaco(renamed, renamed.repo, ["worktree", "create", "renamed-plan", "--json"]);
+    expect(renamedResult.status).toBe(1);
+    expect(readFileSync(renamedExclude, "utf-8")).toBe(renamedBefore);
+    expect(existsSync(join(renamed.repo, "sandboxes", "nested", "renamed-plan", "branch-vault"))).toBe(false);
 
     const rejected = fixture();
     expect(git(rejected.repo, "switch", "-c", "task/blocked-plan").status).toBe(0);
-    writeFileSync(
-      join(rejected.repo, "yaco.toml"),
-      '[paths]\nplan = "branch-vault"\nworktrees = "sandboxes/nested"\n',
-    );
-    mkdirSync(join(rejected.repo, "branch-vault"));
-    writeFileSync(join(rejected.repo, "branch-vault", "keep.txt"), "keep\n");
-    expect(git(rejected.repo, "add", "yaco.toml", "branch-vault/keep.txt").status).toBe(0);
+    writeFileSync(join(rejected.repo, "task-vault", "keep.txt"), "keep\n");
+    expect(git(rejected.repo, "add", "-f", "task-vault/keep.txt").status).toBe(0);
     expect(git(rejected.repo, "commit", "-m", "block branch plan").status).toBe(0);
     expect(git(rejected.repo, "switch", "main").status).toBe(0);
 
@@ -171,7 +169,7 @@ describe("worktree plan provisioning", () => {
     const before = readFileSync(rejectedExclude, "utf-8");
     const result = runYaco(rejected, rejected.repo, ["worktree", "create", "blocked-plan", "--json"]);
     expect(result.status).toBe(1);
-    expect.soft(readFileSync(rejectedExclude, "utf-8")).toBe(before);
+    expect(readFileSync(rejectedExclude, "utf-8")).toBe(before);
   });
 
   it("uses both configured paths, shares task reads, stays relative after a move, and is ignored", () => {
@@ -268,7 +266,7 @@ describe("worktree plan provisioning", () => {
     expect(result.status).toBe(1);
     const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
     expect(envelope.error.code).toBe("CONFLICT");
-    expect(envelope.error.message).toMatch(/stale plan link/i);
+    expect(envelope.error.message).toMatch(/align the branch configuration/i);
     expect(existsSync(join(worktree, "branch-vault"))).toBe(false);
     expect(realpathSync(join(worktree, "task-vault"))).toBe(join(fix.repo, "task-vault"));
   });

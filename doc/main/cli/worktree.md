@@ -105,8 +105,8 @@ and `app/ui` are unchanged.
   resolved plan store. The primary config owns the target; the worktree branch
   owns the location; `path.relative` owns the depth. Reuse validates or repairs
   a missing link without recreating the worktree. An existing real directory,
-  a link to another target, or a link left stale after a branch edits
-  `[paths].plan` is `CONFLICT` and is never overwritten.
+  a link to another target, or a branch whose `[paths].plan` differs from the
+  primary checkout is `CONFLICT` and is never overwritten.
 - After link validation succeeds, the primary plan name is added to the
   git-resolved shared `info/exclude` without a trailing slash. A missing exclude
   file is the normal zero state and is created; failed provisioning writes no

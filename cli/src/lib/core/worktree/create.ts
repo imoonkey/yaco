@@ -95,13 +95,12 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
   const worktreePlan = readYacoProjectPaths(worktreeDir).plan;
   const target = join(repoRoot, primaryPlan);
   const location = join(worktreeDir, worktreePlan);
-  const previousLocation = join(worktreeDir, primaryPlan);
   assertPhysicallyContained(worktreeDir, dirname(location), "plan link parent");
 
-  if (previousLocation !== location && isSymbolicLink(previousLocation)) {
+  if (primaryPlan !== worktreePlan) {
     throw new CliError(
       ErrCode.CONFLICT,
-      `stale plan link at ${previousLocation}: worktree [paths].plan now resolves to ${location}; remove or migrate the stale link, then re-run create`,
+      `worktree [paths].plan resolves to ${location}, but the primary plan is ${target}; align the branch configuration, then re-run create`,
     );
   }
 
