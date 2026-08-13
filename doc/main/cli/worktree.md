@@ -107,9 +107,10 @@ and `app/ui` are unchanged.
   a missing link without recreating the worktree. An existing real directory,
   a link to another target, or a link left stale after a branch edits
   `[paths].plan` is `CONFLICT` and is never overwritten.
-- The link itself is added to the git-resolved shared `info/exclude` without a
-  trailing slash: the directory-only entry written by `yaco plan init` does not
-  match a symlink. This keeps every worktree status clean.
+- After link validation succeeds, the primary plan name is added to the
+  git-resolved shared `info/exclude` without a trailing slash. A missing exclude
+  file is the normal zero state and is created; failed provisioning writes no
+  branch-local ignore rule.
 
 Result: `{ slug, branch, path, base, reused }`.
 

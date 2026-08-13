@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-08-12: worktree plan exclusion is zero-state safe and primary-owned
+
+**What changed:**
+- Plan init and worktree provisioning now share one line-append helper that
+  creates an absent file but fails closed on other read errors.
+- Worktree creation validates its plan location before writing the shared Git
+  exclude and derives that entry only from the primary checkout's plan name.
+
+**Why:**
+- A missing `.git/info/exclude` is a valid repository zero state. Branch-local
+  configuration must neither leak a host-global ignore nor mutate it on a
+  provisioning conflict.
+
+**Key files:** `cli/src/lib/core/ensure-line.ts`,
+`cli/src/lib/core/worktree/create.ts`,
+`cli/test/unit/core/worktree/plan-provision.test.ts`
+**Verification:** focused plan-init and worktree tests plus mutation checks.
+**Commit:** `2c518626..HEAD`
+**Next:** None
+
 ## 2026-08-12: worktrees share the resolved plan store
 
 **What changed:**

@@ -16,15 +16,14 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readlinkSync,
   realpathSync,
   symlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
+import { ensureLine } from "../ensure-line.ts";
 import { readYacoProjectPaths } from "../paths/index.ts";
 import {
   branchExists,
@@ -106,8 +105,6 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
     );
   }
 
-  ensurePlanLinkExcluded(worktreeDir, worktreePlan);
-
   let existing: ReturnType<typeof lstatSync> | undefined;
   try {
     existing = lstatSync(location);
@@ -129,9 +126,11 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
         `stale plan link at ${location}: resolves to ${actual}, expected ${target}`,
       );
     }
+    ensurePlanLinkExcluded(worktreeDir, primaryPlan);
     return;
   }
 
+  ensurePlanLinkExcluded(worktreeDir, primaryPlan);
   mkdirSync(dirname(location), { recursive: true });
   symlinkSync(relative(dirname(location), target), location, "dir");
 }
@@ -158,9 +157,9 @@ function assertPhysicallyContained(owner: string, candidate: string, label: stri
 }
 
 /** A directory-only `/<plan>/` ignore does not match the symlink itself. Add
- * the resolved worktree link path without a trailing slash to the host's shared
- * exclude file, reached through git because linked worktrees redirect it. */
-function ensurePlanLinkExcluded(worktreeDir: string, worktreePlan: string): void {
+ * the primary plan path without a trailing slash to the host's shared exclude
+ * file, reached through git because linked worktrees redirect it. */
+function ensurePlanLinkExcluded(worktreeDir: string, primaryPlan: string): void {
   const result = runGit(["rev-parse", "--git-path", "info/exclude"], worktreeDir);
   if (result.status !== 0) {
     throw new CliError(
@@ -169,20 +168,7 @@ function ensurePlanLinkExcluded(worktreeDir: string, worktreePlan: string): void
     );
   }
   const excludePath = resolve(worktreeDir, result.stdout.trim());
-  const entry = `/${worktreePlan}`;
-  let current: string;
-  try {
-    current = readFileSync(excludePath, "utf-8");
-  } catch (error: unknown) {
-    throw new CliError(ErrCode.IO, `could not read ${excludePath}: ${(error as Error).message}`);
-  }
-  if (current.split(/\r?\n/).some((line) => line.trimEnd() === entry)) return;
-  const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-  try {
-    writeFileSync(excludePath, current + prefix + entry + "\n");
-  } catch (error: unknown) {
-    throw new CliError(ErrCode.IO, `could not write ${excludePath}: ${(error as Error).message}`);
-  }
+  ensureLine(excludePath, `/${primaryPlan}`);
 }
 
 function isSymbolicLink(path: string): boolean {
