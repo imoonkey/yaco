@@ -57,8 +57,19 @@ function makeShim(path: string): void {
  *  bound; and SIGTERM is the signal the bound itself kills with, so a run that
  *  came back "cannot execute — killed by SIGTERM" is also proof that a dying
  *  binary is not being mistaken for a timeout. */
-function makeSignalDyingShim(path: string, message: string): void {
-  writeFileSync(path, `#!/bin/sh\necho "${message}" >&2\nkill -TERM $$\n`);
+function makeSignalDyingShim(path: string, message: string, childPidFile?: string): void {
+  // With a pid file it forks first and records what it left behind: a binary
+  // that dies on its own is killed by nobody, so nothing would clean up after
+  // it unless the probe ends the whole group.
+  //
+  // The child's descriptors go to /dev/null because it would otherwise inherit
+  // the probe's stdout pipe and hold it open — which makes `spawnSync` wait out
+  // the whole bound and report a timeout instead of the crash. That is real
+  // behaviour, and it is not the branch this shim is for.
+  const fork = childPidFile
+    ? `${SLEEP} 30 >/dev/null 2>&1 </dev/null &\necho $! > ${childPidFile}\n`
+    : "";
+  writeFileSync(path, `#!/bin/sh\n${fork}echo "${message}" >&2\nkill -TERM $$\n`);
   chmodSync(path, 0o755);
 }
 
@@ -320,6 +331,19 @@ describe("runAllChecks — a command that is present but cannot execute", () => 
     expect(Date.now() - started).toBeLessThan(15_000);
     expect(t?.status).toBe("fail");
     expect(t?.detail).toBe(`${join(bin, "tmux")}: \`tmux -V\` did not answer within 3000ms`);
+  });
+
+  it("leaves nothing running behind a probe that died on its own", async () => {
+    // Nobody kills a binary that crashes by itself, so whatever it forked
+    // outlives the check unless the probe ends the group it created. The
+    // timeout path cannot cover this: there is no timeout here.
+    await installPrereqs();
+    const bin = shimPath();
+    const pidFile = join(sandbox, "crash-orphan.pid");
+    makeSignalDyingShim(join(bin, "tmux"), "dyld boom", pidFile);
+    const r = await runAllChecks();
+    expect(r.checks.find((c) => c.name === "tmux")?.detail).toContain("cannot execute");
+    expect(await reapedWithin(pidFile, 5_000)).toBe(true);
   });
 
   it("leaves nothing running behind a timed-out probe", async () => {

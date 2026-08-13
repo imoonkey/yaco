@@ -301,6 +301,30 @@ const VERSION_FLAG = "--version";
  *  lists it only on the async options. Widened here rather than at the call. */
 type ProbeSpawnOptions = SpawnSyncOptionsWithStringEncoding & { detached: boolean };
 
+/** End everything the probe started, whatever became of the probe itself.
+ *
+ *  `spawnSync`'s own kill on `timeout` reaches only the process it started, and
+ *  on every other outcome nothing kills anything at all — so a binary that
+ *  forked before it hung, crashed or exited leaves its children running past
+ *  the doctor run. `detached` made the probe a process-group leader so this can
+ *  end the group instead of the leader, and doing it on ALL outcomes rather
+ *  than on the timeout alone is what makes it an invariant worth stating: a
+ *  probe leaves nothing behind. A group with no members left is already gone,
+ *  which is the ordinary case and arrives here as ESRCH.
+ *
+ *  Not race-free, and cannot be while the spawn is synchronous: a pgid is
+ *  unrecyclable only while its group still has members, so in the microseconds
+ *  between `spawnSync` returning an empty group and this kill, a pid wraparound
+ *  could in principle seat a new group leader on that id. Closing that would
+ *  cost an async spawn — signalling while the leader is provably alive — and
+ *  doctor's checks are synchronous. */
+function reapProbeGroup(pid: number | undefined): void {
+  if (typeof pid !== "number") return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch { /* ESRCH — the group is already gone, which is the normal case */ }
+}
+
 function firstLine(out: string | null): string {
   return (out ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
 }
@@ -319,29 +343,17 @@ function probeExecutable(path: string, flag: string): Probe {
     encoding: "utf-8",
     env: { ...process.env },
     timeout: PROBE_TIMEOUT_MS,
-    // Its own process group, so a probe that has to be killed can be killed
-    // WHOLE — see the timeout branch below.
+    // Its own process group, so everything the probe started can be ended
+    // together — see reapProbeGroup below.
     detached: true,
   };
   const r = spawnSync(path, [flag], options);
+  reapProbeGroup(r.pid);
   const err = r.error as NodeJS.ErrnoException | undefined;
   // Node reports a blown `timeout` as ETIMEDOUT (and kills with SIGTERM); every
   // other spawn failure — the file vanished between `which` and here, no exec
   // permission — arrives as a different errno.
-  if (err?.code === "ETIMEDOUT") {
-    // That kill reached only the process doctor started. Anything it had
-    // forked — the hung binary's own children — would outlive the doctor run,
-    // so the bound would be honest about the report and not about the
-    // machine. The group id is the probe's pid, and the kernel will not recycle
-    // that pid while the group still has members, so this either lands on our
-    // descendants or finds the group already gone.
-    if (typeof r.pid === "number") {
-      try {
-        process.kill(-r.pid, "SIGKILL");
-      } catch { /* the group is already gone — nothing was left behind */ }
-    }
-    return { kind: "timeout" };
-  }
+  if (err?.code === "ETIMEDOUT") return { kind: "timeout" };
   if (err) return { kind: "broken", reason: err.message };
   if (r.status !== 0 || r.signal !== null) {
     // What the binary SAID is the diagnosis — `dyld: Library not loaded: …` is
