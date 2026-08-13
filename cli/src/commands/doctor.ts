@@ -22,7 +22,7 @@
  *  reported as part of `providers` if at all; doctor's required surface
  *  is exactly the 11 names above so consumers can rely on the contract.
  */
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -296,6 +296,11 @@ type Probe =
 const TMUX_VERSION_FLAG = "-V";
 const VERSION_FLAG = "--version";
 
+/** `detached` reaches `uv_spawn` from `spawnSync` exactly as it does from
+ *  `spawn` — the child becomes its own process-group leader — but @types/node
+ *  lists it only on the async options. Widened here rather than at the call. */
+type ProbeSpawnOptions = SpawnSyncOptionsWithStringEncoding & { detached: boolean };
+
 function firstLine(out: string | null): string {
   return (out ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
 }
@@ -310,16 +315,33 @@ function firstLine(out: string | null): string {
  *  provider is a Node program and costs hundreds of milliseconds. doctor is the
  *  command whose entire job is to run the checks. */
 function probeExecutable(path: string, flag: string): Probe {
-  const r = spawnSync(path, [flag], {
+  const options: ProbeSpawnOptions = {
     encoding: "utf-8",
     env: { ...process.env },
     timeout: PROBE_TIMEOUT_MS,
-  });
+    // Its own process group, so a probe that has to be killed can be killed
+    // WHOLE — see the timeout branch below.
+    detached: true,
+  };
+  const r = spawnSync(path, [flag], options);
   const err = r.error as NodeJS.ErrnoException | undefined;
   // Node reports a blown `timeout` as ETIMEDOUT (and kills with SIGTERM); every
   // other spawn failure — the file vanished between `which` and here, no exec
   // permission — arrives as a different errno.
-  if (err?.code === "ETIMEDOUT") return { kind: "timeout" };
+  if (err?.code === "ETIMEDOUT") {
+    // That kill reached only the process doctor started. Anything it had
+    // forked — the hung binary's own children — would outlive the doctor run,
+    // so the bound would be honest about the report and not about the
+    // machine. The group id is the probe's pid, and the kernel will not recycle
+    // that pid while the group still has members, so this either lands on our
+    // descendants or finds the group already gone.
+    if (typeof r.pid === "number") {
+      try {
+        process.kill(-r.pid, "SIGKILL");
+      } catch { /* the group is already gone — nothing was left behind */ }
+    }
+    return { kind: "timeout" };
+  }
   if (err) return { kind: "broken", reason: err.message };
   if (r.status !== 0 || r.signal !== null) {
     // What the binary SAID is the diagnosis — `dyld: Library not loaded: …` is

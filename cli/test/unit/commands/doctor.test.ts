@@ -10,6 +10,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -72,11 +73,37 @@ function makeFailingShim(path: string, message: string, code: number): void {
  *  of what the timeout test claims. */
 const SLEEP = spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf-8" }).stdout.trim();
 
-/** Never answers — outlives the probe's bound by an order of magnitude. */
-function makeHangingShim(path: string): void {
+/** Never answers — outlives the probe's bound by an order of magnitude.
+ *
+ *  It hangs by waiting on a child it forked, and records that child's pid: the
+ *  bound has to take down what the probe started INCLUDING its descendants, and
+ *  a shim that hangs in the foreground could not tell the two apart. */
+function makeHangingShim(path: string, childPidFile: string): void {
   expect(SLEEP.length).toBeGreaterThan(0);
-  writeFileSync(path, `#!/bin/sh\n${SLEEP} 30\n`);
+  writeFileSync(path, `#!/bin/sh\n${SLEEP} 30 &\necho $! > ${childPidFile}\nwait\n`);
   chmodSync(path, 0o755);
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The recorded descendant, once the kernel has delivered the kill. Polls
+ *  rather than asserting immediately — signal delivery and reaping are
+ *  asynchronous, and a bare check would be testing this machine's scheduler. */
+async function reapedWithin(pidFile: string, ms: number): Promise<boolean> {
+  const pid = Number(readFileSync(pidFile, "utf-8").trim());
+  expect(Number.isInteger(pid) && pid > 1).toBe(true);
+  for (let waited = 0; waited < ms; waited += 50) {
+    if (!isAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return !isAlive(pid);
 }
 
 beforeEach(() => {
@@ -286,13 +313,26 @@ describe("runAllChecks — a command that is present but cannot execute", () => 
     // be laundered into "cannot execute" — the remedies differ.
     await installPrereqs();
     const bin = shimPath();
-    makeHangingShim(join(bin, "tmux"));
+    makeHangingShim(join(bin, "tmux"), join(sandbox, "tmux-child.pid"));
     const started = Date.now();
     const r = await runAllChecks();
     const t = r.checks.find((c) => c.name === "tmux");
     expect(Date.now() - started).toBeLessThan(15_000);
     expect(t?.status).toBe("fail");
     expect(t?.detail).toBe(`${join(bin, "tmux")}: \`tmux -V\` did not answer within 3000ms`);
+  });
+
+  it("leaves nothing running behind a timed-out probe", async () => {
+    // A bound that returns on time while the binary's children go on running is
+    // honest about the report and not about the machine — and doctor is the
+    // command people run when the machine is already misbehaving.
+    await installPrereqs();
+    const bin = shimPath();
+    const pidFile = join(sandbox, "orphan.pid");
+    makeHangingShim(join(bin, "tmux"), pidFile);
+    const r = await runAllChecks();
+    expect(r.checks.find((c) => c.name === "tmux")?.detail).toContain("did not answer");
+    expect(await reapedWithin(pidFile, 5_000)).toBe(true);
   });
 });
 
@@ -349,7 +389,8 @@ describe("runAllChecks — a provider that is present but cannot execute", () =>
   it("reports a provider that hangs as a timeout, and does not count it as found", async () => {
     await installPrereqs();
     const bin = providerPath();
-    makeHangingShim(join(bin, "claude"));
+    const pidFile = join(sandbox, "claude-child.pid");
+    makeHangingShim(join(bin, "claude"), pidFile);
     const r = await runAllChecks();
     const p = r.checks.find((c) => c.name === "providers");
     expect(p?.status).toBe("skip");
@@ -357,6 +398,9 @@ describe("runAllChecks — a provider that is present but cannot execute", () =>
       `claude=${join(bin, "claude")} installed but did not answer \`--version\` within 3000ms`,
     );
     expect(r.summary.fail).toBe(0);
+    // A provider is a Node program: the one likeliest to hang is also the one
+    // likeliest to have forked something before it did.
+    expect(await reapedWithin(pidFile, 5_000)).toBe(true);
   });
 });
 
