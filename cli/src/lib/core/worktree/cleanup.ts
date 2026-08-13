@@ -12,6 +12,7 @@
 import { existsSync } from "node:fs";
 
 import { CliError, ErrCode } from "../errors.ts";
+import { readYacoProjectPaths } from "../paths/index.ts";
 import { branchExists, resolveRepoRoot, runGit } from "./git.ts";
 import { validateSlug } from "./slug.ts";
 import { worktreeBranch, worktreePath } from "./convention.ts";
@@ -37,7 +38,7 @@ export function cleanupWorktree(slug: string, opts: CleanupOptions = {}): Cleanu
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
-  const worktreeDir = worktreePath(repoRoot, slug);
+  const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
 
   const result: CleanupResult = {
     slug,

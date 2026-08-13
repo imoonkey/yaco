@@ -7,7 +7,7 @@
 
 import { join } from "node:path";
 
-export const worktreePath = (repoRoot: string, slug: string): string =>
-  join(repoRoot, ".worktrees", slug);
+export const worktreePath = (repoRoot: string, worktrees: string, slug: string): string =>
+  join(repoRoot, worktrees, slug);
 
 export const worktreeBranch = (slug: string): string => `task/${slug}`;

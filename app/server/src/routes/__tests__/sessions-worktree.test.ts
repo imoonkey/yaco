@@ -41,7 +41,7 @@ beforeEach(() => {
 })
 
 describe('GET / — worktree extraction', () => {
-  it('adds worktree field for sessions inside .worktrees/', async () => {
+  it('adds worktree field for sessions inside the resolved worktree container', async () => {
     mockReadAll.mockReturnValue([
       {
         name: 'agent-1',
@@ -88,7 +88,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'claude',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/project/.worktrees/fix-bug',
+        sessionPath: '/home/user/my-project/.worktrees/fix-bug',
         sessionId: 's1',
         pid: 1,
       },
@@ -97,7 +97,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'codex',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/project/regular-path',
+        sessionPath: '/home/user/my-project/regular-path',
         sessionId: 's2',
         pid: 2,
       },
@@ -106,7 +106,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'claude',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/project/.worktrees/refactor-api/deep/nested',
+        sessionPath: '/home/user/my-project/.worktrees/refactor-api/deep/nested',
         sessionId: 's3',
         pid: 3,
       },

@@ -15,8 +15,9 @@ worktree/branch DAG**:
   be verified *together* (non-empty `acceptCriteria`) owns a `task/<slug>` tree that children
   merge into. A pure grouping milestone owns no tree.
 
-The slug↔path↔branch convention is **fixed**, not read from yaco.toml (see the CWD table). Pass
-`--json` on every invocation so output flows through the `{ok,data}/{ok,error}` envelope.
+The branch convention is fixed; the directory comes from the primary checkout's resolved
+`[paths].worktrees` (default `.worktrees`). Pass `--json` on every invocation so output flows
+through the `{ok,data}/{ok,error}` envelope.
 
 ## CWD resolution
 
@@ -25,8 +26,8 @@ explicit `worktree` field only overrides it (and must be unique — no two runna
 
 | slug source | CWD | Branch |
 |-------------|-----|--------|
-| default | `<repoRoot>/.worktrees/<task-id>/` | `task/<task-id>` |
-| explicit `worktree: "<slug>"` | `<repoRoot>/.worktrees/<slug>/` | `task/<slug>` |
+| default | `<repoRoot>/<resolved-worktrees>/<task-id>/` | `task/<task-id>` |
+| explicit `worktree: "<slug>"` | `<repoRoot>/<resolved-worktrees>/<slug>/` | `task/<slug>` |
 
 The worktree is created **off its merge-target branch at dispatch** (see Merge up), not always
 `main` — so the base already contains every predecessor that has merged up. The **main checkout** is
@@ -39,11 +40,14 @@ worktree_path="$(yaco worktree create <slug> --base <target-branch> --json | jq 
 ```
 
 `yaco worktree create <slug> [--base <branch>]` creates the worktree on branch `task/<slug>` off
-`--base` (default `main`), runs `scripts/worktree-provision.sh` if present (see Provisioning), and
-**reuses** an existing worktree of the same slug. Without `--json` it prints the path on stdout.
+`--base` (default `main`), provisions the shared plan link, runs
+`scripts/worktree-provision.sh` if present (see Provisioning), and **reuses** an existing
+worktree of the same slug. Reuse also repairs a missing plan link without recreating the
+worktree. An existing path not registered by git fails closed; create never recursively
+deletes it. Without `--json` it prints the path on stdout.
 
 **Cross-repo:** if work spans multiple repos, create a worktree in each repo using the **same
-slug**. Each repo manages its own `.worktrees/` directory independently.
+slug**. Each repo manages its own resolved `[paths].worktrees` directory independently.
 
 ## Merge up
 
@@ -146,6 +150,13 @@ Don't set a milestone parent's state by hand on a merge failure — set the **tr
 `blocked`; the parent's state derives from its children.
 
 ## Provisioning (shared deps)
+
+Before the repository hook, create links the worktree's resolved `[paths].plan` location to
+the primary checkout's resolved plan store. The target is relative, so moving the whole repo
+keeps it valid. An existing directory or stale link fails with `CONFLICT`; migrate its content
+and remove it before re-running create. Never hand-link the plan location, and never recursively
+remove `<worktree>/<plan>/` with a trailing slash — that dereferences the link into the shared
+task graph. Whole-worktree removal and `yaco worktree cleanup` are safe.
 
 `yaco worktree create` runs `<repoRoot>/scripts/worktree-provision.sh` after adding the worktree
 **if it exists and is executable** (silently skipped otherwise), with the new worktree path as `$1`

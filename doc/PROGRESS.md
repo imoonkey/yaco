@@ -1,5 +1,62 @@
 # Progress
 
+## 2026-08-12: worktree plan exclusion is zero-state safe and primary-owned
+
+**What changed:**
+- Plan init and worktree provisioning now share one line-append helper that
+  creates an absent file but fails closed on other read errors.
+- Worktree creation validates its plan location before writing the shared Git
+  exclude, derives that entry only from the primary checkout's plan name, and
+  rejects a branch-local plan rename that no primary-owned pattern could hide.
+
+**Why:**
+- A missing `.git/info/exclude` is a valid repository zero state. Branch-local
+  configuration must neither leak a host-global ignore nor mutate it on a
+  provisioning conflict.
+
+**Key files:** `cli/src/lib/core/ensure-line.ts`,
+`cli/src/lib/core/worktree/create.ts`,
+`cli/test/unit/core/worktree/plan-provision.test.ts`
+**Verification:** focused plan-init and worktree tests plus mutation checks.
+**Commit:** `2c518626..HEAD`
+**Next:** None
+
+## 2026-08-12: worktrees share the resolved plan store
+
+**What changed:**
+- `yaco worktree create` now provisions and validates a relative link from the
+  worktree's resolved `[paths].plan` to the primary checkout's resolved plan
+  store on both fresh create and reuse. Existing directories and stale links
+  fail closed.
+- Create, merge, cleanup, and app worktree-status lookup now consume the
+  configured `[paths].worktrees` container. The plan link gets its own
+  no-trailing-slash `info/exclude` entry so it stays out of git status.
+- Create physically contains the configured worktree path before any recursive
+  directory creation, so a symlinked container cannot redirect writes outside
+  the repository. Existing unregistered paths now fail closed rather than being
+  recursively deleted, because configured paths can overlap plan or source.
+- Session-to-worktree enrichment also resolves each project's configured
+  worktree container instead of parsing a literal `.worktrees` segment.
+- `gate.sh` starts evidence discovery at `plan/`, which traverses the shared
+  starting-point link without enabling broad `find -L` traversal.
+
+**Why:**
+- Moving `plan/` into its own colocated repo made it untracked host state, so
+  git worktrees received an empty task store. Workers could not read their own
+  task contracts and gates could not see review evidence.
+- Both path names are configurable and the repository may move, so names,
+  target, and relative depth must all come from resolvers rather than a hand
+  `../../plan` link.
+
+**Key files:** `cli/src/lib/core/worktree/create.ts`,
+`cli/test/unit/core/worktree/plan-provision.test.ts`, `scripts/gate.sh`,
+`app/server/src/lib/worktree.ts`, `doc/main/cli/worktree.md`
+**Verification:** `scripts/verify.sh` passed all steps; CLI unit 94 files / 1508
+tests; app server 53 files / 878 passed / 1 skipped; focused plan fixture 7/7;
+gate shell fixture 27/27. Every new test was mutation-checked, including removal
+of the destructive temp-root guard and reverting `find plan/`.
+**Commit:** `b15da70b..3de9e4a7`
+**Next:** None
 ## 2026-08-13: doctor runs the binaries it found
 
 **What changed:**
