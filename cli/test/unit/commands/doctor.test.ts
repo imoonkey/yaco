@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { listSkillNames, PACKAGED_SKILLS_DIR } from "../../../src/package-root.ts";
 import { runAllChecks, REQUIRED_CHECKS } from "../../../src/commands/doctor.ts";
@@ -38,8 +38,44 @@ const SHIPPED_SKILL: string = listSkillNames(PACKAGED_SKILLS_DIR)[0]!;
 let sandbox: string;
 let repoRoot: string;
 
+/** A healthy executable: answers its version flag and exits 0. doctor now RUNS
+ *  what it found, so a shim that only exists is no longer a stand-in for an
+ *  installed tool. */
 function makeShim(path: string): void {
-  writeFileSync(path, "#!/bin/sh\nexit 0\n");
+  writeFileSync(path, `#!/bin/sh\necho "${basename(path)} 9.9.9"\nexit 0\n`);
+  chmodSync(path, 0o755);
+}
+
+/** Present, +x, and dead on exec — the shape `which` plus an executable-bit
+ *  test cannot tell from a working one. Two ways of dying, because doctor
+ *  describes them differently: killed by a signal (what a dyld abort does) and
+ *  a non-zero exit.
+ *
+ *  The signal is SIGTERM rather than SIGABRT for two reasons: SIGABRT costs a
+ *  second of core-dump handling on Linux, which would race the probe's own 3s
+ *  bound; and SIGTERM is the signal the bound itself kills with, so a run that
+ *  came back "cannot execute — killed by SIGTERM" is also proof that a dying
+ *  binary is not being mistaken for a timeout. */
+function makeSignalDyingShim(path: string, message: string): void {
+  writeFileSync(path, `#!/bin/sh\necho "${message}" >&2\nkill -TERM $$\n`);
+  chmodSync(path, 0o755);
+}
+
+function makeFailingShim(path: string, message: string, code: number): void {
+  writeFileSync(path, `#!/bin/sh\necho "${message}" >&2\nexit ${code}\n`);
+  chmodSync(path, 0o755);
+}
+
+/** Resolved once at import, from the ambient $PATH, because the shims below run
+ *  under a $PATH built entirely out of this sandbox — which has no `sleep` on
+ *  it, and a shim that fails with "sleep: not found" would prove the opposite
+ *  of what the timeout test claims. */
+const SLEEP = spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf-8" }).stdout.trim();
+
+/** Never answers — outlives the probe's bound by an order of magnitude. */
+function makeHangingShim(path: string): void {
+  expect(SLEEP.length).toBeGreaterThan(0);
+  writeFileSync(path, `#!/bin/sh\n${SLEEP} 30\n`);
   chmodSync(path, 0o755);
 }
 
@@ -170,7 +206,157 @@ describe("runAllChecks — providers zero state (no agent CLI installed)", () =>
     const r = await runAllChecks();
     const p = r.checks.find((c) => c.name === "providers");
     expect(p?.status).toBe("pass");
-    expect(p?.detail).toBe(`claude=${join(bin, "claude")}; codex missing`);
+    expect(p?.detail).toBe(`claude=${join(bin, "claude")} (claude 9.9.9); codex not installed`);
+  });
+});
+
+/** The bug this file grew for: on the operator's laptop `/usr/local/bin/tmux`
+ *  is a 2015 Homebrew symlink into a Cellar whose libevent dylib is gone. It
+ *  exists, it is +x, and every exec of it dies with a dyld error — and doctor
+ *  reported `PASS tmux — /usr/local/bin/tmux`, because the check was `which()`
+ *  plus nothing. */
+describe("runAllChecks — a command that is present but cannot execute", () => {
+  const DYLD = "dyld[99081]: Library not loaded: /usr/local/opt/libevent/lib/libevent-2.0.5.dylib";
+
+  /** A $PATH built entirely from planted shims — never the inherited one, which
+   *  on a developer machine carries a real tmux, git and provider CLI and would
+   *  make every assertion here a statement about that machine. */
+  function shimPath(): string {
+    const bin = join(sandbox, "probe-bin");
+    mkdirSync(bin, { recursive: true });
+    for (const c of ["yaco", "tmux", "git", "claude", "codex"]) makeShim(join(bin, c));
+    const whichPath = spawnSync("which", ["which"], { encoding: "utf-8" }).stdout.trim();
+    expect(whichPath.length).toBeGreaterThan(0);
+    symlinkSync(whichPath, join(bin, "which"));
+    process.env["PATH"] = bin;
+    return bin;
+  }
+
+  it("reports the version tmux PRINTED, not merely its path", async () => {
+    // Worth having on its own: skew between two installed tmux binaries has
+    // already produced a fabricated test result on this project.
+    await installPrereqs();
+    const bin = shimPath();
+    const tmux = join(bin, "tmux");
+    writeFileSync(tmux, "#!/bin/sh\necho 'tmux 3.6a'\n");
+    chmodSync(tmux, 0o755);
+    const r = await runAllChecks();
+    const t = r.checks.find((c) => c.name === "tmux");
+    expect(t?.status).toBe("pass");
+    expect(t?.detail).toBe(`${tmux} (tmux 3.6a)`);
+  });
+
+  it("fails tmux when the binary is there but dies on exec, quoting what it said", async () => {
+    await installPrereqs();
+    const bin = shimPath();
+    const tmux = join(bin, "tmux");
+    makeSignalDyingShim(tmux, DYLD);
+    const r = await runAllChecks();
+    const t = r.checks.find((c) => c.name === "tmux");
+    expect(t?.status).toBe("fail");
+    // The path alone names nothing — what the binary SAID is the diagnosis.
+    expect(t?.detail).toBe(`${tmux}: cannot execute — killed by SIGTERM: ${DYLD}`);
+    expect(r.summary.fail).toBeGreaterThan(0);
+  });
+
+  it("still fails tmux, with the $PATH hint, when it is absent altogether", async () => {
+    // The zero state must not change shape just because the check grew a probe.
+    await installPrereqs();
+    const bin = shimPath();
+    rmSync(join(bin, "tmux"), { force: true });
+    const r = await runAllChecks();
+    const t = r.checks.find((c) => c.name === "tmux");
+    expect(t?.status).toBe("fail");
+    expect(t?.detail).toBe("tmux not on $PATH — agent sessions will not start");
+  });
+
+  it("fails git and names the exit status and what it printed", async () => {
+    await installPrereqs();
+    const bin = shimPath();
+    const git = join(bin, "git");
+    makeFailingShim(git, "git: symbol lookup error", 127);
+    const r = await runAllChecks();
+    const g = r.checks.find((c) => c.name === "git");
+    expect(g?.status).toBe("fail");
+    expect(g?.detail).toBe(`${git}: cannot execute — exit 127: git: symbol lookup error`);
+  });
+
+  it("fails tmux on a hang, reporting the timeout as itself", async () => {
+    // Bounded: a binary that never answers must neither hang the doctor run nor
+    // be laundered into "cannot execute" — the remedies differ.
+    await installPrereqs();
+    const bin = shimPath();
+    makeHangingShim(join(bin, "tmux"));
+    const started = Date.now();
+    const r = await runAllChecks();
+    const t = r.checks.find((c) => c.name === "tmux");
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(t?.status).toBe("fail");
+    expect(t?.detail).toBe(`${join(bin, "tmux")}: \`tmux -V\` did not answer within 3000ms`);
+  });
+});
+
+/** A provider is judged by the same probe and reported differently, because
+ *  `yaco install` throws on any FAILING check and a provider's state must never
+ *  block an install. Unusable is UNAVAILABLE, not a failure — but the detail
+ *  has to say which of the two it is. */
+describe("runAllChecks — a provider that is present but cannot execute", () => {
+  function providerPath(): string {
+    const bin = join(sandbox, "provider-bin");
+    mkdirSync(bin, { recursive: true });
+    for (const c of ["yaco", "tmux", "git"]) makeShim(join(bin, c));
+    const whichPath = spawnSync("which", ["which"], { encoding: "utf-8" }).stdout.trim();
+    symlinkSync(whichPath, join(bin, "which"));
+    process.env["PATH"] = bin;
+    return bin;
+  }
+
+  it("skips (never fails) when the only installed provider cannot run, and says so", async () => {
+    await installPrereqs();
+    const bin = providerPath();
+    const claude = join(bin, "claude");
+    makeFailingShim(claude, "node: bad option: --version", 9);
+    const r = await runAllChecks();
+    const p = r.checks.find((c) => c.name === "providers");
+    expect(p?.status).toBe("skip");
+    // The two situations told apart in words, each naming its own remedy's premise.
+    expect(p?.detail).toBe(
+      `no usable provider (claude=${claude} installed but cannot execute: ` +
+        "exit 9: node: bad option: --version; codex not installed) — " +
+        "install one before starting agents",
+    );
+    // Install must still complete: a skip counts in neither bucket.
+    expect(r.summary.fail).toBe(0);
+  });
+
+  it("passes when another provider works, and still names the broken one", async () => {
+    await installPrereqs();
+    const bin = providerPath();
+    const codex = join(bin, "codex");
+    makeShim(join(bin, "claude"));
+    makeSignalDyingShim(codex, "dyld: Library not loaded: libnode.dylib");
+    const r = await runAllChecks();
+    const p = r.checks.find((c) => c.name === "providers");
+    expect(p?.status).toBe("pass");
+    expect(p?.detail).toBe(
+      `claude=${join(bin, "claude")} (claude 9.9.9); ` +
+        `codex=${codex} installed but cannot execute: ` +
+        "killed by SIGTERM: dyld: Library not loaded: libnode.dylib",
+    );
+    expect(r.summary.fail).toBe(0);
+  });
+
+  it("reports a provider that hangs as a timeout, and does not count it as found", async () => {
+    await installPrereqs();
+    const bin = providerPath();
+    makeHangingShim(join(bin, "claude"));
+    const r = await runAllChecks();
+    const p = r.checks.find((c) => c.name === "providers");
+    expect(p?.status).toBe("skip");
+    expect(p?.detail).toContain(
+      `claude=${join(bin, "claude")} installed but did not answer \`--version\` within 3000ms`,
+    );
+    expect(r.summary.fail).toBe(0);
   });
 });
 

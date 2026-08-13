@@ -22,6 +22,7 @@
  *  reported as part of `providers` if at all; doctor's required surface
  *  is exactly the 11 names above so consumers can rely on the contract.
  */
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -271,23 +272,109 @@ function checkAgentWrapper(): CheckResult {
   return pass("agent-wrapper", path);
 }
 
-function checkCommand(name: string, hint?: string): CheckResult {
+/** How long an executable gets to answer its version flag. Same bound as
+ *  `which()`'s own spawn: a binary that cannot print its version in three
+ *  seconds is not one doctor should wait on, and a hung one must not hang the
+ *  whole run. */
+const PROBE_TIMEOUT_MS = 3000;
+
+/** What running an executable proved. `timeout` is its own outcome, not folded
+ *  into `broken`: "it did not answer in time" and "it answered that it is
+ *  broken" call for different remedies, and a bound that silently reported the
+ *  first as the second would make a slow machine look like a dead binary. */
+type Probe =
+  | { kind: "ok"; version: string }
+  | { kind: "broken"; reason: string }
+  | { kind: "timeout" };
+
+/** The version flag each executable is probed with — the cheapest call that
+ *  still loads the binary and every one of its shared libraries, which is the
+ *  whole point: `which()` plus the executable bit passes a file that cannot
+ *  load. `tmux -V` is tmux's only version flag and, unlike every other tmux
+ *  subcommand, prints and exits without contacting (or starting) a server.
+ *  `git` and the agent CLIs answer `--version` and touch no repo or session. */
+const TMUX_VERSION_FLAG = "-V";
+const VERSION_FLAG = "--version";
+
+function firstLine(out: string | null): string {
+  return (out ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+}
+
+/** Run `path <flag>` and report what happened. Bounded, and `env` is passed
+ *  explicitly for the same reason `which()` does it — the tests build a machine
+ *  by mutating `process.env.PATH`.
+ *
+ *  This probe deliberately lives in `doctor` and not in `which()`: that module
+ *  is the one `$PATH` lookup shared with `agent status` (a status-bar render)
+ *  and `agent start` (a hot path), and neither should execute a binary — a
+ *  provider is a Node program and costs hundreds of milliseconds. doctor is the
+ *  command whose entire job is to run the checks. */
+function probeExecutable(path: string, flag: string): Probe {
+  const r = spawnSync(path, [flag], {
+    encoding: "utf-8",
+    env: { ...process.env },
+    timeout: PROBE_TIMEOUT_MS,
+  });
+  const err = r.error as NodeJS.ErrnoException | undefined;
+  // Node reports a blown `timeout` as ETIMEDOUT (and kills with SIGTERM); every
+  // other spawn failure — the file vanished between `which` and here, no exec
+  // permission — arrives as a different errno.
+  if (err?.code === "ETIMEDOUT") return { kind: "timeout" };
+  if (err) return { kind: "broken", reason: err.message };
+  if (r.status !== 0 || r.signal !== null) {
+    // What the binary SAID is the diagnosis — `dyld: Library not loaded: …` is
+    // the whole finding; the exit status alone names nothing.
+    const how = r.signal !== null ? `killed by ${r.signal}` : `exit ${r.status}`;
+    const said = firstLine(r.stderr) || firstLine(r.stdout);
+    return { kind: "broken", reason: said.length > 0 ? `${how}: ${said}` : how };
+  }
+  // A binary that exits 0 while printing nothing loaded fine but told us
+  // nothing — reported as that, never as a version. Reading empty output as a
+  // real answer is its own incident on this project.
+  return { kind: "ok", version: firstLine(r.stdout) || firstLine(r.stderr) };
+}
+
+function versionOrSilence(version: string): string {
+  return version.length > 0 ? version : "no version output";
+}
+
+/** A command yaco cannot work without: absent is a FAIL, and so is present but
+ *  unrunnable — the state that reads as healthy to `which` and dies at the
+ *  first exec (a Homebrew symlink into a Cellar whose dylib is long gone). A
+ *  pass reports the version the binary PRINTED, which is worth having on its
+ *  own: skew between two installed tmux binaries has caused a real incident. */
+function checkCommand(name: string, flag: string, hint: string): CheckResult {
   const path = which(name);
-  if (!path) return fail(name, hint ?? `${name} not on $PATH`);
-  return pass(name, path);
+  if (!path) return fail(name, hint);
+  const probe = probeExecutable(path, flag);
+  if (probe.kind === "timeout") {
+    return fail(name, `${path}: \`${name} ${flag}\` did not answer within ${PROBE_TIMEOUT_MS}ms`);
+  }
+  if (probe.kind === "broken") {
+    return fail(name, `${path}: cannot execute — ${probe.reason}`);
+  }
+  return pass(name, `${path} (${versionOrSilence(probe.version)})`);
 }
 
 function checkTmux(): CheckResult {
-  return checkCommand("tmux", "tmux not on $PATH — agent sessions will not start");
+  return checkCommand("tmux", TMUX_VERSION_FLAG, "tmux not on $PATH — agent sessions will not start");
 }
 
 function checkGit(): CheckResult {
-  return checkCommand("git", "git not on $PATH");
+  return checkCommand("git", VERSION_FLAG, "git not on $PATH");
 }
 
 /** `providers` (stable check name): pass when at least one provider executable
- *  is on $PATH, skip when none is. Detail is registry-driven — each registered
- *  provider's `executable` is probed via `which`.
+ *  is on $PATH AND runs, skip when none is usable. Detail is registry-driven —
+ *  each registered provider's `executable` is located with `which` and then
+ *  actually run.
+ *
+ *  A provider that is present but cannot execute does not count as found — it
+ *  cannot start an agent — but it is still not a FAIL, for the same reason an
+ *  absent one is not: `yaco install` throws on any failing check, and a
+ *  provider's state must never block an install. The two situations are told
+ *  apart in words instead: "not installed" vs "installed but cannot execute",
+ *  naming the path and what running it produced.
  *
  *  YACO ships no agent, so a machine with none installed yet is a legitimate
  *  zero state — the same shape as `registry` and `task-graph` — and the remedy
@@ -300,22 +387,30 @@ function checkGit(): CheckResult {
  *  The skip still says so: it names every provider that is missing and what to
  *  do about it, and skips print in text mode and in install's own check lines. */
 function checkProviders(): CheckResult {
-  const found: string[] = [];
-  const missing: string[] = [];
+  const usable: string[] = [];
+  const phrases: string[] = [];
   for (const provider of listProviders()) {
     const path = which(provider.executable);
-    if (path) found.push(`${provider.id}=${path}`);
-    else missing.push(provider.id);
+    if (!path) {
+      phrases.push(`${provider.id} not installed`);
+      continue;
+    }
+    const probe = probeExecutable(path, VERSION_FLAG);
+    if (probe.kind === "ok") {
+      usable.push(provider.id);
+      phrases.push(`${provider.id}=${path} (${versionOrSilence(probe.version)})`);
+    } else if (probe.kind === "timeout") {
+      phrases.push(
+        `${provider.id}=${path} installed but did not answer \`${VERSION_FLAG}\` within ${PROBE_TIMEOUT_MS}ms`,
+      );
+    } else {
+      phrases.push(`${provider.id}=${path} installed but cannot execute: ${probe.reason}`);
+    }
   }
-  if (found.length === 0) {
-    return skip(
-      "providers",
-      `no provider executable on $PATH (${missing.join(", ")}) — install one before starting agents`,
-    );
+  const detail = phrases.join("; ");
+  if (usable.length === 0) {
+    return skip("providers", `no usable provider (${detail}) — install one before starting agents`);
   }
-  const detail = missing.length > 0
-    ? `${found.join("; ")}; ${missing.join(", ")} missing`
-    : found.join("; ");
   return pass("providers", detail);
 }
 
