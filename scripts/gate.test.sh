@@ -189,6 +189,19 @@ artifact "$r" plan/review_x.md
 expect "code+verify-pass+doc+review -> green" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
+# 4b. The real plan store is shared into a worktree as a directory symlink.
+# `find plan/` follows that starting-point link without following arbitrary links
+# below it, so evidence remains visible from the worktree checkout.
+r="$(mk 0)"; b="$(head_sha "$r")"
+commit_file "$r" cli/foo.ts "feat: code"
+commit_file "$r" doc/PROGRESS.md "progress"
+shared="$(mktemp -d "$root/shared.XXXXXX")"
+in_root "$shared"
+ln -s "$shared" "$r/plan"
+artifact "$r" plan/review_x.md
+expect "symlinked plan store -> review artifact found" "$r" "$b" \
+  '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
+
 # 5. code + verify FAIL -> verify fail, non-zero exit
 r="$(mk 1)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"

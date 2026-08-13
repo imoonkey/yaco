@@ -105,7 +105,7 @@ artifact_is_fresh() {
     changed="$(git diff "$sha"..HEAD --name-only --no-renames)"
     grep -qE "$touch_re" <<<"$changed" && continue
     return 0
-  done < <(find plan -type f -iname "$glob" 2>/dev/null)
+  done < <(find plan/ -type f -iname "$glob" 2>/dev/null)
   return 1
 }
 

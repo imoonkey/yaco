@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const execFileMock = vi.hoisted(() => vi.fn())
 const existsSyncMock = vi.hoisted(() => vi.fn())
+const readFileSyncMock = vi.hoisted(() => vi.fn())
 const realpathSyncMock = vi.hoisted(() => vi.fn())
 
 vi.mock('child_process', () => ({ execFile: execFileMock }))
-vi.mock('fs', () => ({ existsSync: existsSyncMock, realpathSync: realpathSyncMock }))
+vi.mock('fs', () => ({
+  existsSync: existsSyncMock,
+  readFileSync: readFileSyncMock,
+  realpathSync: realpathSyncMock,
+}))
 
 import {
   extractWorktreeSlug,
@@ -19,6 +24,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Default: realpathSync returns its input (no symlink resolution needed)
   realpathSyncMock.mockImplementation((p: string) => p)
+  readFileSyncMock.mockImplementation(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+  })
 })
 
 // --- extractWorktreeSlug ---
@@ -194,6 +202,25 @@ describe('getWorktreeStatus', () => {
     // Subsequent calls (status, rev-list) use the worktree path as cwd
     for (const call of execFileMock.mock.calls.slice(1)) {
       expect(call[2].cwd).toBe('/my/project/.worktrees/slug')
+    }
+  })
+
+  it('resolves the worktree container from yaco.toml', async () => {
+    readFileSyncMock.mockReturnValue('[paths]\nworktrees = "sandboxes"\n')
+    existsSyncMock.mockReturnValue(true)
+    execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\n\nworktree /project/sandboxes/feat\n\n', '')
+      } else {
+        cb(null, '', '')
+      }
+    })
+
+    const result = await getWorktreeStatus('/project', 'feat')
+
+    expect(result.active).toBe(true)
+    for (const call of execFileMock.mock.calls.slice(1)) {
+      expect(call[2].cwd).toBe('/project/sandboxes/feat')
     }
   })
 

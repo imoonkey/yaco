@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from 'fs'
 import { execFile } from 'child_process'
 import { worktreePath, worktreeBranch } from 'yaco-cli/core/worktree'
+import { readYacoProjectPaths } from 'yaco-cli/core/paths'
 
 export interface WorktreeStatus {
   active: boolean
@@ -110,7 +111,7 @@ export async function worktreeStatus(absPath: string, branch: string): Promise<W
 
 /** Resolve worktree status for a single slug within a project */
 export async function getWorktreeStatus(projectPath: string, slug: string): Promise<WorktreeStatus> {
-  const dir = worktreePath(projectPath, slug)
+  const dir = worktreePath(projectPath, readYacoProjectPaths(projectPath).worktrees, slug)
   const branch = worktreeBranch(slug)
   if (!existsSync(dir)) return inactive(branch)
 
@@ -144,10 +145,11 @@ export async function getWorktreeStatuses(
   if (slugs.size === 0) return results
 
   const registered = registeredPaths(await listRegisteredWorktrees(projectPath))
+  const worktrees = readYacoProjectPaths(projectPath).worktrees
 
   await Promise.all(
     [...slugs].map(async (slug) => {
-      const dir = worktreePath(projectPath, slug)
+      const dir = worktreePath(projectPath, worktrees, slug)
       const branch = worktreeBranch(slug)
       if (!existsSync(dir) || !isRegistered(dir, registered)) {
         results.set(slug, inactive(branch))

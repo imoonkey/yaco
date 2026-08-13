@@ -10,10 +10,23 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
+import { readYacoProjectPaths } from "../paths/index.ts";
 import {
   branchExists,
   isWorktreeRegistered,
@@ -42,11 +55,12 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
-  const worktreeDir = worktreePath(repoRoot, slug);
+  const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
 
   if (existsSync(worktreeDir)) {
     const resolvedDir = realpathSync(worktreeDir);
     if (isWorktreeRegistered(repoRoot, resolvedDir)) {
+      provisionPlanStore(repoRoot, worktreeDir);
       return { slug, branch, path: worktreeDir, base, reused: true };
     }
     rmSync(worktreeDir, { recursive: true, force: true });
@@ -65,9 +79,94 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
     );
   }
 
+  provisionPlanStore(repoRoot, worktreeDir);
   runProvisionHook(repoRoot, worktreeDir);
 
   return { slug, branch, path: worktreeDir, base, reused: false };
+}
+
+/** Share the primary plan store into one worktree without overwriting any
+ * existing local state. The two configs are read independently: the primary
+ * owns the target, while the worktree branch owns the link location. */
+function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
+  const primaryPlan = readYacoProjectPaths(repoRoot).plan;
+  const worktreePlan = readYacoProjectPaths(worktreeDir).plan;
+  const target = join(repoRoot, primaryPlan);
+  const location = join(worktreeDir, worktreePlan);
+  const previousLocation = join(worktreeDir, primaryPlan);
+
+  if (previousLocation !== location && isSymbolicLink(previousLocation)) {
+    throw new CliError(
+      ErrCode.CONFLICT,
+      `stale plan link at ${previousLocation}: worktree [paths].plan now resolves to ${location}; remove or migrate the stale link, then re-run create`,
+    );
+  }
+
+  ensurePlanLinkExcluded(worktreeDir, worktreePlan);
+
+  let existing: ReturnType<typeof lstatSync> | undefined;
+  try {
+    existing = lstatSync(location);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  if (existing) {
+    if (!existing.isSymbolicLink()) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `plan location already exists and is not a symlink: ${location}`,
+      );
+    }
+    const actual = resolve(dirname(location), readlinkSync(location));
+    if (actual !== resolve(target)) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `stale plan link at ${location}: resolves to ${actual}, expected ${target}`,
+      );
+    }
+    return;
+  }
+
+  mkdirSync(dirname(location), { recursive: true });
+  symlinkSync(relative(dirname(location), target), location, "dir");
+}
+
+/** A directory-only `/<plan>/` ignore does not match the symlink itself. Add
+ * the resolved worktree link path without a trailing slash to the host's shared
+ * exclude file, reached through git because linked worktrees redirect it. */
+function ensurePlanLinkExcluded(worktreeDir: string, worktreePlan: string): void {
+  const result = runGit(["rev-parse", "--git-path", "info/exclude"], worktreeDir);
+  if (result.status !== 0) {
+    throw new CliError(
+      ErrCode.IO,
+      `could not resolve info/exclude: ${result.stderr.trim() || "git rev-parse failed"}`,
+    );
+  }
+  const excludePath = resolve(worktreeDir, result.stdout.trim());
+  const entry = `/${worktreePlan}`;
+  let current: string;
+  try {
+    current = readFileSync(excludePath, "utf-8");
+  } catch (error: unknown) {
+    throw new CliError(ErrCode.IO, `could not read ${excludePath}: ${(error as Error).message}`);
+  }
+  if (current.split(/\r?\n/).some((line) => line.trimEnd() === entry)) return;
+  const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+  try {
+    writeFileSync(excludePath, current + prefix + entry + "\n");
+  } catch (error: unknown) {
+    throw new CliError(ErrCode.IO, `could not write ${excludePath}: ${(error as Error).message}`);
+  }
+}
+
+function isSymbolicLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 /** Run `<repoRoot>/scripts/worktree-provision.sh` (if present + executable)
