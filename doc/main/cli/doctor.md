@@ -1,8 +1,9 @@
 # Doctor Subcommand
 
-> Last updated: 2026-08-12 (`agent start` refuses a missing provider through the
-> same `which` this check uses; providers skips when no agent CLI is installed;
-> registry skips; skills-link resolves from the package)
+> Last updated: 2026-08-13 (tmux, git and providers are executed, not merely
+> located, and report the version they printed; `agent start` refuses a missing
+> provider through the same `which` this check uses; providers skips when no
+> agent CLI is installed; registry skips; skills-link resolves from the package)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -38,9 +39,9 @@ yaco doctor [--repo <path>] [--json]
 | 5 | `skills-link` | `~/.claude/skills` is a real directory in which every skill **this package ships** resolves (manifest = `package-root.ts#PACKAGED_SKILLS_DIR`) | `<dir> (<N> skills from <manifest>[; <N> user override(s)])` | `legacy` whole-dir symlink / `missing` / `<N> skill link(s) missing` / an unreadable packaged manifest |
 | 6 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()`, which passes when the raw config text contains `agent hook-event` — the `yaco-agent-hook` marker alone does not satisfy it; only the lifecycle merge still recognizes marker-owned groups, to migrate them) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
 | 7 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
-| 8 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
-| 9 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
-| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) — **skips** when none is | which providers resolve | — (never fails; see below) |
+| 8 | `tmux` | `tmux` is on `$PATH` **and runs** — located with `which`, then executed with `-V` | `<path> (<what it printed>)` | `tmux not on $PATH — agent sessions will not start` / `<path>: cannot execute — <what running it produced>` / `<path>: \`tmux -V\` did not answer within 3000ms` |
+| 9 | `git` | `git` is on `$PATH` **and runs** (`git --version`) | `<path> (<what it printed>)` | `git not on $PATH` / the same two exec failures as `tmux` |
+| 10 | `providers` | At least one registered provider's `executable` is on `$PATH` **and runs** (`<exe> --version` over the provider registry) — **skips** when none is usable | which providers resolve, with the version each printed | — (never fails; see below) |
 | 11 | `task-graph` | `yaco task validate` would succeed on the repo's resolved task store (in-process via `loadTaskStore + validateGraph`) — **skips** when that store is absent | `<tasksPath> ok` | `<N> integrity problem(s)` / `dangling symlink` / the errno that blocked the read |
 
 `skills-link` mirrors the installer's additive-merge tolerance: a user override
@@ -111,6 +112,66 @@ to the nearest component that exists on disk rather than testing the leaf alone 
 `plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
 does, and the extracted *root* is the likelier shape.
 
+## The execution probe — `which` is not enough
+
+`tmux`, `git` and `providers` locate their executable with `which` and then
+**run** it. A file that exists with the executable bit set can still be unable to
+load: `/usr/local/bin/tmux` as a 2015 Homebrew symlink into a Cellar whose
+libevent dylib is gone execs straight into `dyld: Library not loaded`. Reported
+as `PASS tmux — /usr/local/bin/tmux`, the first thing that fails is `yaco agent
+start`, with a raw dyld error naming neither tmux nor yaco — and only in the
+contexts where that `$PATH` entry wins (ssh, launchd, cron), not in the login
+shell where the check was run.
+
+| Flag | Why that one |
+|------|--------------|
+| `tmux -V` | tmux's only version flag, and the only tmux call that neither contacts nor starts a server |
+| `git --version` | touches no repo |
+| `<provider> --version` | touches no session |
+
+Each is the cheapest call that still loads the binary and every shared library it
+needs, which is the whole point.
+
+Three outcomes, kept distinct:
+
+| Outcome | tmux / git | providers |
+|---|---|---|
+| exits 0 | `pass`, detail carries **what it printed** — an empty stdout is reported as `no version output`, never as a version | counts as usable |
+| non-zero exit, or killed by a signal | `fail` — `cannot execute — exit 127: <first line it printed>` / `killed by SIGABRT: …` | not usable; `installed but cannot execute: …` |
+| no answer within **3000 ms** | `fail` — `\`tmux -V\` did not answer within 3000ms` | not usable; `installed but did not answer \`--version\` within 3000ms` |
+
+The bound is the same one `which.ts` spawns under, and a timeout is its own
+outcome: a machine too loaded to answer and a binary that cannot load call for
+different remedies, and a hung binary must not hang the doctor run.
+
+**A probe leaves nothing behind.** Each one runs in its own process group and the
+group is killed after the spawn returns — on *every* outcome, not just the
+timeout, because `spawnSync`'s own kill reaches only the process it started and
+nothing at all kills a binary that crashed by itself. A `--version` call that
+forked before it hung or died would otherwise outlive the check. The group is
+only ever killed for a real child pid: `spawnSync` reports pid **0** when it could
+not create one — an executable whose shebang names a missing interpreter, which
+is the same class of breakage this probe exists to catch — and `kill(-0)` signals
+the *caller's* group, so ungating that would have yaco SIGKILL itself.
+
+`binary` and `agent-wrapper` are not probed this way: the first is the `yaco` that
+is already running (an exec of it would prove only that this process exists), and
+the second is a `bash` script the wrapper protocol never invokes with a version
+flag.
+
+Reporting the version is worth having on its own — skew between two installed
+tmux binaries has already produced a fabricated test result on this project (a
+version-skewed client returned empty output that a probe read as a real answer),
+which is also why exit-0-with-no-output is reported as silence rather than
+rendered as a version.
+
+The probe lives in `doctor.ts` and **not** in `which.ts` deliberately. That module
+is the single `$PATH` lookup shared with `agent status` (a status-bar render) and
+`agent start` (a hot path); putting an exec inside it would make both execute
+binaries on every call, and a provider is a Node program costing hundreds of
+milliseconds against tmux's few. `which()` answers exactly one question; doctor is
+the command whose job is to run the checks.
+
 ## `providers` skip — the machine with no agent CLI yet
 
 YACO ships no agent. A machine with neither `claude` nor `codex` installed is a
@@ -118,7 +179,7 @@ legitimate starting point — the documented first commands are `npm i -g
 yaco-cli` then `yaco install`, and nothing says an agent CLI has to come first:
 
 ```
-SKIP  providers  no provider executable on $PATH (claude, codex) — install one before starting agents
+SKIP  providers  no usable provider (claude not installed; codex not installed) — install one before starting agents
 ```
 
 `yaco install` throws when any check fails, so a fail here would throw the
@@ -135,16 +196,31 @@ and `yaco install` prints its doctor lines including the skips. What is gone is
 only the exception. `README.md` states the prerequisite up front.
 
 And the skip is not the end of it: `yaco agent start` refuses the same missing
-provider, with the same message, using the same probe —
+provider, with the same message, using the same lookup —
 [`which.ts`](../../../cli/src/lib/core/which.ts) is one function, shared by this
-check, the provider lines of `agent status`, and the start path. Install
+check, the provider lines of `agent status`, and the start path. (The execution
+probe on top of it is doctor's alone — see
+[above](#the-execution-probe--which-is-not-enough) — so `start` still refuses only
+what `which` cannot find, and a provider that resolves but dies is described by
+the provider's own error, as every other bootstrap failure is.) Install
 tolerating an absent provider while `doctor` keeps it visible would be hollow if
 the first command after it still died anonymously. -> See:
 [lifecycle.md](lifecycle.md#bootstrap-failure-what-start-can-name-and-what-only-the-provider-can)
 
 **One provider is enough, and the partial case is a pass, not a skip.** With
 `claude` present and `codex` absent the check passes and names the missing one in
-its detail (`claude=/path/to/claude; codex missing`) — unchanged.
+its detail (`claude=/path/to/claude (1.2.3); codex not installed`).
+
+**A provider that is installed but cannot run is unavailable, not failed.** It
+does not count toward the usable set — it cannot start an agent — but the check
+still skips rather than fails when nothing usable is left, for exactly the reason
+above: install throws on any failing check, and a provider's state must never
+block an install. What separates the two is the wording, which names the path and
+what running it produced:
+
+```
+SKIP  providers  no usable provider (claude=/usr/local/bin/claude installed but cannot execute: exit 9: node: bad option; codex not installed) — install one before starting agents
+```
 
 The `providers` and `agent-hook-config` checks keep their fixed names but build
 their detail by iterating the provider registry (`listProviders()` from
@@ -211,7 +287,13 @@ task store can still have a lock `yaco task validate` would reject.
   entries); the providers zero state (no agent CLI on a `$PATH` built from
   shims, so no inherited directory can supply one → `skip`, both names and the
   remedy in the detail, `summary.fail` 0; one provider present → `pass`, still
-  naming the missing one); every row of the store-state table above
+  naming the missing one); the execution probe against planted shims that die
+  the way a broken binary does (a version-printing tmux → `pass` carrying that
+  version; one killed by a signal and one exiting non-zero → `fail` / `installed
+  but cannot execute`, quoting what it printed; one that never answers → the
+  timeout wording, and the run still finishes; an absent tmux → the unchanged
+  `$PATH` hint; an unusable provider → `skip` with `summary.fail` 0, so install
+  still completes); every row of the store-state table above
   (absent → `skip` with the name list unchanged; malformed, invalid, dangling
   at the leaf, dangling at the plan root, permission-walled, missing `--repo`
   → `fail`; live symlinked plan root with no tasks tree → `skip`); the `--json`
