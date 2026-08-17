@@ -1,8 +1,8 @@
-// Single-take audio capture as a plain module (not a hook). Wraps the native
-// MediaRecorder: one continuous take, ended by the user (Stop / F5) or the
-// session cap. The Whisper-ready blob (Opus-in-WebM, or mp4/aac on Safari) is
-// produced once on stop — no mid-recording chunking, no VAD. Replaces
-// voiceVad.ts (Silero/onnxruntime), which is gone.
+import codexPcmProcessorUrl from '../audio/codexPcmProcessor.ts?worker&url'
+
+// Single-take audio capture as a plain module (not a hook). MediaRecorder owns
+// the canonical whole-take Blob. A caller may additionally request parallel
+// PCM16 frames; failure of that optional path never invalidates the Blob.
 
 const ELAPSED_INTERVAL_MS = 1000
 
@@ -44,10 +44,7 @@ export function filenameForMime(mime: string): string {
   return 'take.webm'
 }
 
-// --- Browser capability check ---
-//
-// MediaRecorder + getUserMedia are both gated on a secure context. No
-// AudioWorklet/AudioContext requirement now that the neural VAD is gone.
+// PCM is optional, so browser capability remains the MediaRecorder baseline.
 export function checkBrowserCapability(): { ok: boolean; message?: string } {
   if (typeof window === 'undefined') {
     return { ok: false, message: 'No browser environment.' }
@@ -64,13 +61,11 @@ export function checkBrowserCapability(): { ok: boolean; message?: string } {
   return { ok: true }
 }
 
-// --- Capture session ---
-
 export interface CaptureSession {
-  /** Stop recording and resolve the take as one Blob (null if nothing was
-   *  captured). Idempotent: a second call resolves null. */
+  /** Stop recording and resolve the complete take after optional PCM drain.
+   *  Idempotent: a second call resolves null. */
   stop: () => Promise<Blob | null>
-  /** Stop the mic tracks. Idempotent; safe after a failed init or after stop(). */
+  /** Stop every owned browser audio resource. Idempotent and safe after stop(). */
   release: () => Promise<void>
 }
 
@@ -82,9 +77,17 @@ export interface CaptureCallbacks {
   onAutoStop?: (blob: Blob | null) => void
 }
 
+export interface PcmCaptureSink {
+  start: (sampleRateHz: number) => void
+  append: (chunk: Int16Array) => void
+}
+
 // The session constructor, narrowed so tests can inject a fake recorder without
 // a real mic. The real implementation below satisfies it.
-export type CaptureLoader = (callbacks: CaptureCallbacks) => Promise<CaptureSession>
+export type CaptureLoader = (
+  callbacks: CaptureCallbacks,
+  pcmSink?: PcmCaptureSink,
+) => Promise<CaptureSession>
 
 declare global {
   interface Window {
@@ -92,22 +95,16 @@ declare global {
   }
 }
 
-/**
- * Acquire the mic and start a single-take recording.
- *
- * getUserMedia runs first, so a denied mic rejects this promise (the caller maps
- * it to its error state). If MediaRecorder construction throws after the mic is
- * acquired, we stop the stream before rethrowing. The returned session's stop()
- * resolves the recorded blob; release() is always safe to call.
- */
+/** Acquire the mic and start a whole-take recording plus optional PCM capture. */
 export async function startCaptureSession(
   callbacks: CaptureCallbacks,
+  pcmSink?: PcmCaptureSink,
 ): Promise<CaptureSession> {
   const fakeEnabled = import.meta.env.DEV || import.meta.env.VITE_YACO_E2E_FAKE_CAPTURE === '1'
   const fake = fakeEnabled && typeof window !== 'undefined'
     ? window.__YACO_FAKE_CAPTURE__
     : undefined
-  if (fake) return fake(callbacks)
+  if (fake) return fake(callbacks, pcmSink)
 
   const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS)
   const mimeType = pickMimeType()
@@ -115,22 +112,22 @@ export async function startCaptureSession(
   let recorder: MediaRecorder
   try {
     recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-  } catch (e) {
+  } catch (error) {
     stream.getTracks().forEach(track => track.stop())
-    throw e
+    throw error
   }
 
   const chunks: Blob[] = []
   let stopped = false
   let released = false
   let elapsedTimer: ReturnType<typeof setInterval> | null = null
+  let pcmCapture: PcmCapture | null = null
 
-  const blobType = () => recorder.mimeType || mimeType || 'audio/webm'
+  const blobType = (): string => recorder.mimeType || mimeType || 'audio/webm'
   const assembled = (): Blob | null =>
     chunks.length ? new Blob(chunks, { type: blobType() }) : null
-  const stopTracks = () => stream.getTracks().forEach(track => track.stop())
+  const stopTracks = (): void => stream.getTracks().forEach(track => track.stop())
 
-  // Idempotent teardown — reused by release(), recorder errors, and start-failure.
   const release = async (): Promise<void> => {
     if (released) return
     released = true
@@ -138,39 +135,43 @@ export async function startCaptureSession(
     try {
       if (recorder.state !== 'inactive') recorder.stop()
     } catch {
-      // Best effort; teardown is already underway.
+      // The recorder is already unusable; the remaining resources still close.
     } finally {
       stopTracks()
+      await pcmCapture?.close()
     }
   }
 
-  recorder.ondataavailable = (e: BlobEvent) => {
-    if (e.data.size > 0) chunks.push(e.data)
+  recorder.ondataavailable = (event: BlobEvent) => {
+    if (event.data.size > 0) chunks.push(event.data)
   }
-  // A fatal recorder error must free the mic itself — the caller only learns of
-  // it via onError and may not yet hold the session handle.
+  // A fatal recorder error must free the mic itself — the caller may not hold
+  // the session yet while optional worklet initialization is in progress.
   recorder.onerror = () => {
     callbacks.onError?.('Recording failed.')
     void release()
   }
 
-  // start() can throw; reclaim the mic before rethrowing (no timer armed yet).
   try {
     recorder.start()
-  } catch (e) {
+  } catch (error) {
     stopTracks()
-    throw e
+    throw error
   }
 
-  const startedAt = Date.now()
-  elapsedTimer = setInterval(() => {
-    callbacks.onElapsed?.(Date.now() - startedAt)
-  }, ELAPSED_INTERVAL_MS)
+  if (pcmSink) {
+    pcmCapture = await startPcmCapture(stream, pcmSink)
+    if (released) await pcmCapture?.close()
+  }
 
-  const stop = (): Promise<Blob | null> => {
-    if (stopped || released) return Promise.resolve(null)
-    stopped = true
-    if (elapsedTimer) clearInterval(elapsedTimer)
+  if (!released) {
+    const startedAt = Date.now()
+    elapsedTimer = setInterval(() => {
+      callbacks.onElapsed?.(Date.now() - startedAt)
+    }, ELAPSED_INTERVAL_MS)
+  }
+
+  const stopRecorder = (): Promise<Blob | null> => {
     if (recorder.state === 'inactive') return Promise.resolve(assembled())
     // onstop fires after the final dataavailable, so the blob is complete.
     return new Promise<Blob | null>((resolve) => {
@@ -183,5 +184,128 @@ export async function startCaptureSession(
     })
   }
 
+  const stop = async (): Promise<Blob | null> => {
+    if (stopped || released) return null
+    stopped = true
+    if (elapsedTimer) clearInterval(elapsedTimer)
+    const [blob] = await Promise.all([
+      stopRecorder(),
+      pcmCapture?.flush(),
+    ])
+    return blob
+  }
+
   return { stop, release }
+}
+
+interface PcmCapture {
+  flush: () => Promise<void>
+  close: () => Promise<void>
+}
+
+async function startPcmCapture(
+  stream: MediaStream,
+  sink: PcmCaptureSink,
+): Promise<PcmCapture | null> {
+  let context: AudioContext
+  try {
+    context = new AudioContext()
+  } catch {
+    return null
+  }
+
+  let source: MediaStreamAudioSourceNode | null = null
+  let node: AudioWorkletNode | null = null
+  let closed = false
+  let flushPromise: Promise<void> | null = null
+  let resolveDrain: (() => void) | null = null
+
+  const settleDrain = (): void => {
+    resolveDrain?.()
+    resolveDrain = null
+  }
+
+  const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true
+    settleDrain()
+    node?.port.close()
+    try {
+      source?.disconnect()
+      node?.disconnect()
+    } catch {
+      // A browser may already have disconnected a failed audio graph.
+    }
+    await context.close().catch(() => undefined)
+  }
+
+  try {
+    await context.audioWorklet.addModule(codexPcmProcessorUrl)
+    source = context.createMediaStreamSource(stream)
+    node = new AudioWorkletNode(context, 'codex-pcm-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: 1,
+    })
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
+      const message = event.data
+      if (
+        typeof message === 'object'
+        && message !== null
+        && 'type' in message
+        && message.type === 'frame'
+        && 'pcm16' in message
+        && message.pcm16 instanceof Int16Array
+        && message.pcm16.length <= 1024
+      ) {
+        try {
+          sink.append(message.pcm16)
+        } catch {
+          settleDrain()
+          void close()
+        }
+        return
+      }
+      if (
+        typeof message === 'object'
+        && message !== null
+        && 'type' in message
+        && message.type === 'drained'
+      ) {
+        settleDrain()
+        return
+      }
+      settleDrain()
+      void close()
+    }
+    node.onprocessorerror = () => {
+      settleDrain()
+      void close()
+    }
+    await context.resume()
+    sink.start(context.sampleRate)
+    source.connect(node)
+    node.connect(context.destination)
+  } catch {
+    await close()
+    return null
+  }
+
+  const flush = async (): Promise<void> => {
+    if (closed) return
+    if (!flushPromise) {
+      flushPromise = new Promise<void>((resolve) => {
+        resolveDrain = resolve
+        try {
+          node!.port.postMessage({ type: 'flush' })
+        } catch {
+          settleDrain()
+        }
+      }).then(close)
+    }
+    await flushPromise
+  }
+
+  return { flush, close }
 }

@@ -1,35 +1,111 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startCaptureSession, filenameForMime, checkBrowserCapability } from '../voiceCapture'
+import {
+  startCaptureSession,
+  filenameForMime,
+  checkBrowserCapability,
+  type PcmCaptureSink,
+} from '../voiceCapture'
 
-// Minimal MediaRecorder fake: stop() synchronously delivers a chunk then onstop,
-// which is enough to exercise the session's finalize/idempotency paths.
 class FakeMediaRecorder {
-  static isTypeSupported = (m: string) => m === 'audio/webm;codecs=opus'
+  static isTypeSupported = (mime: string) => mime === 'audio/webm;codecs=opus'
+  static instances: FakeMediaRecorder[] = []
+
   state: 'inactive' | 'recording' = 'inactive'
-  mimeType: string
-  ondataavailable: ((e: { data: Blob }) => void) | null = null
+  readonly mimeType: string
+  ondataavailable: ((event: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
   onerror: (() => void) | null = null
-  constructor(_stream: MediaStream, opts?: MediaRecorderOptions) {
-    this.mimeType = opts?.mimeType ?? ''
+
+  constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
+    this.mimeType = options?.mimeType ?? ''
+    FakeMediaRecorder.instances.push(this)
   }
-  start() { this.state = 'recording' }
-  stop() {
+
+  start(): void {
+    this.state = 'recording'
+  }
+
+  stop(): void {
     this.state = 'inactive'
-    this.ondataavailable?.({ data: new Blob(['audio-bytes'], { type: this.mimeType }) })
+    this.ondataavailable?.({ data: new Blob(['audio-', 'bytes'], { type: this.mimeType }) })
     this.onstop?.()
+  }
+}
+
+class FakeMessagePort {
+  onmessage: ((event: MessageEvent) => void) | null = null
+  readonly postMessage = vi.fn<(message: unknown) => void>()
+  readonly close = vi.fn()
+
+  emit(data: unknown): void {
+    this.onmessage?.({ data } as MessageEvent)
+  }
+}
+
+class FakeAudioWorkletNode {
+  static instances: FakeAudioWorkletNode[] = []
+
+  readonly port = new FakeMessagePort()
+  readonly connect = vi.fn()
+  readonly disconnect = vi.fn()
+  readonly name: string
+
+  constructor(_context: BaseAudioContext, name: string) {
+    this.name = name
+    FakeAudioWorkletNode.instances.push(this)
+  }
+}
+
+class FakeAudioContext {
+  static instances: FakeAudioContext[] = []
+  static addModuleError: Error | null = null
+
+  readonly sampleRate = 48_000
+  readonly destination = {} as AudioDestinationNode
+  readonly source = {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }
+  readonly audioWorklet = {
+    addModule: vi.fn(async () => {
+      if (FakeAudioContext.addModuleError) throw FakeAudioContext.addModuleError
+    }),
+  }
+  readonly createMediaStreamSource = vi.fn(() => this.source)
+  readonly resume = vi.fn(async () => undefined)
+  readonly close = vi.fn(async () => undefined)
+
+  constructor() {
+    FakeAudioContext.instances.push(this)
   }
 }
 
 let trackStop: ReturnType<typeof vi.fn>
 
+function installPcmFakes(): void {
+  vi.stubGlobal('AudioContext', FakeAudioContext)
+  vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+}
+
+function frame(...samples: number[]): Int16Array {
+  return Int16Array.from(samples)
+}
+
 beforeEach(() => {
+  FakeMediaRecorder.instances = []
+  FakeAudioContext.instances = []
+  FakeAudioContext.addModuleError = null
+  FakeAudioWorkletNode.instances = []
   trackStop = vi.fn()
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: trackStop }] }) as unknown as MediaStream) },
+    value: {
+      getUserMedia: vi.fn(async () => ({
+        getTracks: () => [{ stop: trackStop }],
+      }) as unknown as MediaStream),
+    },
   })
 })
 
@@ -52,20 +128,113 @@ describe('voiceCapture', () => {
     expect(checkBrowserCapability().ok).toBe(false)
   })
 
-  it('stop() resolves the recorded blob and is idempotent', async () => {
+  it('keeps Groq capture free of AudioContext and worklet setup', async () => {
+    installPcmFakes()
+
+    const session = await startCaptureSession({})
+
+    expect(FakeAudioContext.instances).toHaveLength(0)
+    await session.release()
+  })
+
+  it('delivers the actual sample rate and ordered PCM frames before Stop resolves', async () => {
+    installPcmFakes()
+    const calls: Array<number | Int16Array> = []
+    const sink: PcmCaptureSink = {
+      start: sampleRateHz => calls.push(sampleRateHz),
+      append: chunk => calls.push(chunk),
+    }
+    const session = await startCaptureSession({}, sink)
+    const context = FakeAudioContext.instances[0]!
+    const node = FakeAudioWorkletNode.instances[0]!
+
+    node.port.emit({ type: 'frame', pcm16: frame(1, 2) })
+    node.port.emit({ type: 'frame', pcm16: frame(3, 4) })
+
+    let resolved = false
+    const stopping = session.stop().then(blob => {
+      resolved = true
+      return blob
+    })
+    await Promise.resolve()
+    expect(resolved).toBe(false)
+    expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'flush' })
+
+    node.port.emit({ type: 'frame', pcm16: frame(5) })
+    node.port.emit({ type: 'drained' })
+    const blob = await stopping
+
+    expect(calls).toEqual([48_000, frame(1, 2), frame(3, 4), frame(5)])
+    expect(await blob!.text()).toBe('audio-bytes')
+    expect(context.resume).toHaveBeenCalledTimes(1)
+    expect(context.source.disconnect).toHaveBeenCalledTimes(1)
+    expect(node.disconnect).toHaveBeenCalledTimes(1)
+    expect(context.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the MediaRecorder take usable when worklet initialization fails', async () => {
+    installPcmFakes()
+    FakeAudioContext.addModuleError = new Error('worklet unavailable')
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn() }
+
+    const session = await startCaptureSession({}, sink)
+    const blob = await session.stop()
+
+    expect(await blob!.text()).toBe('audio-bytes')
+    expect(sink.start).not.toHaveBeenCalled()
+    expect(sink.append).not.toHaveBeenCalled()
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    await session.release()
+    expect(trackStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop() resolves the complete Blob once and is idempotent', async () => {
     const session = await startCaptureSession({})
     const blob = await session.stop()
-    expect(blob).toBeInstanceOf(Blob)
-    expect(blob!.size).toBeGreaterThan(0)
-    // Second stop yields nothing (already finalized).
+
+    expect(await blob!.text()).toBe('audio-bytes')
+    expect(await session.stop()).toBeNull()
+    expect(FakeMediaRecorder.instances[0]!.state).toBe('inactive')
+  })
+
+  it('release() reclaims the recorder, mic, worklet, and context once', async () => {
+    installPcmFakes()
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+    const context = FakeAudioContext.instances[0]!
+    const node = FakeAudioWorkletNode.instances[0]!
+
+    await session.release()
+    await session.release()
+
+    expect(trackStop).toHaveBeenCalledTimes(1)
+    expect(context.source.disconnect).toHaveBeenCalledTimes(1)
+    expect(node.disconnect).toHaveBeenCalledTimes(1)
+    expect(context.close).toHaveBeenCalledTimes(1)
     expect(await session.stop()).toBeNull()
   })
 
-  it('release() stops the mic tracks and is idempotent', async () => {
-    const session = await startCaptureSession({})
+  it('release() settles an in-flight Stop drain and closes everything once', async () => {
+    installPcmFakes()
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+    const context = FakeAudioContext.instances[0]!
+
+    const stopping = session.stop()
     await session.release()
-    await session.release()
+
+    expect(await (await stopping)!.text()).toBe('audio-bytes')
     expect(trackStop).toHaveBeenCalledTimes(1)
+    expect(context.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('unmount-style cleanup closes partial PCM setup without leaking the mic', async () => {
+    installPcmFakes()
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+
+    const cleanup = session.release()
+
+    expect(trackStop).toHaveBeenCalledTimes(1)
+    await cleanup
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
   })
 
   it('reports elapsed time while recording', async () => {
@@ -76,5 +245,55 @@ describe('voiceCapture', () => {
     expect(onElapsed).toHaveBeenCalled()
     expect(onElapsed.mock.lastCall![0]).toBeGreaterThanOrEqual(2000)
     await session.release()
+  })
+})
+
+describe('codexPcmProcessor', () => {
+  it('emits ordered little-endian PCM16 frames of at most 1024 samples and flushes the tail', async () => {
+    vi.resetModules()
+    const posted: Array<{ message: unknown; transfer?: Transferable[] }> = []
+    const port = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      postMessage(message: unknown, transfer?: Transferable[]) {
+        posted.push({ message, transfer })
+      },
+    }
+    type Processor = {
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean
+    }
+    let ProcessorClass: (new () => Processor) | undefined
+    vi.stubGlobal('AudioWorkletProcessor', class { readonly port = port })
+    vi.stubGlobal('registerProcessor', (name: string, implementation: new () => Processor) => {
+      expect(name).toBe('codex-pcm-processor')
+      ProcessorClass = implementation
+    })
+
+    await import('../../audio/codexPcmProcessor')
+    const processor = new ProcessorClass!()
+    const input = new Float32Array(1025)
+    input.set([-2, -1, -0.5, 0, 0.5, 1, 2])
+    input[1024] = 0.25
+    const output = new Float32Array(input.length).fill(1)
+
+    expect(processor.process([[input]], [[output]])).toBe(true)
+    expect(output.every(sample => sample === 0)).toBe(true)
+    port.onmessage?.({ data: { type: 'flush' } } as MessageEvent)
+
+    const frames = posted.filter(entry => (
+      entry.message as { type?: string }
+    ).type === 'frame')
+    expect(frames).toHaveLength(2)
+    const first = (frames[0]!.message as { pcm16: Int16Array }).pcm16
+    const tail = (frames[1]!.message as { pcm16: Int16Array }).pcm16
+    expect(first).toHaveLength(1024)
+    expect(tail).toHaveLength(1)
+    expect(frames[0]!.transfer).toEqual([first.buffer])
+    expect(frames[1]!.transfer).toEqual([tail.buffer])
+
+    const bytes = new DataView(first.buffer, first.byteOffset, first.byteLength)
+    expect(Array.from({ length: 7 }, (_, index) => bytes.getInt16(index * 2, true)))
+      .toEqual([-32768, -32768, -16384, 0, 16383, 32767, 32767])
+    expect(new DataView(tail.buffer).getInt16(0, true)).toBe(8191)
+    expect(posted.at(-1)!.message).toEqual({ type: 'drained' })
   })
 })
