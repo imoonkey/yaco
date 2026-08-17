@@ -10,8 +10,6 @@ const STREAM_ENDPOINT = 'wss://chatgpt.com/backend-api/dictation/stream'
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024
 const STARTUP_TIMEOUT_MS = 10_000
 const FINISH_TIMEOUT_MS = 8_000
-const MIN_SAMPLE_RATE_HZ = 8_000
-const MAX_SAMPLE_RATE_HZ = 192_000
 
 type SessionPhase =
   | 'starting'
@@ -36,7 +34,7 @@ export async function openCodexDictationSession(
 ): Promise<CodexDictationSession> {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS
   validateSampleRate(input.sampleRateHz)
-  if (input.signal?.aborted) throw new CodexTranscribeError('aborted')
+  if (input.signal?.aborted) throw new CodexTranscribeError('network')
 
   const auth = await readCredentials()
   if (!('credentials' in auth)) {
@@ -44,10 +42,10 @@ export async function openCodexDictationSession(
       auth.reason === 'expired_auth' ? 'expired_auth' : 'not_configured',
     )
   }
-  if (input.signal?.aborted) throw new CodexTranscribeError('aborted')
+  if (input.signal?.aborted) throw new CodexTranscribeError('network')
 
   const timeoutMs = deadline - Date.now()
-  if (timeoutMs <= 0) throw new CodexTranscribeError('timeout')
+  if (timeoutMs <= 0) throw new CodexTranscribeError('network')
 
   const session = new UpstreamDictationSession(
     input.sampleRateHz,
@@ -64,7 +62,7 @@ class UpstreamDictationSession implements CodexDictationSession {
   private readonly socket: WebSocket
   private readonly signal: AbortSignal | undefined
   private phase: SessionPhase = 'starting'
-  private audioBytes = 0
+  private queuedAudioBytes = 0
   private terminalError: CodexTranscribeError | undefined
   private startupTimer: ReturnType<typeof setTimeout> | undefined
   private finishTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,7 +92,7 @@ class UpstreamDictationSession implements CodexDictationSession {
       'codex-desktop',
     ])
     this.startupTimer = setTimeout(
-      () => this.fail(new CodexTranscribeError('timeout')),
+      () => this.fail(new CodexTranscribeError('network')),
       startupTimeoutMs,
     )
     signal?.addEventListener('abort', this.onAbort, { once: true })
@@ -127,7 +125,7 @@ class UpstreamDictationSession implements CodexDictationSession {
         response.headers['retry-after'],
       ))
     })
-    this.socket.once('error', () => {
+    this.socket.on('error', () => {
       this.fail(new CodexTranscribeError('network'))
     })
     this.socket.once('close', () => {
@@ -148,17 +146,16 @@ class UpstreamDictationSession implements CodexDictationSession {
   appendPcm16(chunk: Uint8Array): void {
     this.requirePhase('streaming')
     if (chunk.byteLength === 0) return
-    if (chunk.byteLength > MAX_AUDIO_BYTES - this.audioBytes) {
-      const error = new CodexTranscribeError('protocol')
+    if (
+      chunk.byteLength % 2 !== 0 ||
+      chunk.byteLength > MAX_AUDIO_BYTES - this.queuedAudioBytes
+    ) {
+      const error = new CodexTranscribeError('upstream')
       this.fail(error)
       throw error
     }
 
-    this.audioBytes += chunk.byteLength
-    this.send({
-      type: 'audio.append',
-      audio: Buffer.from(chunk).toString('base64'),
-    })
+    this.sendAudio(chunk)
     this.throwIfFailed()
   }
 
@@ -172,7 +169,7 @@ class UpstreamDictationSession implements CodexDictationSession {
       this.rejectFinish = reject
     })
     this.finishTimer = setTimeout(
-      () => this.fail(new CodexTranscribeError('timeout')),
+      () => this.fail(new CodexTranscribeError('network')),
       FINISH_TIMEOUT_MS,
     )
     this.send({ type: 'audio.flush', reason: 'client' })
@@ -182,11 +179,11 @@ class UpstreamDictationSession implements CodexDictationSession {
 
   close(): void {
     if (this.phase === 'closed' || this.phase === 'failed') return
-    this.fail(new CodexTranscribeError('aborted'))
+    this.fail(new CodexTranscribeError('network'))
   }
 
   private readonly onAbort = (): void => {
-    this.fail(new CodexTranscribeError('aborted'))
+    this.fail(new CodexTranscribeError('network'))
   }
 
   private onMessage(data: RawData, isBinary: boolean): void {
@@ -195,7 +192,7 @@ class UpstreamDictationSession implements CodexDictationSession {
       ? undefined
       : parseUpstreamEvent(data.toString('utf8'))
     if (upstreamEvent === undefined) {
-      this.fail(new CodexTranscribeError('protocol'))
+      this.fail(new CodexTranscribeError('upstream'))
       return
     }
 
@@ -205,7 +202,7 @@ class UpstreamDictationSession implements CodexDictationSession {
         upstreamEvent.session.status !== 'active' ||
         !isRequestedMode(upstreamEvent.session)
       ) {
-        this.fail(new CodexTranscribeError('protocol'))
+        this.fail(new CodexTranscribeError('upstream'))
         return
       }
       this.phase = 'streaming'
@@ -225,18 +222,18 @@ class UpstreamDictationSession implements CodexDictationSession {
       return
     }
     if (this.phase === 'starting') {
-      this.fail(new CodexTranscribeError('protocol'))
+      this.fail(new CodexTranscribeError('upstream'))
       return
     }
 
     if (upstreamEvent.type === 'session.updated') {
       if (!isRequestedMode(upstreamEvent.session)) {
-        this.fail(new CodexTranscribeError('protocol'))
+        this.fail(new CodexTranscribeError('upstream'))
         return
       }
       if (upstreamEvent.session.status === 'closed') {
         if (this.phase !== 'finishing') {
-          this.fail(new CodexTranscribeError('protocol'))
+          this.fail(new CodexTranscribeError('upstream'))
           return
         }
         this.complete()
@@ -280,7 +277,7 @@ class UpstreamDictationSession implements CodexDictationSession {
   private requirePhase(expected: SessionPhase): void {
     if (this.terminalError !== undefined) throw this.terminalError
     if (this.phase === expected) return
-    const error = new CodexTranscribeError('protocol')
+    const error = new CodexTranscribeError('upstream')
     this.fail(error)
     throw error
   }
@@ -297,12 +294,33 @@ class UpstreamDictationSession implements CodexDictationSession {
     }
   }
 
+  private sendAudio(chunk: Uint8Array): void {
+    const byteLength = chunk.byteLength
+    this.queuedAudioBytes += byteLength
+    try {
+      this.socket.send(JSON.stringify({
+        type: 'audio.append',
+        audio: Buffer.from(chunk).toString('base64'),
+      }), (error) => {
+        this.queuedAudioBytes = Math.max(
+          0,
+          this.queuedAudioBytes - byteLength,
+        )
+        if (error) this.fail(new CodexTranscribeError('network'))
+      })
+    } catch {
+      this.queuedAudioBytes -= byteLength
+      this.fail(new CodexTranscribeError('network'))
+    }
+  }
+
   private fail(error: CodexTranscribeError, stopSocket = true): void {
     if (this.phase === 'closed' || this.phase === 'failed') return
     this.phase = 'failed'
     this.terminalError = error
     this.clearTimers()
     this.detachAbort()
+    this.queuedAudioBytes = 0
     this.utteranceOrder.length = 0
     this.finalByUtterance.clear()
     this.rejectReady?.(error)
@@ -333,12 +351,8 @@ class UpstreamDictationSession implements CodexDictationSession {
 }
 
 function validateSampleRate(sampleRateHz: number): void {
-  if (
-    !Number.isInteger(sampleRateHz) ||
-    sampleRateHz < MIN_SAMPLE_RATE_HZ ||
-    sampleRateHz > MAX_SAMPLE_RATE_HZ
-  ) {
-    throw new CodexTranscribeError('protocol')
+  if (!Number.isInteger(sampleRateHz) || sampleRateHz <= 0) {
+    throw new CodexTranscribeError('upstream')
   }
 }
 

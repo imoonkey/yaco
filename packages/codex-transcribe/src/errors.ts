@@ -5,9 +5,6 @@ export type CodexTranscribeErrorCode =
   | 'rate_limited'
   | 'upstream'
   | 'network'
-  | 'aborted'
-  | 'timeout'
-  | 'protocol'
 
 export class CodexTranscribeError extends Error {
   readonly code: CodexTranscribeErrorCode

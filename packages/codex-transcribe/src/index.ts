@@ -1,6 +1,7 @@
-import { isRecord, readCredentials } from './auth.js'
+import { readCredentials } from './auth.js'
 import type { CodexTranscribeStatus } from './auth.js'
 import { CodexTranscribeError } from './errors.js'
+import { isRecord } from './json.js'
 
 const TRANSCRIBE_ENDPOINT = 'https://chatgpt.com/backend-api/transcribe'
 

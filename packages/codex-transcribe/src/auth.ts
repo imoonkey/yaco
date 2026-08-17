@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { isRecord } from './json.js'
 
 const ACCOUNT_ID_CLAIM =
   'https://api.openai.com/auth.chatgpt_account_id'
@@ -53,7 +54,7 @@ export async function readCredentials(): Promise<CredentialsResult> {
   }
   if (!isRecord(auth.tokens)) return { reason: 'invalid_auth' }
 
-  const accessToken = nonEmptyString(auth.tokens.access_token)
+  const accessToken = trimmedNonEmptyString(auth.tokens.access_token)
   if (accessToken === undefined) return { reason: 'invalid_auth' }
 
   const payload = parseJwtPayload(accessToken)
@@ -65,18 +66,14 @@ export async function readCredentials(): Promise<CredentialsResult> {
     return { reason: 'invalid_auth' }
   }
   const accountId =
-    nonEmptyString(auth.tokens.account_id) ??
-    nonEmptyString(payload[ACCOUNT_ID_CLAIM])
+    trimmedNonEmptyString(auth.tokens.account_id) ??
+    trimmedNonEmptyString(payload[ACCOUNT_ID_CLAIM])
   if (accountId === undefined) return { reason: 'invalid_auth' }
   if (payload.exp * 1_000 <= Date.now()) {
     return { reason: 'expired_auth' }
   }
 
   return { credentials: { accessToken, accountId } }
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function parseJwtPayload(token: string): Record<string, unknown> | undefined {
@@ -92,7 +89,7 @@ function parseJwtPayload(token: string): Record<string, unknown> | undefined {
   }
 }
 
-function nonEmptyString(value: unknown): string | undefined {
+function trimmedNonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : undefined

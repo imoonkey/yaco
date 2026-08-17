@@ -272,7 +272,7 @@ describe.sequential('Codex dictation session', () => {
     })
 
     const session = await openCodexDictationSession({ sampleRateHz: 44_100 })
-    const error = await expectError(session.finish(), 'protocol')
+    const error = await expectError(session.finish(), 'upstream')
     expect(error.message).not.toContain(PRIVATE_TRANSCRIPT)
   })
 
@@ -310,6 +310,21 @@ describe.sequential('Codex dictation session', () => {
     expect(websocketRedirect.requested).toEqual([])
   })
 
+  it('rejects expired auth before opening a websocket', async () => {
+    await chmod(join(codexHome, 'auth.json'), 0o600)
+    await writeFile(
+      join(codexHome, 'auth.json'),
+      JSON.stringify(auth(jwt({ exp: 0, [CLAIM]: ACCOUNT_ID }))),
+      'utf8',
+    )
+
+    await expectError(
+      openCodexDictationSession({ sampleRateHz: 48_000 }),
+      'expired_auth',
+    )
+    expect(websocketRedirect.requested).toEqual([])
+  })
+
   it('maps an HTTP 401 websocket handshake without response details', async () => {
     harness = await startServer(
       () => undefined,
@@ -331,13 +346,13 @@ describe.sequential('Codex dictation session', () => {
     harness = await startServer(() => connected())
 
     const opening = openCodexDictationSession({ sampleRateHz: 48_000 })
-    const openingError = expectError(opening, 'timeout')
+    const openingError = expectError(opening, 'network')
     await connection
     await vi.advanceTimersByTimeAsync(10_000)
     await openingError
   })
 
-  it('enforces the eight-second finish deadline without resetting startup', async () => {
+  it('enforces the eight-second finish deadline after startup', async () => {
     vi.useFakeTimers()
     harness = await startServer((socket) => {
       socket.on('message', (data) => {
@@ -347,7 +362,7 @@ describe.sequential('Codex dictation session', () => {
 
     const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
     await vi.advanceTimersByTimeAsync(9_000)
-    const finishingError = expectError(session.finish(), 'timeout')
+    const finishingError = expectError(session.finish(), 'network')
     await vi.advanceTimersByTimeAsync(8_000)
     await finishingError
   })
@@ -372,6 +387,25 @@ describe.sequential('Codex dictation session', () => {
     await expectError(session.finish(), 'network')
   })
 
+  it('keeps a non-fatal session error non-terminal', async () => {
+    harness = await startServer((socket) => {
+      socket.on('message', (data) => {
+        const message = parseMessage(data)
+        if (message.type === 'session.start') {
+          socket.send(startedEvent())
+          socket.send(event('session.error', {
+            fatal: false,
+            error: { code: 'warning', message: 'private warning', retryable: true },
+          }))
+        }
+        if (message.type === 'session.close') socket.send(closedEvent())
+      })
+    })
+
+    const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
+    await expect(session.finish()).resolves.toBe('')
+  })
+
   it('closes and rejects when aborted', async () => {
     const controller = new AbortController()
     let closed!: () => void
@@ -389,9 +423,9 @@ describe.sequential('Codex dictation session', () => {
     })
     controller.abort()
     await socketClosed
-    await expectError(session.finish(), 'aborted')
+    await expectError(session.finish(), 'network')
     expect(() => session.appendPcm16(new Uint8Array())).toThrowError(
-      expect.objectContaining({ code: 'aborted' }),
+      expect.objectContaining({ code: 'network' }),
     )
   })
 
@@ -409,31 +443,65 @@ describe.sequential('Codex dictation session', () => {
     session.close()
     session.close()
     await socketClosed
-    await expectError(session.finish(), 'aborted')
+    await expectError(session.finish(), 'network')
   })
 
-  it('rejects cumulative audio above the shared four MiB cap', async () => {
-    const received: Array<Record<string, unknown>> = []
-    let receivedAudio!: () => void
-    const audioReceived = new Promise<void>((resolve) => {
-      receivedAudio = resolve
-    })
+  it('allows more than four MiB over time after queued audio drains', async () => {
+    let resolveAudio!: () => void
+    let audioReceived = new Promise<void>((resolve) => { resolveAudio = resolve })
     harness = await startServer((socket) => {
       socket.on('message', (data) => {
         const message = parseMessage(data)
-        received.push(message)
         if (message.type === 'session.start') socket.send(startedEvent())
-        if (message.type === 'audio.append') receivedAudio()
+        if (message.type === 'audio.append') resolveAudio()
       })
     })
 
     const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
-    session.appendPcm16(Uint8Array.from([1, 2, 3, 4]))
+    session.appendPcm16(new Uint8Array(MAX_AUDIO_BYTES / 2))
     await audioReceived
-    expect(() => session.appendPcm16(new Uint8Array(MAX_AUDIO_BYTES)))
-      .toThrowError(expect.objectContaining({ code: 'protocol' }))
-    expect(received).toHaveLength(2)
-    await expectError(session.finish(), 'protocol')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    audioReceived = new Promise<void>((resolve) => { resolveAudio = resolve })
+    expect(() => session.appendPcm16(new Uint8Array(MAX_AUDIO_BYTES / 2 + 2)))
+      .not.toThrow()
+    await audioReceived
+    session.close()
+  })
+
+  it('rejects more than four MiB of simultaneously queued audio', async () => {
+    harness = await startServer((socket) => {
+      socket.on('message', (data) => {
+        if (parseMessage(data).type === 'session.start') socket.send(startedEvent())
+      })
+    })
+
+    const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
+    session.appendPcm16(new Uint8Array(MAX_AUDIO_BYTES))
+    expect(() => session.appendPcm16(Uint8Array.from([1, 2])))
+      .toThrowError(expect.objectContaining({ code: 'upstream' }))
+    await expectError(session.finish(), 'upstream')
+  })
+
+  it.each([0, -1, 48_000.5, Number.NaN])(
+    'rejects invalid sample rate %s before opening a websocket',
+    async (sampleRateHz) => {
+      await expectError(openCodexDictationSession({ sampleRateHz }), 'upstream')
+      expect(websocketRedirect.requested).toEqual([])
+    },
+  )
+
+  it('rejects an odd-length PCM16 chunk', async () => {
+    harness = await startServer((socket) => {
+      socket.on('message', (data) => {
+        if (parseMessage(data).type === 'session.start') socket.send(startedEvent())
+      })
+    })
+
+    const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
+    expect(() => session.appendPcm16(Uint8Array.from([1])))
+      .toThrowError(expect.objectContaining({ code: 'upstream' }))
+    await expectError(session.finish(), 'upstream')
   })
 
   it('never puts token, audio, transcript, or upstream detail in errors or logs', async () => {
@@ -457,7 +525,7 @@ describe.sequential('Codex dictation session', () => {
 
     const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
     session.appendPcm16(PRIVATE_AUDIO)
-    const error = await expectError(session.finish(), 'protocol')
+    const error = await expectError(session.finish(), 'upstream')
     const exposed = JSON.stringify({
       name: error.name,
       message: error.message,

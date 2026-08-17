@@ -1,4 +1,4 @@
-import { isRecord } from './auth.js'
+import { isRecord } from './json.js'
 
 export type SessionDescription = {
   readonly status: 'active' | 'closed'
@@ -35,7 +35,7 @@ export function parseUpstreamEvent(raw: string): UpstreamEvent | undefined {
     return session === undefined ? undefined : { type: value.type, session }
   }
   if (value.type === 'speech.started' || value.type === 'speech.stopped') {
-    const utteranceId = nonEmptyString(value.utterance_id)
+    const utteranceId = wireString(value.utterance_id)
     return utteranceId === undefined
       ? undefined
       : { type: value.type, utteranceId }
@@ -45,7 +45,7 @@ export function parseUpstreamEvent(raw: string): UpstreamEvent | undefined {
     value.type === 'transcript.segment' ||
     value.type === 'transcript.final'
   ) {
-    const utteranceId = nonEmptyString(value.utterance_id)
+    const utteranceId = wireString(value.utterance_id)
     if (
       utteranceId === undefined ||
       !isSequenceNumber(value.revision) ||
@@ -59,7 +59,7 @@ export function parseUpstreamEvent(raw: string): UpstreamEvent | undefined {
     const validUtterance =
       value.utterance_id === undefined ||
       value.utterance_id === null ||
-      nonEmptyString(value.utterance_id) !== undefined
+      wireString(value.utterance_id) !== undefined
     return validUtterance && isUpstreamError(value.error)
       ? { type: value.type }
       : undefined
@@ -82,7 +82,7 @@ export function isRequestedMode(session: SessionDescription): boolean {
 function parseSession(value: unknown): SessionDescription | undefined {
   if (
     !isRecord(value) ||
-    nonEmptyString(value.session_id) === undefined ||
+    wireString(value.session_id) === undefined ||
     (value.status !== 'active' && value.status !== 'closed') ||
     !isRecord(value.config)
   ) {
@@ -114,6 +114,6 @@ function isSequenceNumber(value: unknown): boolean {
   return Number.isInteger(value) && (value as number) >= 0
 }
 
-function nonEmptyString(value: unknown): string | undefined {
+function wireString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
