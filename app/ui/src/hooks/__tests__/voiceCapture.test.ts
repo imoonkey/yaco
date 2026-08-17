@@ -10,6 +10,7 @@ import {
 class FakeMediaRecorder {
   static isTypeSupported = (mime: string) => mime === 'audio/webm;codecs=opus'
   static instances: FakeMediaRecorder[] = []
+  static startError: Error | null = null
 
   state: 'inactive' | 'recording' = 'inactive'
   readonly mimeType: string
@@ -24,6 +25,7 @@ class FakeMediaRecorder {
 
   start(): void {
     lifecycleEvents.push('recorder:start')
+    if (FakeMediaRecorder.startError) throw FakeMediaRecorder.startError
     this.state = 'recording'
   }
 
@@ -100,6 +102,7 @@ function frame(...samples: number[]): Int16Array {
 
 beforeEach(() => {
   FakeMediaRecorder.instances = []
+  FakeMediaRecorder.startError = null
   FakeAudioContext.instances = []
   FakeAudioContext.addModuleError = null
   FakeAudioWorkletNode.instances = []
@@ -189,6 +192,7 @@ describe('voiceCapture', () => {
     expect(context.source.disconnect).toHaveBeenCalledTimes(1)
     expect(node.disconnect).toHaveBeenCalledTimes(1)
     expect(context.close).toHaveBeenCalledTimes(1)
+    expect(sink.fail).not.toHaveBeenCalled()
   })
 
   it('keeps the MediaRecorder take usable when worklet initialization fails', async () => {
@@ -220,7 +224,8 @@ describe('voiceCapture', () => {
 
   it('release() reclaims the recorder, mic, worklet, and context once', async () => {
     installPcmFakes()
-    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn(), fail: vi.fn() })
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+    const session = await startCaptureSession({}, sink)
     const context = FakeAudioContext.instances[0]!
     const node = FakeAudioWorkletNode.instances[0]!
 
@@ -231,12 +236,14 @@ describe('voiceCapture', () => {
     expect(context.source.disconnect).toHaveBeenCalledTimes(1)
     expect(node.disconnect).toHaveBeenCalledTimes(1)
     expect(context.close).toHaveBeenCalledTimes(1)
+    expect(sink.fail).toHaveBeenCalledTimes(1)
     expect(await session.stop()).toBeNull()
   })
 
   it('release() settles an in-flight Stop drain and closes everything once', async () => {
     installPcmFakes()
-    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn(), fail: vi.fn() })
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+    const session = await startCaptureSession({}, sink)
     const context = FakeAudioContext.instances[0]!
 
     const stopping = session.stop()
@@ -245,6 +252,7 @@ describe('voiceCapture', () => {
     expect(await (await stopping)!.text()).toBe('audio-bytes')
     expect(trackStop).toHaveBeenCalledTimes(1)
     expect(context.close).toHaveBeenCalledTimes(1)
+    expect(sink.fail).toHaveBeenCalledTimes(1)
   })
 
   it('unmount-style cleanup closes partial PCM setup without leaking the mic', async () => {
@@ -280,7 +288,10 @@ describe('voiceCapture', () => {
 
     FakeAudioWorkletNode.instances[0]!.onprocessorerror?.(new Event('processorerror'))
     await vi.waitFor(() => expect(sink.fail).toHaveBeenCalledTimes(1))
+    FakeAudioWorkletNode.instances[0]!.port.emit({ type: 'surprise' })
+    FakeAudioWorkletNode.instances[0]!.onprocessorerror?.(new Event('processorerror'))
 
+    expect(sink.fail).toHaveBeenCalledTimes(1)
     expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
     expect(await (await session.stop())!.text()).toBe('audio-bytes')
     await session.release()
@@ -313,6 +324,20 @@ describe('voiceCapture', () => {
     expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
     expect(await (await session.stop())!.text()).toBe('audio-bytes')
     await session.release()
+  })
+
+  it('fails the sink and closes PCM resources when MediaRecorder start throws', async () => {
+    installPcmFakes()
+    FakeMediaRecorder.startError = new Error('recorder start failed')
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+
+    await expect(startCaptureSession({}, sink)).rejects.toThrow('recorder start failed')
+
+    expect(sink.start).toHaveBeenCalledWith(48_000)
+    expect(sink.fail).toHaveBeenCalledTimes(1)
+    expect(FakeAudioContext.instances[0]!.source.connect).not.toHaveBeenCalled()
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    expect(trackStop).toHaveBeenCalledTimes(1)
   })
 
   it('reports elapsed time while recording', async () => {

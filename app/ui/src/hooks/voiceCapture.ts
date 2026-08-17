@@ -81,7 +81,8 @@ export interface CaptureCallbacks {
 export interface PcmCaptureSink {
   start: (sampleRateHz: number) => void
   append: (chunk: Int16Array) => void
-  /** Called once when PCM becomes unavailable; the Blob capture continues. */
+  /** Called once when PCM becomes unavailable; it may precede start(). The
+   *  canonical Blob capture continues. */
   fail: () => void
 }
 
@@ -168,12 +169,10 @@ export async function startCaptureSession(
   }
   pcmCapture?.start()
 
-  if (!released) {
-    const startedAt = Date.now()
-    elapsedTimer = setInterval(() => {
-      callbacks.onElapsed?.(Date.now() - startedAt)
-    }, ELAPSED_INTERVAL_MS)
-  }
+  const startedAt = Date.now()
+  elapsedTimer = setInterval(() => {
+    callbacks.onElapsed?.(Date.now() - startedAt)
+  }, ELAPSED_INTERVAL_MS)
 
   const stopRecorder = (): Promise<Blob | null> => {
     if (recorder.state === 'inactive') return Promise.resolve(assembled())
@@ -234,6 +233,7 @@ async function startPcmCapture(
   let source: MediaStreamAudioSourceNode | null = null
   let node: AudioWorkletNode | null = null
   let started = false
+  let drained = false
   let closed = false
   let flushPromise: Promise<void> | null = null
   let resolveDrain: (() => void) | null = null
@@ -249,6 +249,7 @@ async function startPcmCapture(
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
+    if (!drained) failSink()
     settleDrain()
     try {
       node?.port.close()
@@ -295,6 +296,7 @@ async function startPcmCapture(
         && 'type' in message
         && message.type === 'drained'
       ) {
+        drained = true
         settleDrain()
         return
       }
