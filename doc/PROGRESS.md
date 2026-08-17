@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-08-17: Voice capture supports an optional PCM side channel
+
+**What changed:**
+- `voiceCapture.ts` can attach an optional AudioWorklet PCM sink beside the
+  canonical MediaRecorder recording.
+- The worklet emits ordered little-endian PCM16 frames of at most 1024 samples,
+  flushes its final partial frame, and acknowledges drain before teardown.
+- Side-channel initialization and runtime failures remain isolated from the
+  fallback Blob; a capture without a sink creates no AudioContext.
+
+**Why:**
+- Codex dictation can consume audio while a take is still recording without
+  sacrificing the whole-take Blob used by batch fallback.
+
+**Key files:** `app/ui/src/hooks/voiceCapture.ts`,
+`app/ui/src/audio/codexPcmProcessor.ts`,
+`app/ui/src/hooks/__tests__/voiceCapture.test.ts`
+**Verification:** `scripts/verify.sh`; UI unit suite 93 files / 1192 tests;
+real-browser fake-microphone QA with 48 kHz `[1024, 512]` PCM frames and a
+non-empty fallback Blob; existing voice Playwright flows 7/7 passed.
+**Commit:** `2f83976e..106e89e7`
+**Next:** Connect the optional sink in the dependent Codex stream-orchestration
+task.
+**Blockers:** None.
+
 ## 2026-08-17: Attention startup ignores archived tasks
 
 **What changed:**

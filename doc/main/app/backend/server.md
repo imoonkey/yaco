@@ -105,12 +105,17 @@ Negotiation only applies to UI routes (`/`, `/assets/*`, and the index fallback)
 
 ### Voice capture assets
 
-None. The voice path records with the browser-native `MediaRecorder`
-(`app/ui/src/hooks/voiceCapture.ts`) and ships **no** extra runtime assets — the
-former self-hosted Silero/onnxruntime VAD (`/assets/vad/<version>/`, ~13 MB,
-copied via `viteStaticCopy`, with `.wasm`/`.onnx` MIME entries) was removed.
-Nothing under `/assets/vad/` is served, and `MIME_TYPES` no longer carries
-`.wasm`/`.onnx`.
+The voice path always records its fallback Blob with the browser-native
+`MediaRecorder` (`app/ui/src/hooks/voiceCapture.ts`). When a caller supplies a
+PCM sink, Vite also loads the small `codexPcmProcessor.ts` AudioWorklet asset to
+convert mono input into bounded PCM16 frames. The one-argument capture path
+loads no worklet and creates no `AudioContext`; worklet failure therefore does
+not disable MediaRecorder capture.
+
+The former self-hosted Silero/onnxruntime VAD (`/assets/vad/<version>/`, ~13
+MB, copied via `viteStaticCopy`, with `.wasm`/`.onnx` MIME entries) remains
+removed. Nothing under `/assets/vad/` is served, and `MIME_TYPES` no longer
+carries `.wasm`/`.onnx`.
 
 
 ## Environment Variables

@@ -207,9 +207,18 @@ Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permis
 ## useVoice.ts (~510 lines)
 
 Orchestrates the single-take voice-input flow on top of three pieces:
-`voiceCapture.ts` (native `MediaRecorder` capture → one whole-take blob),
+`voiceCapture.ts` (native `MediaRecorder` capture → one whole-take fallback
+blob, plus an optional PCM sink),
 `voiceStateMachine.ts` (the `voiceReducer` + selectors), and the split
 [`/api/voice/transcribe` + `/api/voice/format`](../backend/routes.md#voice) routes.
+
+`voiceCapture.ts` keeps MediaRecorder canonical for every caller. An optional
+sink adds a parallel AudioWorklet side channel: it starts with the actual
+`AudioContext.sampleRate`, receives ordered little-endian PCM16 frames of at
+most 1024 samples, and drains its final partial frame during `stop()`. Sink or
+worklet failure is reported to that side channel without invalidating the
+fallback Blob. Callers that omit the sink—including the current Groq-shaped
+path—create no `AudioContext` or worklet.
 
 **Export**: `useVoice()` → `{ capability, availableProviders, provider, setProvider, formatterAvailable, autoFormat, setAutoFormat, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, format, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md). `format(text)` runs the formatter over arbitrary draft text (the tray's **Format** button), returning the polished text (or the input unchanged on failure).
 
