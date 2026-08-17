@@ -357,7 +357,7 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
       return
     }
     voiceWss.handleUpgrade(req, socket, head, (ws) => {
-      voiceWss.emit('connection', ws, req)
+      voiceBridge.accept(ws)
     })
     return
   }
@@ -386,10 +386,6 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, sessionName, cols, rows, terminalPaletteFromSearchParams(url.searchParams))
   })
-})
-
-voiceWss.on('connection', (ws: WebSocket) => {
-  voiceBridge.accept(ws)
 })
 
 wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, initialPalette: TerminalPalette) => {

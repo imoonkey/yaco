@@ -64,6 +64,7 @@ beforeAll(async () => {
     env: {
       ...process.env,
       YACO_HOME: home,
+      YACO_REPO_ROOT: undefined,
       WORKFLOW_PORT: String(port),
       WORKFLOW_CORS_ORIGINS: ALLOWED_ORIGIN,
     },

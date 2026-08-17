@@ -8,6 +8,8 @@ export const CODEX_VOICE_MAX_PENDING_BYTES = 4 * 1024 * 1024
 
 const MIN_SAMPLE_RATE_HZ = 8_000
 const MAX_SAMPLE_RATE_HZ = 96_000
+const START_IDLE_TIMEOUT_MS = 10_000
+const AUDIO_IDLE_TIMEOUT_MS = 30_000
 
 export type CodexVoiceStreamBridge = {
   accept(ws: WebSocket): void
@@ -44,6 +46,7 @@ class VoiceConnection {
   private finishRequested = false
   private terminal = false
   private session: CodexDictationSession | undefined
+  private idleTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private readonly ws: WebSocket,
@@ -52,13 +55,11 @@ class VoiceConnection {
     ws.on('message', (data, isBinary) => this.onMessage(data, isBinary))
     ws.once('close', () => this.cancel())
     ws.once('error', () => this.cancel())
+    this.armIdleTimeout(START_IDLE_TIMEOUT_MS)
   }
 
   shutdown(): void {
-    if (this.terminal) return
-    this.terminal = true
-    this.cleanup()
-    this.ws.terminate()
+    this.cancel(true)
   }
 
   private onMessage(data: RawData, isBinary: boolean): void {
@@ -71,11 +72,13 @@ class VoiceConnection {
     const message = parseControl(data)
     if (isStart(message) && !this.started) {
       this.started = true
+      this.armIdleTimeout(AUDIO_IDLE_TIMEOUT_MS)
       void this.open(message.sampleRateHz)
       return
     }
     if (isFinish(message) && this.started && !this.finishRequested) {
       this.finishRequested = true
+      this.clearIdleTimeout()
       this.finishUpstream()
       return
     }
@@ -98,6 +101,7 @@ class VoiceConnection {
     }
 
     const chunk = copyRawData(data)
+    this.armIdleTimeout(AUDIO_IDLE_TIMEOUT_MS)
     if (this.session === undefined) {
       this.pending.push(chunk)
       this.pendingBytes += byteLength
@@ -175,31 +179,44 @@ class VoiceConnection {
 
   private send(payload: Record<string, unknown>): boolean {
     if (this.ws.readyState !== WebSocket.OPEN) {
-      this.cancel()
+      this.cancel(true)
       return false
     }
     try {
       this.ws.send(JSON.stringify(payload))
       return true
     } catch {
-      this.cancel()
+      this.cancel(true)
       return false
     }
   }
 
-  private cancel(): void {
+  private cancel(terminate = false): void {
     if (this.terminal) return
     this.terminal = true
     this.cleanup()
+    if (terminate && this.ws.readyState !== WebSocket.CLOSED) this.ws.terminate()
   }
 
   private cleanup(): void {
+    this.clearIdleTimeout()
     this.abort.abort()
     this.session?.close()
     this.session = undefined
     this.pending.length = 0
     this.pendingBytes = 0
     this.onTerminal()
+  }
+
+  private armIdleTimeout(timeoutMs: number): void {
+    this.clearIdleTimeout()
+    this.idleTimer = setTimeout(() => this.fail(1002), timeoutMs)
+    this.idleTimer.unref()
+  }
+
+  private clearIdleTimeout(): void {
+    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
   }
 }
 

@@ -62,6 +62,13 @@ async function waitFor(check: () => boolean): Promise<void> {
   await vi.waitFor(() => expect(check()).toBe(true))
 }
 
+async function waitForIo(check: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100 && !check(); attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  expect(check()).toBe(true)
+}
+
 describe('Codex voice WebSocket bridge', () => {
   let server: Server
   let wss: WebSocketServer
@@ -82,6 +89,7 @@ describe('Codex voice WebSocket bridge', () => {
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     bridge.close()
     for (const client of clients) client.terminate()
     clients.length = 0
@@ -239,6 +247,44 @@ describe('Codex voice WebSocket bridge', () => {
     await waitFor(() => client.messages.length === 1)
 
     expect(client.messages).toEqual([{ type: 'failed' }])
+    expect(openCodexDictationSession.mock.calls[0]![0].signal.aborted).toBe(true)
+  })
+
+  it('fails a connection that never sends start after ten seconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const client = await connect()
+    const failed = once(client.ws, 'message')
+
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(client.messages).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    await failed
+
+    expect(client.messages).toEqual([{ type: 'failed' }])
+    expect(openCodexDictationSession).not.toHaveBeenCalled()
+  })
+
+  it('fails a started stream after thirty silent seconds and resets on PCM', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const session = fakeSession()
+    openCodexDictationSession.mockResolvedValue(session)
+    const client = await connect()
+    const ready = once(client.ws, 'message')
+    client.ws.send(JSON.stringify({ type: 'start', sampleRateHz: 48_000 }))
+    await ready
+
+    await vi.advanceTimersByTimeAsync(29_000)
+    client.ws.send(PRIVATE_AUDIO)
+    await waitForIo(() => session.appendPcm16.mock.calls.length === 1)
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(session.close).not.toHaveBeenCalled()
+
+    const failed = once(client.ws, 'message')
+    await vi.advanceTimersByTimeAsync(1)
+    await failed
+
+    expect(client.messages).toEqual([{ type: 'ready' }, { type: 'failed' }])
+    expect(session.close).toHaveBeenCalledOnce()
     expect(openCodexDictationSession.mock.calls[0]![0].signal.aborted).toBe(true)
   })
 
