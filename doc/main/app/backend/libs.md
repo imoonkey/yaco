@@ -183,7 +183,7 @@ Wires the pure `AttentionEngine` to real fs readers + the SSE push, and serves c
 
 **Exports**: `currentAttentionSnapshot()`, `startAttentionEngine()`, `stopAttentionEngine()`, `notifyAttention{Session,Task,Pin}Change()`
 
-- Readers: `readAllSessionsFromStateFiles` (hot state-file read carrying `crashed`/`statusEnteredAt`/`exitCode`/`spawnedBy`, **not** the CLI reconcile path), per-project `loadTaskStore`, `getPinnedSessions`, `getUnreadWatermarks`.
+- Readers: `readAllSessionsFromStateFiles` (hot state-file read carrying `crashed`/`statusEnteredAt`/`exitCode`/`spawnedBy`, **not** the CLI reconcile path), per-project `loadTaskStore` (excluding the historical `archive` workset), `getPinnedSessions`, `getUnreadWatermarks`.
 - `currentAttentionSnapshot()` reuses those readers + per-project `readEvents` and calls the pure `projectAttention` for `GET /attention/feed` cold mounts.
 
 ### session-reconciler.ts (~60 lines)

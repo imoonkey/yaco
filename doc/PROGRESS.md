@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-08-17: Attention startup ignores archived tasks
+
+**What changed:**
+- The live Attention task reader now excludes the `archive` workset before boot
+  reconciliation and cold-feed projection.
+
+**Why:**
+- Archived tasks are historical and must not mint new live edges after a server
+  restart. An archived legacy task with a now-invalid slug exposed this mismatch
+  by failing event validation and putting the backend into a restart loop.
+
+**Key files:** `app/server/src/lib/attention-runtime.ts`,
+`app/server/src/lib/__tests__/attention-runtime.test.ts`
+**Verification:** Focused Attention tests: 109 passed. Full server unit suite:
+56 files / 884 passed / 1 skipped. Server bundle build passed.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None
+
 ## 2026-08-13: Codex channel fallback uses the rendered pane
 
 **What changed:**

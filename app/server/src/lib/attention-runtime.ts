@@ -46,7 +46,10 @@ async function readTasks(): Promise<LiveTask[]> {
       continue // missing/invalid task store — skip this project
     }
     for (const [id, task] of Object.entries(store.tasks)) {
-      // Carry every task; the projector decides which states become ACT/REVIEW
+      // Archived tasks are historical and must not mint new live edges on boot.
+      if (task.workset === 'archive') continue
+
+      // Carry every live-workset task; the projector decides which states become ACT/REVIEW
       // (only `blocked` → ACT, `done` → REVIEW). `ready`/`running`/`cancelled`
       // are inert there but cheap to pass through.
       // Line-2 for a task row: its title (or id when untitled/blank), clamped.
