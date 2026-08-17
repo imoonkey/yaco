@@ -23,6 +23,7 @@ class FakeMediaRecorder {
   }
 
   start(): void {
+    lifecycleEvents.push('recorder:start')
     this.state = 'recording'
   }
 
@@ -50,9 +51,12 @@ class FakeAudioWorkletNode {
   readonly connect = vi.fn()
   readonly disconnect = vi.fn()
   readonly name: string
+  readonly options: AudioWorkletNodeOptions | undefined
+  onprocessorerror: ((event: Event) => void) | null = null
 
-  constructor(_context: BaseAudioContext, name: string) {
+  constructor(_context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
     this.name = name
+    this.options = options
     FakeAudioWorkletNode.instances.push(this)
   }
 }
@@ -64,16 +68,17 @@ class FakeAudioContext {
   readonly sampleRate = 48_000
   readonly destination = {} as AudioDestinationNode
   readonly source = {
-    connect: vi.fn(),
+    connect: vi.fn(() => lifecycleEvents.push('source:connect')),
     disconnect: vi.fn(),
   }
   readonly audioWorklet = {
     addModule: vi.fn(async () => {
+      lifecycleEvents.push('worklet:addModule')
       if (FakeAudioContext.addModuleError) throw FakeAudioContext.addModuleError
     }),
   }
   readonly createMediaStreamSource = vi.fn(() => this.source)
-  readonly resume = vi.fn(async () => undefined)
+  readonly resume = vi.fn(async () => { lifecycleEvents.push('context:resume') })
   readonly close = vi.fn(async () => undefined)
 
   constructor() {
@@ -82,6 +87,7 @@ class FakeAudioContext {
 }
 
 let trackStop: ReturnType<typeof vi.fn>
+let lifecycleEvents: string[]
 
 function installPcmFakes(): void {
   vi.stubGlobal('AudioContext', FakeAudioContext)
@@ -97,6 +103,7 @@ beforeEach(() => {
   FakeAudioContext.instances = []
   FakeAudioContext.addModuleError = null
   FakeAudioWorkletNode.instances = []
+  lifecycleEvents = []
   trackStop = vi.fn()
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
   Object.defineProperty(navigator, 'mediaDevices', {
@@ -141,8 +148,12 @@ describe('voiceCapture', () => {
     installPcmFakes()
     const calls: Array<number | Int16Array> = []
     const sink: PcmCaptureSink = {
-      start: sampleRateHz => calls.push(sampleRateHz),
+      start: sampleRateHz => {
+        lifecycleEvents.push('sink:start')
+        calls.push(sampleRateHz)
+      },
       append: chunk => calls.push(chunk),
+      fail: vi.fn(),
     }
     const session = await startCaptureSession({}, sink)
     const context = FakeAudioContext.instances[0]!
@@ -165,6 +176,14 @@ describe('voiceCapture', () => {
     const blob = await stopping
 
     expect(calls).toEqual([48_000, frame(1, 2), frame(3, 4), frame(5)])
+    expect(lifecycleEvents).toEqual([
+      'worklet:addModule',
+      'context:resume',
+      'sink:start',
+      'recorder:start',
+      'source:connect',
+    ])
+    expect(node.options).toMatchObject({ channelCount: 1, channelCountMode: 'explicit' })
     expect(await blob!.text()).toBe('audio-bytes')
     expect(context.resume).toHaveBeenCalledTimes(1)
     expect(context.source.disconnect).toHaveBeenCalledTimes(1)
@@ -175,7 +194,7 @@ describe('voiceCapture', () => {
   it('keeps the MediaRecorder take usable when worklet initialization fails', async () => {
     installPcmFakes()
     FakeAudioContext.addModuleError = new Error('worklet unavailable')
-    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn() }
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
 
     const session = await startCaptureSession({}, sink)
     const blob = await session.stop()
@@ -183,8 +202,10 @@ describe('voiceCapture', () => {
     expect(await blob!.text()).toBe('audio-bytes')
     expect(sink.start).not.toHaveBeenCalled()
     expect(sink.append).not.toHaveBeenCalled()
+    expect(sink.fail).toHaveBeenCalledTimes(1)
     expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
     await session.release()
+    expect(trackStop).toHaveBeenCalledTimes(1)
     expect(trackStop).toHaveBeenCalledTimes(1)
   })
 
@@ -199,7 +220,7 @@ describe('voiceCapture', () => {
 
   it('release() reclaims the recorder, mic, worklet, and context once', async () => {
     installPcmFakes()
-    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn(), fail: vi.fn() })
     const context = FakeAudioContext.instances[0]!
     const node = FakeAudioWorkletNode.instances[0]!
 
@@ -215,7 +236,7 @@ describe('voiceCapture', () => {
 
   it('release() settles an in-flight Stop drain and closes everything once', async () => {
     installPcmFakes()
-    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn(), fail: vi.fn() })
     const context = FakeAudioContext.instances[0]!
 
     const stopping = session.stop()
@@ -228,13 +249,70 @@ describe('voiceCapture', () => {
 
   it('unmount-style cleanup closes partial PCM setup without leaking the mic', async () => {
     installPcmFakes()
-    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn() })
+    const session = await startCaptureSession({}, { start: vi.fn(), append: vi.fn(), fail: vi.fn() })
 
     const cleanup = session.release()
 
     expect(trackStop).toHaveBeenCalledTimes(1)
     await cleanup
     expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds a stalled drain, signals PCM failure, and still returns the Blob', async () => {
+    vi.useFakeTimers()
+    installPcmFakes()
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+    const session = await startCaptureSession({}, sink)
+
+    const stopping = session.stop()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(await (await stopping)!.text()).toBe('audio-bytes')
+    expect(sink.fail).toHaveBeenCalledTimes(1)
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    await session.release()
+  })
+
+  it('signals PCM failure and closes the graph when the processor errors', async () => {
+    installPcmFakes()
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+    const session = await startCaptureSession({}, sink)
+
+    FakeAudioWorkletNode.instances[0]!.onprocessorerror?.(new Event('processorerror'))
+    await vi.waitFor(() => expect(sink.fail).toHaveBeenCalledTimes(1))
+
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    expect(await (await session.stop())!.text()).toBe('audio-bytes')
+    await session.release()
+  })
+
+  it('fails closed on an unknown worklet message', async () => {
+    installPcmFakes()
+    const sink: PcmCaptureSink = { start: vi.fn(), append: vi.fn(), fail: vi.fn() }
+    const session = await startCaptureSession({}, sink)
+
+    FakeAudioWorkletNode.instances[0]!.port.emit({ type: 'surprise' })
+    await vi.waitFor(() => expect(sink.fail).toHaveBeenCalledTimes(1))
+
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    await session.release()
+  })
+
+  it('signals PCM failure when the sink rejects a frame', async () => {
+    installPcmFakes()
+    const sink: PcmCaptureSink = {
+      start: vi.fn(),
+      append: vi.fn(() => { throw new Error('stream unavailable') }),
+      fail: vi.fn(),
+    }
+    const session = await startCaptureSession({}, sink)
+
+    FakeAudioWorkletNode.instances[0]!.port.emit({ type: 'frame', pcm16: frame(1) })
+    await vi.waitFor(() => expect(sink.fail).toHaveBeenCalledTimes(1))
+
+    expect(FakeAudioContext.instances[0]!.close).toHaveBeenCalledTimes(1)
+    expect(await (await session.stop())!.text()).toBe('audio-bytes')
+    await session.release()
   })
 
   it('reports elapsed time while recording', async () => {

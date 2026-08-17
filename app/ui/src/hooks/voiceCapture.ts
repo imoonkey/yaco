@@ -5,6 +5,7 @@ import codexPcmProcessorUrl from '../audio/codexPcmProcessor.ts?worker&url'
 // PCM16 frames; failure of that optional path never invalidates the Blob.
 
 const ELAPSED_INTERVAL_MS = 1000
+const PCM_DRAIN_TIMEOUT_MS = 1000
 
 // Overall session cap. The module reports elapsed time; the consuming hook
 // enforces the cap by calling stop() (the single path that finalizes a take).
@@ -80,6 +81,8 @@ export interface CaptureCallbacks {
 export interface PcmCaptureSink {
   start: (sampleRateHz: number) => void
   append: (chunk: Int16Array) => void
+  /** Called once when PCM becomes unavailable; the Blob capture continues. */
+  fail: () => void
 }
 
 // The session constructor, narrowed so tests can inject a fake recorder without
@@ -146,23 +149,24 @@ export async function startCaptureSession(
     if (event.data.size > 0) chunks.push(event.data)
   }
   // A fatal recorder error must free the mic itself — the caller may not hold
-  // the session yet while optional worklet initialization is in progress.
+  // the session yet when the browser queues an immediate post-start failure.
   recorder.onerror = () => {
     callbacks.onError?.('Recording failed.')
     void release()
   }
 
+  if (pcmSink) {
+    pcmCapture = await startPcmCapture(stream, pcmSink)
+  }
+
   try {
     recorder.start()
   } catch (error) {
+    await pcmCapture?.close()
     stopTracks()
     throw error
   }
-
-  if (pcmSink) {
-    pcmCapture = await startPcmCapture(stream, pcmSink)
-    if (released) await pcmCapture?.close()
-  }
+  pcmCapture?.start()
 
   if (!released) {
     const startedAt = Date.now()
@@ -199,6 +203,7 @@ export async function startCaptureSession(
 }
 
 interface PcmCapture {
+  start: () => void
   flush: () => Promise<void>
   close: () => Promise<void>
 }
@@ -207,20 +212,36 @@ async function startPcmCapture(
   stream: MediaStream,
   sink: PcmCaptureSink,
 ): Promise<PcmCapture | null> {
+  let sinkFailed = false
+  const failSink = (): void => {
+    if (sinkFailed) return
+    sinkFailed = true
+    try {
+      sink.fail()
+    } catch {
+      // The fallback recorder must survive a broken optional sink.
+    }
+  }
+
   let context: AudioContext
   try {
     context = new AudioContext()
   } catch {
+    failSink()
     return null
   }
 
   let source: MediaStreamAudioSourceNode | null = null
   let node: AudioWorkletNode | null = null
+  let started = false
   let closed = false
   let flushPromise: Promise<void> | null = null
   let resolveDrain: (() => void) | null = null
+  let drainTimer: ReturnType<typeof setTimeout> | null = null
 
   const settleDrain = (): void => {
+    if (drainTimer) clearTimeout(drainTimer)
+    drainTimer = null
     resolveDrain?.()
     resolveDrain = null
   }
@@ -229,8 +250,8 @@ async function startPcmCapture(
     if (closed) return
     closed = true
     settleDrain()
-    node?.port.close()
     try {
+      node?.port.close()
       source?.disconnect()
       node?.disconnect()
     } catch {
@@ -247,6 +268,7 @@ async function startPcmCapture(
       numberOfOutputs: 1,
       outputChannelCount: [1],
       channelCount: 1,
+      channelCountMode: 'explicit',
     })
     node.port.onmessage = (event: MessageEvent<unknown>) => {
       const message = event.data
@@ -257,11 +279,11 @@ async function startPcmCapture(
         && message.type === 'frame'
         && 'pcm16' in message
         && message.pcm16 instanceof Int16Array
-        && message.pcm16.length <= 1024
       ) {
         try {
           sink.append(message.pcm16)
         } catch {
+          failSink()
           settleDrain()
           void close()
         }
@@ -276,20 +298,33 @@ async function startPcmCapture(
         settleDrain()
         return
       }
+      failSink()
       settleDrain()
       void close()
     }
     node.onprocessorerror = () => {
+      failSink()
       settleDrain()
       void close()
     }
     await context.resume()
     sink.start(context.sampleRate)
-    source.connect(node)
-    node.connect(context.destination)
   } catch {
+    failSink()
     await close()
     return null
+  }
+
+  const start = (): void => {
+    if (started || closed) return
+    started = true
+    try {
+      source!.connect(node!)
+      node!.connect(context.destination)
+    } catch {
+      failSink()
+      void close()
+    }
   }
 
   const flush = async (): Promise<void> => {
@@ -297,9 +332,14 @@ async function startPcmCapture(
     if (!flushPromise) {
       flushPromise = new Promise<void>((resolve) => {
         resolveDrain = resolve
+        drainTimer = setTimeout(() => {
+          failSink()
+          settleDrain()
+        }, PCM_DRAIN_TIMEOUT_MS)
         try {
           node!.port.postMessage({ type: 'flush' })
         } catch {
+          failSink()
           settleDrain()
         }
       }).then(close)
@@ -307,5 +347,5 @@ async function startPcmCapture(
     await flushPromise
   }
 
-  return { flush, close }
+  return { start, flush, close }
 }
