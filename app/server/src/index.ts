@@ -27,6 +27,10 @@ import { PACKAGE_ROOT } from './package-root.js'
 import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { pickEncoding, appendVary } from './lib/static-encoding.js'
 import { createOriginGuard } from './lib/origin.js'
+import {
+  CODEX_VOICE_MAX_PENDING_BYTES,
+  createCodexVoiceStreamBridge,
+} from './lib/codex-voice-stream.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runtime.js'
@@ -259,6 +263,11 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 // WebSocket server on the same HTTP server
 const wss = new WebSocketServer({ noServer: true })
+const voiceWss = new WebSocketServer({
+  noServer: true,
+  maxPayload: CODEX_VOICE_MAX_PENDING_BYTES,
+})
+const voiceBridge = createCodexVoiceStreamBridge()
 type PtySubscription = ReturnType<IPty['onData']>
 
 type TerminalConnection = {
@@ -342,6 +351,17 @@ sweepInterval.unref()
 server.on('upgrade', (req: IncomingMessage, socket, head) => {
   const url = new URL(req.url ?? '', `http://localhost:${port}`)
 
+  if (url.pathname === '/ws/voice/codex') {
+    if (!isAllowedOrigin(req.headers.origin)) {
+      socket.destroy()
+      return
+    }
+    voiceWss.handleUpgrade(req, socket, head, (ws) => {
+      voiceWss.emit('connection', ws, req)
+    })
+    return
+  }
+
   if (!url.pathname.startsWith('/ws/terminal/')) {
     socket.destroy()
     return
@@ -366,6 +386,10 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, sessionName, cols, rows, terminalPaletteFromSearchParams(url.searchParams))
   })
+})
+
+voiceWss.on('connection', (ws: WebSocket) => {
+  voiceBridge.accept(ws)
 })
 
 wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, initialPalette: TerminalPalette) => {
@@ -515,6 +539,8 @@ let cleanedUp = false
 function cleanupTerminalResources(): void {
   if (cleanedUp) return
   cleanedUp = true
+  voiceBridge.close()
+  voiceWss.close()
   if (pingInterval) clearInterval(pingInterval)
   if (sweepInterval) clearInterval(sweepInterval)
   stopSessionReconciler()
