@@ -19,8 +19,11 @@ type SessionPhase =
   | 'failed'
 
 export type CodexDictationSession = {
+  /** Appends an even-length little-endian PCM16 frame while the session is active. */
   appendPcm16(chunk: Uint8Array): void
+  /** Closes upstream and returns ordered final text; an empty string requests batch fallback. */
   finish(): Promise<string>
+  /** Cancels and releases the upstream socket. Repeated calls are safe. */
   close(): void
 }
 
@@ -29,6 +32,10 @@ export type CodexDictationSessionInput = {
   readonly signal?: AbortSignal
 }
 
+/**
+ * Opens a ready Codex dictation stream using the current read-only Codex auth.
+ * Connection startup is bounded to ten seconds; finish is bounded to eight.
+ */
 export async function openCodexDictationSession(
   input: CodexDictationSessionInput,
 ): Promise<CodexDictationSession> {
