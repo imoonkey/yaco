@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-08-13: Codex channel fallback uses the rendered pane
+
+**What changed:**
+- When structured provider output is unavailable, Codex channel replies now
+  read tmux's rendered pane and extract the answer between the submitted prompt
+  and the next input prompt. Raw PTY bytes remain timing-only for this path.
+- Other providers retain the existing offset/slice fallback.
+
+**Why:**
+- Codex repaints its spinner and status bar with cursor controls. Forwarding
+  that byte stream exposed repeated `Working` fragments and terminal-control
+  residue such as `[0 q` in WhatsApp replies.
+
+**Key files:** `app/server/src/lib/channels/pane-reply.ts`,
+`app/server/src/lib/channels/router.ts`,
+`app/server/src/lib/__tests__/channel-pty-fallback.test.ts`
+**Verification:** `scripts/verify.sh` passed all steps; CLI 94 files / 1521
+tests, pack smoke 13 tests, transcribe 75 tests, server 55 files / 883 passed /
+1 skipped, UI lint with one existing warning, and production build.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None
+
 ## 2026-08-12: worktree plan exclusion is zero-state safe and primary-owned
 
 **What changed:**

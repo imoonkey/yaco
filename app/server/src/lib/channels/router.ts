@@ -14,6 +14,7 @@ import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, hasTap } from './pty-tap'
 import { startTurn, streamAgentReply, queueHandleStream } from './agent-output'
 import { sendEscape } from './keys'
+import { extractPaneReply } from './pane-reply'
 
 export type ChannelReply =
   | { kind: 'text'; text: string }
@@ -468,7 +469,7 @@ export function createRouter(store: BindingStore) {
     const label = `[${sessionHandle}] `
     queueHandleStream(sessionHandle, async () => {
       if (!turn) {
-        await passthroughViaTap(ctx, sessionHandle, onReply, label)
+        await passthroughViaTap(ctx, session, text, onReply, label)
         return
       }
 
@@ -498,15 +499,17 @@ export function createRouter(store: BindingStore) {
     })
   }
 
-  /** Legacy tap-based passthrough — only used when the provider exposes no
-   *  output cursor. Kept as a safety net so a freshly-started session that
-   *  hasn't written a sessionId yet still produces some output. */
+  /** Terminal fallback for providers without an output cursor. The tap only
+   *  detects quiet; tmux renders the final screen so TUI repaint bytes never
+   *  become channel text. */
   async function passthroughViaTap(
     ctx: CommandContext,
-    handle: string,
+    session: AgentSession,
+    prompt: string,
     onReply: ReplyCallback,
     label: string,
   ): Promise<void> {
+    const handle = session.name
     if (!hasTap(handle)) {
       try { await acquireTap(handle) }
       catch {
@@ -516,14 +519,20 @@ export function createRouter(store: BindingStore) {
       }
     }
     const offset = recordOffset(handle)
-    // (send already happened in passthroughText)
     const { quiet } = await waitForQuiet(handle, {
       quietMs: PASSTHROUGH_QUIET_MS,
       timeoutMs: PASSTHROUGH_TIMEOUT_MS,
     })
-    const slice = sliceFromOffset(handle, offset)
-    let reply = slice.text.trim() || '(no output captured — try /capture)'
-    if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
+    let reply: string
+    if (session.provider === 'codex') {
+      const pane = await captureSession(handle, CAPTURE_MAX_LINES)
+      reply = extractPaneReply(pane, prompt, session.provider)
+    } else {
+      const slice = sliceFromOffset(handle, offset)
+      reply = slice.text.trim()
+      if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
+    }
+    if (!reply) reply = '(no output captured — try /capture)'
     if (!quiet) reply = `${reply}\n[turn may still be in progress — /last to retry]`
     await onReply(textReply(`${label}${reply}`))
   }
