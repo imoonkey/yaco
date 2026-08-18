@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-08-18: Codex dictation transport remains authorization-gated
+
+**What changed:**
+- Added an opt-in transport probe that emits only redacted endpoint, request
+  shape, phase, status-class, and timing metadata; synthetic PCM is generated
+  in memory and sent only after `session.started`.
+- The App-exact WebSocket shape returned redacted HTTP 403 on desktop and
+  laptop before session start or audio. Static App and CLI inspection found no
+  evidence-backed alternate dictation transport.
+
+**Why:**
+- The result narrows the blocker to unresolved App-server-auth versus
+  `auth.json` credential provenance, ambient browser auth, or server-side
+  rollout eligibility without crossing the read-only authorization boundary.
+
+**Key files:** `packages/codex-transcribe/scripts/transport-probe.ts`,
+`plan/all/codex-dictation-streaming/transport-probe.md`
+**Verification:** `scripts/check-docs.py doc/PROGRESS.md`; `scripts/verify.sh`.
+**Commit:** this commit
+**Next:** Re-probe only when OpenAI exposes supported equivalent credentials or
+enables the streaming rollout for an authorized test account.
+**Blockers:** The private stream rejects the current `auth.json` boundary before
+audio; App-token equivalence and rollout eligibility remain unresolved.
+
 ## 2026-08-17: Laptop adds distinct-account Codex live evidence
 
 **What changed:**
