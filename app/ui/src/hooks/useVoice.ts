@@ -8,8 +8,9 @@ import {
 } from './voiceStateMachine'
 import {
   checkBrowserCapability, startCaptureSession, filenameForMime,
-  MAX_RECORDING_SECONDS, type CaptureSession,
+  MAX_RECORDING_SECONDS, type CaptureSession, type PcmCaptureSink,
 } from './voiceCapture'
+import { createCodexVoiceStream, type CodexVoiceStream } from './codexVoiceStream'
 
 // Re-export shared types so consumers keep importing from './useVoice'
 export type { VoiceSurface, VoiceTargetContext, InteractionState } from './voiceStateMachine'
@@ -158,6 +159,12 @@ function delay(ms: number): Promise<void> {
 
 type TranscribeResult = { ok: true; text: string } | { ok: false }
 
+type ActiveTake = {
+  readonly runId: number
+  readonly provider: VoiceProvider
+  readonly stream: CodexVoiceStream | null
+}
+
 export function useVoice(): UseVoiceReturn {
   const [capability, setCapability] = useState<CapabilityState>(() => {
     const browserCheck = checkBrowserCapability()
@@ -174,6 +181,7 @@ export function useVoice(): UseVoiceReturn {
   const [autoFormat, setAutoFormatState] = useState(loadAutoFormat)
 
   const sessionRef = useRef<CaptureSession | null>(null)
+  const takeRef = useRef<ActiveTake | null>(null)
   const audioRef = useRef<Blob | null>(null) // cached take, kept for Retry until appended
   const runCounterRef = useRef(0)
   const phaseRef = useRef(voiceState.phase)
@@ -235,7 +243,8 @@ export function useVoice(): UseVoiceReturn {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      sessionRef.current?.release()
+      takeRef.current?.stream?.close()
+      void sessionRef.current?.release().catch(() => {})
     }
   }, [])
 
@@ -310,8 +319,24 @@ export function useVoice(): UseVoiceReturn {
     target: VoiceTargetContext,
     provider: VoiceProvider,
     shouldAutoFormat: boolean,
+    stream: CodexVoiceStream | null = null,
   ) => {
-    const result = await postTranscribe(blob, provider)
+    let result: TranscribeResult
+    if (stream) {
+      let streamedText: string | null = null
+      try {
+        streamedText = await stream.finish()
+      } catch {
+        stream.close()
+      }
+      if (!mountedRef.current) return
+      if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
+      result = streamedText?.trim()
+        ? { ok: true, text: streamedText }
+        : await postTranscribe(blob, provider)
+    } else {
+      result = await postTranscribe(blob, provider)
+    }
     if (!mountedRef.current) return
     if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
 
@@ -375,6 +400,14 @@ export function useVoice(): UseVoiceReturn {
     if (!selectedProvider) return
 
     const runId = ++runCounterRef.current
+    const stream = selectedProvider === 'codex' ? createCodexVoiceStream() : null
+    const take: ActiveTake = { runId, provider: selectedProvider, stream }
+    takeRef.current = take
+    const pcmSink: PcmCaptureSink | undefined = stream ? {
+      start: stream.start,
+      append: stream.append,
+      fail: stream.close,
+    } : undefined
     setElapsedMs(0)
     dispatch({ type: 'START_RECORD', target, runId })
 
@@ -384,13 +417,19 @@ export function useVoice(): UseVoiceReturn {
       // voiceCapture). The hook only surfaces it — and must NOT touch sessionRef,
       // which a late stale-run error could otherwise steal from a newer take. The
       // reducer drops the FAIL if this run is no longer current.
-      onError: (message) => dispatch({ type: 'FAIL', message, runId }),
-    })
+      onError: (message) => {
+        stream?.close()
+        if (takeRef.current === take) takeRef.current = null
+        dispatch({ type: 'FAIL', message, runId })
+      },
+    }, pcmSink)
       .then(session => {
         setTimeout(() => {
           const p = phaseRef.current
           if (!mountedRef.current || p.phase !== 'requesting_permission' || p.runId !== runId) {
-            session.release()
+            stream?.close()
+            if (takeRef.current === take) takeRef.current = null
+            void session.release().catch(() => {})
             return
           }
           sessionRef.current = session
@@ -398,6 +437,8 @@ export function useVoice(): UseVoiceReturn {
         }, 0)
       })
       .catch(() => {
+        stream?.close()
+        if (takeRef.current === take) takeRef.current = null
         const p = phaseRef.current
         if (!mountedRef.current || p.phase !== 'requesting_permission' || p.runId !== runId) return
         dispatch({ type: 'PERMISSION_DENIED', message: 'Microphone permission denied.', runId })
@@ -410,8 +451,8 @@ export function useVoice(): UseVoiceReturn {
     const session = sessionRef.current
     const runId = phase.runId
     const target = phase.target
-    const selectedProvider = providerRef.current
-    if (!selectedProvider) return
+    const take = takeRef.current
+    if (!take || take.runId !== runId) return
     const shouldAutoFormat = autoFormatRef.current
 
     dispatch({ type: 'STOP', runId })
@@ -425,15 +466,22 @@ export function useVoice(): UseVoiceReturn {
         await session?.release().catch(() => {})
         if (sessionRef.current === session) sessionRef.current = null
       }
-      if (!mountedRef.current) return
-      if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
+      if (!mountedRef.current || phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) {
+        take.stream?.close()
+        if (takeRef.current === take) takeRef.current = null
+        return
+      }
 
       if (!blob || blob.size === 0) {
+        take.stream?.close()
+        if (takeRef.current === take) takeRef.current = null
         audioRef.current = null
         dispatch({ type: 'NO_SPEECH', message: 'No speech detected.', runId })
         return
       }
       if (blob.size > maxUploadBytesRef.current) {
+        take.stream?.close()
+        if (takeRef.current === take) takeRef.current = null
         audioRef.current = null
         dispatch({ type: 'FAIL', message: 'Recording too long. Keep it shorter.', runId })
         return
@@ -443,9 +491,11 @@ export function useVoice(): UseVoiceReturn {
         blob,
         runId,
         target,
-        selectedProvider,
+        take.provider,
         shouldAutoFormat,
+        take.stream,
       )
+      if (takeRef.current === take) takeRef.current = null
     })()
   }, [processTake])
   useEffect(() => { stopRef.current = stop })
@@ -480,6 +530,8 @@ export function useVoice(): UseVoiceReturn {
     dispatch({ type: 'COPY' })
   }, [])
   const discard = useCallback(() => {
+    takeRef.current?.stream?.close()
+    takeRef.current = null
     const session = sessionRef.current
     if (session) { void session.release().catch(() => {}); sessionRef.current = null }
     audioRef.current = null

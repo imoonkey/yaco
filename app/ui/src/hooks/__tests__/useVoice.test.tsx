@@ -4,6 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 
 const checkBrowserCapabilityMock = vi.fn()
 const startCaptureSessionMock = vi.fn()
+const createCodexVoiceStreamMock = vi.fn()
 
 vi.mock('../voiceCapture', () => ({
   checkBrowserCapability: () => checkBrowserCapabilityMock(),
@@ -12,9 +13,19 @@ vi.mock('../voiceCapture', () => ({
   MAX_RECORDING_SECONDS: 300,
 }))
 
+vi.mock('../codexVoiceStream', () => ({
+  createCodexVoiceStream: () => createCodexVoiceStreamMock(),
+}))
+
 const { useVoice } = await import('../useVoice')
 
 let fakeSession: { stop: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }
+let fakeStream: {
+  start: ReturnType<typeof vi.fn>
+  append: ReturnType<typeof vi.fn>
+  finish: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+}
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -70,12 +81,24 @@ function setupCapture(stopBlob: Blob | null = new Blob(['audio'], { type: 'audio
     stop: vi.fn(async () => stopBlob),
     release: vi.fn(async () => {}),
   }
-  startCaptureSessionMock.mockImplementation(async () => fakeSession)
+  startCaptureSessionMock.mockImplementation(async (_callbacks, pcmSink) => {
+    pcmSink?.start(48_000)
+    pcmSink?.append(new Int16Array([1, 2]))
+    return fakeSession
+  })
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   localStorage.clear()
   checkBrowserCapabilityMock.mockReturnValue({ ok: true })
+  fakeStream = {
+    start: vi.fn(),
+    append: vi.fn(),
+    finish: vi.fn(async () => null),
+    close: vi.fn(),
+  }
+  createCodexVoiceStreamMock.mockImplementation(() => fakeStream)
   setupCapture()
 })
 
@@ -87,6 +110,110 @@ afterEach(() => {
 })
 
 describe('useVoice single-take flow', () => {
+  it('uses a non-empty Codex stream final without calling batch and formats once', async () => {
+    fakeStream.finish.mockResolvedValue('stream raw')
+    let transcribeCalls = 0
+    let formatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) { transcribeCalls++; throw new Error('batch must not run') }
+      if (url.endsWith('/voice/format')) {
+        formatCalls++
+        return jsonResponse({ displayText: 'Stream raw.', formattingStatus: 'formatted' })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+
+    expect(fakeStream.start).toHaveBeenCalledWith(48_000)
+    expect(fakeStream.append).toHaveBeenCalledTimes(1)
+    expect(fakeStream.finish).toHaveBeenCalledTimes(1)
+    expect(transcribeCalls).toBe(0)
+    expect(formatCalls).toBe(1)
+    expect(hook.result.current.appendText?.text).toBe('Stream raw.')
+  })
+
+  it.each([
+    ['unavailable stream', null],
+    ['empty stream final', '   '],
+  ])('falls back from %s to cached-Blob Codex batch exactly once', async (_label, streamText) => {
+    fakeStream.finish.mockResolvedValue(streamText)
+    const forms: FormData[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) {
+        forms.push(requestForm(init))
+        return jsonResponse({ text: 'batch raw' })
+      }
+      if (url.endsWith('/voice/format')) return jsonResponse({ displayText: 'Batch raw.', formattingStatus: 'formatted' })
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+
+    expect(forms).toHaveLength(1)
+    expect(forms[0].get('provider')).toBe('codex')
+    expect(await (forms[0].get('audio') as File).text()).toBe('audio')
+    expect(hook.result.current.appendText?.text).toBe('Batch raw.')
+  })
+
+  it('keeps Groq batch-only and does not create a stream or PCM sink', async () => {
+    const forms: FormData[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) {
+        forms.push(requestForm(init))
+        return jsonResponse({ text: 'groq raw' })
+      }
+      if (url.endsWith('/voice/format')) return jsonResponse({ displayText: 'Groq raw.', formattingStatus: 'formatted' })
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    act(() => hook.result.current.setProvider('groq'))
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+
+    expect(createCodexVoiceStreamMock).not.toHaveBeenCalled()
+    expect(startCaptureSessionMock.mock.calls[0][1]).toBeUndefined()
+    expect(forms).toHaveLength(1)
+    expect(forms[0].get('provider')).toBe('groq')
+  })
+
+  it('drops a stale stream final before batch or formatting can run', async () => {
+    let resolveFinal: (text: string) => void = () => {}
+    fakeStream.finish.mockImplementation(() => new Promise(resolve => { resolveFinal = resolve }))
+    let transcribeCalls = 0
+    let formatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) { transcribeCalls++; return jsonResponse({ text: 'stale batch' }) }
+      if (url.endsWith('/voice/format')) { formatCalls++; return jsonResponse({ displayText: 'Stale.' }) }
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('transcribing'))
+    act(() => hook.result.current.discard())
+    act(() => resolveFinal('stale final'))
+    await waitFor(() => expect(hook.result.current.state).toBe('idle'))
+
+    expect(fakeStream.close).toHaveBeenCalledTimes(1)
+    expect(transcribeCalls).toBe(0)
+    expect(formatCalls).toBe(0)
+    expect(hook.result.current.appendText).toBeNull()
+  })
+
   it('defaults to Codex and sends the explicit captured provider', async () => {
     const transcribeForms: FormData[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
