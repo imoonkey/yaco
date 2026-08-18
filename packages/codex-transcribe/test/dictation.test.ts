@@ -108,14 +108,17 @@ function startedEvent(
   })
 }
 
-function closedEvent(providerMode: 'buffered' | 'streaming_sse' = 'streaming_sse'): string {
+function closedEvent(
+  providerMode: 'buffered' | 'streaming_sse' = 'streaming_sse',
+  transcriptDeliveryMode: 'final_only' | 'segment' | 'delta' = 'final_only',
+): string {
   return event('session.updated', {
     session: {
       session_id: 'local-session',
       status: 'closed',
       config: {
         provider_mode: providerMode,
-        transcript_delivery_mode: 'final_only',
+        transcript_delivery_mode: transcriptDeliveryMode,
       },
     },
   })
@@ -300,19 +303,37 @@ describe.sequential('Codex dictation session', () => {
     await expect(session.finish()).resolves.toBe('')
   })
 
-  it('rejects an upstream mode that does not deliver final transcripts', async () => {
+  it.each(['segment', 'delta'] as const)(
+    'rejects upstream %s delivery at startup',
+    async (deliveryMode) => {
+      harness = await startServer((socket) => {
+        socket.on('message', (data) => {
+          if (parseMessage(data).type === 'session.start') {
+            socket.send(startedEvent('buffered', deliveryMode))
+          }
+        })
+      })
+
+      await expectError(
+        openCodexDictationSession({ sampleRateHz: 48_000 }),
+        'upstream',
+      )
+    },
+  )
+
+  it('rejects a session update that changes away from final delivery', async () => {
     harness = await startServer((socket) => {
       socket.on('message', (data) => {
-        if (parseMessage(data).type === 'session.start') {
-          socket.send(startedEvent('buffered', 'segment'))
+        const message = parseMessage(data)
+        if (message.type === 'session.start') socket.send(startedEvent('buffered'))
+        if (message.type === 'session.close') {
+          socket.send(closedEvent('buffered', 'segment'))
         }
       })
     })
 
-    await expectError(
-      openCodexDictationSession({ sampleRateHz: 48_000 }),
-      'upstream',
-    )
+    const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
+    await expectError(session.finish(), 'upstream')
   })
 
   it.each([
