@@ -10,6 +10,9 @@ const MIN_SAMPLE_RATE_HZ = 8_000
 const MAX_SAMPLE_RATE_HZ = 96_000
 const START_IDLE_TIMEOUT_MS = 10_000
 const AUDIO_IDLE_TIMEOUT_MS = 30_000
+// Ten seconds of 96 kHz audio produces at most 938 normal 1024-sample frames.
+// Bound array/object overhead separately from the PCM-byte budget.
+const MAX_PENDING_FRAMES = 1_024
 
 export type CodexVoiceStreamBridge = {
   accept(ws: WebSocket): void
@@ -93,8 +96,12 @@ class VoiceConnection {
 
     const byteLength = rawDataLength(data)
     if (
+      byteLength === 0 ||
       byteLength % 2 !== 0 ||
-      (this.session === undefined && byteLength > CODEX_VOICE_MAX_PENDING_BYTES - this.pendingBytes)
+      (this.session === undefined && (
+        this.pending.length >= MAX_PENDING_FRAMES ||
+        byteLength > CODEX_VOICE_MAX_PENDING_BYTES - this.pendingBytes
+      ))
     ) {
       this.fail(1002)
       return

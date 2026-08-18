@@ -178,6 +178,23 @@ describe('Codex voice WebSocket bridge', () => {
     await waitFor(() => lateSession.close.mock.calls.length === 1)
   })
 
+  it('bounds pre-ready frame overhead independently of PCM bytes', async () => {
+    const opening = deferred<CodexDictationSession>()
+    openCodexDictationSession.mockReturnValue(opening.promise)
+    const client = await connect()
+
+    client.ws.send(JSON.stringify({ type: 'start', sampleRateHz: 96_000 }))
+    for (let frame = 0; frame < 1_024; frame += 1) {
+      client.ws.send(Uint8Array.from([1, 2]))
+    }
+    client.ws.send(Uint8Array.from([3, 4]))
+    await waitFor(() => client.messages.length === 1)
+
+    expect(client.messages).toEqual([{ type: 'failed' }])
+    expect(openCodexDictationSession.mock.calls[0]![0].signal.aborted).toBe(true)
+    opening.reject(new Error('cancelled'))
+  })
+
   it.each([
     ['binary before start', (client: Client) => client.ws.send(PRIVATE_AUDIO)],
     ['malformed JSON', (client: Client) => client.ws.send('{')],
@@ -196,9 +213,10 @@ describe('Codex voice WebSocket bridge', () => {
     expect(openCodexDictationSession).not.toHaveBeenCalled()
   })
 
-  it('rejects duplicate start, duplicate finish, odd PCM, and PCM after finish', async () => {
+  it('rejects duplicate start/finish, empty or odd PCM, and PCM after finish', async () => {
     for (const violate of [
       (client: Client) => client.ws.send(JSON.stringify({ type: 'start', sampleRateHz: 48_000 })),
+      (client: Client) => client.ws.send(new Uint8Array()),
       (client: Client) => client.ws.send(Uint8Array.from([1])),
       (client: Client) => {
         client.ws.send(JSON.stringify({ type: 'finish' }))
