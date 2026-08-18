@@ -14,6 +14,11 @@ export const LIVE_MAX_PCM_BYTES = LIVE_SAMPLE_RATE_HZ * 2 * 30
 const LIVE_FRAME_SAMPLES = 1_024
 const MAX_ENCODED_BYTES = 20_000_000
 const REQUEST_TIMEOUT_MS = 60_000
+const NON_TRANSIENT_STREAM_STATUSES = new Set<LiveStatus>([
+  'error:not_configured',
+  'error:expired_auth',
+  'error:forbidden',
+])
 
 export type LiveEnvironment = {
   readonly CODEX_TRANSCRIBE_LIVE?: string
@@ -168,6 +173,8 @@ export async function runLive(
   }
 
   const filename = mimeType === 'audio/webm' ? 'fixture.webm' : 'fixture.mp4'
+  let streamDisabled = false
+  let streamFailed = false
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const batchStartedAt = dependencies.now()
     let batchTranscript: string
@@ -200,15 +207,19 @@ export async function runLive(
       transcriptComparison: 'not_applicable',
     })
 
+    if (streamDisabled) continue
+
     const streamResult = await runStreamingAttempt(pcm, dependencies)
     if (!streamResult.ok) {
+      streamFailed = true
       emit(dependencies, terminalEvent(
         streamResult.status,
         'stream',
         attempt,
         streamResult.stopToRawMs,
       ))
-      return 1
+      streamDisabled = NON_TRANSIENT_STREAM_STATUSES.has(streamResult.status)
+      continue
     }
     emit(dependencies, {
       mode: 'stream',
@@ -221,7 +232,7 @@ export async function runLive(
           : 'different',
     })
   }
-  return 0
+  return streamFailed ? 1 : 0
 }
 
 type StreamingResult =

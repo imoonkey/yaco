@@ -272,25 +272,44 @@ describe('Codex live runner contract', () => {
     expect(emitted[0]).not.toContain('private body')
   })
 
-  it('fails fast on a non-transient stream failure without emitting private details', async () => {
+  it('records each non-transient stream reason once while completing the batch budget', async () => {
+    for (const code of ['not_configured', 'expired_auth', 'forbidden'] as const) {
+      const emitted: string[] = []
+      const openStream = vi.fn(async () => {
+        throw new CodexTranscribeError(code, { cause: new Error('private upstream body') })
+      })
+      const deps = dependencies({ emit: line => emitted.push(line), openStream })
+
+      expect(await runLive(environment(), deps)).toBe(1)
+      expect(deps.transcribe).toHaveBeenCalledTimes(5)
+      expect(openStream).toHaveBeenCalledOnce()
+      expect(emitted.map(line => JSON.parse(line))).toEqual([
+        { mode: 'batch', status: 'ok', attempt: 1, stopToRawMs: 25,
+          transcriptComparison: 'not_applicable' },
+        { mode: 'stream', status: `error:${code}`, attempt: 1, stopToRawMs: 0,
+          transcriptComparison: 'not_applicable' },
+        ...[2, 3, 4, 5].map(attempt => ({
+          mode: 'batch', status: 'ok', attempt, stopToRawMs: 25,
+          transcriptComparison: 'not_applicable',
+        })),
+      ])
+      expect(emitted.join('\n')).not.toContain('private upstream body')
+    }
+  })
+
+  it('bounds transient stream retries by the configured attempt count', async () => {
     const emitted: string[] = []
-    const close = vi.fn()
-    const deps = dependencies({
-      emit: line => emitted.push(line),
-      openStream: vi.fn(async () => ({
-        appendPcm16: vi.fn(),
-        finish: vi.fn(async () => {
-          throw new CodexTranscribeError('upstream', { cause: new Error('private upstream body') })
-        }),
-        close,
-      })),
+    const openStream = vi.fn(async () => {
+      throw new CodexTranscribeError('network', { cause: new Error('private network body') })
     })
-    expect(await runLive(environment(), deps)).toBe(1)
-    expect(deps.openStream).toHaveBeenCalledOnce()
-    expect(close).toHaveBeenCalledOnce()
-    expect(emitted).toHaveLength(2)
-    expect(emitted.at(-1)).toContain('error:upstream')
-    expect(emitted.join('\n')).not.toContain('private upstream body')
+    const deps = dependencies({ emit: line => emitted.push(line), openStream })
+
+    expect(await runLive(environment({ CODEX_TRANSCRIBE_ATTEMPTS: '7' }), deps)).toBe(1)
+    expect(deps.transcribe).toHaveBeenCalledTimes(7)
+    expect(openStream).toHaveBeenCalledTimes(7)
+    expect(emitted).toHaveLength(14)
+    expect(emitted.filter(line => line.includes('error:network'))).toHaveLength(7)
+    expect(emitted.join('\n')).not.toContain('private network body')
   })
 
   it.each([
@@ -304,7 +323,7 @@ describe('Codex live runner contract', () => {
     const deps = dependencies(override)
     expect(await runLive(environment(), deps)).toBe(1)
     expect(deps.emit).toHaveBeenCalledWith(expect.stringContaining('error:empty'))
-    expect(deps.emit).toHaveBeenCalledTimes(mode === 'batch' ? 1 : 2)
+    expect(deps.emit).toHaveBeenCalledTimes(mode === 'batch' ? 1 : 10)
   })
 
   it('fails on private fixture input without emitting the path', async () => {
