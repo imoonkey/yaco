@@ -92,26 +92,29 @@ function event(
   return JSON.stringify({ type, sequence_no: 1, ...fields })
 }
 
-function startedEvent(): string {
+function startedEvent(
+  providerMode: 'buffered' | 'streaming_sse' = 'streaming_sse',
+  transcriptDeliveryMode: 'final_only' | 'segment' | 'delta' = 'final_only',
+): string {
   return event('session.started', {
     session: {
       session_id: 'local-session',
       status: 'active',
       config: {
-        provider_mode: 'streaming_sse',
-        transcript_delivery_mode: 'final_only',
+        provider_mode: providerMode,
+        transcript_delivery_mode: transcriptDeliveryMode,
       },
     },
   })
 }
 
-function closedEvent(): string {
+function closedEvent(providerMode: 'buffered' | 'streaming_sse' = 'streaming_sse'): string {
   return event('session.updated', {
     session: {
       session_id: 'local-session',
       status: 'closed',
       config: {
-        provider_mode: 'streaming_sse',
+        provider_mode: providerMode,
         transcript_delivery_mode: 'final_only',
       },
     },
@@ -282,6 +285,34 @@ describe.sequential('Codex dictation session', () => {
     const session = await openCodexDictationSession({ sampleRateHz: 44_100 })
     const error = await expectError(session.finish(), 'upstream')
     expect(error.message).not.toContain(PRIVATE_TRANSCRIPT)
+  })
+
+  it('accepts the upstream buffered mode selected by the App endpoint', async () => {
+    harness = await startServer((socket) => {
+      socket.on('message', (data) => {
+        const message = parseMessage(data)
+        if (message.type === 'session.start') socket.send(startedEvent('buffered'))
+        if (message.type === 'session.close') socket.send(closedEvent('buffered'))
+      })
+    })
+
+    const session = await openCodexDictationSession({ sampleRateHz: 48_000 })
+    await expect(session.finish()).resolves.toBe('')
+  })
+
+  it('rejects an upstream mode that does not deliver final transcripts', async () => {
+    harness = await startServer((socket) => {
+      socket.on('message', (data) => {
+        if (parseMessage(data).type === 'session.start') {
+          socket.send(startedEvent('buffered', 'segment'))
+        }
+      })
+    })
+
+    await expectError(
+      openCodexDictationSession({ sampleRateHz: 48_000 }),
+      'upstream',
+    )
   })
 
   it.each([

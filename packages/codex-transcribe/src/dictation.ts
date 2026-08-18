@@ -1,7 +1,7 @@
 import WebSocket, { type RawData } from 'ws'
 import { readCredentials } from './auth.js'
 import {
-  isRequestedMode,
+  isSupportedMode,
   parseUpstreamEvent,
 } from './dictation-events.js'
 import { CodexTranscribeError } from './errors.js'
@@ -209,7 +209,7 @@ class UpstreamDictationSession implements CodexDictationSession {
       if (
         this.phase !== 'starting' ||
         upstreamEvent.session.status !== 'active' ||
-        !isRequestedMode(upstreamEvent.session)
+        !isSupportedMode(upstreamEvent.session)
       ) {
         this.fail(new CodexTranscribeError('upstream'))
         return
@@ -236,7 +236,7 @@ class UpstreamDictationSession implements CodexDictationSession {
     }
 
     if (upstreamEvent.type === 'session.updated') {
-      if (!isRequestedMode(upstreamEvent.session)) {
+      if (!isSupportedMode(upstreamEvent.session)) {
         this.fail(new CodexTranscribeError('upstream'))
         return
       }

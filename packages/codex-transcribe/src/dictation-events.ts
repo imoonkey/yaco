@@ -72,11 +72,8 @@ export function parseUpstreamEvent(raw: string): UpstreamEvent | undefined {
   return undefined
 }
 
-export function isRequestedMode(session: SessionDescription): boolean {
-  return (
-    session.providerMode === 'streaming_sse' &&
-    session.transcriptDeliveryMode === 'final_only'
-  )
+export function isSupportedMode(session: SessionDescription): boolean {
+  return session.transcriptDeliveryMode === 'final_only'
 }
 
 function parseSession(value: unknown): SessionDescription | undefined {
