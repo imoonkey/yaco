@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CodexTranscribeError } from '../src/index.ts'
 import {
+  LIVE_MAX_PCM_BYTES,
   LIVE_SAMPLE_RATE_HZ,
   formatLiveEvent,
   mimeTypeForPath,
@@ -26,7 +27,7 @@ function dependencies(overrides: Partial<LiveDependencies> = {}): LiveDependenci
     transcribe: vi.fn(async () => 'private transcript'),
     now: vi.fn(() => { now += 25; return now }),
     wait: vi.fn(async () => {}),
-    timeout: vi.fn(() => AbortSignal.abort()),
+    timeout: vi.fn(() => new AbortController().signal),
     emit: vi.fn(),
     ...overrides,
   }
@@ -41,6 +42,10 @@ function environment(overrides: LiveEnvironment = {}): LiveEnvironment {
 }
 
 describe('Codex live runner contract', () => {
+  it('caps decoded PCM at 30 seconds', () => {
+    expect(LIVE_MAX_PCM_BYTES).toBe(LIVE_SAMPLE_RATE_HZ * 2 * 30)
+  })
+
   it.each([
     ['/tmp/take.webm', 'audio/webm'],
     ['/tmp/take.WEBM', 'audio/webm'],
@@ -76,6 +81,7 @@ describe('Codex live runner contract', () => {
 
   it('requires one fixture path', () => {
     expect(parseFixturePath('/tmp/private.webm')).toBe('/tmp/private.webm')
+    expect(parseFixturePath(' /tmp/private.webm ')).toBe('/tmp/private.webm')
     for (const raw of [undefined, '', ' ', '\0']) {
       expect(() => parseFixturePath(raw)).toThrow('invalid fixture')
     }
@@ -112,6 +118,12 @@ describe('Codex live runner contract', () => {
     expect(statusForError(error)).toBe(expected)
     expect(statusForError(error)).not.toContain(error.message)
     expect(statusForError(error)).not.toContain('private cause')
+  })
+
+  it('maps unexpected errors without their message', () => {
+    const error = new Error('private fixture path and upstream body')
+    expect(statusForError(error)).toBe('error:unexpected')
+    expect(statusForError(error)).not.toContain(error.message)
   })
 
   it('requires explicit opt-in without reading fixtures', async () => {
@@ -153,7 +165,8 @@ describe('Codex live runner contract', () => {
 
   it('runs paired batch and real-time PCM attempts with Stop-only timing', async () => {
     const emitted: string[] = []
-    const appendPcm16 = vi.fn()
+    let nowMs = 100
+    const appendPcm16 = vi.fn((_chunk: Uint8Array) => { nowMs += 1_000 })
     const close = vi.fn()
     const deps = dependencies({
       emit: line => emitted.push(line),
@@ -163,15 +176,25 @@ describe('Codex live runner contract', () => {
       }),
       openStream: vi.fn(async () => ({
         appendPcm16,
-        finish: vi.fn(async () => ' private   transcript '),
+        finish: vi.fn(async () => {
+          nowMs += 25
+          return ' private   transcript '
+        }),
         close,
       })),
-      transcribe: vi.fn(async () => 'private transcript'),
+      transcribe: vi.fn(async () => {
+        nowMs += 25
+        return 'private transcript'
+      }),
+      now: vi.fn(() => nowMs),
     })
 
     expect(await runLive(environment({ CODEX_TRANSCRIBE_ATTEMPTS: '5' }), deps)).toBe(0)
     expect(deps.transcribe).toHaveBeenCalledTimes(5)
     expect(deps.openStream).toHaveBeenCalledTimes(5)
+    expect(deps.decodePcm16).toHaveBeenCalledWith(
+      '/tmp/private.webm', LIVE_SAMPLE_RATE_HZ, LIVE_MAX_PCM_BYTES,
+    )
     expect(deps.openStream).toHaveBeenCalledWith({
       sampleRateHz: LIVE_SAMPLE_RATE_HZ,
       signal: expect.any(AbortSignal),
@@ -181,6 +204,11 @@ describe('Codex live runner contract', () => {
       Array.from({ length: 5 }, () => [2_048, 4]).flat(),
     )
     expect(deps.wait).toHaveBeenCalledTimes(10)
+    const fullFrameMs = (1_024 / LIVE_SAMPLE_RATE_HZ) * 1_000
+    const tailFrameMs = (2 / LIVE_SAMPLE_RATE_HZ) * 1_000
+    expect(vi.mocked(deps.wait).mock.calls.map(([milliseconds]) => milliseconds)).toEqual(
+      Array.from({ length: 5 }, () => [fullFrameMs, tailFrameMs]).flat(),
+    )
     expect(close).toHaveBeenCalledTimes(5)
     expect(deps.timeout).toHaveBeenCalledTimes(10)
     expect(deps.timeout).toHaveBeenCalledWith(60_000)
@@ -200,6 +228,16 @@ describe('Codex live runner contract', () => {
       expect(line).not.toContain('private.webm')
       expect(line).not.toContain('private transcript')
     }
+  })
+
+  it('rejects a fixture above the 30-second PCM bound before any endpoint call', async () => {
+    const deps = dependencies({
+      decodePcm16: vi.fn(async () => new Uint8Array(LIVE_MAX_PCM_BYTES + 2)),
+    })
+    expect(await runLive(environment(), deps)).toBe(2)
+    expect(deps.transcribe).not.toHaveBeenCalled()
+    expect(deps.openStream).not.toHaveBeenCalled()
+    expect(deps.emit).toHaveBeenCalledWith(expect.stringContaining('error:input'))
   })
 
   it('records transcript disagreement without emitting either transcript', async () => {
@@ -234,7 +272,7 @@ describe('Codex live runner contract', () => {
     expect(emitted[0]).not.toContain('private body')
   })
 
-  it('records every bounded stream failure while emitting no private details', async () => {
+  it('fails fast on a non-transient stream failure without emitting private details', async () => {
     const emitted: string[] = []
     const close = vi.fn()
     const deps = dependencies({
@@ -248,10 +286,9 @@ describe('Codex live runner contract', () => {
       })),
     })
     expect(await runLive(environment(), deps)).toBe(1)
-    expect(deps.openStream).toHaveBeenCalledTimes(5)
-    expect(close).toHaveBeenCalledTimes(5)
-    expect(emitted).toHaveLength(10)
-    expect(emitted.filter(line => line.includes('error:upstream'))).toHaveLength(5)
+    expect(deps.openStream).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    expect(emitted).toHaveLength(2)
     expect(emitted.at(-1)).toContain('error:upstream')
     expect(emitted.join('\n')).not.toContain('private upstream body')
   })
@@ -267,7 +304,7 @@ describe('Codex live runner contract', () => {
     const deps = dependencies(override)
     expect(await runLive(environment(), deps)).toBe(1)
     expect(deps.emit).toHaveBeenCalledWith(expect.stringContaining('error:empty'))
-    expect(deps.emit).toHaveBeenCalledTimes(mode === 'batch' ? 1 : 10)
+    expect(deps.emit).toHaveBeenCalledTimes(mode === 'batch' ? 1 : 2)
   })
 
   it('fails on private fixture input without emitting the path', async () => {

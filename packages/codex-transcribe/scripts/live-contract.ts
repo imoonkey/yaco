@@ -9,10 +9,10 @@ import {
 } from '../src/index.ts'
 
 export const LIVE_SAMPLE_RATE_HZ = 48_000
+export const LIVE_MAX_PCM_BYTES = LIVE_SAMPLE_RATE_HZ * 2 * 30
 
 const LIVE_FRAME_SAMPLES = 1_024
 const MAX_ENCODED_BYTES = 20_000_000
-const MAX_PCM_BYTES = 4 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 60_000
 
 export type LiveEnvironment = {
@@ -47,6 +47,7 @@ export type LiveDependencies = {
   readonly decodePcm16: (
     path: string,
     sampleRateHz: number,
+    maxBytes: number,
   ) => Promise<Uint8Array<ArrayBuffer>>
   readonly openStream: (input: CodexDictationSessionInput) => Promise<CodexDictationSession>
   readonly transcribe: (input: CodexTranscribeInput) => Promise<string>
@@ -81,7 +82,7 @@ export function parseFixturePath(raw: string | undefined): string {
   if (raw === undefined || raw.trim().length === 0 || raw.includes('\0')) {
     throw new Error('invalid fixture')
   }
-  return raw
+  return raw.trim()
 }
 
 export function formatLiveEvent(
@@ -153,11 +154,11 @@ export async function runLive(
   try {
     [audio, pcm] = await Promise.all([
       dependencies.readAudio(path),
-      dependencies.decodePcm16(path, LIVE_SAMPLE_RATE_HZ),
+      dependencies.decodePcm16(path, LIVE_SAMPLE_RATE_HZ, LIVE_MAX_PCM_BYTES),
     ])
     if (
       audio.byteLength === 0 || audio.byteLength > MAX_ENCODED_BYTES ||
-      pcm.byteLength === 0 || pcm.byteLength % 2 !== 0 || pcm.byteLength > MAX_PCM_BYTES
+      pcm.byteLength === 0 || pcm.byteLength % 2 !== 0 || pcm.byteLength > LIVE_MAX_PCM_BYTES
     ) {
       throw new Error('invalid fixture')
     }
@@ -167,7 +168,6 @@ export async function runLive(
   }
 
   const filename = mimeType === 'audio/webm' ? 'fixture.webm' : 'fixture.mp4'
-  let streamFailed = false
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const batchStartedAt = dependencies.now()
     let batchTranscript: string
@@ -202,14 +202,13 @@ export async function runLive(
 
     const streamResult = await runStreamingAttempt(pcm, dependencies)
     if (!streamResult.ok) {
-      streamFailed = true
       emit(dependencies, terminalEvent(
         streamResult.status,
         'stream',
         attempt,
         streamResult.stopToRawMs,
       ))
-      continue
+      return 1
     }
     emit(dependencies, {
       mode: 'stream',
@@ -222,7 +221,7 @@ export async function runLive(
           : 'different',
     })
   }
-  return streamFailed ? 1 : 0
+  return 0
 }
 
 type StreamingResult =

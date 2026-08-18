@@ -20,8 +20,8 @@
 **Key files:** `packages/codex-transcribe/scripts/{live,live-contract}.ts`,
 `packages/codex-transcribe/test/live.test.ts`,
 `app/ui/tests/e2e/voice-streaming.spec.ts`, `doc/main/app/{README.md,backend/routes.md,backend/server.md,frontend/hooks.md}`
-**Verification:** 36 focused live-runner tests and typecheck passed; focused
-Playwright 3/3 passed, including native Chromium capture. Desktop same-fixture
+**Verification:** 39 focused live-runner tests and typecheck passed; focused
+Playwright 3/3 passed with the opt-in audio fixture, including native Chromium capture. Desktop same-fixture
 batch Stop-to-raw was 823/3440/3237/2928/6541 ms (median 3237 ms); all five
 stream startups returned redacted `forbidden`, so streaming latency/transcript
 comparison remained unavailable. Full `scripts/verify.sh` recorded at commit.

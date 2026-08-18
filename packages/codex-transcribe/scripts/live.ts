@@ -2,12 +2,12 @@ import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
-const MAX_DECODED_BYTES = 4 * 1024 * 1024
 const execFileAsync = promisify(execFile)
 
 async function decodePcm16(
   path: string,
   sampleRateHz: number,
+  maxBytes: number,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const { stdout } = await execFileAsync('ffmpeg', [
     '-nostdin',
@@ -20,7 +20,7 @@ async function decodePcm16(
     'pipe:1',
   ], {
     encoding: 'buffer',
-    maxBuffer: MAX_DECODED_BYTES,
+    maxBuffer: maxBytes,
   })
   if (!Buffer.isBuffer(stdout)) throw new Error('decode failed')
   return Uint8Array.from(stdout)
