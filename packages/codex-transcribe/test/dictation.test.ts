@@ -10,7 +10,11 @@ import type {
 
 const websocketRedirect = vi.hoisted(() => ({
   url: '',
-  requested: [] as Array<{ readonly url: string; readonly protocols: readonly string[] }>,
+  requested: [] as Array<{
+    readonly url: string
+    readonly protocols: readonly string[]
+    readonly userAgent: string | undefined
+  }>,
 }))
 
 vi.mock('ws', async () => {
@@ -31,6 +35,9 @@ vi.mock('ws', async () => {
       websocketRedirect.requested.push({
         url: String(url),
         protocols: protocolList,
+        userAgent: typeof options?.headers?.['User-Agent'] === 'string'
+          ? options.headers['User-Agent']
+          : undefined,
       })
       super(websocketRedirect.url, protocols, options)
     }
@@ -227,6 +234,7 @@ describe.sequential('Codex dictation session', () => {
         `openai-bearer.${token}`,
         'codex-desktop',
       ],
+      userAgent: 'codex-desktop',
     }])
     expect(received).toEqual([
       {

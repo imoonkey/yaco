@@ -97,7 +97,9 @@ class UpstreamDictationSession implements CodexDictationSession {
       'chatgpt-dictation',
       `openai-bearer.${accessToken}`,
       'codex-desktop',
-    ])
+    ], {
+      headers: { 'User-Agent': 'codex-desktop' },
+    })
     this.startupTimer = setTimeout(
       () => this.fail(new CodexTranscribeError('network')),
       startupTimeoutMs,
