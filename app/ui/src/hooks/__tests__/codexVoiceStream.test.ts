@@ -12,6 +12,7 @@ class FakeWebSocket {
   readonly url: string
   readonly sent: Array<string | Uint8Array> = []
   readyState = FakeWebSocket.CONNECTING
+  bufferedAmount = 0
   binaryType = 'blob'
   onopen: ((event: Event) => void) | null = null
   onmessage: ((event: MessageEvent) => void) | null = null
@@ -150,6 +151,27 @@ describe('createCodexVoiceStream', () => {
     const stream = createCodexVoiceStream()
     stream.start(48_000)
     stream.append(new Int16Array((4 * 1024 * 1024) / 2 + 1))
+
+    await expect(stream.finish()).resolves.toBeNull()
+    expect(socket().readyState).toBe(FakeWebSocket.CLOSED)
+  })
+
+  it('fails closed when 1024 pre-ready frames are already queued', async () => {
+    const stream = createCodexVoiceStream()
+    stream.start(48_000)
+    for (let index = 0; index < 1_025; index++) stream.append(new Int16Array([index]))
+
+    await expect(stream.finish()).resolves.toBeNull()
+    expect(socket().readyState).toBe(FakeWebSocket.CLOSED)
+  })
+
+  it('shares the 4 MiB cap with the browser send buffer after ready', async () => {
+    const stream = createCodexVoiceStream()
+    stream.start(48_000)
+    socket().open()
+    socket().receive(JSON.stringify({ type: 'ready' }))
+    socket().bufferedAmount = 4 * 1024 * 1024
+    stream.append(new Int16Array([1]))
 
     await expect(stream.finish()).resolves.toBeNull()
     expect(socket().readyState).toBe(FakeWebSocket.CLOSED)

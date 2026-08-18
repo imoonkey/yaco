@@ -188,8 +188,11 @@ describe('useVoice single-take flow', () => {
     expect(forms[0].get('provider')).toBe('groq')
   })
 
-  it('drops a stale stream final before batch or formatting can run', async () => {
-    let resolveFinal: (text: string) => void = () => {}
+  it.each([
+    ['non-empty', 'stale final'],
+    ['unavailable', null],
+  ])('drops a stale %s stream final before batch or formatting can run', async (_label, staleFinal) => {
+    let resolveFinal: (text: string | null) => void = () => {}
     fakeStream.finish.mockImplementation(() => new Promise(resolve => { resolveFinal = resolve }))
     let transcribeCalls = 0
     let formatCalls = 0
@@ -205,7 +208,7 @@ describe('useVoice single-take flow', () => {
     await recordThenStop(hook)
     await waitFor(() => expect(hook.result.current.state).toBe('transcribing'))
     act(() => hook.result.current.discard())
-    act(() => resolveFinal('stale final'))
+    act(() => resolveFinal(staleFinal))
     await waitFor(() => expect(hook.result.current.state).toBe('idle'))
 
     expect(fakeStream.close).toHaveBeenCalledTimes(1)

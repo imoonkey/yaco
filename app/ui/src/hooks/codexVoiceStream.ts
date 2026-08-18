@@ -59,6 +59,13 @@ export function createCodexVoiceStream(): CodexVoiceStream {
       settle(null)
       return false
     }
+    if (
+      typeof data !== 'string' &&
+      data.byteLength > MAX_PENDING_BYTES - socket.bufferedAmount
+    ) {
+      settle(null)
+      return false
+    }
     try {
       socket.send(data)
       return true
@@ -144,11 +151,12 @@ export function createCodexVoiceStream(): CodexVoiceStream {
       settle(null)
       return
     }
-    const bytes = Uint8Array.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
+    const view = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)
     if (state === 'ready') {
-      send(bytes)
+      send(view)
       return
     }
+    const bytes = Uint8Array.from(view)
     if (pending.length >= MAX_PENDING_FRAMES || bytes.byteLength > MAX_PENDING_BYTES - pendingBytes) {
       settle(null)
       return

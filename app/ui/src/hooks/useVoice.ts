@@ -191,6 +191,10 @@ export function useVoice(): UseVoiceReturn {
   const mountedRef = useRef(true)
   const providerRef = useRef(provider)
   const autoFormatRef = useRef(autoFormat)
+  const endTake = useCallback((take: ActiveTake): void => {
+    take.stream?.close()
+    if (takeRef.current === take) takeRef.current = null
+  }, [])
 
   // Capability check on mount
   useEffect(() => {
@@ -243,10 +247,10 @@ export function useVoice(): UseVoiceReturn {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      takeRef.current?.stream?.close()
+      if (takeRef.current) endTake(takeRef.current)
       void sessionRef.current?.release().catch(() => {})
     }
-  }, [])
+  }, [endTake])
 
   const fetchWithTimeout = useCallback(async (
     input: RequestInfo | URL,
@@ -319,24 +323,21 @@ export function useVoice(): UseVoiceReturn {
     target: VoiceTargetContext,
     provider: VoiceProvider,
     shouldAutoFormat: boolean,
-    stream: CodexVoiceStream | null = null,
+    streamResult: Promise<string | null> | null = null,
   ) => {
-    let result: TranscribeResult
-    if (stream) {
-      let streamedText: string | null = null
+    let streamedText: string | null = null
+    if (streamResult) {
       try {
-        streamedText = await stream.finish()
+        streamedText = await streamResult
       } catch {
-        stream.close()
+        streamedText = null
       }
       if (!mountedRef.current) return
       if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
-      result = streamedText?.trim()
-        ? { ok: true, text: streamedText }
-        : await postTranscribe(blob, provider)
-    } else {
-      result = await postTranscribe(blob, provider)
     }
+    const result: TranscribeResult = streamedText?.trim()
+      ? { ok: true, text: streamedText }
+      : await postTranscribe(blob, provider)
     if (!mountedRef.current) return
     if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
 
@@ -418,8 +419,7 @@ export function useVoice(): UseVoiceReturn {
       // which a late stale-run error could otherwise steal from a newer take. The
       // reducer drops the FAIL if this run is no longer current.
       onError: (message) => {
-        stream?.close()
-        if (takeRef.current === take) takeRef.current = null
+        endTake(take)
         dispatch({ type: 'FAIL', message, runId })
       },
     }, pcmSink)
@@ -427,8 +427,7 @@ export function useVoice(): UseVoiceReturn {
         setTimeout(() => {
           const p = phaseRef.current
           if (!mountedRef.current || p.phase !== 'requesting_permission' || p.runId !== runId) {
-            stream?.close()
-            if (takeRef.current === take) takeRef.current = null
+            endTake(take)
             void session.release().catch(() => {})
             return
           }
@@ -437,13 +436,12 @@ export function useVoice(): UseVoiceReturn {
         }, 0)
       })
       .catch(() => {
-        stream?.close()
-        if (takeRef.current === take) takeRef.current = null
+        endTake(take)
         const p = phaseRef.current
         if (!mountedRef.current || p.phase !== 'requesting_permission' || p.runId !== runId) return
         dispatch({ type: 'PERMISSION_DENIED', message: 'Microphone permission denied.', runId })
       })
-  }, [capability])
+  }, [capability, endTake])
 
   const stop = useCallback(() => {
     const phase = phaseRef.current
@@ -458,8 +456,10 @@ export function useVoice(): UseVoiceReturn {
     dispatch({ type: 'STOP', runId })
     void (async () => {
       let blob: Blob | null = null
+      let streamResult: Promise<string | null> | null = null
       try {
         blob = session ? await session.stop() : null
+        if (blob && blob.size > 0) streamResult = take.stream?.finish() ?? null
       } catch {
         blob = null
       } finally {
@@ -467,21 +467,18 @@ export function useVoice(): UseVoiceReturn {
         if (sessionRef.current === session) sessionRef.current = null
       }
       if (!mountedRef.current || phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) {
-        take.stream?.close()
-        if (takeRef.current === take) takeRef.current = null
+        endTake(take)
         return
       }
 
       if (!blob || blob.size === 0) {
-        take.stream?.close()
-        if (takeRef.current === take) takeRef.current = null
+        endTake(take)
         audioRef.current = null
         dispatch({ type: 'NO_SPEECH', message: 'No speech detected.', runId })
         return
       }
       if (blob.size > maxUploadBytesRef.current) {
-        take.stream?.close()
-        if (takeRef.current === take) takeRef.current = null
+        endTake(take)
         audioRef.current = null
         dispatch({ type: 'FAIL', message: 'Recording too long. Keep it shorter.', runId })
         return
@@ -493,11 +490,13 @@ export function useVoice(): UseVoiceReturn {
         target,
         take.provider,
         shouldAutoFormat,
-        take.stream,
+        streamResult,
       )
+      // finish() already terminalized the client; only forget this take if it
+      // was not discarded or replaced while the transcript was pending.
       if (takeRef.current === take) takeRef.current = null
     })()
-  }, [processTake])
+  }, [endTake, processTake])
   useEffect(() => { stopRef.current = stop })
 
   const retry = useCallback(() => {
@@ -530,13 +529,12 @@ export function useVoice(): UseVoiceReturn {
     dispatch({ type: 'COPY' })
   }, [])
   const discard = useCallback(() => {
-    takeRef.current?.stream?.close()
-    takeRef.current = null
+    if (takeRef.current) endTake(takeRef.current)
     const session = sessionRef.current
     if (session) { void session.release().catch(() => {}); sessionRef.current = null }
     audioRef.current = null
     dispatch({ type: 'DISCARD' })
-  }, [])
+  }, [endTake])
   const markTargetLost = useCallback(() => { dispatch({ type: 'TARGET_LOST' }) }, [])
 
   // Format arbitrary draft text (the tray's Format button) using the run's
