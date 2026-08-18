@@ -1,14 +1,23 @@
 import { extname } from 'node:path'
 import {
   CodexTranscribeError,
+  type CodexDictationSession,
+  type CodexDictationSessionInput,
   type CodexTranscribeErrorCode,
   type CodexTranscribeInput,
   type CodexTranscribeStatus,
 } from '../src/index.ts'
 
+export const LIVE_SAMPLE_RATE_HZ = 48_000
+
+const LIVE_FRAME_SAMPLES = 1_024
+const MAX_ENCODED_BYTES = 20_000_000
+const MAX_PCM_BYTES = 4 * 1024 * 1024
+const REQUEST_TIMEOUT_MS = 60_000
+
 export type LiveEnvironment = {
   readonly CODEX_TRANSCRIBE_LIVE?: string
-  readonly CODEX_TRANSCRIBE_FIXTURES?: string
+  readonly CODEX_TRANSCRIBE_FIXTURE?: string
   readonly CODEX_TRANSCRIBE_ATTEMPTS?: string
 }
 
@@ -21,20 +30,28 @@ type LiveStatus =
   | 'error:unexpected'
   | `unavailable:${UnavailableReason}`
   | `error:${CodexTranscribeErrorCode}`
-type LiveMimeType = 'audio/webm' | 'audio/mp4' | 'none' | 'unknown'
+type LiveMode = 'none' | 'batch' | 'stream'
+type TranscriptComparison = 'not_applicable' | 'match' | 'different'
 
 type LiveEvent = {
+  readonly mode: LiveMode
   readonly status: LiveStatus
-  readonly mimeType: LiveMimeType
   readonly attempt: number
-  readonly latencyMs: number
+  readonly stopToRawMs: number
+  readonly transcriptComparison: TranscriptComparison
 }
 
 export type LiveDependencies = {
   readonly inspect: () => Promise<CodexTranscribeStatus>
   readonly readAudio: (path: string) => Promise<Uint8Array<ArrayBuffer>>
+  readonly decodePcm16: (
+    path: string,
+    sampleRateHz: number,
+  ) => Promise<Uint8Array<ArrayBuffer>>
+  readonly openStream: (input: CodexDictationSessionInput) => Promise<CodexDictationSession>
   readonly transcribe: (input: CodexTranscribeInput) => Promise<string>
   readonly now: () => number
+  readonly wait: (milliseconds: number) => Promise<void>
   readonly timeout: (milliseconds: number) => AbortSignal
   readonly emit: (line: string) => void
 }
@@ -56,35 +73,26 @@ export function parseAttemptCount(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 5
   if (!/^\d+$/.test(raw)) throw new Error('invalid attempt count')
   const attempts = Number(raw)
-  if (attempts < 1 || attempts > 20) throw new Error('invalid attempt count')
+  if (attempts < 5 || attempts > 20) throw new Error('invalid attempt count')
   return attempts
 }
 
-export function parseFixturePaths(raw: string | undefined): string[] {
-  if (raw === undefined || raw === '') throw new Error('invalid fixture list')
-  let value: unknown
-  try {
-    value = JSON.parse(raw)
-  } catch {
-    throw new Error('invalid fixture list')
+export function parseFixturePath(raw: string | undefined): string {
+  if (raw === undefined || raw.trim().length === 0 || raw.includes('\0')) {
+    throw new Error('invalid fixture')
   }
-  if (
-    !Array.isArray(value) || value.length < 1 || value.length > 2 ||
-    value.some(path => typeof path !== 'string' || path.length === 0)
-  ) {
-    throw new Error('invalid fixture list')
-  }
-  return value
+  return raw
 }
 
 export function formatLiveEvent(
   event: LiveEvent & { readonly [key: string]: unknown },
 ): string {
   return JSON.stringify({
+    mode: event.mode,
     status: event.status,
-    mimeType: event.mimeType,
     attempt: event.attempt,
-    latencyMs: event.latencyMs,
+    stopToRawMs: event.stopToRawMs,
+    transcriptComparison: event.transcriptComparison,
   })
 }
 
@@ -98,73 +106,166 @@ function emit(dependencies: LiveDependencies, event: LiveEvent): void {
   dependencies.emit(formatLiveEvent(event))
 }
 
+function terminalEvent(
+  status: LiveStatus,
+  mode: LiveMode = 'none',
+  attempt = 0,
+  stopToRawMs = 0,
+): LiveEvent {
+  return {
+    mode,
+    status,
+    attempt,
+    stopToRawMs,
+    transcriptComparison: 'not_applicable',
+  }
+}
+
 export async function runLive(
   environment: LiveEnvironment,
   dependencies: LiveDependencies,
 ): Promise<number> {
   if (environment.CODEX_TRANSCRIBE_LIVE !== '1') {
-    emit(dependencies, { status: 'disabled', mimeType: 'none', attempt: 0, latencyMs: 0 })
+    emit(dependencies, terminalEvent('disabled'))
     return 2
   }
 
-  let paths: string[]
+  let path: string
   let attempts: number
+  let mimeType: 'audio/webm' | 'audio/mp4'
   try {
-    paths = parseFixturePaths(environment.CODEX_TRANSCRIBE_FIXTURES)
+    path = parseFixturePath(environment.CODEX_TRANSCRIBE_FIXTURE)
     attempts = parseAttemptCount(environment.CODEX_TRANSCRIBE_ATTEMPTS)
+    mimeType = mimeTypeForPath(path)
   } catch {
-    emit(dependencies, { status: 'error:input', mimeType: 'none', attempt: 0, latencyMs: 0 })
+    emit(dependencies, terminalEvent('error:input'))
     return 2
   }
 
   const availability = await dependencies.inspect()
   if (!availability.available) {
-    emit(dependencies, {
-      status: `unavailable:${availability.reason}`,
-      mimeType: 'none',
-      attempt: 0,
-      latencyMs: 0,
-    })
+    emit(dependencies, terminalEvent(`unavailable:${availability.reason}`))
     return 1
   }
 
-  for (const path of paths) {
-    let mimeType: 'audio/webm' | 'audio/mp4'
-    let audio: Uint8Array<ArrayBuffer>
+  let audio: Uint8Array<ArrayBuffer>
+  let pcm: Uint8Array<ArrayBuffer>
+  try {
+    [audio, pcm] = await Promise.all([
+      dependencies.readAudio(path),
+      dependencies.decodePcm16(path, LIVE_SAMPLE_RATE_HZ),
+    ])
+    if (
+      audio.byteLength === 0 || audio.byteLength > MAX_ENCODED_BYTES ||
+      pcm.byteLength === 0 || pcm.byteLength % 2 !== 0 || pcm.byteLength > MAX_PCM_BYTES
+    ) {
+      throw new Error('invalid fixture')
+    }
+  } catch {
+    emit(dependencies, terminalEvent('error:input'))
+    return 2
+  }
+
+  const filename = mimeType === 'audio/webm' ? 'fixture.webm' : 'fixture.mp4'
+  let streamFailed = false
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const batchStartedAt = dependencies.now()
+    let batchTranscript: string
     try {
-      mimeType = mimeTypeForPath(path)
-      audio = await dependencies.readAudio(path)
-    } catch {
-      emit(dependencies, { status: 'error:input', mimeType: 'unknown', attempt: 0, latencyMs: 0 })
-      return 2
+      batchTranscript = await dependencies.transcribe({
+        audio,
+        filename,
+        mimeType,
+        signal: dependencies.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch (error) {
+      emit(dependencies, terminalEvent(
+        statusForError(error),
+        'batch',
+        attempt,
+        Math.round(dependencies.now() - batchStartedAt),
+      ))
+      return 1
+    }
+    const batchLatencyMs = Math.round(dependencies.now() - batchStartedAt)
+    if (batchTranscript.trim().length === 0) {
+      emit(dependencies, terminalEvent('error:empty', 'batch', attempt, batchLatencyMs))
+      return 1
+    }
+    emit(dependencies, {
+      mode: 'batch',
+      status: 'ok',
+      attempt,
+      stopToRawMs: batchLatencyMs,
+      transcriptComparison: 'not_applicable',
+    })
+
+    const streamResult = await runStreamingAttempt(pcm, dependencies)
+    if (!streamResult.ok) {
+      streamFailed = true
+      emit(dependencies, terminalEvent(
+        streamResult.status,
+        'stream',
+        attempt,
+        streamResult.stopToRawMs,
+      ))
+      continue
+    }
+    emit(dependencies, {
+      mode: 'stream',
+      status: 'ok',
+      attempt,
+      stopToRawMs: streamResult.stopToRawMs,
+      transcriptComparison:
+        normalizeTranscript(streamResult.transcript) === normalizeTranscript(batchTranscript)
+          ? 'match'
+          : 'different',
+    })
+  }
+  return streamFailed ? 1 : 0
+}
+
+type StreamingResult =
+  | { readonly ok: true; readonly transcript: string; readonly stopToRawMs: number }
+  | { readonly ok: false; readonly status: LiveStatus; readonly stopToRawMs: number }
+
+async function runStreamingAttempt(
+  pcm: Uint8Array<ArrayBuffer>,
+  dependencies: LiveDependencies,
+): Promise<StreamingResult> {
+  let session: CodexDictationSession | undefined
+  let stopStartedAt: number | undefined
+  try {
+    session = await dependencies.openStream({
+      sampleRateHz: LIVE_SAMPLE_RATE_HZ,
+      signal: dependencies.timeout(REQUEST_TIMEOUT_MS),
+    })
+    const frameBytes = LIVE_FRAME_SAMPLES * 2
+    for (let offset = 0; offset < pcm.byteLength; offset += frameBytes) {
+      const chunk = pcm.subarray(offset, Math.min(offset + frameBytes, pcm.byteLength))
+      session.appendPcm16(chunk)
+      await dependencies.wait((chunk.byteLength / 2 / LIVE_SAMPLE_RATE_HZ) * 1_000)
     }
 
-    const filename = mimeType === 'audio/webm' ? 'fixture.webm' : 'fixture.mp4'
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const startedAt = dependencies.now()
-      try {
-        const transcript = await dependencies.transcribe({
-          audio,
-          filename,
-          mimeType,
-          signal: dependencies.timeout(60_000),
-        })
-        const latencyMs = Math.round(dependencies.now() - startedAt)
-        if (transcript.trim().length === 0) {
-          emit(dependencies, { status: 'error:empty', mimeType, attempt, latencyMs })
-          return 1
-        }
-        emit(dependencies, { status: 'ok', mimeType, attempt, latencyMs })
-      } catch (error) {
-        emit(dependencies, {
-          status: statusForError(error),
-          mimeType,
-          attempt,
-          latencyMs: Math.round(dependencies.now() - startedAt),
-        })
-        return 1
-      }
+    stopStartedAt = dependencies.now()
+    const transcript = await session.finish()
+    const stopToRawMs = Math.round(dependencies.now() - stopStartedAt)
+    return transcript.trim().length > 0
+      ? { ok: true, transcript, stopToRawMs }
+      : { ok: false, status: 'error:empty', stopToRawMs }
+  } catch (error) {
+    return {
+      ok: false,
+      status: statusForError(error),
+      stopToRawMs: stopStartedAt === undefined
+        ? 0
+        : Math.round(dependencies.now() - stopStartedAt),
     }
+  } finally {
+    session?.close()
   }
-  return 0
+}
+
+function normalizeTranscript(text: string): string {
+  return text.trim().replace(/\s+/gu, ' ')
 }

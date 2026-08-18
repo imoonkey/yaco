@@ -1,12 +1,12 @@
 # Server
 
-Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE attention push, and the built UI shell.
+Hono-based Node.js backend serving HTTP API, terminal and voice WebSockets, SSE attention push, and the built UI shell.
 
 ## Owns
 
 - Server initialization and middleware pipeline
 - CORS and origin validation
-- WebSocket upgrade handling for terminal sessions
+- WebSocket upgrade handling for terminal sessions and Codex voice takes
 - Static file serving for the built React app
 - Background service orchestration (watchers, poller)
 
@@ -41,7 +41,7 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE attention p
    - `startSessionReconciler()` — session health/drift GC + safety pass; polls at 60s normally and ~8s while any agent is `processing`, so interrupt reconciliation converges quickly only during active turns
    - `startProjectWatchers()` — global session/project watchers (which wake the attention engine on session/task writes), then recursive project watchers
    - `startAttentionEngine()` — Facet B: boot reconciliation (id-scan `events.jsonl` for open ACT conditions) + change-driven edge detection + the 60s safety tick. Started **after** the watchers so their notify hooks reach a live engine
-6. Attach WebSocket server for terminal connections
+6. Attach separate no-server WebSocket handlers for terminal connections and the exact `/ws/voice/codex` bridge
 
 Runtime watchers intentionally start only after the port bind succeeds. A duplicate `tsx watch` child that loses the `:3001` race exits without installing recursive project watchers, so it cannot consume inotify slots or starve the critical `${YACO_HOME:-~/.yaco}/sessions` watcher.
 
@@ -68,6 +68,24 @@ Close codes:
 - `4002 pty_capacity` — server is under PTY pressure (soft/hard limit or drain). Client uses a slower 5s→60s backoff with a `[Server overloaded — retrying…]` banner.
 - `4003 attach_failed` — unexpected error from `pty.spawn`. Default client backoff.
 
+## WebSocket Codex Voice
+
+`/ws/voice/codex` is a same-origin server bridge, not a browser connection to
+ChatGPT. Each accepted socket owns one take: a strict `start` → binary PCM16 →
+`finish` downstream sequence and one package-owned upstream dictation session.
+The adapter buffers only while upstream starts (4 MiB / 1024-frame bounds),
+drains in order after `ready`, and returns only `ready`, `final`, or `failed`.
+Protocol violation, idle timeout, disconnect, upstream failure, or server
+shutdown cancels and releases both sides idempotently.
+
+Only the server-side `yaco-codex-transcribe` package reads Codex auth and builds
+the upstream URL, bearer subprotocol, fixed session configuration, base64
+`audio.append`, and terminal-event parser. No token, upstream error body, or
+private schema is sent over the browser socket. The upstream dictation
+interface is hidden behavior observed from the current Codex app, **not an
+officially supported public API**; unknown/malformed events fail closed so the
+UI can use its cached-Blob Codex batch fallback.
+
 ### PTY Capacity Guard
 
 `pty-capacity.ts` tracks a `healthy` / `degraded` / `draining` state machine against darwin's 511-slot PTY table. `attachSession` calls `assertCanSpawn()` before `pty.spawn()` — when state is not `healthy`, it throws `PtyCapacityError` which the WS handler maps to close code `4002`. Starting a shell uses `tmux new-session` directly and does not allocate a node-pty in the server. A 60s unref'd `sweep()` samples actual PTY ownership via `lsof -p <pid> -F tn` and transitions state with 2-sweep hysteresis; on `draining` it closes non-persistent tmux attach clients only. Tmux sessions themselves stay alive, so long-running shell and agent state survives.
@@ -78,7 +96,7 @@ A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks a
 
 ### Graceful Shutdown
 
-On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server stops background reconcilers/watchers, destroys all active tmux attach PTYs, and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
+On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server stops background reconcilers/watchers, closes every active voice bridge session, destroys all active tmux attach PTYs, and terminates WebSocket connections before exiting. This prevents orphaned upstream voice sockets and `tmux attach-session` client processes from surviving restart. Tmux sessions themselves are unaffected — only the attach clients are closed.
 
 Signal handlers route through `shutdownGracefully()` which **awaits** `shutdownWhatsApp()` before `process.exit(0)`. Without this await, tsx-watch reloads would orphan the Puppeteer Chrome holding the WhatsApp LocalAuth `userDataDir`, leaving a stale `SingletonLock` that blocks the next `initWhatsApp()`. Boot-time recovery for this case is also implemented (see `whatsapp/index.ts`'s `cleanupStaleChromeSingleton()`).
 

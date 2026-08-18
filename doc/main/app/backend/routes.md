@@ -103,6 +103,7 @@ A **colocated repo** is a depth-1 child directory that is its own git repo but i
 | Protocol | Path | Description |
 |----------|------|-------------|
 | WS | `/ws/terminal/:name?cols=N&rows=N&fg=%23rrggbb&bg=%23rrggbb&cursor=%23rrggbb&project=P` | Terminal PTY attached to tmux; palette params let app/server answer Codex OSC color probes at the PTY bridge; `project` scopes session selection in the UI |
+| WS | `/ws/voice/codex` | Same-origin, one-take PCM16 bridge to the server-owned Codex dictation session; no credential or upstream schema crosses to the browser |
 
 ### Voice
 
@@ -150,11 +151,26 @@ Example with neither STT provider available:
 
 Top-level `enabled` is **STT-only**: it is true when at least one provider is available. `providers.codex` comes from local auth metadata inspection only; status never uploads probe audio. Codex reasons are `missing_auth`, `unsupported_auth`, `invalid_auth`, or `expired_auth`. `formatter.available` depends only on `GROQ_API_KEY`, so Codex raw transcription works without a formatter. The nested `tts` remains keyless and does not affect mic readiness.
 
-The pipeline is **split** into two single-responsibility endpoints. The client
-records one continuous take (native `MediaRecorder`, ended by the user via
-Stop/F5 — no mid-recording chunking, no VAD), uploads it **once** to
-`/transcribe` with the selected provider, then calls `/format` only when Auto
-format is enabled and the formatter is available.
+The raw-transcript path depends on the selected provider. Groq records one
+continuous take and uploads it once to `/transcribe`. Codex is
+**streaming-first**: recording keeps the same whole-take Blob while a parallel
+AudioWorklet sends PCM16 through `/ws/voice/codex`; Stop drains PCM and asks for
+the final. A non-empty final skips `/transcribe`. If streaming is unavailable,
+fails, times out, or returns empty, the client uploads the cached Blob once to
+`/transcribe` with `provider=codex`. This is transport fallback within Codex,
+not provider failover. Both providers call `/format` only after raw text exists
+and only when Auto format is enabled and the formatter is available.
+
+**`WS /ws/voice/codex`** — exact one-take downstream protocol.
+
+- Client: `{ "type": "start", "sampleRateHz": N }` → zero or more binary
+  little-endian PCM16 frames → `{ "type": "finish" }`.
+- Server: `{ "type": "ready" }` → `{ "type": "final", "text": "..." }`
+  or `{ "type": "failed" }`, then close.
+- The server rejects disallowed origins, invalid ordering/shapes, odd or empty
+  PCM frames, and bounded-buffer overflow. Browser disconnect cancels the
+  upstream session. Stable `failed` is the only upstream failure information
+  exposed to the client.
 
 **`POST /api/voice/transcribe`** (`multipart/form-data`) — provider-selected STT.
 
@@ -230,11 +246,12 @@ On a 429, `/transcribe` forwards either provider's upstream `retry-after` header
 client backs off precisely — `useVoice.ts` parses it (seconds or HTTP date),
 waits, and retries the upload once.
 
-Audio is never persisted to disk. API keys and Codex OAuth credentials are never exposed to the browser. `yaco-codex-transcribe` reads `${CODEX_HOME:-~/.codex}/auth.json` for each operation, accepts only `auth_mode: "chatgpt"`, and never reads a refresh token, refreshes credentials, or writes the Codex-owned file. The ChatGPT batch endpoint is hidden and may change; a 403 is surfaced as a provider failure rather than starting a browser/Cloudflare challenge flow.
+Audio is never persisted to disk. API keys and Codex OAuth credentials are never exposed to the browser or downstream WebSocket messages. `yaco-codex-transcribe` reads `${CODEX_HOME:-~/.codex}/auth.json` for each operation, accepts only `auth_mode: "chatgpt"`, and never reads a refresh token, refreshes credentials, or writes the Codex-owned file. The ChatGPT dictation WebSocket and batch transcription endpoint are hidden interfaces observed from the current Codex app, **not officially supported public APIs**. Either may change or reject a host/account; unknown streaming messages fail closed and the browser receives only `failed`, while batch 403 remains a provider failure rather than starting a browser/Cloudflare challenge flow.
 
--> History: `plan/archive/20260605_voice-streaming/` (the original streaming
-design; the mid-recording chunking it describes was reverted to this single-take
-flow).
+-> Current design: `plan/all/codex-dictation-streaming/design.md`. History:
+`plan/archive/20260605_voice-streaming/` describes the retired multi-request
+batch chunking approach; current streaming keeps one take and one upstream
+dictation session instead.
 
 ### Tasks
 

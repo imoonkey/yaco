@@ -206,9 +206,10 @@ Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permis
 
 ## useVoice.ts (~510 lines)
 
-Orchestrates the single-take voice-input flow on top of three pieces:
+Orchestrates the single-take voice-input flow on top of four pieces:
 `voiceCapture.ts` (native `MediaRecorder` capture → one whole-take fallback
 blob, plus an optional PCM sink),
+`codexVoiceStream.ts` (one take-scoped same-origin WebSocket),
 `voiceStateMachine.ts` (the `voiceReducer` + selectors), and the split
 [`/api/voice/transcribe` + `/api/voice/format`](../backend/routes.md#voice) routes.
 
@@ -217,8 +218,15 @@ sink adds a parallel AudioWorklet side channel: it starts with the actual
 `AudioContext.sampleRate`, receives ordered little-endian PCM16 frames of at
 most 1024 samples, and drains its final partial frame during `stop()`. Sink or
 worklet failure is reported to that side channel without invalidating the
-fallback Blob. Callers that omit the sink—including the current Groq-shaped
-path—create no `AudioContext` or worklet.
+fallback Blob. Codex supplies the sink; Groq omits it and creates no
+`AudioContext` or worklet.
+
+`codexVoiceStream.ts` owns only browser socket state for one take. It queues at
+most 4 MiB / 1024 frames before server `ready`, sends binary PCM in order, and
+accepts only strict `ready`, `final`, or `failed` messages. The browser never
+sees Codex auth or the hidden upstream schema; close, error, timeout, malformed
+messages, and overflow all become one `null` result that selects cached-Blob
+fallback.
 
 **Export**: `useVoice()` → `{ capability, availableProviders, provider, setProvider, formatterAvailable, autoFormat, setAutoFormat, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, format, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md). `format(text)` runs the formatter over arbitrary draft text (the tray's **Format** button), returning the polished text (or the input unchanged on failure).
 
@@ -233,20 +241,26 @@ type/paste with no recording at all.
 - **Capability** — on mount: `checkBrowserCapability()` (secure context + `getUserMedia` + `MediaRecorder`), then fail-closed parsing of `GET /api/voice/status` for the two provider capabilities, formatter capability, and `maxUploadBytes`. At least one STT provider must be available to gate `record()` (not `open()` — type/paste works without a mic).
 - **Preferences** — `yaco.voiceProvider` stores `codex|groq`; `yaco.voiceAutoFormat` stores the independent formatter choice. Codex is the first-choice default when available. If a persisted provider is unavailable before recording, the hook reconciles to the first available provider; a temporary formatter outage disables formatting for the current mount without erasing the persisted preference.
 - **`open(ctx)`** — opens the tray idle (`composing`) for type/paste.
-- **`record(ctx?)`** — computes `runId` up front (mirrors the reducer's `counter + 1`), dispatches `START_RECORD`, then `startCaptureSession({ onElapsed, onError })`. The session resolves to `PERMISSION_GRANTED` **only if** the live phase is still `requesting_permission` with the same `runId` and the hook is mounted — otherwise the orphaned session is `release()`d. Rejection → `PERMISSION_DENIED`. From `composing`/`error` it reuses the frozen target and appends.
-- **`stop()` → take pipeline** — dispatches `STOP` (→ `transcribing`), `await session.stop()` (one blob) + `release()`. An empty/oversized blob → `NO_SPEECH` / `FAIL`; otherwise the blob is cached in `audioRef`. `processTake` captures the selected provider and auto-format value at the async boundary, sends the mandatory provider field to `POST /transcribe`, and only calls `POST /format` when auto-format remains selected and available. A formatter failure falls back to the raw transcript so words are never lost. A second effect calls `stop()` once `elapsedMs` crosses `MAX_RECORDING_SECONDS`.
-- **`retry()`** — re-runs `processTake` from the cached `audioRef` blob (no re-record) with the provider the user currently selects in the error state. There is no automatic provider fallback. Provider/formatter controls are locked during permission, recording, and transcription, then re-enabled on error.
+- **`record(ctx?)`** — computes `runId` and freezes the selected provider up front. Codex creates a take-scoped stream and passes its PCM sink into `startCaptureSession`; Groq passes no sink. The session resolves to `PERMISSION_GRANTED` **only if** the live phase is still `requesting_permission` with the same `runId` and the hook is mounted — otherwise both orphaned resources are released. Rejection → `PERMISSION_DENIED`. From `composing`/`error` it reuses the frozen target and appends.
+- **`stop()` → take pipeline** — dispatches `STOP` (→ `transcribing`), drains PCM while finalizing the complete Blob, then releases capture resources. An empty/oversized blob → `NO_SPEECH` / `FAIL`; otherwise it is cached in `audioRef`. Codex first awaits the stream final: non-empty raw text skips HTTP batch, while unavailable/failed/timed-out/empty streaming calls `POST /transcribe` exactly once with the same Blob and frozen `provider=codex`. Groq calls batch directly. Only the accepted raw text can call `/format`, at most once, when the take-frozen Auto format choice is enabled. Formatter failure preserves raw text.
+- **`retry()`** — re-runs `processTake` from the cached `audioRef` Blob (no re-record and no attempt to reconstruct a finished stream) with the provider the user currently selects in the error state. Automatic fallback never changes provider: streaming→batch stays within Codex, while switching to Groq remains explicit. Provider/formatter controls are locked during permission, recording, and transcription, then re-enabled on error.
 
 ### Timeouts
 
 - **`retry-after` honoring** — on a 429, `postTranscribe` reads the upstream `retry-after` header (`parseRetryAfterMs` handles seconds or HTTP-date), waits, and retries **once**; a second 429 / any non-OK → transient failure (`{ ok: false }`).
 - **Timeouts** (`fetchWithTimeout`) — `/transcribe` aborts after 60 s, `/format` after 30 s, via `AbortController`.
+- **Streaming bounds** — browser startup is 10 s from record start and final wait is 8 s after `finish`; the server/package enforce their own startup, idle, finish, and 4 MiB bounds. A bound firing selects the same-provider batch path rather than surfacing an intermediate tray error.
 
 ### Cleanup
 
-An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution.
+An unmount effect flips `mountedRef`, closes the active stream, and `release()`s the capture session; the `runId` + live-phase guards drop every stale-run resolution.
 
-Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): provider capability validation/reconciliation, persisted preference durability, in-flight preference locking, explicit-provider cached Retry, auto-format independence, record→transcribe→format→append, `/format` failure → raw append, no-speech, and unmount cleanup.
+Tested in `__tests__/{useVoice,codexVoiceStream,voiceCapture}` and
+`tests/e2e/voice-streaming.spec.ts`: stream success skips batch; all stream
+failure classes select one Codex batch call; stale finals stop; Retry reuses the
+Blob; Auto format remains after raw text; browser protocol bounds and capture
+cleanup hold. The opt-in browser case uses Chromium's real
+`getUserMedia`/`MediaRecorder`/`AudioWorklet` path with a temporary audio source.
 
 ## useSpeech.ts
 

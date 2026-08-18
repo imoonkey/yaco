@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-08-17: Codex voice is streaming-first with redacted live QA
+
+**What changed:**
+- Codex takes now use the previously landed PCM/WebSocket path first and retain
+  the whole-take Blob for automatic same-provider batch fallback; Groq remains
+  batch-only and formatting remains after raw text.
+- The opt-in live runner compares one encoded fixture against real-time PCM
+  replay for 5–20 attempts and emits only redacted Stop-to-raw and transcript
+  agreement metadata.
+- Focused browser QA covers stream success, forced fallback, cached-Blob Retry,
+  Auto format on/off, and the native MediaRecorder/AudioWorklet capture path.
+
+**Why:**
+- Overlapping Codex transcription with recording can reduce Stop latency, but
+  the hidden ChatGPT dictation interface is unsupported and must fail closed
+  without exposing server-owned credentials or losing the recorded take.
+
+**Key files:** `packages/codex-transcribe/scripts/{live,live-contract}.ts`,
+`packages/codex-transcribe/test/live.test.ts`,
+`app/ui/tests/e2e/voice-streaming.spec.ts`, `doc/main/app/{README.md,backend/routes.md,backend/server.md,frontend/hooks.md}`
+**Verification:** 36 focused live-runner tests and typecheck passed; focused
+Playwright 3/3 passed, including native Chromium capture. Desktop same-fixture
+batch Stop-to-raw was 823/3440/3237/2928/6541 ms (median 3237 ms); all five
+stream startups returned redacted `forbidden`, so streaming latency/transcript
+comparison remained unavailable. Full `scripts/verify.sh` recorded at commit.
+**Commit:** this commit
+**Next:** Re-run live QA only after the private endpoint/account capability is
+available; do not infer official support from a future pass.
+**Blockers:** Laptop was offline during QA; desktop hidden streaming endpoint
+was unavailable, so the streaming-vs-batch acceptance comparison is unresolved.
+
 ## 2026-08-17: Voice capture supports an optional PCM side channel
 
 **What changed:**
