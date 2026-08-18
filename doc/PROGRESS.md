@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-08-18: Codex dictation streaming transport is live
+
+**What changed:**
+- The upstream dictation WebSocket now sends the minimal App-observed
+  `User-Agent: codex-desktop`. With the same token and ordered subprotocols,
+  this changes the desktop upgrade from 403 to 101.
+- Session validation now mirrors the current App: it accepts either
+  `streaming_sse` or the service-selected `buffered` provider mode while still
+  requiring final-only transcript delivery.
+- A synthetic package probe reached clean session closure in 3288 ms, and a
+  client through a temporary real `/ws/voice/codex` server received `ready` at
+  3327 ms and `final` at 4284 ms without retaining audio or transcript content.
+
+**Why:**
+- Chromium supplied request identity outside the App's explicit dictation
+  handler, and the upstream currently chooses a supported provider mode other
+  than the one requested. Matching both behaviors unblocks the existing
+  streaming-first route without changing its same-provider batch fallback.
+
+**Key files:** `packages/codex-transcribe/src/{dictation.ts,dictation-events.ts}`,
+`packages/codex-transcribe/test/dictation.test.ts`,
+`plan/all/codex-dictation-streaming/{transport-probe.md,live-qa.md}`
+**Verification:** package tests 101/101; package typecheck; synthetic package
+and real-server bridge probes; independent review approved with 0 findings;
+`scripts/verify.sh`.
+**Commits:** `cec842e5`, `244aef78`, `9221de08`, plus this documentation commit.
+**Next:** Deploy on desktop and measure Stop-to-text latency and recognition
+quality with user-driven real speech.
+**Blockers:** None for synthetic desktop transport. The hidden endpoint remains
+unsupported, and meaningful real-speech latency/quality acceptance is pending.
+
 ## 2026-08-18: Codex dictation transport remains authorization-gated
 
 **What changed:**

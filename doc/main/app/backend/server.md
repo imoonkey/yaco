@@ -81,7 +81,10 @@ shutdown cancels and releases both sides idempotently.
 Only the server-side `yaco-codex-transcribe` package reads Codex auth and builds
 the upstream URL, bearer subprotocol, fixed session configuration, base64
 `audio.append`, and terminal-event parser. No token, upstream error body, or
-private schema is sent over the browser socket. The upstream dictation
+private schema is sent over the browser socket. The upstream upgrade carries
+the App-observed `User-Agent: codex-desktop`; the session requests
+`streaming_sse` but accepts the App-supported service choice of `streaming_sse`
+or `buffered`, while any non-`final_only` delivery mode fails closed. The upstream dictation
 interface is hidden behavior observed from the current Codex app, **not an
 officially supported public API**; unknown/malformed events fail closed so the
 UI can use its cached-Blob Codex batch fallback.
