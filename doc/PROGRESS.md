@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-08-17: Laptop adds distinct-account Codex live evidence
+
+**What changed:**
+- The exact `229df542` live runner completed five same-fixture Codex batch calls
+  on the laptop (3497/946/3768/3047/2816 ms; median 3047 ms). Its distinct
+  Codex account returned redacted `forbidden` before Stop, so the reviewed
+  runner suppressed redundant handshakes and no stream latency or transcript
+  comparison is claimed.
+- Installed Chrome passed the three focused voice cases from an isolated exact
+  code snapshot: native browser capture with a fake audio device, forced
+  same-Codex batch fallback plus cached-Blob Retry, and Auto format on/off.
+- Synthetic audio and all temporary runner/browser material were removed; no
+  credential, dependency, service, transcript, or live checkout file changed.
+
+**Why:**
+- The laptop supplies a distinct account/environment check for the private
+  endpoint while preserving the fail-closed and no-sensitive-artifact contract.
+
+**Key files:** `plan/all/codex-dictation-streaming/live-qa.md`,
+`plan/all/codex-dictation-streaming/qa-codex-stream-live-qa-docs.md`,
+`plan/all/codex-dictation-streaming/implementation-summary-codex-stream-live-qa-docs.md`
+**Verification:** Five content-free batch timing rows; one redacted pre-Stop
+stream availability result; focused installed-Chrome Playwright 3/3 passed;
+temporary-tree cleanup verified with zero open handles.
+**Commit:** this commit
+**Next:** Re-run the live comparison only when the private streaming capability
+is available. Separately align the laptop checkout only after its live
+server/build/agent processes exit or their lifecycle is explicitly authorized.
+**Blockers:** Both tested Codex accounts returned redacted `forbidden` before
+Stop. Laptop checkout alignment was deferred for process safety; backup ref
+`backup/laptop-main-before-origin-align-20260817` preserves `7132eecc`.
+
 ## 2026-08-17: Codex voice is streaming-first with redacted live QA
 
 **What changed:**
