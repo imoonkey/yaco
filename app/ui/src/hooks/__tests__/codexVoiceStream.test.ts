@@ -152,8 +152,8 @@ describe('createCodexVoiceStream', () => {
     stream.start(48_000)
     stream.append(new Int16Array((4 * 1024 * 1024) / 2 + 1))
 
-    await expect(stream.finish()).resolves.toBeNull()
     expect(socket().readyState).toBe(FakeWebSocket.CLOSED)
+    await expect(stream.finish()).resolves.toBeNull()
   })
 
   it('fails closed when 1024 pre-ready frames are already queued', async () => {
@@ -161,8 +161,8 @@ describe('createCodexVoiceStream', () => {
     stream.start(48_000)
     for (let index = 0; index < 1_025; index++) stream.append(new Int16Array([index]))
 
-    await expect(stream.finish()).resolves.toBeNull()
     expect(socket().readyState).toBe(FakeWebSocket.CLOSED)
+    await expect(stream.finish()).resolves.toBeNull()
   })
 
   it('shares the 4 MiB cap with the browser send buffer after ready', async () => {
@@ -173,8 +173,8 @@ describe('createCodexVoiceStream', () => {
     socket().bufferedAmount = 4 * 1024 * 1024
     stream.append(new Int16Array([1]))
 
-    await expect(stream.finish()).resolves.toBeNull()
     expect(socket().readyState).toBe(FakeWebSocket.CLOSED)
+    await expect(stream.finish()).resolves.toBeNull()
   })
 
   it('ignores stale duplicate terminal events and closes idempotently', async () => {

@@ -137,6 +137,44 @@ describe('useVoice single-take flow', () => {
     expect(hook.result.current.appendText?.text).toBe('Stream raw.')
   })
 
+  it('finishes the drained stream before capture release completes', async () => {
+    const events: string[] = []
+    let resolveRelease: () => void = () => {}
+    fakeSession = {
+      stop: vi.fn(async () => {
+        events.push('drain-done')
+        return new Blob(['audio'], { type: 'audio/webm' })
+      }),
+      release: vi.fn(() => new Promise<void>(resolve => {
+        events.push('release-started')
+        resolveRelease = resolve
+      })),
+    }
+    startCaptureSessionMock.mockImplementation(async (_callbacks, pcmSink) => {
+      pcmSink?.start(48_000)
+      return fakeSession
+    })
+    fakeStream.finish.mockImplementation(() => {
+      events.push('finish-called')
+      return Promise.resolve('stream raw')
+    })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) throw new Error('batch must not run')
+      if (url.endsWith('/voice/format')) return jsonResponse({ displayText: 'Stream raw.', formattingStatus: 'formatted' })
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    await recordThenStop(hook)
+    await waitFor(() => expect(events).toEqual(['drain-done', 'finish-called', 'release-started']))
+    expect(hook.result.current.state).toBe('transcribing')
+
+    act(() => resolveRelease())
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+  })
+
   it.each([
     ['unavailable stream', null],
     ['empty stream final', '   '],
