@@ -17,7 +17,8 @@
 
 **Key files:** `packages/codex-transcribe/scripts/transport-probe.ts`,
 `plan/all/codex-dictation-streaming/transport-probe.md`
-**Verification:** `scripts/check-docs.py doc/PROGRESS.md`; `scripts/verify.sh`.
+**Verification:** `python3 agent-config/global/skills/update-doc/scripts/check-docs.py doc`;
+`scripts/verify.sh`.
 **Commit:** this commit
 **Next:** Re-probe only when OpenAI exposes supported equivalent credentials or
 enables the streaming rollout for an authorized test account.
