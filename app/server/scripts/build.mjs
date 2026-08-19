@@ -8,6 +8,10 @@
  *  inlined, and its native or lazily-`import()`ed pieces do not survive that.
  *  `yaco-codex-transcribe` is inlined precisely *by not being a dependency*,
  *  which is also the only correct published manifest: it is not published.
+ *  It is inlined from *source*, via the `development` condition below — the
+ *  package now also ships a built `dist` so the subtitle native host can
+ *  install it as a versioned artifact, and that build is not what this bundle
+ *  should be made of.
  *
  *  Each name is externalised twice. esbuild matches an external entry against
  *  the import path literally, so `hono` alone leaves `hono/cors`, `dotenv/config`
@@ -44,6 +48,12 @@ export const bundleOptions = {
   // either way.
   absWorkingDir: at("../../../"),
   bundle: true,
+  // `yaco-codex-transcribe` publishes an exports map whose default target is
+  // its built `dist`, which a checkout does not have; `development` is the
+  // condition that names its source, and it is what `dev`/`start` already pass.
+  // Only that package and the externalised CLI declare the condition, so this
+  // changes nothing else in the graph.
+  conditions: ["development"],
   platform: "node",
   format: "esm",
   target: "node24",

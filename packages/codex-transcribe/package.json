@@ -1,14 +1,35 @@
 {
   "name": "yaco-codex-transcribe",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "description": "Batch and dictation transcription against a locally signed-in Codex account. Reads Codex credentials; never writes them.",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imoonkey/yaco.git",
+    "directory": "packages/codex-transcribe"
+  },
   "engines": {
     "node": ">=22.13.0"
   },
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
   "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run clean && npm run build",
     "test": "vitest run",
+    "test:pack": "vitest run test/pack.test.ts",
     "test:live": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/live.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -1,0 +1,20 @@
+{
+  // The published shape: plain JS plus declarations, emitted from `src` into
+  // `dist` so every path in the exports map is one level below the package
+  // root. TypeScript source under `node_modules` fails plain Node with
+  // ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING, so an installed consumer can
+  // only import emitted JS — `files` ships `dist` alone for that reason.
+  //
+  // Every relative import in `src` already carries an explicit `.js`, so the
+  // emit needs no specifier rewriting: what tsc writes is what Node resolves.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "allowImportingTsExtensions": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "esnext"
+  },
+  "include": ["src/**/*.ts"]
+}

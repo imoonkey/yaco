@@ -16,7 +16,19 @@ is its most valuable distribution property.
 
 **Two, not three.** `app/ui` and `packages/codex-transcribe` stay `private` and are
 never published: the UI ships as built files inside `yaco-app`, and
-codex-transcribe (one consumer, no dependencies) is inlined into the bundle.
+codex-transcribe is inlined into the bundle from source, through the
+`development` condition its exports map declares.
+
+codex-transcribe is nonetheless *versioned and packable*. It has a second
+consumer outside this repository — the video-subtitles native messaging host —
+which cannot be given a checkout, so `npm pack --workspace yaco-codex-transcribe`
+produces a tarball of the built `dist` that installs into a clean project and
+carries no path back here. `private: true` keeps `npm publish` refusing it while
+`npm pack` still works, which is exactly the distribution shape wanted: a pinned
+artifact a consumer vendors, not a registry entry. `test/pack.test.ts`
+(`npm run test:pack --workspace yaco-codex-transcribe`) is the gate — it installs
+the tarball into a temporary project outside this checkout and uses it from
+there.
 
 ## The package root
 
