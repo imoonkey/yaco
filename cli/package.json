@@ -56,6 +56,11 @@
       "types": "./dist/lib/core/agent/index.d.ts",
       "default": "./dist/lib/core/agent/index.js"
     },
+    "./core/agent/tmux-escape": {
+      "development": "./src/lib/core/agent/tmux-escape.ts",
+      "types": "./dist/lib/core/agent/tmux-escape.d.ts",
+      "default": "./dist/lib/core/agent/tmux-escape.js"
+    },
     "./core/agent/messages": {
       "development": "./src/lib/core/agent/providers/message-read.ts",
       "types": "./dist/lib/core/agent/providers/message-read.d.ts",

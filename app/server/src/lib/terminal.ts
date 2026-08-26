@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 import { spawn } from 'child_process'
@@ -9,6 +10,7 @@ import { buildChildProcessEnv } from './ssh-auth'
 import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
 import { shellSessionsDir } from 'yaco-cli/core/paths'
+import { CGROUP_ESCAPE_ARGV, cgroupLeaf, needsCgroupEscape } from 'yaco-cli/core/agent/tmux-escape'
 
 export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
 
@@ -172,8 +174,12 @@ interface TmuxResult {
  *  WebSocket path, so a synchronous spawn would stall the whole server — including
  *  every other terminal's output — for the duration of the subprocess. */
 function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): Promise<TmuxResult> {
+  return run('tmux', args, env, input)
+}
+
+function run(cmd: string, args: string[], env: NodeJS.ProcessEnv, input?: string): Promise<TmuxResult> {
   return new Promise((resolve) => {
-    const child = spawn('tmux', args, { env })
+    const child = spawn(cmd, args, { env })
     let stderr = ''
     child.stderr.setEncoding('utf-8')
     child.stderr.on('data', (chunk: string) => { stderr += chunk })
@@ -221,6 +227,38 @@ async function checkTmuxSession(name: string): Promise<TmuxSessionState> {
 
   console.warn(`[terminal] tmux has-session returned ${result.status} for ${name}: ${result.stderr.trim()}`)
   return 'unknown'
+}
+
+/** Whether a `tmux new-session` issued here would found the server inside this
+ *  service's cgroup. Probed off the event loop, and only on the rare call that
+ *  finds no server running — so there is nothing here worth caching. */
+async function cgroupEscapeNeeded(): Promise<boolean> {
+  if (process.platform !== 'linux') return false
+  try {
+    if (!needsCgroupEscape(cgroupLeaf(await readFile('/proc/self/cgroup', 'utf-8')))) return false
+    return (await run('which', ['systemd-run'], process.env)).status === 0
+  } catch {
+    return false
+  }
+}
+
+/** `tmux new-session`, escaped out of this service's cgroup when this call is
+ *  the one that starts the tmux server. Without it the server is founded inside
+ *  `yaco-server.service` and dies with the unit — a `systemctl restart`, or a
+ *  systemd-oomd kill, SIGKILLs the whole cgroup and every agent session in it.
+ *  The escape belongs only to the starting call: later sessions are forked by
+ *  the running server into its cgroup, and a second escape would collide on the
+ *  singleton unit name. */
+async function newTmuxSession(args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  const serverRunning = (await tmux(['list-sessions'], env)).status === 0
+  if (serverRunning || !(await cgroupEscapeNeeded())) return runTmux(args, env)
+
+  const [escapeCmd, ...escapeArgs] = CGROUP_ESCAPE_ARGV
+  const result = await run(escapeCmd, [...escapeArgs, 'tmux', ...args], env)
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`escaped tmux new-session failed: ${result.stderr.trim() || `exit ${result.status}`}`)
+  }
 }
 
 async function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): Promise<void> {
@@ -348,7 +386,7 @@ export async function startShellSession(cwd: string, project: string, requestedN
     `unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}'); ` +
     `exec ${shellQuote(shell)} -li`
   try {
-    await runTmux([
+    await newTmuxSession([
       'new-session',
       '-d',
       '-s',

@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { CGROUP_ESCAPE_ARGV } from 'yaco-cli/core/agent/tmux-escape'
 
 const {
   spawnMock,
@@ -36,6 +37,10 @@ function fakeTmuxChild(result: { status: number | null; stderr?: string; error?:
 }
 
 const aliveTmuxSessions = new Set<string>()
+/** Every command line handed to `systemd-run`, in call order. */
+const escapedSpawns: string[][] = []
+/** Whether this process's cgroup is one tmux must be escaped out of. */
+let escapeNeeded = false
 const TEST_STATE_DIR = join(process.cwd(), '.tmp', 'terminal-test', 'shell-sessions')
 
 function writeShellState(name: string, project = 'workflow'): void {
@@ -47,6 +52,11 @@ function writeShellState(name: string, project = 'workflow'): void {
     createdAt: '2026-05-10T00:00:00.000Z',
   }), 'utf-8')
 }
+
+vi.mock('yaco-cli/core/agent/tmux-escape', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('yaco-cli/core/agent/tmux-escape')>()),
+  needsCgroupEscape: () => escapeNeeded,
+}))
 
 vi.mock('node-pty', () => ({
   spawn: spawnMock,
@@ -114,9 +124,25 @@ describe('attachSession', () => {
     vi.clearAllMocks()
     resetPtyCapacity()
     setShellSessionChangeCallback(() => {})
-    tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) => {
-      expect(cmd).toBe('tmux')
+    escapedSpawns.length = 0
+    escapeNeeded = false
+    tmuxSpawnMock.mockImplementation((cmd: string, argv: string[]) => {
+      let args = argv
+      if (cmd === 'which') {
+        return { status: 0, stdout: '', stderr: '' }
+      }
+      if (cmd === 'systemd-run') {
+        escapedSpawns.push(argv)
+        args = argv.slice(argv.indexOf('tmux') + 1)
+      } else {
+        expect(cmd).toBe('tmux')
+      }
       const [action] = args
+      if (action === 'list-sessions') {
+        return aliveTmuxSessions.size > 0
+          ? { status: 0, stdout: '', stderr: '' }
+          : { status: 1, stdout: '', stderr: 'no server running' }
+      }
       if (action === 'has-session') {
         const name = args[args.indexOf('-t') + 1]
         return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: '' }
@@ -317,7 +343,6 @@ describe('attachSession', () => {
   it('keeps shell state when tmux existence check fails', async () => {
     writeShellState('shell-1')
     tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) => {
-      expect(cmd).toBe('tmux')
       if (args[0] === 'has-session') {
         return { status: null, stdout: '', stderr: '', error: new Error('tmux unavailable') }
       }
@@ -349,6 +374,31 @@ describe('attachSession', () => {
     expect(readFileSync(join(TEST_STATE_DIR, 'shell-1.json'), 'utf-8')).toContain('shell-1')
   })
 
+  it('founds the tmux server outside this service cgroup', async () => {
+    // Unescaped, the server is a child of yaco-server.service and dies with the
+    // unit — `systemctl restart`, or a systemd-oomd kill, SIGKILLs the whole
+    // cgroup and takes every agent session in it down.
+    escapeNeeded = true
+
+    await startShellSession('/tmp/project', 'workflow', 'shell-1')
+
+    expect(escapedSpawns).toHaveLength(1)
+    const [escaped] = escapedSpawns
+    expect(escaped.slice(0, escaped.indexOf('tmux'))).toEqual(CGROUP_ESCAPE_ARGV.slice(1))
+    expect(escaped.slice(escaped.indexOf('tmux'))).toContain('new-session')
+  })
+
+  it('leaves a running server alone — the escape is the founder\'s job', async () => {
+    // A second escape would collide on the singleton unit name, and the session
+    // is forked by the running server into its cgroup regardless of ours.
+    escapeNeeded = true
+    aliveTmuxSessions.add('shell-0')
+
+    await startShellSession('/tmp/project', 'workflow', 'shell-1')
+
+    expect(escapedSpawns).toEqual([])
+  })
+
   it('cleans state when tmux creation fails after prewriting ownership', async () => {
     tmuxSpawnMock.mockImplementation((cmd: string, args: string[]) => {
       expect(cmd).toBe('tmux')
@@ -357,6 +407,12 @@ describe('attachSession', () => {
       }
       if (args[0] === 'new-session') {
         return { status: 1, stdout: '', stderr: 'new failed' }
+      }
+      if (args[0] === 'list-sessions') {
+        return { status: 1, stdout: '', stderr: 'no server running' }
+      }
+      if (cmd === 'which') {
+        return { status: 1, stdout: '', stderr: '' }
       }
       throw new Error(`unexpected tmux action: ${args[0]}`)
     })

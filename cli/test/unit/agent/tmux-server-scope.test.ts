@@ -14,11 +14,11 @@
  *  command line must not move a byte — that is what `newSessionCommand` pins.
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { newSessionCommand } from "../../../src/lib/core/agent/tmux.ts";
 import {
   CGROUP_ESCAPE_PREFIX,
   needsCgroupEscape,
-  newSessionCommand,
-} from "../../../src/lib/core/agent/tmux.ts";
+} from "../../../src/lib/core/agent/tmux-escape.ts";
 
 describe("needsCgroupEscape — the environment probe's decision", () => {
   it("wraps only for a managed .service leaf that is not the user manager", () => {

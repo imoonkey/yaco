@@ -1,5 +1,6 @@
 import { execFileSync, execSync, spawn } from "child_process";
 import { readFileSync } from "fs";
+import { CGROUP_ESCAPE_PREFIX, cgroupLeaf, needsCgroupEscape } from "./tmux-escape.ts";
 import { listProviders } from "./providers/index.ts";
 import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
@@ -79,52 +80,27 @@ export function isTmuxAvailable(): boolean {
   return execOk("which tmux");
 }
 
-/** The transient scope the tmux server is escaped into. A fixed unit name, not
- *  systemd-run's per-invocation `run-p<pid>-i<id>.scope`: the cgroup belongs to
- *  the server, and every session is forked by that server into it. An anonymous
- *  scope per `new-session` names the shared cgroup after whichever session
- *  happened to start the server, and reports its whole CPU/memory footprint
- *  against that one session's command line. */
-export const CGROUP_ESCAPE_PREFIX =
-  "systemd-run --user --scope --unit=yaco-tmux-server --collect --quiet " +
-  `--description="yaco tmux server (hosts every agent session)" `;
-
-/** Whether a process whose leaf cgroup is `leaf` needs the escape: a managed
- *  `.service` would take tmux down with it on `systemctl restart`.
- *  `user@<uid>.service` is the user manager itself — direct membership means
- *  we're a top-level user process in a `.scope`, never directly in user@. */
-export function needsCgroupEscape(leaf: string | undefined): boolean {
-  return !!leaf && leaf.endsWith(".service") && !/^user@\d+\.service$/.test(leaf);
-}
-
-let _cgroupEscapePrefix: string | null | undefined = undefined;
-/** When multmux runs inside a nested systemd `.service` cgroup (e.g. spawned
- *  by workflow-server.service), `tmux new-session` would inherit that cgroup
- *  and die with the parent on `systemctl restart`. Wrapping with
- *  `systemd-run --user --scope` puts the tmux server in a transient scope
- *  outside the parent's control-group, so sessions survive parent restart.
- *  Returns the prefix to inject before `tmux new-session`, or "" when not
- *  needed (non-Linux, no systemd-run, or leaf cgroup already a .scope). */
-function cgroupEscapePrefix(): string {
-  if (_cgroupEscapePrefix !== undefined) return _cgroupEscapePrefix ?? "";
-  if (process.platform !== "linux" || !execOk("which systemd-run")) {
-    return (_cgroupEscapePrefix = null) ?? "";
-  }
-  try {
-    // cgroup v2 line: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/<leaf>"
-    const leaf = readFileSync("/proc/self/cgroup", "utf-8")
-      .split("\n").find(l => l.startsWith("0::"))?.split("/").pop()?.trim();
-    _cgroupEscapePrefix = needsCgroupEscape(leaf) ? CGROUP_ESCAPE_PREFIX : null;
-  } catch {
-    _cgroupEscapePrefix = null;
-  }
-  return _cgroupEscapePrefix ?? "";
-}
-
 /** True when a tmux server is already accepting commands on this socket.
  *  `list-sessions` exits 1 with "no server running on <socket>" when it isn't. */
 function isTmuxServerRunning(): boolean {
   return execOk("tmux list-sessions");
+}
+
+let _cgroupEscapeNeeded: boolean | undefined = undefined;
+/** Whether a `tmux new-session` issued here would found the server inside a
+ *  restartable, oom-killable `.service` cgroup. */
+function cgroupEscapeNeeded(): boolean {
+  if (_cgroupEscapeNeeded !== undefined) return _cgroupEscapeNeeded;
+  if (process.platform !== "linux" || !execOk("which systemd-run")) {
+    return (_cgroupEscapeNeeded = false);
+  }
+  try {
+    return (_cgroupEscapeNeeded = needsCgroupEscape(
+      cgroupLeaf(readFileSync("/proc/self/cgroup", "utf-8")),
+    ));
+  } catch {
+    return (_cgroupEscapeNeeded = false);
+  }
 }
 
 /** The escape belongs to the invocation that STARTS the tmux server. Every
@@ -132,8 +108,7 @@ function isTmuxServerRunning(): boolean {
  *  scope its own client was launched into, so wrapping those too buys nothing
  *  and would collide on the singleton unit name. */
 function serverEscapePrefix(): string {
-  const prefix = cgroupEscapePrefix();
-  return prefix && !isTmuxServerRunning() ? prefix : "";
+  return cgroupEscapeNeeded() && !isTmuxServerRunning() ? CGROUP_ESCAPE_PREFIX : "";
 }
 
 export function hasSession(handle: string): boolean {

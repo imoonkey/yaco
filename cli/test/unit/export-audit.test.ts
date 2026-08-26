@@ -328,6 +328,22 @@ const EXPECTED: Record<string, ExpectedExport> = {
       ],
     },
   },
+  // Where the tmux server must live, and how to put it there. Policy only: two
+  // constants and two pure predicates, no I/O at all — each consumer probes its
+  // own cgroup on the terms its runtime allows, so nothing here can block a
+  // request. That is why the closure is one file and reaches no external.
+  "./core/agent/tmux-escape": {
+    files: ["src/lib/core/agent/tmux-escape.ts"],
+    externals: [],
+    names: {
+      "src/lib/core/agent/tmux-escape.ts": [
+        "CGROUP_ESCAPE_ARGV",
+        "CGROUP_ESCAPE_PREFIX",
+        "cgroupLeaf",
+        "needsCgroupEscape",
+      ],
+    },
+  },
   // The one session-summary read. Its closure reaches the provider log-path
   // half of `providers/output.ts` and the label-collapsing rules it shares with
   // the history list; it reaches neither `history.ts` (whose provider scans are

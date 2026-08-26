@@ -47,8 +47,11 @@ Object.defineProperty(process, "platform", { value: "linux" });
 process.env["YACO_PATH"] = "/opt/bin/yaco";
 delete process.env["YACO_HOME"];
 
-const { createSession, CGROUP_ESCAPE_PREFIX, JOIN_EXISTING_SERVER } = await import(
+const { createSession, JOIN_EXISTING_SERVER } = await import(
   "../../../src/lib/core/agent/tmux.ts"
+);
+const { CGROUP_ESCAPE_PREFIX } = await import(
+  "../../../src/lib/core/agent/tmux-escape.ts"
 );
 
 // Matches both forms the code can issue: `tmux new-session` and the join-only
