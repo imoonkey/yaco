@@ -9,7 +9,18 @@
  *  happened to start the server, and reports its whole CPU/memory footprint
  *  against that one session's command line. */
 const ESCAPE_DESCRIPTION = "yaco tmux server (hosts every agent session)";
-const ESCAPE_FLAGS = ["--user", "--scope", "--unit=yaco-tmux-server", "--collect", "--quiet"];
+/** `ManagedOOMPreference=avoid`: when the user slice is under memory pressure,
+ *  systemd-oomd kills the LARGEST cgroup in it — not the one thrashing — and
+ *  the scope hosting every agent session is always the largest. `avoid` makes
+ *  it the last candidate rather than the first. */
+const ESCAPE_FLAGS = [
+  "--user",
+  "--scope",
+  "--unit=yaco-tmux-server",
+  "--property=ManagedOOMPreference=avoid",
+  "--collect",
+  "--quiet",
+];
 
 /** argv form, for callers that spawn without a shell. */
 export const CGROUP_ESCAPE_ARGV = [

@@ -44,7 +44,8 @@ describe("needsCgroupEscape — the environment probe's decision", () => {
 describe("CGROUP_ESCAPE_PREFIX — the scope belongs to the server, not to a session", () => {
   it("names one fixed unit instead of systemd-run's per-invocation scope", () => {
     expect(CGROUP_ESCAPE_PREFIX).toBe(
-      "systemd-run --user --scope --unit=yaco-tmux-server --collect --quiet " +
+      "systemd-run --user --scope --unit=yaco-tmux-server " +
+        "--property=ManagedOOMPreference=avoid --collect --quiet " +
         `--description="yaco tmux server (hosts every agent session)" `,
     );
   });
@@ -60,6 +61,12 @@ describe("CGROUP_ESCAPE_PREFIX — the scope belongs to the server, not to a ses
     // Without --unit, systemd-run mints `run-p<pid>-i<id>.scope` per invocation:
     // a fresh unit name every time, each one claiming to be that session's.
     expect(CGROUP_ESCAPE_PREFIX).toContain("--unit=");
+  });
+
+  it("asks systemd-oomd to spare the scope — it is the biggest cgroup in the slice", () => {
+    // Under slice-wide pressure oomd kills by size, and every agent session lives
+    // here; the thrasher that caused the pressure is a different, smaller unit.
+    expect(CGROUP_ESCAPE_PREFIX).toContain("--property=ManagedOOMPreference=avoid");
   });
 });
 

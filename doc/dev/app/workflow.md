@@ -103,13 +103,13 @@ The backend starts runtime watchers only after `:3001` is successfully bound. If
 
 Both desktop (Linux) and laptop (macOS) run YACO as long-running OS-managed services, kept alive across reboots. The backend uses `npm start`, not `tsx watch`, so an OOM or other backend exit reaches the service manager and triggers `Restart=on-failure`/`KeepAlive`. Use the foreground commands above when server hot reload is needed.
 
-Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, log paths, memory bounds, and autostart all derive from it, so that table is the only place to add, rename, or demote one:
+Three services, defined once in the `SERVICES` table at the top of `app/scripts/services.sh` — unit names, plist labels, log paths, and autostart all derive from it, so that table is the only place to add, rename, or demote one:
 
-| Service | Runs | Purpose | MemoryHigh / Max | Autostart |
-|---|---|---|---|---|
-| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/server/ui` | 2G / 3G | yes |
-| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `app/server/ui` tracking source | 2G / 3G | yes |
-| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | 1G / 2G | **no — on demand** |
+| Service | Runs | Purpose | Autostart |
+|---|---|---|---|
+| `yaco-server` | `npm start` in `app/server` | Hono API + WS on `:3001`, and serves `app/server/ui` | yes |
+| `yaco-ui-build` | `npm run build:watch` in `app/ui` | `vite build --watch` — keeps `app/server/ui` tracking source | yes |
+| `yaco-ui` | `npm run dev` in `app/ui` | Vite dev on `:5173` (HMR) | **no — on demand** |
 
 **Vite dev is on demand.** Nothing in the normal path touches it: `/` serves the
 built UI from `yaco-server`, and `yaco-ui-build` is what keeps it current. It is needed
@@ -127,40 +127,27 @@ launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.yaco.ui.plist   # macOS
 `services.sh start|stop|restart` still act on **all** three, Vite included — they
 mean "everything". Autostart is the thing the table controls.
 
-The memory bounds are part of the service contract, not a nicety. These are
-long-lived Node processes sharing a box with agent fleets; once one is big enough
-to be paged out, every major GC turns into a swap-in storm that stalls its event
-loop for **seconds** — on `yaco-server` that freezes every attached terminal and
-every API call at once, since they all share one loop. A kill + `Restart=on-failure`
-is strictly better. Units also carry `MemorySwapMax=0`: with tens of GB free, the
-right use of that headroom is to pin these processes in RAM so a major GC is always
-RAM-speed, not to let them grow larger. Limits are emitted from the `SERVICES` table,
-so `services.sh install` is what applies a change. (launchd has no equivalent, so the
-macOS plists carry the V8 cap only.)
+**No cgroup memory bounds — deliberately.** A unit grinding against its own
+`MemoryHigh` raises memory *pressure* on the whole user slice, and Ubuntu desktops
+ship `systemd-oomd` with `ManagedOOMMemoryPressure=kill` on `user@.service` (50% for
+20s). oomd answers slice pressure by killing the slice's **largest** cgroup — which is
+the `yaco-tmux-server.scope` hosting every agent session, never the small unit that
+caused it. Two fleet-wide session losses (2026-08-26, 2026-08-28) were exactly this:
+`yaco-server` at `MemoryHigh=2G` + `MemorySwapMax=0` thrashing reclaim on a box with
+38 GB free, oomd taking the 10 GB agent scope first. The scope is additionally
+founded with `ManagedOOMPreference=avoid` (see `cli/src/lib/core/agent/tmux-escape.ts`),
+so under genuine memory shortage it is the last candidate, not the first.
 
-**They bound only these three units — not agents.** `yaco-*.service` are siblings of
-the transient scope tmux runs in (`cgroupEscapePrefix` in `cli/src/lib/core/agent/tmux.ts` wraps `tmux new-session` in `systemd-run --user --scope` precisely so the tmux server escapes this unit's control group and survives its restarts),
-so agent sessions and anything they spawn — Polars jobs, pytest, a full quant run —
-inherit no ceiling from here and can use the whole machine.
-
-**Size them from the cgroup's peak, never the main process's RSS.** `MemoryMax`
-governs every process in the unit: `yaco-server` also hosts the WhatsApp puppeteer
-Chrome fleet (~950 MB RSS across 7 processes), and `ui-build` peaks near 1.3 GB
-during a full rebuild — limits derived from the Node RSS alone kill both. An OOM'd
-`ui-build` is the worst case: vite empties `../server/ui` per rebuild, so a mid-build
-kill can leave `/` serving nothing.
+The runaway guard for the JS heap is V8's own `--max-old-space-size=1536` in
+`app/server/package.json`: it exits with a clean OOM trace, pressures nothing, and
+`Restart=on-failure` brings the service back.
 
 ```bash
-# what to size from — cgroup peak and its anon/file split, not `ps` RSS
+# who is under pressure, and what oomd would kill (largest cgroup in the slice)
 CG=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice
-cat $CG/yaco-server.service/memory.peak $CG/yaco-server.service/memory.max
-awk '/^anon |^file /' $CG/yaco-server.service/memory.stat
-cat $CG/yaco-server.service/memory.events      # high/max/oom_kill counters
+for u in $CG/*; do printf '%-32s %6dM  %s\n' "$(basename $u)" $(( $(cat $u/memory.current)/1048576 )) "$(head -1 $u/memory.pressure)"; done
+journalctl --user -g 'systemd-oomd' --since -1d      # the kill record names the victim and its pressure
 ```
-
-The backend additionally caps V8 with `--max-old-space-size=1536` in
-`app/server/package.json`. That, not the cgroup number, is the real runaway guard for
-the JS heap; `MemoryMax` is the backstop for native memory the V8 flag cannot see.
 
 | Platform | Manager | Unit/Plist location |
 |---|---|---|

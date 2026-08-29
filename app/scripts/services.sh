@@ -16,7 +16,7 @@ SERVER_DIR="$APP_DIR/server"
 UI_DIR="$APP_DIR/ui"
 
 # The canonical service set, as
-# `name|working dir|npm script|description|MemoryHigh|MemoryMax|autostart`.
+# `name|working dir|npm script|description|autostart`.
 # Unit/label names derive from `name`, so this table is the single place a
 # service is added, renamed, or moved between always-on and on-demand.
 #
@@ -25,33 +25,23 @@ UI_DIR="$APP_DIR/ui"
 # a resident Node process around the clock otherwise, and this box shares memory
 # with agent fleets.
 #
-# The memory bounds matter as much as the restart policy. These are long-lived
-# Node processes on a box that also runs agent fleets; once one is large enough
-# to be paged out, every major GC becomes a swap-in storm that stalls the whole
-# event loop for seconds — which on `server` freezes every attached terminal.
-# Killing and restarting is strictly better than that. MemoryMax is a cgroup
-# ceiling; the backend additionally caps V8 itself via `--max-old-space-size`
-# in `app/server/package.json`, so it usually dies on the heap cap first with a
-# clean OOM trace instead of a SIGKILL.
-#
-# Size these from the CGROUP's observed peak, never from the main process's RSS
-# — the ceiling governs every process in the unit. `server` also hosts the
-# WhatsApp puppeteer Chrome fleet (~950MB RSS across 7 processes), and
-# `ui-build` spikes to ~1.3GB during a full rebuild; a limit set from the Node
-# RSS alone kills both. An OOM'd `ui-build` is especially bad: vite empties
-# `dist/` per rebuild, so a mid-build kill can leave `/` serving nothing.
+# No cgroup memory bounds, deliberately. A unit grinding against its own
+# MemoryHigh raises memory PRESSURE on the whole user slice, and systemd-oomd
+# (on by default on Ubuntu desktops, 50% for 20s) answers slice pressure by
+# killing the slice's LARGEST cgroup — which is the tmux scope hosting every
+# agent session, not the unit that caused it. The runaway guard for the JS heap
+# is V8's own `--max-old-space-size` in `app/server/package.json`: it exits with
+# a clean OOM trace, pressures nothing, and `Restart=on-failure` brings it back.
 SERVICES=(
-  "server|$SERVER_DIR|start|YACO backend (Hono)|2G|3G|yes"
-  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|1G|2G|no"
-  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|2G|3G|yes"
+  "server|$SERVER_DIR|start|YACO backend (Hono)|yes"
+  "ui|$UI_DIR|dev|YACO frontend (Vite dev)|no"
+  "ui-build|$UI_DIR|build:watch|YACO frontend (production build watcher)|yes"
 )
 svc_name()  { cut -d'|' -f1 <<<"$1"; }
 svc_dir()   { cut -d'|' -f2 <<<"$1"; }
 svc_script(){ cut -d'|' -f3 <<<"$1"; }
 svc_desc()  { cut -d'|' -f4 <<<"$1"; }
-svc_mem_high(){ cut -d'|' -f5 <<<"$1"; }
-svc_mem_max() { cut -d'|' -f6 <<<"$1"; }
-svc_autostart(){ cut -d'|' -f7 <<<"$1"; }
+svc_autostart(){ cut -d'|' -f5 <<<"$1"; }
 
 # Canonical tailnet mapping: `/` serves the built bundle — over a high-RTT link
 # Vite dev's unbundled module graph costs ~7x the requests — and DEV_SERVE_PORT
@@ -160,9 +150,6 @@ $hosts_env
 ExecStart=$node_bin_dir/npm run $(svc_script "$s")
 Restart=on-failure
 RestartSec=5
-MemoryHigh=$(svc_mem_high "$s")
-MemoryMax=$(svc_mem_max "$s")
-MemorySwapMax=0
 StandardOutput=journal
 StandardError=journal
 

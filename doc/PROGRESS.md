@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-08-28: systemd-oomd no longer takes the agent fleet down
+
+**What changed:**
+- `app/scripts/services.sh` emits no `MemoryHigh` / `MemoryMax` /
+  `MemorySwapMax` for any unit. The V8 heap cap in `app/server/package.json`
+  remains the runaway guard.
+- The tmux server's scope is founded with `ManagedOOMPreference=avoid`
+  (`cli/src/lib/core/agent/tmux-escape.ts`), so it is oomd's last candidate.
+
+**Why:**
+- Two fleet-wide session losses (08-26, 08-28) had the same shape:
+  `yaco-server` thrashing reclaim against its own 2G `MemoryHigh` with swap
+  forbidden — on a box with 38 GB free — raised the user slice past Ubuntu's
+  `systemd-oomd` 50%/20s threshold, and oomd kills the slice's *largest*
+  cgroup, which is the 10 GB agent scope, not the 2 GB thrasher. The 08-28
+  record shows the scope at `Pressure 0.00, Pgscan 0` when it was chosen.
+- The caps produced the pressure they were meant to prevent.
+
+**Key files:** `app/scripts/services.sh`, `cli/src/lib/core/agent/tmux-escape.ts`,
+`doc/dev/app/workflow.md`
+**Verification:** cli agent tests 34/34, app/server terminal tests 23/23;
+`daemon-reload` re-realized both live units to `memory.high=max`; installed
+CLI dist carries the flag; a probe scope confirmed systemd writes the
+`user.oomd_avoid` xattr at creation (and not on a later `set-property`).
+
 ## 2026-08-18: Codex dictation streaming transport is live
 
 **What changed:**
