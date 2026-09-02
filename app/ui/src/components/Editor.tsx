@@ -135,7 +135,11 @@ export function Editor({
   const syncActiveRef = useRef(false)
   const lastSelfReportedLineRef = useRef(viewportLine)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
-  const insertRequestKeyRef = useRef<number | undefined>(undefined)
+  // Seeded with the key present at mount: an insert request is a one-shot event
+  // aimed at the editor that was live when it was produced. The screen keeps the
+  // last request in state, so a fresh mount must ignore it — replaying it here
+  // would duplicate the text at the new view's cursor (position 0).
+  const insertRequestKeyRef = useRef<number | undefined>(insertRequestKey)
 
   // Content-free suggestion metrics. The ref carries the latest (project,
   // worktree) so the stable sink — captured once by the editor extension —

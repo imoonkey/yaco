@@ -221,7 +221,9 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const [inputPromptFrames, setInputPromptFrames] = useState<InputPromptFrame[]>([])
-  const sendTextKeyRef = useRef<number | undefined>(undefined)
+  // Seeded with the key present at mount — the send is a one-shot event for the
+  // terminal that was live when it was produced; a remount must not re-paste it.
+  const sendTextKeyRef = useRef<number | undefined>(sendTextKey)
   const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false, meta: false })
   const modifiersRef = useRef(modifiers)
   useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
