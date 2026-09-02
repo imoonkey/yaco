@@ -1,5 +1,39 @@
 # Progress
 
+## 2026-09-01: A voice take no longer re-inserts itself at the document start
+
+**What changed:**
+- `Editor` and `Terminal` seed their voice de-dupe refs (`insertRequestKeyRef`,
+  `sendTextKeyRef`) with the request key present **at mount**, so a pane that
+  mounts after the event was produced ignores it instead of replaying it.
+- New regression test `app/ui/src/components/__tests__/Editor.insert.test.tsx`:
+  a mount carrying a pending request inserts nothing; a request arriving while
+  mounted still inserts.
+
+**Why:**
+- `WorkspaceScreen` keeps the last confirmed transcript in `editorInsert` state
+  and never clears it, while the consumer de-dupes with a ref that only resets on
+  unmount. Any remount of the target pane — tab switch back, preview toggle, a
+  transient content reload — replayed the still-pending request into a fresh
+  CodeMirror view, whose cursor sits at position 0. The dictated text appeared
+  twice: once at the caret, once at the top of the file.
+- Seeding at mount states the real semantics (an insert is a one-shot event aimed
+  at the editor that was live when it was produced) in one line per consumer, with
+  no clear-after-delivery plumbing between the screen and the panels.
+- The terminal path is the same invariant but is not reachable today: on a fresh
+  mount the WebSocket is not yet `OPEN`, so `pasteText` drops the send. It is
+  seeded for symmetry, without a test that would only assert the ws timing.
+
+**Key files:** `app/ui/src/components/Editor.tsx`,
+`app/ui/src/components/Terminal.tsx`,
+`app/ui/src/components/__tests__/Editor.insert.test.tsx`,
+`doc/main/app/ui/app-shell.md`
+**Verification:** the new test fails on the pre-fix code (mutation-checked by
+restoring the old ref seed); `npx tsc -b` clean; `npx vitest run src/` in
+`app/ui` green (95 files / 1212 tests).
+**Commit:** 91bafc41
+**Blockers:** None
+
 ## 2026-08-28: systemd-oomd no longer takes the agent fleet down
 
 **What changed:**
