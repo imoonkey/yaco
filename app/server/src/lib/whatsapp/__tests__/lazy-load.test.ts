@@ -22,7 +22,9 @@ async function runProbe(
   try {
     return await execFileAsync(
       process.execPath,
-      ['--import', 'tsx', fileURLToPath(new URL(`./${name}`, import.meta.url)), ...args],
+      // --conditions=development matches the server's real boot (`npm start`):
+      // workspace deps resolve to src/, not a dist/ that CI never builds.
+      ['--conditions', 'development', '--import', 'tsx', fileURLToPath(new URL(`./${name}`, import.meta.url)), ...args],
       { cwd: SERVER_ROOT, env: { ...process.env, YACO_HOME: home, ...env }, timeout: 90_000 },
     )
   } finally {
