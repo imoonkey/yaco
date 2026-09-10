@@ -279,6 +279,49 @@ describe("codex hooks-review interstitial wiring", () => {
 });
 
 // ===========================================================================
+// Claude's trust-FOLDER dialog opens on "No, exit" — the declared keys must
+// walk the cursor onto the trusting option before confirming. A bare Enter
+// answers "No" and the provider exits 1 during bootstrap.
+// ===========================================================================
+
+/** Real `claude` trust dialog, as captured from the pane. `❯` marks the cursor. */
+const CLAUDE_TRUST_SCREEN = [
+  "Accessing workspace:",
+  "/home/user/new-project",
+  "Quick safety check: Is this a project you created or one you trust?",
+  "❯ No, exit",
+  "  Yes, I trust this folder",
+  "Enter to confirm · Esc to cancel",
+].join("\n");
+
+/** Replay `keys` over a captured arrow-menu screen; returns the confirmed option. */
+function confirmedOption(screen: string, keys: readonly string[]): string | null {
+  const options = screen.split("\n").filter((line) => /^[❯ ] {0,2}\S/.test(line) && /^(❯|  )/.test(line));
+  let cursor = options.findIndex((line) => line.startsWith("❯"));
+  for (const key of keys) {
+    if (key === "Down") cursor = Math.min(cursor + 1, options.length - 1);
+    else if (key === "Up") cursor = Math.max(cursor - 1, 0);
+    else if (key === "Enter") return options[cursor]!.replace(/^[❯ ]\s*/, "");
+  }
+  return null;
+}
+
+describe("claude trust-folder interstitial wiring", () => {
+  const interstitials = getProvider("claude").command.startupInterstitials ?? [];
+
+  it("the declared keys confirm 'Yes, I trust this folder', not the default 'No, exit'", () => {
+    const i = interstitials.find((x) => x.pattern.test(CLAUDE_TRUST_SCREEN));
+    expect(i).toBeDefined();
+    expect(confirmedOption(CLAUDE_TRUST_SCREEN, i!.keys)).toBe("Yes, I trust this folder");
+  });
+
+  it("pauses between the keys so the TUI redraws before the confirm", () => {
+    const i = interstitials.find((x) => x.pattern.test(CLAUDE_TRUST_SCREEN));
+    expect(i?.settleMs).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
 // Guard path — a failed gate writes blocked(trust) and sends NO keys
 // ===========================================================================
 

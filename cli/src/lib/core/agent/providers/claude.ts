@@ -58,7 +58,9 @@ export const claudeProvider: TuiProvider = {
     },
 
     startupInterstitials: [
-      { pattern: TRUST_PATTERN, keys: ["Enter"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
+      // Cursor starts on "No, exit"; Down + Enter picks "Yes, I trust this folder".
+      // A bare Enter answers "No" and the provider exits 1 during bootstrap.
+      { pattern: TRUST_PATTERN, keys: ["Down", "Enter"], settleMs: 100, skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
     ],
   },
 
