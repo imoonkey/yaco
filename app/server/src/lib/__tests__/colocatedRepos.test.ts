@@ -100,6 +100,12 @@ describe('getColocatedRepos', () => {
       expect(await getColocatedRepos(host)).toEqual(['.yaco/plan', 'vendor-repo'])
     })
 
+    it('does NOT detect a .yaco/plan symlink back into the host (no self-alias)', async () => {
+      await mkdir(join(host, '.yaco'), { recursive: true })
+      await symlink('..', join(host, '.yaco', 'plan'))
+      expect(await getColocatedRepos(host)).toEqual([])
+    })
+
     it('does NOT detect a plan without .git (tracked or plain dir)', async () => {
       await mkdir(join(host, '.yaco', 'plan', 'tasks'), { recursive: true })
       await writeFile(join(host, '.yaco', 'plan', 'tasks', 'tasks.json'), '{}\n')

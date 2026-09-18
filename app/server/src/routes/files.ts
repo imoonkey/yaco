@@ -99,11 +99,12 @@ function validateNewPath(projectPath: string, filePath: string): string | null {
 /** Recursively list every file under an already-known symlinked directory.
  *  ancestors holds realpath()s of dirs we're currently inside (per recursion path),
  *  so cycles like loop -> . terminate while two distinct top-level aliases pointing
- *  to the same target can both still be indexed. */
+ *  to the same target can both still be indexed. Colocated repo roots are skipped:
+ *  their own git ls-files already indexed them, honoring their .gitignore. */
 async function walkSymlinkedDir(
   dir: string, relPrefix: string, seen: Set<string>,
   files: { name: string; path: string; type: string }[],
-  ancestors: Set<string>
+  ancestors: Set<string>, colocated: Set<string>
 ) {
   let entries
   try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
@@ -116,11 +117,12 @@ async function walkSymlinkedDir(
       try { isDir = (await stat(abs)).isDirectory() } catch { continue }
     }
     if (isDir) {
+      if (colocated.has(relPath)) continue
       let real
       try { real = await realpath(abs) } catch { continue }
       if (ancestors.has(real)) continue
       ancestors.add(real)
-      await walkSymlinkedDir(abs, relPath, seen, files, ancestors)
+      await walkSymlinkedDir(abs, relPath, seen, files, ancestors, colocated)
       ancestors.delete(real)
     } else if (!seen.has(relPath)) {
       seen.add(relPath)
@@ -133,19 +135,20 @@ async function walkSymlinkedDir(
  *  git ls-files doesn't follow symlinks, so we recover those here.
  *  Top-level only: avoids walking the entire project tree (which can be 100k+ dirs
  *  on monorepos with large gitignored data dirs). Nested symlinked dirs are not indexed.
- *  skipNames holds top-level names already indexed via their own git ls-files (a
- *  symlinked-in colocated repo) — re-walking them would leak their .gitignored files. */
+ *  colocated holds repo paths already indexed via their own git ls-files — re-walking
+ *  one (a symlinked-in repo, or one below a symlinked `.yaco`) would leak its
+ *  .gitignored files, so the walk stops at each of them. */
 async function collectSymlinkedFiles(
   projectPath: string, seen: Set<string>,
   files: { name: string; path: string; type: string }[],
-  skipNames: Set<string> = new Set()
+  colocated: Set<string> = new Set()
 ) {
   let entries
   try { entries = await readdir(projectPath, { withFileTypes: true }) } catch { return }
   let projectReal: string
   try { projectReal = await realpath(projectPath) } catch { return }
   for (const entry of entries) {
-    if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name) || skipNames.has(entry.name)) continue
+    if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name) || colocated.has(entry.name)) continue
     const abs = join(projectPath, entry.name)
     let isDir, real
     try {
@@ -155,7 +158,7 @@ async function collectSymlinkedFiles(
     if (!isDir) continue
     // Skip self/ancestor links (loop -> ., link -> ..) that would re-enter the project tree
     if (real === projectReal || projectReal.startsWith(real + '/')) continue
-    await walkSymlinkedDir(abs, entry.name, seen, files, new Set([real]))
+    await walkSymlinkedDir(abs, entry.name, seen, files, new Set([real]), colocated)
   }
 }
 

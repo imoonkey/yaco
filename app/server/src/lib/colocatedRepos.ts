@@ -77,28 +77,6 @@ export async function getColocatedRepos(projectPath: string): Promise<string[]> 
 }
 
 async function detect(projectPath: string): Promise<string[]> {
-  const candidates = await childRepoDirs(projectPath)
-  if (existsSync(join(projectPath, PLAN_DIR, '.git'))) candidates.push(PLAN_DIR)
-  if (candidates.length === 0) return []
-
-  const tracked = await trackedPaths(projectPath)
-  const ig = await getProjectGitignore(projectPath)
-
-  return candidates
-    .filter((rel) => !tracked.some((p) => p === rel || p.startsWith(`${rel}/`)))
-    .filter((rel) => !(ig?.ignores(`${rel}/`) ?? false))
-    .sort()
-}
-
-/** Depth-1 child directories (following a symlinked dir) that contain a `.git`. */
-async function childRepoDirs(projectPath: string): Promise<string[]> {
-  let entries
-  try {
-    entries = await readdir(projectPath, { withFileTypes: true })
-  } catch {
-    return []
-  }
-
   let projectReal: string | null = null
   try {
     projectReal = await realpath(projectPath)
@@ -106,28 +84,46 @@ async function childRepoDirs(projectPath: string): Promise<string[]> {
     projectReal = null
   }
 
-  const names: string[] = []
-  for (const entry of entries) {
-    if (entry.name === '.git') continue
-    let isDir = entry.isDirectory()
-    if (entry.isSymbolicLink()) {
-      let real: string
-      try {
-        real = await realpath(join(projectPath, entry.name))
-        isDir = (await stat(real)).isDirectory()
-      } catch {
-        continue // broken symlink
-      }
-      if (!isDir) continue
-      // Skip self/ancestor links (loop -> ., link -> ..) that resolve back into
-      // the host tree — otherwise the host repo aliases itself as a colocated one.
-      if (projectReal && (real === projectReal || projectReal.startsWith(`${real}/`))) continue
-    }
-    if (!isDir) continue
-    // `.git` as a dir (normal repo) or a file (linked worktree) both qualify.
-    if (existsSync(join(projectPath, entry.name, '.git'))) names.push(entry.name)
+  const candidates = [...(await childDirNames(projectPath)), PLAN_DIR]
+  const repos: string[] = []
+  for (const rel of candidates) {
+    if (await isRepoDir(projectPath, projectReal, rel)) repos.push(rel)
   }
-  return names
+  if (repos.length === 0) return []
+
+  const tracked = await trackedPaths(projectPath)
+  const ig = await getProjectGitignore(projectPath)
+
+  return repos
+    .filter((rel) => !tracked.some((p) => p === rel || p.startsWith(`${rel}/`)))
+    .filter((rel) => !(ig?.ignores(`${rel}/`) ?? false))
+    .sort()
+}
+
+/** Depth-1 child names, `.git` excluded. */
+async function childDirNames(projectPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(projectPath, { withFileTypes: true })
+    return entries.map((e) => e.name).filter((name) => name !== '.git')
+  } catch {
+    return []
+  }
+}
+
+/** True when `rel` is a directory (following a symlink) holding a `.git` — a dir
+ *  (normal repo) or a file (linked worktree) — and does not resolve back into the
+ *  host tree (loop -> ., link -> ..), which would alias the host as a colocated repo. */
+async function isRepoDir(projectPath: string, projectReal: string | null, rel: string): Promise<boolean> {
+  const abs = join(projectPath, rel)
+  let real: string
+  try {
+    real = await realpath(abs)
+    if (!(await stat(real)).isDirectory()) return false
+  } catch {
+    return false // absent or a broken symlink
+  }
+  if (projectReal && (real === projectReal || projectReal.startsWith(`${real}/`))) return false
+  return existsSync(join(abs, '.git'))
 }
 
 /** Paths present in the host index (one `git ls-files -z`). A nested repo is

@@ -332,6 +332,24 @@ describe('GET /:project/search-index — colocated repos', () => {
     expect(paths).not.toContain('plan/session.lock')
   })
 
+  it("keeps a plan's ignored files out when .yaco is a symlink (no re-walk of the repo)", async () => {
+    await mkdir(join(testProjectPath, 'data', 'yaco'), { recursive: true })
+    await symlink(join('data', 'yaco'), join(testProjectPath, '.yaco'))
+    const plan = makeColocatedRepo('data/yaco/plan')
+    await writeFile(join(plan, '.gitignore'), '*.log\n')
+    await writeFile(join(plan, 'keep.md'), 'k')
+    await writeFile(join(plan, 'hidden.log'), 'noise')
+    await mkdir(join(testProjectPath, 'data', 'yaco', 'notes'), { recursive: true })
+    await writeFile(join(testProjectPath, 'data', 'yaco', 'notes', 'n.md'), 'n')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/.yaco/plan\n/data/\n')
+
+    const paths = (await fetchIndex()).map(e => e.path)
+    expect(paths).toContain('.yaco/plan/keep.md')
+    expect(paths).not.toContain('.yaco/plan/hidden.log')
+    // Recovery of the symlink's other contents still works.
+    expect(paths).toContain('.yaco/notes/n.md')
+  })
+
   it('does not double-list a colocated file (single seen-set)', async () => {
     const plan = makeColocatedRepo('plan')
     await writeFile(join(plan, 'foo.md'), '# foo')

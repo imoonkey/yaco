@@ -62,7 +62,7 @@ diff views, terminals — plus the parts a plain IDE doesn't have:
   sessions rendered as the tree they are; a session that finished or is waiting
   on your reply reaches the notification panel, the session badge, and your
   browser's notifications.
-- **The task graph under `plan/`, rendered live.** Worksets, `depends` edges,
+- **The task graph under `.yaco/plan/`, rendered live.** Worksets, `depends` edges,
   per-task state, and a Gantt view — refreshed over SSE as the files change.
 - **Git worktree isolation.** Switch the whole workspace between `main` and any
   `task/<slug>` checkout.
