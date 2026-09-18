@@ -383,4 +383,4 @@ One fixed unit name per user account is sound because yaco always talks to one t
 
 Detection result is cached per process. macOS and non-systemd Linux return `""` and behave exactly as before — no wrapping, no overhead, and `newSessionCommand()` pins that command line byte-for-byte. launchd doesn't have cgroup-style group-kill semantics, so macOS doesn't need this.
 
-> A session dying has never been able to end that scope, and the fix does not change that: the scope goes away when the **server** exits, which is what happened on 2026-08-11. See `plan/all/tmux-server-shared-scope/qa-cgroup-escape.md` for how that was established and what remains unexplained.
+> A session dying has never been able to end that scope, and the fix does not change that: the scope goes away when the **server** exits, which is what happened on 2026-08-11. See `.yaco/plan/all/tmux-server-shared-scope/qa-cgroup-escape.md` for how that was established and what remains unexplained.

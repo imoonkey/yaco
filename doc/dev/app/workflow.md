@@ -322,7 +322,7 @@ provisions the projects/fixtures it needs there — never the real `~/.yaco`. Th
 holds for the **main checkout too**, not just worktrees.
 
 - **Isolated server serves a static build.** `resolveDevPorts({ e2e: true })`
-  (`e2ePorts.ts`) derives, from the cwd slug (`main`, or `.worktrees/<slug>`), a
+  (`e2ePorts.ts`) derives, from the cwd slug (`main`, or `.yaco/worktrees/<slug>`), a
   hashed UI/API port pair + `yacoHome: <tmpdir>/yaco-e2e-home/<slug>`.
   `playwright.config.ts` builds the UI (`vite build --outDir dist-e2e`) and boots
   ONE Hono server (`reuseExistingServer:false`) that serves the static build +
@@ -333,12 +333,13 @@ holds for the **main checkout too**, not just worktrees.
   `YACO_UI_DIST` (= `dist-e2e`) so it never clobbers the served `app/server/ui`. Channels are
   disabled — each run gets a throwaway `YACO_HOME` with no `channels/enabled.json`, so no orphan puppeteer Chromes.
 - **Self-provisioned fixtures.** `tests/e2e/helpers/workspace.ts`:
-  `provisionWorkspace(page, request, { files?, tasks? })` / `createFixtureProject`
+  `provisionWorkspace(page, request, { files?, tasks? })` (`tasks` is written to
+  `.yaco/plan/tasks/tasks.json`) / `createFixtureProject`
   / `createWorktreeFixture` / `createExternalWorktreeFixture` / `createBinaryFixture`
   / `createBrowseFixture` register temp git projects (each carrying a
   `.yaco-e2e-fixture` marker) and `dispose()` them in `afterEach`; `uniqueFileName()`
   namespaces created artifacts. `createExternalWorktreeFixture` registers a worktree
-  at an **external** path (a sibling temp dir, OUTSIDE `.worktrees/`); its
+  at an **external** path (a sibling temp dir, OUTSIDE `.yaco/worktrees/`); its
   marker-bearing parent is swept while the checkout stays clean.
   `global-setup`/`global-teardown` (+ `helpers/cleanup.ts`) sweep leftovers and —
   gated on the marker — never delete real data, even under `E2E_REUSE`.

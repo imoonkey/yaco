@@ -24,7 +24,7 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 - File explorer with git status
 - A **grid of tab groups** for the working area — one editor tab per open file/diff, one tab per terminal, freely interleaved in each group's strip
 - Git changes panel with diff viewer
-- Tasks tab — a singleton working-area tab (Meta+Shift+T) that renders the task graph; task records live across `plan/tasks/**/tasks.json`
+- Tasks tab — a singleton working-area tab (Meta+Shift+T) that renders the task graph; task records live across `.yaco/plan/tasks/**/tasks.json`
 - Terminal sessions, each a tab bound to one session
 - File search
 

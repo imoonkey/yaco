@@ -1,14 +1,13 @@
 # Task Subcommand (`yaco-cli/core/task`)
 
-> Last updated: 2026-08-11 (milestone-derived-state: a milestone's state is derived from its children on load; prior task-read-cutover, read-export-gate, oss-doc-cleanup)
+> Last updated: 2026-09-17 (yaco-dir-layout: the store is fixed at `.yaco/plan/tasks`; prior milestone-derived-state, task-read-cutover, read-export-gate, oss-doc-cleanup)
 
-The task area owns the project task graph at `<repoRoot>/<paths.tasks>`. It
-defaults to `plan/tasks` and is overridden by `yaco.toml [paths]`: `tasks` is
-*plan-relative* and joined under `[paths].plan`, so `plan = "private-plan"`
-alone moves the store to `private-plan/tasks`. `yaco paths project --json`
-prints the resolved absolute path. If the path is a directory, every descendant
-`tasks.json` is loaded recursively; if it is a `.json` file, that file is
-treated as a single-file task store.
+The task area owns the project task graph at `<repoRoot>/.yaco/plan/tasks`
+(`TASKS_DIR`, fixed — no config; -> See: [paths.md](paths.md)).
+`yaco paths project --json` prints the absolute path. Every descendant
+`tasks.json` of that directory is loaded recursively. The store loaders also
+accept a single `.json` file path (a single-file task store), but no CLI or app
+caller passes one.
 
 The pure library lives under `cli/src/lib/core/task/`. The **read half** —
 model, graph analysis, the composed `readTaskList`, and the (asynchronous) store
@@ -68,11 +67,11 @@ Three properties of the read are contract, not implementation detail:
 **One limit, measured.** The read's worst event-loop stall is bounded by the
 largest single `tasks.json` it must parse, because one file is one `JSON.parse`
 that nothing divides. For the directory store `yaco task set` writes, that is a
-bundle file and the stall is a few milliseconds. A `yaco.toml` may instead point
-`[paths].tasks` at one `.json` file, and at multiple megabytes that parse
-(28-65 ms for 7.5 MB) is comparable to what the subprocess route cost — the
-one case where the cutover does not improve on it.
--> See: `plan/all/cli-node-sdk/qa-task-read-cutover.md` §2.
+bundle file and the stall is a few milliseconds. A single-file store passed
+straight to the loader would be one parse of the whole graph, and at multiple
+megabytes (28-65 ms for 7.5 MB) that is comparable to what the subprocess route
+cost; no CLI or app path reaches that topology.
+-> See: `.yaco/plan/all/cli-node-sdk/qa-task-read-cutover.md` §2.
 
 Only reads moved. Every mutation still spawns `yaco task …`: the lock, the
 repository gate and the write are one authority, and half of it inside the app
@@ -173,7 +172,7 @@ JSON payload comes from **exactly one** of `--data`, `--stdin`, `--file`.
 Positional JSON is not supported (USAGE exit 2). Payload must be a JSON
 object.
 
-- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. A new child task is written to its parent's source file; a new top-level task is written to `<paths.tasks>/<id>/tasks.json` when `paths.tasks` is a directory.
+- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. A new child task is written to its parent's source file; a new top-level task is written to `.yaco/plan/tasks/<id>/tasks.json`.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics). `blockReason: null` deletes the same way; an absent key still means "leave it alone".
 - **`blockReason` lives only alongside `state: "blocked"`** — the invariant `setStatus` keeps for agent sessions ([state-contract.md](state-contract.md)), for the same field. `set` enforces it on the write, so unblocking is ONE write: a payload that leaves the task in any other state drops the reason, including a task the [derivation](#milestone-state-is-derived-not-stored) rolled off `blocked` because it just gained a child. Rejecting the pair instead would make every caller that forgets a second write produce the contradiction. A reason named in the *same* payload as a non-blocked state is `INVALID` exit 1 rather than a silent drop — auto-clear only ever drops a value this write did not mention.
@@ -191,8 +190,8 @@ Response shape (`--json`):
     "action": "create" | "update",
     "task": { ...full record... },
     "warnings": [ "..." ],
-    "tasksPath": "/abs/path/to/plan/tasks",
-    "tasksFile": "/abs/path/to/plan/tasks/<id>/tasks.json"
+    "tasksPath": "/abs/path/to/.yaco/plan/tasks",
+    "tasksFile": "/abs/path/to/.yaco/plan/tasks/<id>/tasks.json"
   } }
 ```
 
@@ -308,12 +307,12 @@ filtering on `--state done` never marks a task done.
 `--json` returns the same `{ tasks, tasksPath, tasksFile }` shape over the
 filtered map.
 
-## Path resolution (the bug we fixed)
+## Path resolution
 
-Every subcommand resolves the task store via `readYacoProjectPaths(repoRoot)`
-from `yaco-cli/core/paths`. This honors `<repoRoot>/yaco.toml
-[paths].tasks`. The legacy Python script hardcoded `plan/tasks.json`; the
-current default is the recursive directory store `plan/tasks`.
+Every subcommand resolves the task store as `join(repoRoot, TASKS_DIR)`
+(`cli/src/commands/task/paths.ts`, `TASKS_DIR` from `yaco-cli/core/paths`); the
+default file for a new task is `<tasks>/tasks.json` and the archive dir is
+`<repoRoot>/.yaco/plan/archive`.
 
 `--repo <path>` overrides cwd. Empty / missing value → USAGE exit 2.
 
@@ -360,8 +359,8 @@ Stale-lock handling:
 
 | Behaviour | Legacy Python (`update-tasks.py`) | TS (`yaco task`) |
 |-----------|-----------------------------------|-------------------|
-| Tasks storage | Hardcoded `plan/tasks.json` | Recursive `plan/tasks/**/tasks.json`, or a configured single `.json` file |
-| Archive behavior | Snapshot JSON under `plan/archive` | `workset=archive` on the terminal subtree |
+| Tasks storage | Hardcoded `<plan>/tasks.json` | Recursive `.yaco/plan/tasks/**/tasks.json` |
+| Archive behavior | Snapshot JSON under `<plan>/archive` | `workset=archive` on the terminal subtree |
 | Lock primitive | `fcntl.flock` on a single file | Atomic `mkdir` of `<file>.lock.d` + owner metadata |
 | Stale-lock detection | n/a (`flock` releases on process death) | PID + hostname check; cross-host never auto-broken |
 | `set` payload source | Positional JSON OR stdin | `--data` / `--stdin` / `--file` (exactly one); positional rejected |

@@ -14,7 +14,7 @@ The failure mode this skill exists to kill: a chronological walk over commits/ta
 
 ## Where it goes
 
-The plan bundle that owns the work (e.g. `plan/all/<bundle>/implementation-summary.md`; in a yaco project resolve the bundle home via `/yaco-paths`). Match the bundle's existing language convention (zh docs keep key terms in English); don't mix languages within the doc.
+The plan bundle that owns the work (e.g. `.yaco/plan/all/<bundle>/implementation-summary.md`; in a yaco project resolve the bundle home via `/yaco-paths`). Match the bundle's existing language convention (zh docs keep key terms in English); don't mix languages within the doc.
 
 ## Skeleton
 

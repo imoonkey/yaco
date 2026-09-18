@@ -120,7 +120,7 @@ the worker it started in its own worktree.
 Twenty-two skills in
 [`agent-config/global/skills/`](agent-config/global/skills/) encode the
 development loop — and drive the `yaco` subcommands built for it: `yaco task`
-(a per-repo task graph under `plan/`), `yaco worktree` (one task, one
+(a per-repo task graph under `.yaco/plan/`), `yaco worktree` (one task, one
 checkout), `yaco plan`, `yaco gate`. They install alongside — never
 replacing — the skills you already have.
 
@@ -169,12 +169,13 @@ real <code>depends</code> edges, and a Gantt view when you want dates.</td>
 </table>
 
 The workflow's paper trail — the task graph, design docs, reviews, QA and
-implementation summaries — lives in `<repo>/plan/`, next to the code and
-committed with it by default; a visible design history is a feature. The
+implementation summaries — lives in `<repo>/.yaco/plan/`, next to the code and
+committed with it by default (YACO's only other footprint is
+`.yaco/worktrees/`, excluded locally; the host repo needs no yaco config file); a visible design history is a feature. The
 design docs and task graph are the parts you co-author; the rest the agents
 write and you mostly read — implementation summaries routinely, the others
 when you need them. If you'd rather
-not commit it with the code, `yaco plan init` promotes `plan/` into a
+not commit it with the code, `yaco plan init` promotes `.yaco/plan/` into a
 separate, colocated git repo the host repo ignores; every file stays exactly
 where it was ([doc/main/cli/plan.md](doc/main/cli/plan.md)).
 
@@ -202,7 +203,7 @@ and diff views, terminals — plus the parts a traditional IDE doesn't have:
 - **Voice input built for prompting.** Record, transcribe, auto-format the
   rambling into clean prose, review — then insert into the editor or paste
   straight into an agent's terminal.
-- **Plans and design docs, first-class.** The task graph under `plan/`
+- **Plans and design docs, first-class.** The task graph under `.yaco/plan/`
   rendered live, and markdown editing built for the `/design` and `/discuss`
   review loops — plus opt-in inline suggestions for prose.
 

@@ -2,7 +2,7 @@
 
 > What `yaco-cli` may publish for in-process use, and the audit that decides it.
 
-Last updated: 2026-08-11 (history-read-land: `readProjectHistory` joins the `core/agent` barrel, and rule 5 judges a second `node:sqlite` query) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
+Last updated: 2026-09-17 (yaco-dir-layout: `core/paths` publishes the fixed-layout constants, `core/worktree`'s closure gains `paths/project.ts`; prior history-read-land) · Code: `cli/test/unit/export-audit.test.ts`, `cli/test/helpers/export-closure.ts`, `cli/test/bench/{history,summary}-stall.ts` · Parent: [README.md](README.md)
 
 `app/server` imports all eight exported subpaths in process today —
 `core/paths`, `core/task`, `core/agent`, `core/agent/messages`,
@@ -83,7 +83,11 @@ to work.
 - **`core/worktree`** publishes `validateSlug`, `worktreePath`, `worktreeBranch`
   and nothing else. `git`, `create`, `merge`, `cleanup`, `pr` spawn git or gh
   synchronously and read `process.cwd()`; `cli/src/commands/worktree/*` imports
-  those modules directly. -> See: [worktree.md](worktree.md#convention-export)
+  those modules directly. `convention.ts` imports `WORKTREES_DIR` from
+  `paths/project.ts`, so the pinned closure is `errors`, `paths/project`,
+  `result`, `worktree/{convention,index,slug}` with externals `node:fs` +
+  `node:path` (`node:fs` is `resolveDocDir`'s single `statSync` — a bounded
+  read under rule 5). -> See: [worktree.md](worktree.md#convention-export)
 - **`core/task`** publishes the model, the pure graph analysis and the read half
   of the store. The writers, the tasks-file lock, `archive.ts` and `link.ts` are
   gone from the barrel: task mutation is one authority — lock, repository gate,
@@ -94,11 +98,10 @@ to work.
 - **`YACO_TASK_LOCK_TIMEOUT_MS`** is read only at
   `cli/src/commands/task/lock-timeout.ts` and passed down as an explicit
   `AcquireOptions.timeoutMs`. -> See: [task.md](task.md#locking)
-- **`TomlParseError`** is deleted; `parseScopedToml` raises
-  `CliError(ENV, "yaco.toml:<line>: …")` — no `details`, so the envelope is
-  byte-identical to what the deleted class's translation produced, and the line
-  number stays where it always was, in the message.
-  -> See: [paths.md](paths.md#files)
+- **`core/paths`** publishes the runtime-home helpers (`yaco-home.ts`), the
+  registry (`project-registry.ts`), and the fixed project layout
+  (`project.ts`: `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR`, `resolveDocDir`) —
+  no parser and no config reader. -> See: [paths.md](paths.md#files)
 
 - **`core/agent/messages`** publishes one verb, `readMessageRows` — a per-subpath
   export rather than a widening of the `core/agent` barrel, because the barrel's

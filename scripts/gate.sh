@@ -13,9 +13,9 @@
 #
 # Evidence checks are existence + freshness in v1 (verdict/severity parsing is v3):
 #   doc    : a doc/** or PROGRESS.md change, or a `docs:` commit since <base>
-#   review : a plan/ *review* file whose reviewed_sha..HEAD touches no code root
+#   review : a .yaco/plan/ *review* file whose reviewed_sha..HEAD touches no code root
 #            (^(src|cli|app|tools)/) — the review lands AFTER the last code change.
-#   qa     : a plan/ *qa* file whose reviewed_sha..HEAD touches no app/ui/.
+#   qa     : a .yaco/plan/ *qa* file whose reviewed_sha..HEAD touches no app/ui/.
 # Freshness reads reviewed_sha FROM the artifact (not the live HEAD sha), so a
 # docs/plan-only commit stacked on reviewed code keeps the review valid (no
 # docs-tail false-stale); a code commit after the review correctly goes stale.
@@ -45,7 +45,7 @@ if ! git rev-parse --verify "$base^{commit}" >/dev/null 2>&1; then
 fi
 
 head_sha="$(git rev-parse --short=7 HEAD)"
-# --no-renames so a rename exposes BOTH paths: `git mv cli/x.ts plan/x.md` must
+# --no-renames so a rename exposes BOTH paths: `git mv cli/x.ts .yaco/plan/x.md` must
 # not hide the code source (rename detection reports only the destination),
 # which would let relocated code skip the verify/review floor.
 diff_files="$(git diff "$base"..HEAD --name-only --no-renames)"
@@ -65,15 +65,15 @@ touched_ui=0
 grep -qE "$code_roots_re" <<<"$diff_files" && touched_code=1
 grep -qE "$ui_root_re" <<<"$diff_files" && touched_ui=1
 
-# A diff confined to the documentation trees — doc/ and plan/ (design docs,
+# A diff confined to the documentation trees — doc/ and .yaco/plan/ (design docs,
 # task graphs) — is its own doc-sync: no separate code change is left to record,
 # so a design doc committed without a `docs:` prefix must not false-fail the doc
 # check. Scoped to those trees on purpose: a bare *.md match would admit
 # behavior-bearing markdown (agent-config skill prompts, CLAUDE.md/AGENTS.md),
-# which must still owe doc evidence. Any path outside doc//plan/ flips this off.
+# which must still owe doc evidence. Any path outside doc/ and .yaco/plan/ flips this off.
 doc_only=0
 if [ "$touched_any" = 1 ] && [ "$touched_code" = 0 ] && [ "$touched_ui" = 0 ] \
-  && ! grep -qvE '^(doc|plan)/' <<<"$diff_files"; then
+  && ! grep -qvE '^(doc|\.yaco/plan)/' <<<"$diff_files"; then
   doc_only=1
 fi
 
@@ -89,7 +89,7 @@ extract_reviewed_sha() {
     | grep -oiE '[0-9a-f]{7,40}' | head -1
 }
 
-# artifact_is_fresh <touch-regex> <iname-glob> : true if SOME plan/ artifact
+# artifact_is_fresh <touch-regex> <iname-glob> : true if SOME .yaco/plan/ artifact
 # matching the glob carries a reviewed_sha whose `reviewed_sha..HEAD` diff
 # (--no-renames) touches no path matching <touch-regex>. The sha must be a known
 # commit AND an ancestor of HEAD — a missing, unknown, or rebased/orphaned sha
@@ -105,7 +105,7 @@ artifact_is_fresh() {
     changed="$(git diff "$sha"..HEAD --name-only --no-renames)"
     grep -qE "$touch_re" <<<"$changed" && continue
     return 0
-  done < <(find plan/ -type f -iname "$glob" 2>/dev/null)
+  done < <(find .yaco/plan/ -type f -iname "$glob" 2>/dev/null)
   return 1
 }
 

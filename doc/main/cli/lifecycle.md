@@ -411,9 +411,8 @@ rename.
   files and rewrites any `parentSession === old` to `new`. Idempotent.
 - **Task links** — the task store is resolved from the renamed session's
   `sessionPath` via `resolveTasksPathForSessionPath()`, which walks upward to the
-  nearest project root (first ancestor with `yaco.toml` or `plan/tasks`, so a
-  worktree or subdirectory `sessionPath` still resolves), then honors
-  `yaco.toml [paths].tasks`. `rewriteTaskAgentHandle(tasksPath, old, new)` rewrites
+  first ancestor containing `.yaco/plan/tasks` and returns that path (so a
+  worktree or subdirectory `sessionPath` still resolves). `rewriteTaskAgentHandle(tasksPath, old, new)` rewrites
   matching `agents` entries under the tasks-file lock — order-preserving, deduped
   if `new` was already linked, patched per-source-file so unrelated tasks aren't
   re-normalized. Idempotent.

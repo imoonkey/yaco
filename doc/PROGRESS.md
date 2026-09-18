@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-09-17: One `.yaco/` footprint per project, one doc folder
+
+**What changed:**
+- The project layout is fixed: `.yaco/plan` (tasks, bundles, views) and
+  `.yaco/worktrees/<slug>`. `yaco.toml`, its `[paths]` override, the TOML
+  parser and the `[colocated]` policy are deleted; `yaco-cli/core/paths`
+  exports `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR` and `resolveDocDir`.
+- `yaco worktree create` provisions the plan by privacy state (private plan →
+  symlink, tracked → branch copy, absent → nothing; a tracked plan no longer
+  throws) and excludes `/.yaco/worktrees/`. `yaco plan init` targets
+  `.yaco/plan` and whitelists `!.yaco/` + `!.yaco/plan/` in `.ignore`.
+- `yaco paths project` returns `{plan, tasks, worktrees, doc}`; `yaco gate`
+  skips every check in a repo without `scripts/gate.sh`; registering `$HOME`
+  as a project is refused.
+- The app detects `.yaco/plan` as a colocated repo at depth 2; the watcher and
+  UI read the constants.
+- Skills stop assuming `doc/main` + `doc/dev`: one doc folder (`docs/` or
+  `doc/`), PROGRESS only if the project keeps one.
+
+**Why:**
+- YACO has to fit repos it does not own; two top-level dirs plus a committed
+  config file did not. Zero of 14 registered projects used `yaco.toml`.
+
+**Key files:** `cli/src/lib/core/paths/project.ts`,
+`cli/src/lib/core/worktree/create.ts`, `cli/src/commands/plan/init.ts`,
+`app/server/src/lib/colocatedRepos.ts`, `app/server/src/lib/project-watcher.ts`,
+`agent-config/global/skills/{yaco-paths,update-doc,init-all}/`,
+`scripts/gate.sh`. Design: `.yaco/plan/all/yaco-dir-layout/design.md`.
+**Verification:** `scripts/verify.sh`; cli unit + integration, server, ui unit
++ isolated e2e; Codex review per task.
+**Commit:** `411c1d12`..HEAD on `task/yaco-dir-layout`
+**Next:** deploy the CLI, then run `.yaco/plan/all/yaco-dir-layout/migrate.sh`
+per project (yaco first).
+**Blockers:** None
+
 ## 2026-09-01: A voice take no longer re-inserts itself at the document start
 
 **What changed:**

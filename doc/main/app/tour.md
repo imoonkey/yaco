@@ -55,7 +55,7 @@ switching devices doesn't end anything.
   <img src="../../assets/tasks-light.png" alt="The task graph, stacked view">
 </picture>
 
-`plan/tasks/` rendered live: milestones with their tasks, per-task state, and
+`.yaco/plan/tasks/` rendered live: milestones with their tasks, per-task state, and
 the worktree slug each one runs in. Workset (active / backlog / archive) and
 state are filters, not separate screens.
 
@@ -74,7 +74,7 @@ graph assumed rather than ones you wrote down.
   <img src="../../assets/worktrees-light.png" alt="The worktree picker listing main and two task branches">
 </picture>
 
-`yaco worktree` puts each task on `task/<slug>` under `.worktrees/`. The
+`yaco worktree` puts each task on `task/<slug>` under `.yaco/worktrees/`. The
 explorer header switches the entire workspace — files, git, diffs, drafts —
 between them, while your terminals keep running where they are.
 

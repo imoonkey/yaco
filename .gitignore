@@ -8,7 +8,6 @@ progress.json.lock
 reference/
 test-results/
 .env
-.worktrees/
 .tasks.json.lock
 # yaco task-store lock (mkdir-based, holds owner.json) — a transient runtime
 # artifact, never committed; keeping it out of git also means a held lock can't
@@ -17,8 +16,3 @@ test-results/
 .wwebjs_cache/
 .wwebjs_auth/
 .playwright-mcp/
-
-# Transient align/monitor logs (regenerated per run)
-plan/**/poll.log
-plan/**/poll.err
-plan/**/_monitor.log

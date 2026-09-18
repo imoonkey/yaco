@@ -58,7 +58,7 @@ Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
 ### `${YACO_HOME}/projects/<id>/events.jsonl`
 
-Append-only NDJSON event stream per registered project. **Durable source of truth** for the attention feed (Facet B), sidebar badges, and downstream channel deliveries. The actionable attention state is *projected* from this log + the live snapshot + the ack/clear watermarks every time it is computed — there is no derived inbox cache. One event per line; lines are immutable. Schema: [`plan/all/yaco-core/final/schemas/event.schema.json`](../../../../plan/all/yaco-core/final/schemas/event.schema.json).
+Append-only NDJSON event stream per registered project. **Durable source of truth** for the attention feed (Facet B), sidebar badges, and downstream channel deliveries. The actionable attention state is *projected* from this log + the live snapshot + the ack/clear watermarks every time it is computed — there is no derived inbox cache. One event per line; lines are immutable. Schema: [`.yaco/plan/all/yaco-core/final/schemas/event.schema.json`](../../../../.yaco/plan/all/yaco-core/final/schemas/event.schema.json).
 
 Line shape:
 
@@ -138,7 +138,7 @@ A REVIEW generation is **unread** iff `gen.tsMs > max(projectReadAt[project], ke
 
 A flat string set of dismissed **ACT** generation ids (`{ generations: string[] }`). An ACT condition is muted iff its exact `generation` is a member — a **per-generation tombstone**, not a watermark. A watermark can't express this: a future-dated/clock-skewed `statusEnteredAt` written as a cutoff would also suppress a later, correctly-dated re-entry; exact-id membership means a re-entry (new `statusEnteredAt` ⇒ new generation id) always re-surfaces. The engine **prunes the set to live `rawAct` generations each recompute** (a resolved condition's id can never recur, so its tombstone is dropped) — keeping the store bounded. Locked read-modify-write add/remove (`addDismissedActGeneration` / `removeDismissedActGenerations`) so a concurrent `/dismiss` and an engine prune can't clobber each other.
 
-`plan/progress.json`, `plan/active/<bundle>/progress.json`, and `plan/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
+`.yaco/plan/progress.json`, `.yaco/plan/active/<bundle>/progress.json`, and `.yaco/plan/active/<bundle>/workstream.json` are not runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
 
 ## In-Browser State
 
@@ -182,7 +182,7 @@ Dirty file drafts persisted by `usePersistence`, snapshotted from `useFileState`
   "/abs/project/root": {
     "path/to/file.ts": { "draft": "file content...", "baseRevision": 3, "viewportLine": 42, "updatedAt": 1710936000000 }
   },
-  "/abs/project/root/.worktrees/feature": {
+  "/abs/project/root/.yaco/worktrees/feature": {
     "other/file.ts": { "draft": "...", "baseRevision": 1, "viewportLine": 1, "updatedAt": 1710936000123 }
   }
 }
@@ -190,7 +190,7 @@ Dirty file drafts persisted by `usePersistence`, snapshotted from `useFileState`
 
 The flush serializes **every** live worktree bucket (not just the active one), overlaid onto the migrated base, so a dirty draft in a background worktree is never lost. Only dirty drafts (or a non-default viewport) are persisted; empty buckets are pruned; on quota exceeded the oldest `(bucket, path)` entries across all worktrees are evicted first.
 
-**Migration on load** (`loadDraftsByWorktree`, runs once at mount before any save): legacy single-bucket blobs fold into the abspath-keyed record — the legacy primary `yaco-drafts:<project>` `{ files }` blob into the project-root bucket, and each legacy `yaco-drafts:<project>:wt:<suffix>` into its worktree's abspath bucket (a post-P1 abspath suffix verbatim, a pre-P1 slug under `.worktrees/<slug>`). A newer multi-bucket bucket wins over a stale legacy fold; duplicate legacy keys for one worktree merge newer-`updatedAt`-per-path. `commitDraftMigration` then retires the legacy `:wt:` keys (after persisting the merged record) so a cleared draft can't resurrect.
+**Migration on load** (`loadDraftsByWorktree`, runs once at mount before any save): legacy single-bucket blobs fold into the abspath-keyed record — the legacy primary `yaco-drafts:<project>` `{ files }` blob into the project-root bucket, and each legacy `yaco-drafts:<project>:wt:<suffix>` into its worktree's abspath bucket (a post-P1 abspath suffix verbatim, a pre-P1 slug resolved to `<projectPath>/.yaco/worktrees/<slug>`). A newer multi-bucket bucket wins over a stale legacy fold; duplicate legacy keys for one worktree merge newer-`updatedAt`-per-path. `commitDraftMigration` then retires the legacy `:wt:` keys (after persisting the merged record) so a cleared draft can't resurrect.
 
 ### In-Memory Only (not persisted)
 

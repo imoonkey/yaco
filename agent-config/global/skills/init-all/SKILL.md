@@ -1,6 +1,6 @@
 ---
 name: init-all
-description: Set up a project for all AI agents (Claude, Codex, Cursor, Gemini) — CLAUDE.md, multi-tool symlinks, and a doc/ memory base. Use when onboarding a repo or the user says "init all" or "set up for codex".
+description: Set up a project for all AI agents (Claude, Codex, Cursor, Gemini) — CLAUDE.md, multi-tool symlinks, and a doc-folder memory base. Use when onboarding a repo or the user says "init all" or "set up for codex".
 metadata:
   yaco-dependent: "true"
 ---
@@ -16,8 +16,8 @@ Initialize a project for multi-agent development. CLAUDE.md is the single source
 Invoke Claude's built-in `/init`, then trim the generated CLAUDE.md to the pointer convention:
 
 - Don't repeat rules the agent already loads globally
-- Don't embed architecture or workflow details — point to `doc/main/` and `doc/dev/` as SOTA instead
-- Keep it under 50 lines; if longer, content belongs in doc/
+- Don't embed architecture or workflow details — point to the doc folder as SOTA instead
+- Keep it under 50 lines; if longer, content belongs in the doc folder
 
 ### 2. Multi-Tool Symlinks
 
@@ -38,20 +38,17 @@ Idempotent. Requires CLAUDE.md (fails if missing); refuses to clobber a real fil
 
 ### 3. Bootstrap Doc Structure
 
-If doc/ doesn't exist, create the SOTA skeleton:
+Resolve the doc folder: `yaco paths project --json` → `doc` (the first existing of `docs/`,
+`doc/`, else `docs/`). Seed only what is missing:
 
 ```
-doc/
-  main/
-    architecture.md     # System overview, components, data flow
-  dev/
-    workflow.md         # Build, test, lint, dev setup
+<doc>/
+  README.md             # Doc map: system overview, components, build/test commands
   PROGRESS.md           # History trace (append-only)
 ```
 
 Write brief stubs based on Step 1 analysis. These grow over time via `/update-doc`.
-
-If doc/main/ and doc/dev/ already exist, leave them alone.
+Leave any existing file and any existing doc tree as it is.
 
 ### 4. Verify Global Config
 

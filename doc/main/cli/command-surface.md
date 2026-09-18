@@ -25,7 +25,7 @@ Outside the grid — the only agent command that isn't CRUD-shaped:
 - **agent**: `mark-crashed` — internal, called by the wrapper EXIT trap (not a user command): generation/sentinel-guarded rewrite of a session state file to `crashed` + `exitCode`. See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
 
 A worktree is a git object, so YACO adds **no** worktree read command: `git
-worktree list` and `git -C .worktrees/<slug> status` are its canonical readers.
+worktree list` and `git -C .yaco/worktrees/<slug> status` are its canonical readers.
 The only YACO-specific bit (the slug↔path↔branch convention) is shared as a
 core export instead — see [worktree.md](worktree.md#convention-export). There is
 no `project get`: a project record is only `{name, path}`, so a keyed lookup

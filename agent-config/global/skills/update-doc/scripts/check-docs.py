@@ -5,8 +5,8 @@ Resolves relative markdown links, validates mermaid blocks, and (optionally)
 greps for stale paths left behind by a rename. Stdlib only.
 
 Usage:
-  scripts/check-docs.py [root]                       # default root: doc
-  scripts/check-docs.py doc --stale old/path.md foo  # also fail if a pattern appears
+  scripts/check-docs.py <root>                        # the project's doc folder
+  scripts/check-docs.py docs --stale old/path.md foo  # also fail if a pattern appears
 
 Exit status is non-zero if any check fails.
 """
@@ -25,8 +25,11 @@ MERMAID_RE = re.compile(r"```mermaid\n(.*?)```", re.S)
 
 
 def main(argv: list[str]) -> int:
-    positional = [a for a in argv[1:] if not a.startswith("--")]
-    root = pathlib.Path(positional[0] if positional else "doc")
+    args = argv[1:argv.index("--stale")] if "--stale" in argv else argv[1:]
+    if len(args) != 1:
+        print("usage: check-docs.py <root> [--stale <pattern>...]", file=sys.stderr)
+        return 2
+    root = pathlib.Path(args[0])
     stale = argv[argv.index("--stale") + 1:] if "--stale" in argv else []
 
     files = sorted(root.rglob("*.md"))

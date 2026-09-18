@@ -60,13 +60,13 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | Trigger | Channel(s) | Source |
 |---------|------------|--------|
 | File create/delete/rename in project | `filetree` | project-watcher.ts |
-| `plan/tasks/**` write (task-graph edit) | `tasks` | project-watcher.ts (on the file write; honors each project's `yaco.toml [paths].tasks`), tasks.ts (`invalidateTasksCache`, on app-initiated mutation) |
-| `.worktrees/<slug>` top-level change | `worktrees` | project-watcher.ts |
+| `.yaco/plan/tasks/**/*.json` write (task-graph edit, primary or inside a worktree) | `tasks` | project-watcher.ts (on the file write; one matcher on `TASKS_DIR`), tasks.ts (`invalidateTasksCache`, on app-initiated mutation) |
+| `.yaco/worktrees/<slug>` top-level change | `worktrees` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
 | Session status change | `sessions` | project-watcher.ts (`${YACO_HOME:-~/.yaco}/sessions/*.json`, filtered by `sessionPath`), terminal.ts (Workflow shell lifecycle in `${YACO_HOME:-~/.yaco}/shell-sessions` + tmux), session-reconciler.ts (drift), sessions.ts (`invalidateSessionsCache`, on every mutation) |
 | `projects.json` change | `projects` | project-watcher.ts |
 
-Project-watcher filesystem events (`filetree`, `git`, `projects`) are debounced at 200ms. A `plan/tasks/**` write emits both `filetree` (explorer) and the dedicated `tasks` channel; the Task Graph / Gantt / detail views subscribe to `tasks` only, so unrelated file writes don't refetch the (large) task payload. Progress data now comes from the YACO event stream and is refreshed through normal polling/SSE refresh paths; repo-local `progress.json` is not watched.
+Project-watcher filesystem events (`filetree`, `git`, `projects`) are debounced at 200ms. A `.yaco/plan/tasks/**` write emits both `filetree` (explorer) and the dedicated `tasks` channel; the Task Graph / Gantt / detail views subscribe to `tasks` only, so unrelated file writes don't refetch the (large) task payload. Progress data now comes from the YACO event stream and is refreshed through normal polling/SSE refresh paths; repo-local `progress.json` is not watched.
 
 ## Polling Fallbacks
 

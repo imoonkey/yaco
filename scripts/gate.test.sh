@@ -114,11 +114,11 @@ r="$(mk 0)"
 expect "clean -> all skip" "$r" "$(head_sha "$r")" \
   '{"verify":"skip","doc":"skip","review":"skip","qa":"skip"}' 0
 
-# 2. doc-only diff (plan/ markdown), no docs: prefix -> self-documenting: a
+# 2. doc-only diff (.yaco/plan/ markdown), no docs: prefix -> self-documenting: a
 # pure-doc change has no separate code to record, so doc passes (was a false fail).
 r="$(mk 0)"; b="$(head_sha "$r")"
-commit_file "$r" plan/foo.md "add plan note"
-expect "doc-only plan/ -> doc pass" "$r" "$b" \
+commit_file "$r" .yaco/plan/foo.md "add plan note"
+expect "doc-only .yaco/plan/ -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
 # 3. doc/** change -> doc passes by path
@@ -129,7 +129,7 @@ expect "doc path -> doc pass" "$r" "$b" \
 
 # 3b. docs: commit subject (non-doc path) -> doc passes by commit
 r="$(mk 0)"; b="$(head_sha "$r")"
-commit_file "$r" plan/x.md "docs: record decision"
+commit_file "$r" .yaco/plan/x.md "docs: record decision"
 expect "docs: commit -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
@@ -139,10 +139,10 @@ expect "docs: commit -> doc pass" "$r" "$b" \
 # subject detection is what passes the doc check (preserving that coverage).
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" tool.cfg "chore: zero"
-commit_file "$r" plan/a.md "chore: one"
-commit_file "$r" plan/b.md "docs: the evidence"
-commit_file "$r" plan/c.md "chore: two"
-commit_file "$r" plan/d.md "chore: three"
+commit_file "$r" .yaco/plan/a.md "chore: one"
+commit_file "$r" .yaco/plan/b.md "docs: the evidence"
+commit_file "$r" .yaco/plan/c.md "chore: two"
+commit_file "$r" .yaco/plan/d.md "chore: three"
 expect "docs: commit amid noise (mixed) -> doc pass" "$r" "$b" \
   '{"verify":"skip","doc":"pass","review":"skip","qa":"skip"}' 0
 
@@ -154,11 +154,11 @@ commit_file "$r" agent-config/skills/x/SKILL.md "update skill"
 expect "behavior .md outside doc trees not doc_only -> doc fail" "$r" "$b" \
   '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
-# 3e. MIXED non-doc + plan/ diff, no doc/PROGRESS and no docs: commit -> doc
+# 3e. MIXED non-doc + .yaco/plan/ diff, no doc/PROGRESS and no docs: commit -> doc
 # fail: the doc-only relaxation must NOT leak to a diff with real non-doc work.
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" tool.cfg "chore: config change"
-commit_file "$r" plan/note.md "add note"
+commit_file "$r" .yaco/plan/note.md "add note"
 expect "mixed non-doc+plan, no evidence -> doc fail" "$r" "$b" \
   '{"verify":"skip","doc":"fail","review":"skip","qa":"skip"}' 1
 
@@ -175,8 +175,8 @@ r="$(mk 0)"
 commit_file "$r" cli/foo.ts "feat: code"
 b="$(head_sha "$r")"
 in_root "$r"
-mkdir -p "$r/plan"
-git -C "$r" mv cli/foo.ts plan/foo.md
+mkdir -p "$r/.yaco/plan"
+git -C "$r" mv cli/foo.ts .yaco/plan/foo.md
 git -C "$r" commit -qm "refactor: relocate"
 expect "renamed code->plan is not doc_only -> verify+review owed" "$r" "$b" \
   '{"verify":"pass","doc":"fail","review":"fail","qa":"skip"}' 1
@@ -185,20 +185,21 @@ expect "renamed code->plan is not doc_only -> verify+review owed" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_x.md
+artifact "$r" .yaco/plan/review_x.md
 expect "code+verify-pass+doc+review -> green" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
 # 4b. The real plan store is shared into a worktree as a directory symlink.
-# `find plan/` follows that starting-point link without following arbitrary links
+# `find .yaco/plan/` follows that starting-point link without following arbitrary links
 # below it, so evidence remains visible from the worktree checkout.
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 commit_file "$r" doc/PROGRESS.md "progress"
 shared="$(mktemp -d "$root/shared.XXXXXX")"
 in_root "$shared"
-ln -s "$shared" "$r/plan"
-artifact "$r" plan/review_x.md
+mkdir -p "$r/.yaco"
+ln -s "$shared" "$r/.yaco/plan"
+artifact "$r" .yaco/plan/review_x.md
 expect "symlinked plan store -> review artifact found" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
@@ -219,8 +220,8 @@ expect "code, no review artifact -> review fail" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" app/ui/x.ts "feat: ui"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_x.md
-artifact "$r" plan/qa_x.md
+artifact "$r" .yaco/plan/review_x.md
+artifact "$r" .yaco/plan/qa_x.md
 expect "app/ui + qa artifact -> qa pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"pass"}' 0
 
@@ -228,7 +229,7 @@ expect "app/ui + qa artifact -> qa pass" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" app/ui/x.ts "feat: ui"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_x.md
+artifact "$r" .yaco/plan/review_x.md
 expect "app/ui, no qa artifact -> qa fail" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"fail"}' 1
 
@@ -236,7 +237,7 @@ expect "app/ui, no qa artifact -> qa fail" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_x.md deadbeef
+artifact "$r" .yaco/plan/review_x.md deadbeef
 expect "stale review sha -> review fail" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
 
@@ -250,7 +251,7 @@ r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 commit_file "$r" doc/PROGRESS.md "docs: progress on top of reviewed code"
-artifact "$r" plan/review_x.md "$code_sha"
+artifact "$r" .yaco/plan/review_x.md "$code_sha"
 expect "docs tail on reviewed code -> review pass (no false-stale)" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
@@ -259,7 +260,7 @@ expect "docs tail on reviewed code -> review pass (no false-stale)" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
-artifact "$r" plan/review_x.md "$code_sha"
+artifact "$r" .yaco/plan/review_x.md "$code_sha"
 commit_file "$r" cli/bar.ts "feat: more code after the review"
 commit_file "$r" doc/PROGRESS.md "progress"
 expect "code commit after review -> review fail (stale)" "$r" "$b" \
@@ -275,7 +276,7 @@ git -C "$r" checkout -q -b side
 commit_file "$r" cli/side.ts "feat: orphaned code"
 orphan_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 git -C "$r" checkout -q "$orig_branch"
-artifact "$r" plan/review_x.md "$orphan_sha"
+artifact "$r" .yaco/plan/review_x.md "$orphan_sha"
 commit_file "$r" doc/PROGRESS.md "progress"
 expect "reviewed_sha not ancestor of HEAD -> review fail (stale)" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
@@ -285,7 +286,7 @@ expect "reviewed_sha not ancestor of HEAD -> review fail (stale)" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact_raw "$r" plan/review_x.md "just prose, no machine-readable sha here"
+artifact_raw "$r" .yaco/plan/review_x.md "just prose, no machine-readable sha here"
 expect "review artifact without reviewed_sha -> review fail" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1
 
@@ -296,8 +297,8 @@ old_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 commit_file "$r" cli/bar.ts "feat: more code"
 new_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_old.md "$old_sha"   # stale: cli/bar.ts landed after it
-artifact "$r" plan/review_new.md "$new_sha"   # fresh: no code since
+artifact "$r" .yaco/plan/review_old.md "$old_sha"   # stale: cli/bar.ts landed after it
+artifact "$r" .yaco/plan/review_new.md "$new_sha"   # fresh: no code since
 expect "multiple reviews, any fresh -> review pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
@@ -307,8 +308,8 @@ expect "multiple reviews, any fresh -> review pass" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" app/ui/x.ts "feat: ui"
 ui_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
-artifact "$r" plan/review_x.md "$ui_sha"
-artifact "$r" plan/qa_x.md "$ui_sha"
+artifact "$r" .yaco/plan/review_x.md "$ui_sha"
+artifact "$r" .yaco/plan/qa_x.md "$ui_sha"
 commit_file "$r" cli/foo.ts "feat: cli code, not app/ui"
 commit_file "$r" doc/PROGRESS.md "progress"
 expect "cli commit after artifacts -> review stale, qa fresh" "$r" "$b" \
@@ -320,7 +321,7 @@ r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 long_sha="$(git -C "$r" rev-parse HEAD)"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact "$r" plan/review_x.md "$long_sha"
+artifact "$r" .yaco/plan/review_x.md "$long_sha"
 expect "40-char reviewed_sha parsed -> review pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
@@ -330,7 +331,7 @@ r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact_raw "$r" plan/review_x.md \
+artifact_raw "$r" .yaco/plan/review_x.md \
   "VERDICT: pass  unresolved_critical=0  unresolved_high=0  reviewed_sha=$code_sha"
 expect "inline reviewed_sha= verdict form parsed -> review pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
@@ -341,7 +342,7 @@ r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
 commit_file "$r" doc/PROGRESS.md "progress"
-artifact_raw "$r" plan/review_x.md "- **reviewed_sha:** \`$code_sha\` — frozen there"
+artifact_raw "$r" .yaco/plan/review_x.md "- **reviewed_sha:** \`$code_sha\` — frozen there"
 expect "markdown/backtick reviewed_sha form parsed -> review pass" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"pass","qa":"skip"}' 0
 
@@ -351,7 +352,7 @@ expect "markdown/backtick reviewed_sha form parsed -> review pass" "$r" "$b" \
 r="$(mk 0)"; b="$(head_sha "$r")"
 commit_file "$r" cli/foo.ts "feat: code"
 code_sha="$(git -C "$r" rev-parse --short=7 HEAD)"
-artifact_raw "$r" plan/review_x.md "unreviewed_sha: $code_sha (not a real field)"
+artifact_raw "$r" .yaco/plan/review_x.md "unreviewed_sha: $code_sha (not a real field)"
 commit_file "$r" doc/PROGRESS.md "progress"
 expect "reviewed_sha substring (unreviewed_sha) not parsed -> review fail" "$r" "$b" \
   '{"verify":"pass","doc":"pass","review":"fail","qa":"skip"}' 1

@@ -7,44 +7,55 @@ metadata:
 
 # yaco-paths — Project Path Layout & Handoffs
 
-Where a project's docs, task graph, and archives live, and how stages hand off to yaco machinery. Companion to the `yaco paths` CLI.
+Where a project's plan, task graph, worktrees and docs live, and how stages hand off to yaco machinery. Companion to the `yaco paths` CLI.
 
 ## Resolve, don't hardcode
 
-Never hardcode `plan/`. Ask the CLI — it reads `yaco.toml [paths]` (or defaults) and returns every path **already joined and absolute**; use the values directly, don't re-join:
+Ask the CLI — it returns every path **absolute**; use the values directly:
 
 ```bash
-yaco paths project --json   # { plan, tasks, active, archive, backlog, worktrees }
+yaco paths project --json   # { plan, tasks, worktrees, doc }
 yaco paths runtime --json   # { yacoHome, sessionsDir, ... } for agent/session state
 ```
 
-In `yaco.toml` the keys `tasks`/`active`/`archive`/`backlog` are written **plan-relative**, so they default under `<plan>`; `plan` and `worktrees` are repo-relative. Defaults:
+The layout is fixed — every YACO artifact lives under one hidden directory, and the host repo needs no yaco config file:
 
 ```
-plan    = <repo>/plan       archive   = <plan>/archive
-tasks   = <plan>/tasks      backlog   = <plan>/backlog
-active  = <plan>/active     worktrees = <repo>/.worktrees   (not under plan)
+<repo>/.yaco/
+  plan/          plan        tasks/ all/ active/ backlog/ archive/
+  worktrees/     worktrees   <slug>/   (branch task/<slug>)
 ```
 
-`all` is **not** a returned key: the bundle home is always the fixed subdir `<plan>/all`.
+`tasks` is `<plan>/tasks`. The views `active`, `backlog`, `archive` and the bundle home `all` are always `<plan>/<name>`.
+
+`doc` is the project's doc folder: the first existing of `docs/`, `doc/`, else `docs/` (create it when you first write into it). How the folder is organized is the project's choice — follow what is there.
+
+## Plan privacy
+
+A plan is either private or part of the host repo; its state is the only signal:
+
+| `.yaco/plan` | host git | a worktree gets |
+|---|---|---|
+| has `.git` (private, made by `yaco plan init`) | excluded by `/.yaco/plan` | a symlink to the primary's plan (one live graph) |
+| no `.git` (tracked) | committed like any dir | the branch's own copy |
+| absent | — | nothing |
+
+In a private plan, commit plan artifacts inside the plan repo (`git -C <plan>`), not the host.
 
 ## Layout
 
-Each `<plan>`/`<active>`/`<archive>`/`<backlog>`/`<tasks>` below is a **resolved** value from above (independently overridable in `yaco.toml`). Write the project's docs into the bundle home — one per stage, plus the implementation summary — not scattered:
+Write the project's docs into the bundle home — one per stage, plus the implementation summary — not scattered:
 
 ```
-<plan>/all/<project>/            # bundle home (all = fixed <plan>/all subdir) — holds the project's per-stage docs
+<plan>/all/<project>/            # bundle home — holds the project's per-stage docs
   <stage>.md                     # scope-review, ux-design, design, eng-plan-review, code-review, notes, …
   initial/ discussion/ final/    # /double-design: initial/design[_review]_{claude,codex}.md → /align turns → final/
   implementation_summary.md      # maintained by /update-doc: what was implemented, key decisions, current state
-<active>/<project>            -> <plan>/all/<project>   # symlink view while active
-<backlog>/<project>           -> <plan>/all/<project>   # symlink view while queued
-<archive>/YYYYMMDD_<project>  -> <plan>/all/<project>   # symlink view once archived
-<tasks>                          # task store (see below)
+<plan>/active/<project>       -> ../all/<project>   # symlink view while active
+<plan>/backlog/<project>      -> ../all/<project>   # symlink view while queued
+<plan>/archive/YYYYMMDD_<project> -> ../all/<project>   # symlink view once archived
+<tasks>                          # task store: <tasks>/tasks.json, split **/tasks.json layouts included
 ```
-
-- A view (`<active>`/`<archive>`/`<backlog>`) is a symlink to the bundle home `<plan>/all/<project>` — compute its relative target from the resolved view dir, never hardcode `../all`.
-- `<tasks>` is the resolved task store: a directory (file `<tasks>/tasks.json`, split `**/tasks.json` layouts included) or, when `[paths].tasks` ends in `.json`, that single file.
 
 ## Task-graph handoff
 
@@ -54,7 +65,7 @@ Each `<plan>`/`<active>`/`<archive>`/`<backlog>`/`<tasks>` below is a **resolved
 ## Archive procedure
 
 - If the task store at `<tasks>` has the matching terminal project task, archive it via `yaco task archive <id> --json` (or `/yaco-task`). The command marks the terminal subtree `workset=archive`.
-- Move the project symlink view from `<active>/<project>` or `<backlog>/<project>` to `<archive>/YYYYMMDD_<project>`, using the archive date.
+- Move the project symlink view from `<plan>/active/<project>` or `<plan>/backlog/<project>` to `<plan>/archive/YYYYMMDD_<project>`, using the archive date.
 
 ## Project detection
 

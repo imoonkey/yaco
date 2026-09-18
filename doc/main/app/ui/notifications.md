@@ -40,7 +40,7 @@ therefore computed in different places:
         ┌───────────── SERVER (attention authority) ─────────────┐
  cli    │  ~/.yaco/sessions/*.json ──fs.watch──┐                  │
 (runtime)  (status incl. crashed, statusEnteredAt)                │
-        │  plan/tasks/**  ─────────fs.watch────┐ │                │
+        │  .yaco/plan/tasks/** ────fs.watch────┐ │                │
         │                                      ▼ ▼                │
         │                       ┌──── attention-engine.ts ────┐   │
         │  hot reads (no GC):   │ • detect status/state EDGES  │   │

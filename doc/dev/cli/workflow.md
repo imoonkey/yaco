@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-08-11 (dual-artifact npm package + the skills mirror)
+> Last updated: 2026-09-17 (the fixed `.yaco/plan` layout; prior dual-artifact npm package + the skills mirror)
 
 ## Prerequisites
 
@@ -153,8 +153,8 @@ Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
 `yaco doctor [--repo <path>] [--json]` runs eleven required checks; the
 `--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
 0 / 1 carrying the pass/fail signal. A check may report `skip` (a zero
-state, e.g. `task-graph` in a repo with no task store at the path
-`yaco.toml [paths]` resolves — `plan/tasks` by default); skips count in
+state, e.g. `task-graph` in a repo with no task store at
+`.yaco/plan/tasks`); skips count in
 neither summary bucket, so they keep the exit code at 0. A store that is
 there but unreadable still fails.
 
@@ -248,20 +248,19 @@ route's synchronous `ssh-add` discovery is imported, not reconstructed) and
 `cli/test/integration/task/read-starvation.integration.ts`. Both are skipped
 with a stated reason when `cli/dist` is unbuilt.
 
-`tasks-read-starvation.test.ts` seeds its four fixtures from this repository's
-own `plan/tasks` when it is there, and from a generated tree of the same scale
-when it is not — **which it is not in a worktree or on CI, since `plan/` is a
-separate repository.** Every test name says which (`[repository data]` /
-`[synthetic data]`), because the two are not interchangeable: the generated tree
-is uniform where the real graph is not, and a limit that only the real graph
-reaches will pass on the stand-in. To reproduce the primary checkout's condition
-from a worktree, copy the real store in — a **copy**, never a symlink, and
-excluded so it cannot be staged:
+`tasks-read-starvation.test.ts` seeds its fixtures from this repository's
+own `.yaco/plan/tasks` when it is there, and from a generated tree of the same
+scale when it is not — **which it is not on CI, since `.yaco/plan/` is a
+separate repository.** A worktree made by `yaco worktree create` carries the
+real store through its `.yaco/plan` link. Every test name says which
+(`[repository data]` / `[synthetic data]`), because the two are not
+interchangeable: the generated tree is uniform where the real graph is not, and
+a limit that only the real graph reaches will pass on the stand-in. A worktree
+missing the link gets it back from re-running `yaco worktree create <slug>`:
 
 ```bash
 wt=$(git rev-parse --show-toplevel)
-cp -a /abs/primary/checkout/plan/tasks "$wt/plan/tasks"
-printf 'plan/\n' >> "$(git rev-parse --git-path info/exclude)"
+ls -ld "$wt/.yaco/plan"                  # expect a symlink to the primary's plan
 (cd "$wt/cli" && npm run build:bundle)   # the fixture skips itself without cli/dist
 (cd "$wt/app/server" && npx vitest run --project unit \
    src/routes/__tests__/tasks-read-starvation.test.ts --reporter=verbose)
@@ -326,7 +325,7 @@ Test split:
   asserts the install wrote nothing under `HOME` but npm's own cache. Nothing
   else in the suite can see a broken `files` allowlist.
 
-Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, the milestone state derivation (in-flight `running`, all-cancelled `cancelled`, a stale recorded value corrected on read, the old parent re-derived after a reparent, `set` refused on a milestone), --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
+Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo` resolution to `<repo>/.yaco/plan/tasks`, the milestone state derivation (in-flight `running`, all-cancelled `cancelled`, a stale recorded value corrected on read, the old parent re-derived after a reparent, `set` refused on a milestone), --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create at `.yaco/worktrees/<slug>` (self-excluded via `info/exclude`) + idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
 ### Testing a window that `sleepSync` holds open
 

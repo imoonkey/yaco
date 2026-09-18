@@ -126,7 +126,7 @@ Enumerates every git-registered worktree of a project (primary + linked, incl. m
 
 **Export**: `useProjectWorktrees(projectName)` → `WorktreeInfo[]`
 
-**WorktreeInfo**: `{ id: string, name: string, branch: string, head: string, isPrimary: boolean, dirty: boolean, ahead: number, behind: number }` — `id` is the worktree's **absolute path** (the stable identity that replaces the old `.worktrees/<slug>` slug).
+**WorktreeInfo**: `{ id: string, name: string, branch: string, head: string, isPrimary: boolean, dirty: boolean, ahead: number, behind: number }` — `id` is the worktree's **absolute path** (the stable identity that replaces the old slug identity).
 
 Behavior:
 - Fetches `GET /api/worktrees/:project` (git-sourced via `git worktree list`), which includes the primary checkout — so manually-created and task-less worktrees appear (unlike the old task-derived list, which only surfaced active-task-linked worktrees)

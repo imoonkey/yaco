@@ -8,7 +8,7 @@ metadata:
 Read the task graph (`/yaco-task`), dispatch `/implement` workers (`/yaco-agent`),
 **gatekeep** their output, and merge up the worktree/branch DAG (`/yaco-worktree`). Every `yaco`
 call MUST pass `--json` and use the canonical `yaco agent start <provider>` form; the task graph
-path resolves from yaco.toml (`/yaco-paths`).
+lives at `.yaco/plan/tasks` (`/yaco-paths`).
 
 A worker is just `/implement <task>` in its own session — orchestrate never re-runs the leaf
 recipe, it gatekeeps by **reading evidence**. The model is **task DAG ≅ worktree/branch DAG**

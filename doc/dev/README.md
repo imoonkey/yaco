@@ -65,18 +65,20 @@ workspace package lands and fails loudly if it is outside the worktree; and
 resolver for every workspace specifier `app/server` imports.
 `scripts/worktree-provision.test.sh` is a hermetic test of the mirror itself.
 
-The plan store follows a different rule: it is repo-global mutable state and is
-shared whole. `yaco worktree create` resolves both checkouts' `[paths].plan` plus
-the primary `[paths].worktrees`, then creates a relative link from the worktree
-plan location to the primary store. Re-running the same create repairs a missing
-link in place. It refuses a real directory or stale link so artifacts are never
-silently overwritten. Do not hand-link the plan location: both names and the
-relative depth must come from the resolvers. Migrate any local plan artifacts
-first, remove the old location, then re-run `yaco worktree create`.
+The plan store follows a different rule: yaco's `.yaco/plan` is a private repo
+(it has a `.git`), so it is repo-global mutable state and is shared whole.
+`yaco worktree create` (worktree at `.yaco/worktrees/<slug>`) creates a relative
+link from the worktree's `.yaco/plan` to the primary's. Re-running the same
+create repairs a missing link in place. It refuses a real directory or stale
+link so artifacts are never silently overwritten. Do not hand-link the plan
+location: the relative depth must come from `create`. Migrate any local plan
+artifacts first, remove the old location, then re-run `yaco worktree create`.
+(A project whose plan is tracked in the host repo gets the branch's own copy
+instead — -> See: [main/cli/worktree.md](../main/cli/worktree.md).)
 
-Whole-worktree cleanup unlinks that link safely. Never append the resolved plan
-path and a trailing slash to a recursive remove command: that spelling follows
-the link into the shared task graph. Use `yaco worktree cleanup <slug>`.
+Whole-worktree cleanup unlinks that link safely. Never append `.yaco/plan` and a
+trailing slash to a recursive remove command: that spelling follows the link
+into the shared task graph. Use `yaco worktree cleanup <slug>`.
 
 **Build the CLI before running `app/server` tests in a fresh worktree.** A few of
 them spawn a plain `node --import tsx` child, which resolves `yaco-cli/*` to
@@ -112,10 +114,11 @@ and `~/.yaco`.
 
 `gate.sh` derives the check set from the diff, not from which task is in flight —
 the work can't dodge a gate by misclassifying itself. v1 is stateless; `review`/`qa`
-are existence + **freshness** checks — a `plan/` artifact whose own `reviewed_sha`
+are existence + **freshness** checks — a `.yaco/plan/` artifact whose own `reviewed_sha`
 is an ancestor of HEAD with no code (`review`: `^(src|cli|app)/`) / no `app/ui`
 (`qa`) touched since, so a docs/plan-only tail keeps a review valid while a later
-code commit correctly stales it. The thin `yaco gate` verb wraps these scripts
+code commit correctly stales it. A diff that touches only `doc/` and `.yaco/plan/`
+is doc-only (`^(doc|\.yaco/plan)/`). The thin `yaco gate` verb wraps these scripts
 ([`main/cli/gate.md`](../main/cli/gate.md)), and the skills call them: `/verify` runs
 `scripts/verify.sh`, `/implement` self-checks with `yaco gate`, and `/orchestrate`
 gatekeeps on its result. `scripts/gate.test.sh` is a hermetic test of the floor mapping.

@@ -7,8 +7,8 @@ metadata:
 
 Operation manual for `yaco task` — the project task graph, from top-level
 milestones down to leaf tasks. The graph lives in `<tasks>/**/tasks.json` —
-`<tasks>` defaults to `plan/tasks`, and `yaco paths project --json` resolves a
-project's actual path. Never edit those files or script around them: every read
+`<tasks>` is `.yaco/plan/tasks`, and `yaco paths project --json` resolves it
+absolute. Never edit those files or script around them: every read
 and write goes through the `yaco task` CLI, which owns the graph constraints
 (ref validation, cycle detection, state guards, parent rollup). For where docs,
 bundles, and the archive/symlink views live, follow `/yaco-paths`.
@@ -31,7 +31,7 @@ bundles, and the archive/symlink views live, follow `/yaco-paths`.
     "depends": [],
     "state": "ready",
     "workset": "active",
-    "design": "plan/all/workspace-state/final/design_aligned.md",
+    "design": ".yaco/plan/all/workspace-state/final/design_aligned.md",
     "scope": ["src/store/**", "src/hooks/useEditor*"],
     "acceptCriteria": "- editor state persists across refresh\n- npm test passes\n- no console errors on reload",
     "note": null
@@ -60,7 +60,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
 | `blockReason` | no | `verification-failed \| human-review \| external \| dependency \| merge-conflict` — why a task is blocked. Valid only with `state: "blocked"`: set both in one write, and any write that leaves the task in another state drops it (so unblocking needs no second call). Sending a reason with a non-blocked state is an error; send `null` to clear it while staying blocked |
-| `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>`. Lifecycle (create/merge/cleanup) is driven by `/yaco-worktree` |
+| `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.yaco/worktrees/<slug>/`, branch: `task/<slug>`. Lifecycle (create/merge/cleanup) is driven by `/yaco-worktree` |
 | `created` | auto | ISO timestamp, set automatically on creation |
 | `updated` | auto | ISO timestamp, set automatically on every write |
 

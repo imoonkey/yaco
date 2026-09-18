@@ -3,7 +3,8 @@
 > Last updated: 2026-08-13 (tmux, git and providers are executed, not merely
 > located, and report the version they printed; `agent start` refuses a missing
 > provider through the same `which` this check uses; providers skips when no
-> agent CLI is installed; registry skips; skills-link resolves from the package)
+> agent CLI is installed; registry skips; skills-link resolves from the package;
+> 2026-09-17: task-graph reads the fixed `.yaco/plan/tasks`)
 
 `yaco doctor` runs the eleven required health checks against the current
 yaco install + repo. Each check returns
@@ -78,13 +79,12 @@ deliberate change to the published contract.
 
 ## `task-graph` skip — the unplanned repo
 
-The check reads the task store at the path `yaco.toml [paths]` resolves —
-`plan/tasks` unless the repo overrides `plan` or `tasks`; the detail always
-names the resolved path. A repo that has no store there has not been planned
+The check reads the task store at the fixed `<repo>/.yaco/plan/tasks`
+(`TASKS_DIR`); the detail always names that path. A repo that has no store there has not been planned
 yet; that is the zero state of every fresh clone, not breakage:
 
 ```
-SKIP  task-graph  <repo>/plan/tasks absent — no task graph yet (`yaco task set` creates one)
+SKIP  task-graph  <repo>/.yaco/plan/tasks absent — no task graph yet (`yaco task set` creates one)
 ```
 
 Because skips count in neither summary bucket, `summary.fail` stays 0, the
@@ -100,7 +100,7 @@ read fails, and says why:
 | no component of the path exists | `skip` |
 | the repo root itself does not exist (a wrong `--repo`) | `fail` — bad input, not a zero state |
 | a live symlinked plan root that has no tasks tree yet | `skip` |
-| symlink dangling at a moved/extracted store — **at any depth**, `plan` or `plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
+| symlink dangling at a moved/extracted store — **at any depth**, `.yaco/plan` or `.yaco/plan/tasks` | `fail` — `dangling symlink[ at <component>]` |
 | walled off by permissions | `fail` — the errno (`EACCES: …`) |
 | loads but does not validate | `fail` — `<N> integrity problem(s)` |
 | loads and validates (an empty store counts) | `pass` |
@@ -109,8 +109,8 @@ The dangling-symlink case is not hypothetical: pointing the plan root at a task
 store kept outside the public tree is exactly how a repo separates its plan, and
 laundering that broken link into a skip would hide it. The probe therefore climbs
 to the nearest component that exists on disk rather than testing the leaf alone —
-`plan -> /moved/private-plan` breaks `plan/tasks` just as `plan/tasks -> /moved`
-does, and the extracted *root* is the likelier shape.
+`.yaco/plan -> /moved/private-plan` breaks `.yaco/plan/tasks` just as
+`.yaco/plan/tasks -> /moved` does, and the extracted *root* is the likelier shape.
 
 ## The execution probe — `which` is not enough
 
@@ -300,13 +300,13 @@ task store can still have a lock `yaco task validate` would reject.
   envelope contract on failure (`{ok:true, data:{...}}` stdout + exit 1 + empty
   stderr); and the `--repo` wire-through against a sandbox repo.
 - `cli/test/unit/commands/install.test.ts` — the fresh-clone flow: `yaco
-  install --repo <clone>` against a checkout with no `plan/` exits 0 with a
+  install --repo <clone>` against a checkout with no `.yaco/plan/` exits 0 with a
   `task-graph` skip, in-process and as a subprocess.
 - `cli/test/integration/install.test.ts` — the same flow through the real
   entry point: `git archive HEAD tools cli agent-config` into a sandbox (no
-  `plan/`), then that export's `tools/install.sh --cli-only` with the closing
+  `.yaco/plan/`), then that export's `tools/install.sh --cli-only` with the closing
   doctor **enabled**, asserting exit 0 and the skip line. The older bootstrap
-  case runs `--skip-doctor` against this checkout, which has a `plan/`, so it
+  case runs `--skip-doctor` against this checkout, which has a `.yaco/plan/`, so it
   cannot cover this.
 - `cli/test/integration/pack.test.ts` — the stranger's machine end to end: the
   real `npm pack` tarball, installed into a temp prefix, then `yaco install` on

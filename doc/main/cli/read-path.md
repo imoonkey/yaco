@@ -4,7 +4,7 @@
 > spawn `yaco … --json`, what each move measured, and how to put any one of them
 > back.
 
-Last updated: 2026-08-12 (starvation-single-file-limit — the single-file limit restated at repository size, and the gate stopped swapping its data source silently) · Design: `plan/all/cli-node-sdk/final/design.md` (*Read-path adoption*, *Concurrency and event-loop safety*, *Staging and rollback*) · Parent: [README.md](README.md)
+Last updated: 2026-09-17 (yaco-dir-layout — the task store is fixed at `.yaco/plan/tasks`, so the single-file topology is no longer reachable from the app and its gate cases are gone; prior starvation-single-file-limit) · Design: `.yaco/plan/all/cli-node-sdk/final/design.md` (*Read-path adoption*, *Concurrency and event-loop safety*, *Staging and rollback*) · Parent: [README.md](README.md)
 
 `app/server` used to reach every piece of CLI-owned data the same way: spawn the
 `yaco` binary, wait for the child, parse its `--json` envelope. Five read paths
@@ -74,11 +74,11 @@ what shipped is the exception written down, not a softened condition.
    this repository uses. Cutover 4 costs 14–23 ms against ~6 ms on the largest
    log in the local corpus, and is better or equal everywhere else. Both are
    stated below with what they cost and why the alternatives were rejected;
-   neither gate was widened to admit its own result, and cutover 1's two
-   single-file cases assert only wall time, with the stall printed rather than
-   bounded, because on that topology the stall is one indivisible `JSON.parse`
-   of the store whose size is input rather than implementation — with the cost
-   of dropping the bound named below rather than absorbed.
+   neither gate was widened to admit its own result. The store now lives at the
+   fixed directory `.yaco/plan/tasks`, so the app can no longer reach the
+   single-file topology (its only route in was a path override that no longer
+   exists) and `tasks-read-starvation.test.ts` measures the directory store
+   only; the loader still accepts a `.json` path, covered by CLI tests.
 
 Condition 3 is the one that has produced surprises in both directions, so three
 findings belong with the rule itself:
@@ -124,8 +124,8 @@ bound rather than a harness, and says so below.
 Read alone, with HTTP framing out of it, a hand-run of cutover 1's comparison
 over a copy of this repository's *actual* graph measured **153.9 → 10.7 ms** at
 485 tasks and **427.3 → 72.1 ms** at 4 850. The committed harness falls back to
-generated fixtures when `plan/tasks` is not in the checkout — which it is not in
-a worktree or on CI, since `plan/` is a separate repository — and **every one of
+generated fixtures when `.yaco/plan/tasks` is not in the checkout — which it is
+not on CI, since `.yaco/plan/` is a separate repository — and **every one of
 its test names carries `[repository data]` or `[synthetic data]`**, so a run on
 the stand-in cannot be read as one that measured the real store. It could be
 before: the harness said so only in a console line, and that is how the
@@ -158,7 +158,7 @@ built binary and deep-equals its rows *and* its failure bodies for the message
 read; and an unchanged CLI golden matrix throughout, so every command's stdout,
 stderr and exit code are byte-identical to the pre-cutover build.
 
--> Artifacts: `plan/all/cli-node-sdk/qa-{task,message,summary}-read-cutover.md`
+-> Artifacts: `.yaco/plan/all/cli-node-sdk/qa-{task,message,summary}-read-cutover.md`
 and the matching `impl-*-summary.md`.
 
 ### The limits that are on the record
@@ -205,9 +205,9 @@ accepted with its reason.
   the app's event loop — so it is the same indivisible-parse limit seen in the
   statistic most sensitive to it, not a measurement artefact.
 
-  What both single-file cases assert is the separation that is real — **8–10× on
-  wall time at repository size** (137–172 → 15–21 ms) — with the stall printed
-  on every run.
+  What the single-file cases asserted, while the app could still reach that
+  topology, was the separation that is real — **8–10× on wall time at
+  repository size** (137–172 → 15–21 ms) — with the stall printed on every run.
 
   **What dropping the bound costs, stated rather than waved at.** Blocking added
   after the read still turns the two directory fixtures red, and
@@ -221,7 +221,7 @@ accepted with its reason.
   needs a gate whose bound is not a millisecond threshold, and the obvious ratio
   does not supply one (a bare parse is 0.7× the route's stall at repository size
   and 1.8× at ten times). Named as a follow-up, not silently absorbed.
-  -> Artifact: `plan/all/starvation-single-file-limit/qa-single-file-limit.md`
+  -> Artifact: `.yaco/plan/all/starvation-single-file-limit/qa-single-file-limit.md`
 - **One 38 MB message log costs 14–23 ms against the subprocess route's ~6 ms.**
   Traced, not waved at: one 1.36 MB record through the provider parser is 2 ms of
   indivisible work, and allocating the 40 MB read buffer accounts for up to
@@ -354,7 +354,7 @@ A session belongs to a project when its cwd is the project path **or a
 descendant of it**. That is not a new rule — it is the one the live session list
 has always applied (`listByPath`'s prefix match, `resolveProjectForPath` /
 `isPathDescendantOrEqual`). History keyed on an exact cwd instead, so an agent
-working in `<project>/.worktrees/<slug>` — every `/orchestrate` worker and
+working in `<project>/.yaco/worktrees/<slug>` — every `/orchestrate` worker and
 reviewer — was listed while it ran and vanished the moment it was only history.
 The two halves of one question answered with two scoping rules; history was the
 odd one out.
@@ -371,7 +371,7 @@ Three things the widening had to get right:
 - **The name decides nothing; it only narrows what has to be read.**
   `encodeClaudeCwd` maps every non-alphanumeric to `-` and has no inverse, so
   the sibling project `<project>-backups` shares the prefix with
-  `<project>/.worktrees/x` — and two distinct cwds can collide onto *one*
+  `<project>/.yaco/worktrees/x` — and two distinct cwds can collide onto *one*
   directory, which is why attribution is per log and never per directory: one
   log deciding for its neighbours would admit and drop history according to
   `readdir` order. Nor can the filesystem answer: a worktree's directory is

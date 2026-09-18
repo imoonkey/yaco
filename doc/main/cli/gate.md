@@ -2,7 +2,7 @@
 
 > `yaco gate` — the thin verb that runs the repo's exit gate against the session's diff.
 
-Last updated: 2026-06-24 · Code: `cli/src/commands/gate.ts`, `cli/src/lib/core/gate/` · Parent: [README.md](README.md)
+Last updated: 2026-09-17 (a repo without `scripts/gate.sh` skips every check) · Code: `cli/src/commands/gate.ts`, `cli/src/lib/core/gate/` · Parent: [README.md](README.md)
 
 `gate ⊃ verify`. The verb is a ~thin wrapper; the floor-from-diff logic lives in
 the repo's `scripts/gate.sh` (a `codify-process-gate` v1 artifact). Three layers,
@@ -33,6 +33,11 @@ yaco gate [--base <ref>] [--json]
 `data.checks` is `{verify, doc, review, qa}`, each `pass`/`fail`/`skip` — verbatim
 from `gate.sh`. `data.dirty` is whether the worktree has uncommitted changes.
 
+**The gate is a per-repo opt-in.** A repo with no `scripts/gate.sh` returns every
+check as `skip` (`ok:true`, exit 0) with `sha` = HEAD and `base` = `--base` or
+HEAD itself — no merge-base is computed. A repo with no commit at all (unborn
+HEAD) has no sha to report and is an `ENV` error, script or not.
+
 ## Root resolution — the session's worktree, not the primary checkout
 
 `runGate` resolves the root via `git rev-parse --show-toplevel`, **not**
@@ -54,7 +59,8 @@ emits the result on stdout, exit code carrying the verdict:
 |---------|--------|--------|------|
 | all checks green/skip | `{"ok":true,"data":{…}}` | (gate.sh progress, streamed) | `0` |
 | some check `fail` | `{"ok":false,"data":{…}}` | (gate.sh progress, streamed) | `1` |
-| couldn't run (not a repo / no `scripts/gate.sh`) | empty | `{"ok":false,"error":{code:"ENV"…}}` | `3` |
+| no `scripts/gate.sh` | `{"ok":true,"data":{…all skip}}` | empty | `0` |
+| couldn't run (not a repo / unborn HEAD) | empty | `{"ok":false,"error":{code:"ENV"…}}` | `3` |
 
 `ok` mirrors the verdict in BOTH the green and red cases so a caller reads `ok`
 and `checks` together — unlike `doctor`'s always-`ok:true`. **`dirty` does not
@@ -80,5 +86,5 @@ same sha makes it earn its keep.
 
 `cli/test/gate.test.ts` (in the `test:unit` allowlist): `getMergeBase` parity;
 `runGate` skip/fail/dirty/default-base, last-stdout-line parse, missing-script
-throw, multi-MB-stderr regression, linked-worktree-gates-its-own-tree; and the
+all-skip, unborn-HEAD throw, multi-MB-stderr regression, linked-worktree-gates-its-own-tree; and the
 `yaco gate` CLI envelope (clean/red/usage/hard-error/exit-codes).
