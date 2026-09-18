@@ -213,6 +213,27 @@ describe("worktree plan provisioning", () => {
     expect(readFileSync(join(fix.repo, ".yaco", "worktrees", "occupied", PLAN, "keep.txt"), "utf-8")).toBe("keep\n");
   });
 
+  it("private plan: links correctly when the branch symlinks .yaco to another in-tree dir", () => {
+    const fix = fixture("private");
+    const tree = join(fix.root, "branch-tree");
+    guardFixturePath(fix.root, tree);
+    expect(git(fix.repo, "worktree", "add", "-q", tree, "-b", "task/moved-parent").status).toBe(0);
+    mkdirSync(join(tree, "data", "yaco"), { recursive: true });
+    writeFileSync(join(tree, "data", "yaco", ".keep"), "");
+    symlinkSync(join("data", "yaco"), join(tree, ".yaco"));
+    expect(git(tree, "add", "-f", ".yaco", "data/yaco/.keep").status).toBe(0);
+    expect(git(tree, "commit", "-m", "symlink .yaco").status).toBe(0);
+    expect(git(fix.repo, "worktree", "remove", "--force", tree).status).toBe(0);
+
+    const created = data(runYaco(fix, fix.repo, ["worktree", "create", "moved-parent", "--json"]));
+    const worktree = created["path"] as string;
+    expect(realpathSync(join(worktree, PLAN))).toBe(join(fix.repo, PLAN));
+    const task = data(runYaco(fix, worktree, ["task", "get", "sample", "--json"]));
+    expect((task["task"] as { title: string }).title).toBe("Shared task");
+    // Reuse validates the same physical link instead of calling it stale.
+    expect(data(runYaco(fix, fix.repo, ["worktree", "create", "moved-parent", "--json"]))["reused"]).toBe(true);
+  });
+
   it("repairs a pre-change real plan directory after preserving it, without recreating the worktree", () => {
     const fix = fixture("private");
     const created = data(runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]));

@@ -1,7 +1,7 @@
 /** Tests for the fixed project layout's one probe, resolveDocDir. */
 
 import { afterAll, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,6 +33,18 @@ describe("resolveDocDir", () => {
 
   it("prefers docs/ when both exist", () => {
     const root = tempRepo("doc", "docs");
+    expect(resolveDocDir(root)).toBe(join(root, "docs"));
+  });
+
+  it("skips a regular file named like a doc folder", () => {
+    const root = tempRepo("doc");
+    writeFileSync(join(root, "docs"), "not a folder\n");
+    expect(resolveDocDir(root)).toBe(join(root, "doc"));
+  });
+
+  it("accepts a directory symlink", () => {
+    const root = tempRepo("real-docs");
+    symlinkSync(join(root, "real-docs"), join(root, "docs"));
     expect(resolveDocDir(root)).toBe(join(root, "docs"));
   });
 });

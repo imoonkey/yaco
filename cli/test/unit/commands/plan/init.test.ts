@@ -1,7 +1,7 @@
 /** Tests for `yaco plan init` (runPlanInit core + handlePlan dispatcher). */
 
 import { afterAll, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -69,10 +69,26 @@ describe("runPlanInit", () => {
     const root = makeHostRepo();
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/\n!.yaco/plan/\n");
     const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
     expect(exclude.split("\n")).toContain("/.ignore");
   });
+
+  it.skipIf(spawnSync("rg", ["--version"]).status !== 0)(
+    "leaves the plan searchable by plain rg while worktrees stay hidden",
+    () => {
+      const root = makeHostRepo();
+      writeFileSync(join(root, ".yaco", "plan", "note.md"), "NEEDLE\n");
+      mkdirSync(join(root, ".yaco", "worktrees", "wt"), { recursive: true });
+      writeFileSync(join(root, ".yaco", "worktrees", "wt", "copy.md"), "NEEDLE\n");
+      execFileSync("git", ["commit", "--allow-empty", "-qm", "init"], { cwd: root });
+      writeFileSync(join(root, ".git", "info", "exclude"), "/.yaco/worktrees/\n");
+      runPlanInit({ cwd: root });
+
+      const found = spawnSync("rg", ["-l", "NEEDLE", "."], { cwd: root, encoding: "utf-8" });
+      expect(found.stdout.trim().split("\n")).toEqual(["./.yaco/plan/note.md"]);
+    },
+  );
 
   it("does not exclude a .ignore the host already had", () => {
     const root = makeHostRepo();
@@ -87,38 +103,38 @@ describe("runPlanInit", () => {
     writeFileSync(join(root, ".ignore"), "node_modules/\ndist/\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!.yaco/plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!.yaco/\n!.yaco/plan/\n");
   });
 
   it("glues a newline when the existing .ignore lacks a trailing one", () => {
     const root = makeHostRepo();
     writeFileSync(join(root, ".ignore"), "dist/");
     runPlanInit({ cwd: root });
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/\n!.yaco/plan/\n");
   });
 
   it("leaves an .ignore that already carries the whitelist untouched", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), "dist/\n!.yaco/plan/\ncustom\n");
+    writeFileSync(join(root, ".ignore"), "dist/\n!.yaco/\n!.yaco/plan/\ncustom\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(false);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/plan/\ncustom\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/\n!.yaco/plan/\ncustom\n");
   });
 
   it("treats an indented copy of the entry as absent — leading whitespace defeats negation", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), " !.yaco/plan/\n");
+    writeFileSync(join(root, ".ignore"), "!.yaco/\n !.yaco/plan/\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe(" !.yaco/plan/\n!.yaco/plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/\n !.yaco/plan/\n!.yaco/plan/\n");
   });
 
   it("treats a trailing-whitespace copy as present — git strips trailing whitespace", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), "!.yaco/plan/  \n");
+    writeFileSync(join(root, ".ignore"), "!.yaco/ \n!.yaco/plan/  \n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(false);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/plan/  \n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/ \n!.yaco/plan/  \n");
   });
 
   it("fails on an unreadable .ignore instead of silently replacing it", () => {

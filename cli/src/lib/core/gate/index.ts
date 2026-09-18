@@ -135,7 +135,14 @@ export function findGateScript(cwd: string): string | null {
   return existsSync(script) ? script : null;
 }
 
-const headSha = (root: string): string => runGit(["rev-parse", "HEAD"], root).stdout.trim();
+/** HEAD's sha; an unborn branch has none, so there is nothing to gate. */
+function headSha(root: string): string {
+  const r = runGit(["rev-parse", "--verify", "--quiet", "HEAD"], root);
+  if (r.status !== 0) {
+    throw new CliError(ErrCode.ENV, `no commit to gate yet in ${root} (HEAD is unborn)`);
+  }
+  return r.stdout.trim();
+}
 
 /** Run the repo's gate against the session's working tree.
  *

@@ -13,10 +13,12 @@
  *       `git rev-parse --git-path info/exclude` so a linked worktree (where
  *       .git is a file) is handled correctly — so the host repo never tracks
  *       it. No trailing slash: the line also matches a worktree's plan symlink.
- *    3  ensure "!.yaco/plan/" is in the root .ignore — the exclude entry also
- *       makes ignore-stack tools (rg/fd, agent file search) blind to the plan;
- *       the .ignore negation re-includes it at higher precedence. A .ignore
- *       this step creates is itself excluded, so the host stays clean.
+ *    3  ensure "!.yaco/" and "!.yaco/plan/" are in the root .ignore — the
+ *       exclude entry and the hidden parent both make ignore-stack tools
+ *       (rg/fd, agent file search) blind to the plan; the .ignore negations
+ *       re-include both at higher precedence, while `.yaco/worktrees/` stays
+ *       excluded. A .ignore this step creates is itself excluded, so the host
+ *       stays clean.
  *    4  --remote: add origin; a different existing origin is a CONFLICT unless
  *       --force. Never pushes — publishing the plan repo is a separate, personal
  *       step the tool does not assume.
@@ -31,6 +33,10 @@ import { ok, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
 import { PLAN_DIR } from "../../lib/core/paths/index.ts";
 import { ensureExcluded, runGit } from "../../lib/core/worktree/git.ts";
+
+/** Root `.ignore` lines that let plain rg/fd search the plan: the hidden
+ *  parent first, then the excluded plan itself. */
+const IGNORE_WHITELIST = ["!.yaco/", `!${PLAN_DIR}/`];
 
 /** Runtime-noise patterns the plan repo should ignore by default. */
 const DEFAULT_PLAN_GITIGNORE = ["poll.log", "poll.err", "_monitor.log", "*.lock"];
@@ -105,7 +111,7 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   // ── 3. root .ignore whitelist ────────────────────────────────────────────
   const ignorePath = join(repoRoot, ".ignore");
   const ignoreCreated = !existsSync(ignorePath);
-  const ignoreUpdated = ensureLine(ignorePath, `!${plan}/`);
+  const ignoreUpdated = IGNORE_WHITELIST.map((line) => ensureLine(ignorePath, line)).some(Boolean);
   if (ignoreCreated) ensureExcluded(repoRoot, "/.ignore");
 
   // ── 4. remote (never pushes) ─────────────────────────────────────────────
@@ -196,7 +202,7 @@ function renderPlanInit(r: PlanInitResult): string {
     `  ${r.initialized ? "git init (new repo)" : "already a repo"}`,
     `  .gitignore ${r.gitignoreCreated ? "created" : "kept"}`,
     `  info/exclude ${r.excludeUpdated ? "added /" + r.plan : "already excludes /" + r.plan}`,
-    `  .ignore ${r.ignoreUpdated ? "added !" + r.plan + "/" : "already whitelists !" + r.plan + "/"}`,
+    `  .ignore ${r.ignoreUpdated ? "updated" : "already whitelists"} ${IGNORE_WHITELIST.join(" ")}`,
   ];
   if (r.remote !== "none") lines.push(`  origin ${r.remote}`);
   return lines.join("\n") + "\n";

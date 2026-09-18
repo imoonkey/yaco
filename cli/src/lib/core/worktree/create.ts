@@ -20,7 +20,7 @@ import {
   realpathSync,
   symlinkSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { PLAN_DIR, WORKTREES_DIR } from "../paths/index.ts";
@@ -116,11 +116,10 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
         `plan location already exists and is not a symlink: ${location}`,
       );
     }
-    const actual = resolve(dirname(location), readlinkSync(location));
-    if (actual !== resolve(target)) {
+    if (physicalPath(location) !== realpathSync(target)) {
       throw new CliError(
         ErrCode.CONFLICT,
-        `stale plan link at ${location}: resolves to ${actual}, expected ${target}`,
+        `stale plan link at ${location}: points to ${readlinkSync(location)}, expected ${target}`,
       );
     }
   }
@@ -128,8 +127,19 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
   // No trailing slash: a directory-only `/.yaco/plan/` would not match the link.
   ensureExcluded(repoRoot, `/${PLAN_DIR}`);
   if (existing) return;
+  // Relative from the physical parent: a branch may symlink `.yaco` elsewhere
+  // inside the worktree, and a lexical target would then dangle.
   mkdirSync(dirname(location), { recursive: true });
-  symlinkSync(relative(dirname(location), target), location, "dir");
+  symlinkSync(relative(realpathSync(dirname(location)), realpathSync(target)), location, "dir");
+}
+
+/** A path's physical location, or null when it does not resolve (a dangling link). */
+function physicalPath(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
 }
 
 /** Reject a repo-relative path whose existing ancestor resolves through a

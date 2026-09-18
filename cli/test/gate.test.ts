@@ -209,6 +209,17 @@ describe("runGate (stubbed gate.sh)", () => {
     expect(r.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
     expect(r.data.base).toBe(r.data.sha);
   });
+
+  it("throws ENV on an unborn branch rather than reporting a fake sha", () => {
+    const unborn = mkdtempSync(TMP_PREFIX + "unborn-");
+    if (!unborn.startsWith(TMP_PREFIX)) throw new Error(`fixture escaped temp root: ${unborn}`);
+    expect(git(unborn, "init", "--initial-branch=main").status).toBe(0);
+    try {
+      expect(() => runGate(unborn, {})).toThrow(/unborn/);
+    } finally {
+      rmSync(unborn, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("runGate (real scripts/gate.sh wiring)", () => {
