@@ -71,13 +71,24 @@ function plantExecutable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
-function fixture(): Fixture {
+const PLAN = ".yaco/plan";
+
+type PlanState = "private" | "tracked" | "absent";
+
+const SAMPLE_TASKS = JSON.stringify({
+  sample: { parent: null, depends: [], state: "ready", workset: "active", title: "Shared task" },
+});
+
+/** A throwaway host repo whose `.yaco/plan` is in one of the three privacy
+ *  states. Every mutating git call runs inside the fixture's temp root. */
+function fixture(state: PlanState = "private"): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "yaco-plan-provision-")));
   roots.push(root);
   const repo = join(root, "repo");
   const bin = join(root, "bin");
   mkdirSync(repo);
   mkdirSync(bin);
+  guardFixturePath(root, repo);
 
   symlinkSync("/usr/bin/git", join(bin, "git"));
   plantExecutable(join(bin, "claude"), "exit 0");
@@ -86,27 +97,18 @@ function fixture(): Fixture {
   expect(git(repo, "init", "--initial-branch=main").status).toBe(0);
   expect(git(repo, "config", "user.email", "test@test.invalid").status).toBe(0);
   expect(git(repo, "config", "user.name", "Test").status).toBe(0);
+  writeFileSync(join(repo, "README.md"), "host\n");
+  expect(git(repo, "add", "README.md").status).toBe(0);
 
-  writeFileSync(
-    join(repo, "yaco.toml"),
-    '[paths]\nplan = "task-vault"\nworktrees = "sandboxes/nested"\n',
-  );
-  writeFileSync(join(repo, ".gitignore"), "/sandboxes/\n");
-  mkdirSync(join(repo, "task-vault", "tasks"), { recursive: true });
-  writeFileSync(
-    join(repo, "task-vault", "tasks", "tasks.json"),
-    JSON.stringify({
-      sample: {
-        parent: null,
-        depends: [],
-        state: "ready",
-        workset: "active",
-        title: "Shared task",
-      },
-    }),
-  );
-  writeFileSync(join(repo, ".git", "info", "exclude"), "/task-vault/\n");
-  expect(git(repo, "add", ".gitignore", "yaco.toml").status).toBe(0);
+  if (state !== "absent") {
+    mkdirSync(join(repo, PLAN, "tasks"), { recursive: true });
+    writeFileSync(join(repo, PLAN, "tasks", "tasks.json"), SAMPLE_TASKS);
+  }
+  if (state === "private") {
+    expect(git(join(repo, PLAN), "init", "--initial-branch=main").status).toBe(0);
+    writeFileSync(join(repo, ".git", "info", "exclude"), `/${PLAN}\n`);
+  }
+  if (state === "tracked") expect(git(repo, "add", PLAN).status).toBe(0);
   expect(git(repo, "commit", "-m", "fixture").status).toBe(0);
   return { root, repo, bin };
 }
@@ -130,59 +132,16 @@ function data(result: CommandResult): Record<string, unknown> {
 }
 
 describe("worktree plan provisioning", () => {
-  it("creates a missing shared info/exclude file", () => {
-    const fix = fixture();
-    const exclude = join(fix.repo, ".git", "info", "exclude");
-    unlinkSync(exclude);
-
-    data(runYaco(fix, fix.repo, ["worktree", "create", "zero-state", "--json"]));
-
-    expect(readFileSync(exclude, "utf-8")).toBe("/task-vault\n");
-  });
-
-  it("rejects branch-local plan names and occupied locations before changing the primary exclude", () => {
-    const renamed = fixture();
-    expect(git(renamed.repo, "switch", "-c", "task/renamed-plan").status).toBe(0);
-    writeFileSync(
-      join(renamed.repo, "yaco.toml"),
-      '[paths]\nplan = "branch-vault"\nworktrees = "sandboxes/nested"\n',
-    );
-    expect(git(renamed.repo, "add", "yaco.toml").status).toBe(0);
-    expect(git(renamed.repo, "commit", "-m", "rename branch plan").status).toBe(0);
-    expect(git(renamed.repo, "switch", "main").status).toBe(0);
-
-    const renamedExclude = join(renamed.repo, ".git", "info", "exclude");
-    const renamedBefore = readFileSync(renamedExclude, "utf-8");
-    const renamedResult = runYaco(renamed, renamed.repo, ["worktree", "create", "renamed-plan", "--json"]);
-    expect(renamedResult.status).toBe(1);
-    expect(readFileSync(renamedExclude, "utf-8")).toBe(renamedBefore);
-    expect(existsSync(join(renamed.repo, "sandboxes", "nested", "renamed-plan", "branch-vault"))).toBe(false);
-
-    const rejected = fixture();
-    expect(git(rejected.repo, "switch", "-c", "task/blocked-plan").status).toBe(0);
-    writeFileSync(join(rejected.repo, "task-vault", "keep.txt"), "keep\n");
-    expect(git(rejected.repo, "add", "-f", "task-vault/keep.txt").status).toBe(0);
-    expect(git(rejected.repo, "commit", "-m", "block branch plan").status).toBe(0);
-    expect(git(rejected.repo, "switch", "main").status).toBe(0);
-
-    const rejectedExclude = join(rejected.repo, ".git", "info", "exclude");
-    const before = readFileSync(rejectedExclude, "utf-8");
-    const result = runYaco(rejected, rejected.repo, ["worktree", "create", "blocked-plan", "--json"]);
-    expect(result.status).toBe(1);
-    expect(readFileSync(rejectedExclude, "utf-8")).toBe(before);
-  });
-
-  it("uses both configured paths, shares task reads, stays relative after a move, and is ignored", () => {
-    const fix = fixture();
+  it("private plan: links the primary's plan, shares task reads, stays relative after a move, and is ignored", () => {
+    const fix = fixture("private");
     const created = data(runYaco(fix, fix.repo, ["worktree", "create", "fresh", "--json"]));
     const worktree = created["path"] as string;
-    const link = join(worktree, "task-vault");
-    const target = join(fix.repo, "task-vault");
+    const link = join(worktree, PLAN);
+    const target = join(fix.repo, PLAN);
 
-    expect(worktree).toBe(join(fix.repo, "sandboxes", "nested", "fresh"));
+    expect(worktree).toBe(join(fix.repo, ".yaco", "worktrees", "fresh"));
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(readlinkSync(link)).toBe(relative(dirname(link), target));
-    expect(resolve(dirname(link), readlinkSync(link))).toBe(target);
 
     const primaryTask = data(runYaco(fix, fix.repo, ["task", "get", "sample", "--json"]));
     const worktreeTask = data(runYaco(fix, worktree, ["task", "get", "sample", "--json"]));
@@ -192,42 +151,114 @@ describe("worktree plan provisioning", () => {
 
     const movedRepo = join(fix.root, "moved-repo");
     renameSync(fix.repo, movedRepo);
-    expect(realpathSync(join(movedRepo, "sandboxes", "nested", "fresh", "task-vault"))).toBe(
-      join(movedRepo, "task-vault"),
+    expect(realpathSync(join(movedRepo, ".yaco", "worktrees", "fresh", PLAN))).toBe(
+      join(movedRepo, PLAN),
     );
   });
 
+  it("private plan: writes both excludes into a missing shared info/exclude", () => {
+    const fix = fixture("private");
+    const exclude = join(fix.repo, ".git", "info", "exclude");
+    unlinkSync(exclude);
+
+    data(runYaco(fix, fix.repo, ["worktree", "create", "zero-state", "--json"]));
+
+    expect(readFileSync(exclude, "utf-8")).toBe(`/.yaco/worktrees/\n/${PLAN}\n`);
+  });
+
+  it("tracked plan: the worktree keeps its branch's own copy instead of throwing", () => {
+    const fix = fixture("tracked");
+    const created = data(runYaco(fix, fix.repo, ["worktree", "create", "tracked", "--json"]));
+    const worktree = created["path"] as string;
+    const plan = join(worktree, PLAN);
+
+    expect(lstatSync(plan).isDirectory()).toBe(true);
+    expect(lstatSync(plan).isSymbolicLink()).toBe(false);
+    const worktreeTask = data(runYaco(fix, worktree, ["task", "get", "sample", "--json"]));
+    expect((worktreeTask["task"] as { title: string }).title).toBe("Shared task");
+    expect(readFileSync(join(fix.repo, ".git", "info", "exclude"), "utf-8")).not.toContain(`/${PLAN}\n`);
+    expect(git(fix.repo, "status", "--porcelain", "--untracked-files=all").stdout).toBe("");
+
+    // Idempotent: a re-run over the registered worktree is a reuse, not a conflict.
+    expect(data(runYaco(fix, fix.repo, ["worktree", "create", "tracked", "--json"]))["reused"]).toBe(true);
+  });
+
+  it("absent plan: the worktree gets nothing", () => {
+    const fix = fixture("absent");
+    const created = data(runYaco(fix, fix.repo, ["worktree", "create", "bare", "--json"]));
+    const worktree = created["path"] as string;
+
+    expect(existsSync(join(worktree, ".yaco"))).toBe(false);
+    expect(readFileSync(join(fix.repo, ".git", "info", "exclude"), "utf-8")).not.toContain(`/${PLAN}`);
+    expect(git(fix.repo, "status", "--porcelain", "--untracked-files=all").stdout).toBe("");
+  });
+
+  it("private plan: refuses a branch that occupies the plan location with real files", () => {
+    const fix = fixture("private");
+    // The branch's own tree carries a real `.yaco/plan` directory.
+    const tree = join(fix.root, "branch-tree");
+    mkdirSync(tree);
+    expect(git(fix.repo, "worktree", "add", "-q", tree, "-b", "task/occupied").status).toBe(0);
+    mkdirSync(join(tree, PLAN), { recursive: true });
+    writeFileSync(join(tree, PLAN, "keep.txt"), "keep\n");
+    expect(git(tree, "add", "-f", `${PLAN}/keep.txt`).status).toBe(0);
+    expect(git(tree, "commit", "-m", "occupy the plan location").status).toBe(0);
+    expect(git(fix.repo, "worktree", "remove", "--force", tree).status).toBe(0);
+
+    const result = runYaco(fix, fix.repo, ["worktree", "create", "occupied", "--json"]);
+    expect(result.status).toBe(1);
+    const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("CONFLICT");
+    expect(envelope.error.message).toMatch(/not a symlink/i);
+    expect(readFileSync(join(fix.repo, ".yaco", "worktrees", "occupied", PLAN, "keep.txt"), "utf-8")).toBe("keep\n");
+  });
+
   it("repairs a pre-change real plan directory after preserving it, without recreating the worktree", () => {
-    const fix = fixture();
+    const fix = fixture("private");
     const created = data(runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]));
     const worktree = created["path"] as string;
     const before = lstatSync(worktree).ino;
-    unlinkSync(join(worktree, "task-vault"));
-    mkdirSync(join(worktree, "task-vault", "all", "repair"), { recursive: true });
-    writeFileSync(join(worktree, "task-vault", "all", "repair", "qa-orphan.md"), "preserve me\n");
+    unlinkSync(join(worktree, PLAN));
+    mkdirSync(join(worktree, PLAN, "all", "repair"), { recursive: true });
+    writeFileSync(join(worktree, PLAN, "all", "repair", "qa-orphan.md"), "preserve me\n");
 
     const refused = runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]);
     expect(refused.status).toBe(1);
-    expect(existsSync(join(worktree, "task-vault", "all", "repair", "qa-orphan.md"))).toBe(true);
+    expect(existsSync(join(worktree, PLAN, "all", "repair", "qa-orphan.md"))).toBe(true);
 
     const preserved = join(fix.root, "preserved-plan");
-    renameSync(join(worktree, "task-vault"), preserved);
+    renameSync(join(worktree, PLAN), preserved);
 
     const repaired = data(runYaco(fix, fix.repo, ["worktree", "create", "repair", "--json"]));
     expect(repaired["reused"]).toBe(true);
     expect(lstatSync(worktree).ino).toBe(before);
-    expect(realpathSync(join(worktree, "task-vault"))).toBe(join(fix.repo, "task-vault"));
+    expect(realpathSync(join(worktree, PLAN))).toBe(join(fix.repo, PLAN));
     expect(existsSync(join(preserved, "all", "repair", "qa-orphan.md"))).toBe(true);
   });
 
-  it("rejects a configured worktree container that resolves outside the repository", () => {
-    const fix = fixture();
+  it("reports a stale link that resolves somewhere other than the primary plan", () => {
+    const fix = fixture("private");
+    const created = data(runYaco(fix, fix.repo, ["worktree", "create", "stale", "--json"]));
+    const worktree = created["path"] as string;
+    const elsewhere = join(fix.root, "elsewhere");
+    mkdirSync(elsewhere);
+    unlinkSync(join(worktree, PLAN));
+    symlinkSync(elsewhere, join(worktree, PLAN));
+
+    const result = runYaco(fix, fix.repo, ["worktree", "create", "stale", "--json"]);
+    expect(result.status).toBe(1);
+    const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("CONFLICT");
+    expect(envelope.error.message).toMatch(/stale plan link/i);
+  });
+
+  it("rejects a worktree container that resolves outside the repository", () => {
+    const fix = fixture("private");
     const external = join(fix.root, "external-container");
     mkdirSync(join(external, "escaped"), { recursive: true });
     const sentinel = join(external, "escaped", "keep.txt");
     writeFileSync(sentinel, "keep\n");
-    mkdirSync(join(fix.repo, "sandboxes"), { recursive: true });
-    symlinkSync(external, join(fix.repo, "sandboxes", "nested"));
+    symlinkSync(external, join(fix.repo, ".yaco", "worktrees"));
 
     const result = runYaco(fix, fix.repo, ["worktree", "create", "escaped", "--json"]);
     expect(result.status).toBe(1);
@@ -237,15 +268,14 @@ describe("worktree plan provisioning", () => {
     expect(existsSync(sentinel)).toBe(true);
   });
 
-  it("never deletes an unregistered configured path that overlaps the plan store", () => {
-    const fix = fixture();
-    writeFileSync(
-      join(fix.repo, "yaco.toml"),
-      '[paths]\nplan = "task-vault"\nworktrees = "task-vault"\n',
-    );
-    const sentinel = join(fix.repo, "task-vault", "tasks", "tasks.json");
+  it("never touches an unregistered directory at the worktree path", () => {
+    const fix = fixture("private");
+    const squatter = join(fix.repo, ".yaco", "worktrees", "squat");
+    mkdirSync(squatter, { recursive: true });
+    const sentinel = join(squatter, "keep.txt");
+    writeFileSync(sentinel, "keep\n");
 
-    const result = runYaco(fix, fix.repo, ["worktree", "create", "tasks", "--json"]);
+    const result = runYaco(fix, fix.repo, ["worktree", "create", "squat", "--json"]);
     expect(result.status).toBe(1);
     const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
     expect(envelope.error.code).toBe("CONFLICT");
@@ -253,49 +283,31 @@ describe("worktree plan provisioning", () => {
     expect(existsSync(sentinel)).toBe(true);
   });
 
-  it("reports a stale link after the worktree branch edits its plan path", () => {
-    const fix = fixture();
-    const created = data(runYaco(fix, fix.repo, ["worktree", "create", "stale", "--json"]));
-    const worktree = created["path"] as string;
-    writeFileSync(
-      join(worktree, "yaco.toml"),
-      '[paths]\nplan = "branch-vault"\nworktrees = "sandboxes/nested"\n',
-    );
-
-    const result = runYaco(fix, worktree, ["worktree", "create", "stale", "--json"]);
-    expect(result.status).toBe(1);
-    const envelope = JSON.parse(result.stderr) as { error: { code: string; message: string } };
-    expect(envelope.error.code).toBe("CONFLICT");
-    expect(envelope.error.message).toMatch(/align the branch configuration/i);
-    expect(existsSync(join(worktree, "branch-vault"))).toBe(false);
-    expect(realpathSync(join(worktree, "task-vault"))).toBe(join(fix.repo, "task-vault"));
-  });
-
   it("cleanup and whole-worktree removal never remove the primary plan store", () => {
-    const fix = fixture();
-    const sentinel = join(fix.repo, "task-vault", "keep.txt");
+    const fix = fixture("private");
+    const sentinel = join(fix.repo, PLAN, "keep.txt");
     writeFileSync(sentinel, "keep\n");
     data(runYaco(fix, fix.repo, ["worktree", "create", "cleanup", "--json"]));
     data(runYaco(fix, fix.repo, ["worktree", "cleanup", "cleanup", "--json"]));
     expect(existsSync(sentinel)).toBe(true);
 
-    const manual = join(fix.repo, "sandboxes", "nested", "manual");
-    mkdirSync(manual, { recursive: true });
-    symlinkSync(relative(manual, join(fix.repo, "task-vault")), join(manual, "task-vault"));
+    const manual = join(fix.repo, ".yaco", "worktrees", "manual");
+    mkdirSync(join(manual, ".yaco"), { recursive: true });
+    symlinkSync(relative(join(manual, ".yaco"), join(fix.repo, PLAN)), join(manual, PLAN));
     guardFixturePath(fix.root, manual);
     rmSync(manual, { recursive: true, force: true });
     expect(existsSync(sentinel)).toBe(true);
   });
 
   it("confines the trailing-slash destructive edge behind the fixture guard", () => {
-    const fix = fixture();
+    const fix = fixture("private");
     expect(() => removeFixturePath(fix.root, "/tmp/not-this-fixture")).toThrow(/refusing/);
 
-    const worktree = join(fix.repo, "sandboxes", "nested", "danger-demo");
-    mkdirSync(worktree, { recursive: true });
-    const link = join(worktree, "task-vault");
-    symlinkSync(relative(worktree, join(fix.repo, "task-vault")), link);
-    const sentinel = join(fix.repo, "task-vault", "trailing-slash-victim.txt");
+    const worktree = join(fix.repo, ".yaco", "worktrees", "danger-demo");
+    mkdirSync(join(worktree, ".yaco"), { recursive: true });
+    const link = join(worktree, PLAN);
+    symlinkSync(relative(join(worktree, ".yaco"), join(fix.repo, PLAN)), link);
+    const sentinel = join(fix.repo, PLAN, "trailing-slash-victim.txt");
     writeFileSync(sentinel, "fixture only\n");
 
     removeFixturePath(fix.root, `${link}/`);

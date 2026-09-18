@@ -12,15 +12,15 @@ import { handlePlan } from "../../../../src/commands/plan/index.ts";
 
 const TMP_ROOTS: string[] = [];
 
-/** Fresh host git repo with a scaffolded (non-repo) plan/ dir holding a file. */
-function makeHostRepo(planName = "plan"): string {
+/** Fresh host git repo with a scaffolded (non-repo) .yaco/plan dir holding a file. */
+function makeHostRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "plan-init-"));
   TMP_ROOTS.push(root);
   execFileSync("git", ["init", "-q", root]);
   execFileSync("git", ["config", "user.email", "t@t"], { cwd: root });
   execFileSync("git", ["config", "user.name", "t"], { cwd: root });
   execFileSync("git", ["config", "core.excludesFile", "/dev/null"], { cwd: root });
-  const planDir = join(root, planName);
+  const planDir = join(root, ".yaco", "plan");
   mkdirSync(planDir, { recursive: true });
   writeFileSync(join(planDir, "tasks.json"), "{}\n");
   return root;
@@ -43,12 +43,12 @@ describe("runPlanInit", () => {
     expect(r.gitignoreCreated).toBe(true);
     expect(r.excludeUpdated).toBe(true);
     expect(r.remote).toBe("none");
-    expect(existsSync(join(root, "plan", ".git"))).toBe(true);
+    expect(existsSync(join(root, ".yaco", "plan", ".git"))).toBe(true);
 
     // The host's exclude file carries the entry; host git status is clean.
     const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
-    expect(exclude).toContain("/plan/");
-    expect(hostStatus(root)).not.toContain("plan");
+    expect(exclude.split("\n")).toContain("/.yaco/plan");
+    expect(hostStatus(root)).toBe("");
   });
 
   it("is idempotent on a second run", () => {
@@ -62,14 +62,24 @@ describe("runPlanInit", () => {
     expect(second.ignoreUpdated).toBe(false);
     // The exclude file did not gain a duplicate entry.
     const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
-    expect(exclude.match(/\/plan\//g)?.length).toBe(1);
+    expect(exclude.match(/^\/\.yaco\/plan$/gm)?.length).toBe(1);
   });
 
-  it("creates a root .ignore whitelisting the plan dir", () => {
+  it("creates a root .ignore whitelisting the plan dir, and excludes the file it created", () => {
     const root = makeHostRepo();
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/plan/\n");
+    const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
+    expect(exclude.split("\n")).toContain("/.ignore");
+  });
+
+  it("does not exclude a .ignore the host already had", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, ".ignore"), "dist/\n");
+    runPlanInit({ cwd: root });
+    const exclude = readFileSync(join(root, ".git", "info", "exclude"), "utf-8");
+    expect(exclude.split("\n")).not.toContain("/.ignore");
   });
 
   it("appends the whitelist to an existing .ignore, preserving its lines", () => {
@@ -77,38 +87,38 @@ describe("runPlanInit", () => {
     writeFileSync(join(root, ".ignore"), "node_modules/\ndist/\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("node_modules/\ndist/\n!.yaco/plan/\n");
   });
 
   it("glues a newline when the existing .ignore lacks a trailing one", () => {
     const root = makeHostRepo();
     writeFileSync(join(root, ".ignore"), "dist/");
     runPlanInit({ cwd: root });
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/plan/\n");
   });
 
   it("leaves an .ignore that already carries the whitelist untouched", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), "dist/\n!plan/\ncustom\n");
+    writeFileSync(join(root, ".ignore"), "dist/\n!.yaco/plan/\ncustom\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(false);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!plan/\ncustom\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("dist/\n!.yaco/plan/\ncustom\n");
   });
 
   it("treats an indented copy of the entry as absent — leading whitespace defeats negation", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), " !plan/\n");
+    writeFileSync(join(root, ".ignore"), " !.yaco/plan/\n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe(" !plan/\n!plan/\n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe(" !.yaco/plan/\n!.yaco/plan/\n");
   });
 
   it("treats a trailing-whitespace copy as present — git strips trailing whitespace", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".ignore"), "!plan/  \n");
+    writeFileSync(join(root, ".ignore"), "!.yaco/plan/  \n");
     const r = runPlanInit({ cwd: root });
     expect(r.ignoreUpdated).toBe(false);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!plan/  \n");
+    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!.yaco/plan/  \n");
   });
 
   it("fails on an unreadable .ignore instead of silently replacing it", () => {
@@ -128,21 +138,9 @@ describe("runPlanInit", () => {
     expect(readFileSync(ignorePath, "utf-8")).toBe("keep-me\n");
   });
 
-  it("whitelist and second-run idempotency track the [paths] plan override", () => {
-    const root = makeHostRepo("private-plan");
-    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "private-plan"\n');
-    const first = runPlanInit({ cwd: root });
-    expect(first.ignoreUpdated).toBe(true);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
-
-    const second = runPlanInit({ cwd: root });
-    expect(second.ignoreUpdated).toBe(false);
-    expect(readFileSync(join(root, ".ignore"), "utf-8")).toBe("!private-plan/\n");
-  });
-
   it("refuses when the root .gitignore matches the plan root", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, ".gitignore"), "plan/\n");
+    writeFileSync(join(root, ".gitignore"), ".yaco/\n");
     try {
       runPlanInit({ cwd: root });
       expect("should have thrown").toBe("");
@@ -155,19 +153,10 @@ describe("runPlanInit", () => {
 
   it("does not overwrite an existing plan .gitignore", () => {
     const root = makeHostRepo();
-    writeFileSync(join(root, "plan", ".gitignore"), "custom-pattern\n");
+    writeFileSync(join(root, ".yaco", "plan", ".gitignore"), "custom-pattern\n");
     const r = runPlanInit({ cwd: root });
     expect(r.gitignoreCreated).toBe(false);
-    expect(readFileSync(join(root, "plan", ".gitignore"), "utf-8")).toBe("custom-pattern\n");
-  });
-
-  it("honors a [paths] plan override", () => {
-    const root = makeHostRepo("private-plan");
-    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "private-plan"\n');
-    const r = runPlanInit({ cwd: root });
-    expect(r.plan).toBe("private-plan");
-    expect(existsSync(join(root, "private-plan", ".git"))).toBe(true);
-    expect(readFileSync(join(root, ".git", "info", "exclude"), "utf-8")).toContain("/private-plan/");
+    expect(readFileSync(join(root, ".yaco", "plan", ".gitignore"), "utf-8")).toBe("custom-pattern\n");
   });
 
   it("fails clearly outside a git repository", () => {
@@ -185,10 +174,10 @@ describe("runPlanInit", () => {
   it("is linked-worktree safe (resolves info/exclude via --git-path)", () => {
     const root = makeHostRepo();
     execFileSync("git", ["commit", "--allow-empty", "-qm", "init"], { cwd: root });
-    const wt = join(root, ".worktrees", "wt1");
+    const wt = join(root, ".yaco", "worktrees", "wt1");
     execFileSync("git", ["worktree", "add", "-q", wt, "-b", "wt1"], { cwd: root });
-    mkdirSync(join(wt, "plan"), { recursive: true });
-    writeFileSync(join(wt, "plan", "tasks.json"), "{}\n");
+    mkdirSync(join(wt, ".yaco", "plan"), { recursive: true });
+    writeFileSync(join(wt, ".yaco", "plan", "tasks.json"), "{}\n");
 
     const r = runPlanInit({ cwd: wt });
     expect(r.excludeUpdated).toBe(true);
@@ -200,47 +189,19 @@ describe("runPlanInit", () => {
       encoding: "utf-8",
     }).trim();
     const content = readFileSync(resolve(wt, excludeRel), "utf-8");
-    expect(content).toContain("/plan/");
+    expect(content.split("\n")).toContain("/.yaco/plan");
   });
 
   it("refuses when run from inside an already-initialized plan repo", () => {
     const root = makeHostRepo();
-    runPlanInit({ cwd: root }); // now <root>/plan is its own repo, excluded by <root>
+    runPlanInit({ cwd: root }); // now <root>/.yaco/plan is its own repo, excluded by <root>
     try {
-      runPlanInit({ cwd: join(root, "plan") });
+      runPlanInit({ cwd: join(root, ".yaco", "plan") });
       expect("should have thrown").toBe("");
     } catch (e) {
       expect(e).toBeInstanceOf(CliError);
       expect((e as CliError).code).toBe(ErrCode.USAGE);
       expect((e as Error).message).toMatch(/host repo root/);
-    }
-  });
-
-  it("refuses a git-option-injecting plan root (--bare) and creates no bare repo", () => {
-    const root = makeHostRepo();
-    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "--bare"\n');
-    try {
-      runPlanInit({ cwd: root });
-      expect("should have thrown").toBe("");
-    } catch (e) {
-      expect(e).toBeInstanceOf(CliError);
-      expect((e as CliError).code).toBe(ErrCode.ENV);
-    }
-    // `git init --bare` would have written bare-repo files at the host root.
-    expect(existsSync(join(root, "HEAD"))).toBe(false);
-    expect(existsSync(join(root, "objects"))).toBe(false);
-  });
-
-  it("refuses a non-depth-1 plan root", () => {
-    const root = makeHostRepo();
-    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "nested/plan"\n');
-    try {
-      runPlanInit({ cwd: root });
-      expect("should have thrown").toBe("");
-    } catch (e) {
-      expect(e).toBeInstanceOf(CliError);
-      expect((e as CliError).code).toBe(ErrCode.ENV);
-      expect((e as Error).message).toMatch(/depth-1/);
     }
   });
 
@@ -250,7 +211,7 @@ describe("runPlanInit", () => {
 
     function originUrl(root: string): string {
       return execFileSync("git", ["remote", "get-url", "origin"], {
-        cwd: join(root, "plan"),
+        cwd: join(root, ".yaco", "plan"),
         encoding: "utf-8",
       }).trim();
     }

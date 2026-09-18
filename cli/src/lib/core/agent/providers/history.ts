@@ -12,7 +12,7 @@
  *  live session list already applies (`isPathDescendantOrEqual`). Both providers
  *  key their own storage on an exact cwd, so each reader widens it in the terms
  *  its storage offers: Claude by directory (`claudeProjectDirs`), Codex in the
- *  query. Without it an agent running in `<project>/.worktrees/<slug>` is listed
+ *  query. Without it an agent running in `<project>/.yaco/worktrees/<slug>` is listed
  *  while it runs and gone the moment it is only history.
  *
  *  **Every provider scan is capped at the window.** The merge sorts newest-first
@@ -291,7 +291,7 @@ function descendantPrefix(projectPath: string): string {
 function claudeProjectDir(projectPath: string): string {
   // Claude Code keys ~/.claude/projects/<encoded-cwd>/ with the same lossy
   // encoder used for project-move directory renames (non-alphanumerics → "-"),
-  // so a path like `/repo/.worktrees/x` resolves to `-repo--worktrees-x`.
+  // so a path like `/repo/.yaco/worktrees/x` resolves to `-repo--yaco-worktrees-x`.
   return join(claudeProjectsRoot(), encodeClaudeCwd(projectPath));
 }
 
@@ -484,13 +484,13 @@ async function claudeLogDir(dir: string): Promise<ClaudeLogDir | null> {
  *  A session is this project's when its cwd is the project path or below it,
  *  which is the predicate the live session list already applies
  *  (`listByPath`, `resolveProjectForPath`). History used to read one exact
- *  directory instead, so an agent working in `<project>/.worktrees/<slug>` was
+ *  directory instead, so an agent working in `<project>/.yaco/worktrees/<slug>` was
  *  listed while it ran and vanished the moment it was only history.
  *
  *  This is deliberately a *superset*: the name cannot decide membership, because
  *  `encodeClaudeCwd` maps every non-alphanumeric to `-` and has no inverse, so
  *  the sibling `<project>-backups` shares the prefix with
- *  `<project>/.worktrees/x` and two distinct cwds can even collide onto one
+ *  `<project>/.yaco/worktrees/x` and two distinct cwds can even collide onto one
  *  directory. What decides is the cwd each log records (`claudeList`); this only
  *  narrows how many logs have to be read. Nor could the filesystem decide it: a
  *  worktree's directory is deleted when it merges, long before its history stops

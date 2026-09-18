@@ -17,12 +17,12 @@ import { saveTasks } from "../../../../src/lib/core/task/store.ts";
 
 function projectRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "rename-task-"));
-  mkdirSync(join(root, "plan", "tasks"), { recursive: true });
+  mkdirSync(join(root, ".yaco", "plan", "tasks"), { recursive: true });
   return root;
 }
 
 function writeTasks(root: string, graph: TaskGraph): string {
-  const tasksPath = join(root, "plan", "tasks");
+  const tasksPath = join(root, ".yaco", "plan", "tasks");
   saveTasks(join(tasksPath, "tasks.json"), graph);
   return tasksPath;
 }
@@ -34,30 +34,24 @@ function task(agents?: string[]): TaskGraph[string] {
 describe("resolveTasksPathForSessionPath", () => {
   it("resolves the project root from the root itself", () => {
     const root = projectRoot();
-    expect(resolveTasksPathForSessionPath(root)).toBe(join(root, "plan", "tasks"));
+    expect(resolveTasksPathForSessionPath(root)).toBe(join(root, ".yaco", "plan", "tasks"));
   });
 
   it("walks up from a nested subdirectory", () => {
     const root = projectRoot();
     const deep = join(root, "src", "a", "b");
     mkdirSync(deep, { recursive: true });
-    expect(resolveTasksPathForSessionPath(deep)).toBe(join(root, "plan", "tasks"));
+    expect(resolveTasksPathForSessionPath(deep)).toBe(join(root, ".yaco", "plan", "tasks"));
   });
 
   it("resolves a worktree checkout to its own task store", () => {
-    // A worktree is itself a project root (own plan/tasks); nearest root wins.
+    // A worktree is itself a project root (own .yaco/plan/tasks); nearest root wins.
     const root = projectRoot();
-    const worktree = join(root, ".worktrees", "feature");
-    mkdirSync(join(worktree, "plan", "tasks"), { recursive: true });
+    const worktree = join(root, ".yaco", "worktrees", "feature");
+    mkdirSync(join(worktree, ".yaco", "plan", "tasks"), { recursive: true });
     const sub = join(worktree, "cli", "src");
     mkdirSync(sub, { recursive: true });
-    expect(resolveTasksPathForSessionPath(sub)).toBe(join(worktree, "plan", "tasks"));
-  });
-
-  it("honors a yaco.toml [paths].tasks override (plan-relative)", () => {
-    const root = mkdtempSync(join(tmpdir(), "rename-toml-"));
-    writeFileSync(join(root, "yaco.toml"), '[paths]\ntasks = "items"\n');
-    expect(resolveTasksPathForSessionPath(root)).toBe(join(root, "plan", "items"));
+    expect(resolveTasksPathForSessionPath(sub)).toBe(join(worktree, ".yaco", "plan", "tasks"));
   });
 
   it("returns null when no project root is found", () => {
@@ -108,7 +102,7 @@ describe("rewriteTaskAgentHandle", () => {
 
   it("upgrades a legacy `agent` field on a rewritten task and drops it", async () => {
     const root = projectRoot();
-    const tasksPath = join(root, "plan", "tasks");
+    const tasksPath = join(root, ".yaco", "plan", "tasks");
     // Write raw legacy shape directly to disk.
     saveTasks(join(tasksPath, "tasks.json"), {
       t: { parent: null, depends: [], state: "ready", agent: "old" } as TaskGraph[string],

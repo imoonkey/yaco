@@ -1,6 +1,6 @@
 /** Public surface of yaco-cli/core/paths.
  *
- *  Re-exports the runtime root resolver, the [paths] reader, and the
+ *  Re-exports the runtime root resolver, the fixed project layout, and the
  *  registry helpers. Importers should always go through this barrel so
  *  the underlying file layout can change without churning callers.
  */
@@ -19,12 +19,11 @@ export {
 } from "./yaco-home.ts";
 
 export {
-  DEFAULT_PROJECT_PATHS,
-  readYacoProjectPaths,
-  type YacoProjectPaths,
-} from "./yaco-paths.ts";
-
-export { parseScopedToml, type ParsedTomlSections } from "./toml.ts";
+  PLAN_DIR,
+  TASKS_DIR,
+  WORKTREES_DIR,
+  resolveDocDir,
+} from "./project.ts";
 
 export {
   ensureYacoHome,

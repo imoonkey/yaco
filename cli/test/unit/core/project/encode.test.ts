@@ -10,7 +10,7 @@ describe("encodeClaudeCwd", () => {
   });
 
   it("replaces each '.' with '-' (so hidden segments collapse)", () => {
-    expect(encodeClaudeCwd("/x/.worktrees/y")).toBe("-x--worktrees-y");
+    expect(encodeClaudeCwd("/x/.yaco/worktrees/y")).toBe("-x--yaco-worktrees-y");
   });
 
   it("preserves existing hyphens", () => {
@@ -23,11 +23,11 @@ describe("encodeClaudeCwd", () => {
     expect(encodeClaudeCwd("/home/user/ld-workspace/yaco")).toBe(
       "-home-user-ld-workspace-yaco",
     );
-    //   /home/user/ld-workspace/yaco/.worktrees/remote-perf-compress
-    //     -> -home-user-ld-workspace-yaco--worktrees-remote-perf-compress
+    //   /home/user/ld-workspace/yaco/.yaco/worktrees/remote-perf-compress
+    //     -> -home-user-ld-workspace-yaco--yaco-worktrees-remote-perf-compress
     expect(
-      encodeClaudeCwd("/home/user/ld-workspace/yaco/.worktrees/remote-perf-compress"),
-    ).toBe("-home-user-ld-workspace-yaco--worktrees-remote-perf-compress");
+      encodeClaudeCwd("/home/user/ld-workspace/yaco/.yaco/worktrees/remote-perf-compress"),
+    ).toBe("-home-user-ld-workspace-yaco--yaco-worktrees-remote-perf-compress");
   });
 
   it("collapses other non-alphanumerics (whitespace, underscores)", () => {

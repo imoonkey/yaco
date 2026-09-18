@@ -1,8 +1,6 @@
 /** End-to-end CLI integration: spawns `yaco` and asserts on the envelope.
  *
- *  Covers: set / rm / archive / validate / list, the configured-tasks-path
- *  regression that update-tasks.py had (hardcoded plan/tasks.json),
- *  and the lock-contention + cross-host stale-lock contracts.
+ *  Covers: set / rm / archive / validate / list, and the lock-contention + cross-host stale-lock contracts.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -36,15 +34,8 @@ function runYaco(repo: string, args: string[], stdin?: string, env: Record<strin
   };
 }
 
-function mkRepo(opts: { tasksFile?: string; archive?: string } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "yaco-task-int-"));
-  if (opts.tasksFile || opts.archive) {
-    const lines = ["[paths]"];
-    if (opts.tasksFile) lines.push(`tasks = "${opts.tasksFile}"`);
-    if (opts.archive) lines.push(`archive = "${opts.archive}"`);
-    writeFileSync(join(root, "yaco.toml"), lines.join("\n") + "\n");
-  }
-  return root;
+function mkRepo(): string {
+  return mkdtempSync(join(tmpdir(), "yaco-task-int-"));
 }
 
 function parseJson(line: string): { ok: boolean; data?: unknown; error?: { code: string; message: string; details?: unknown } } {
@@ -52,7 +43,7 @@ function parseJson(line: string): { ok: boolean; data?: unknown; error?: { code:
 }
 
 function defaultTasksPath(repo: string): string {
-  return join(repo, "plan/tasks");
+  return join(repo, ".yaco/plan/tasks");
 }
 
 function defaultTasksFile(repo: string, id: string): string {
@@ -722,47 +713,6 @@ describe("task attach / detach (agents link delta)", () => {
     const r = runYaco(repo, ["task", "attach", "x", "--json"]);
     expect(r.status).toBe(2);
     expect(parseJson(r.stderr).error!.code).toBe("USAGE");
-  });
-});
-
-describe("configured tasks path (yc-task-ts bug fix)", () => {
-  it("honors yaco.toml [paths].tasks file overrides instead of default plan/tasks", () => {
-    const repo = mkRepo({ tasksFile: "custom/dir/tasks.json" });
-    const expectedTasksFile = join(repo, "plan/custom/dir/tasks.json");
-    const r = runYaco(repo, [
-      "task",
-      "set",
-      "x",
-      "--data",
-      JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
-      "--json",
-    ]);
-    expect(r.status).toBe(0);
-    const data = parseJson(r.stdout).data as { tasksFile: string; tasksPath: string };
-    expect(data.tasksFile).toBe(expectedTasksFile);
-    expect(data.tasksPath).toBe(expectedTasksFile);
-    expect(existsSync(expectedTasksFile)).toBe(true);
-    expect(existsSync(defaultTasksFile(repo, "x"))).toBe(false);
-  });
-
-  it("honors yaco.toml [paths].tasks directory overrides under the plan root", () => {
-    const repo = mkRepo({ tasksFile: "custom/tasks" });
-    const expectedTasksPath = join(repo, "plan/custom/tasks");
-    const expectedTasksFile = join(expectedTasksPath, "x", "tasks.json");
-    const r = runYaco(repo, [
-      "task",
-      "set",
-      "x",
-      "--data",
-      JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
-      "--json",
-    ]);
-    expect(r.status).toBe(0);
-    const data = parseJson(r.stdout).data as { tasksFile: string; tasksPath: string };
-    expect(data.tasksFile).toBe(expectedTasksFile);
-    expect(data.tasksPath).toBe(expectedTasksPath);
-    expect(existsSync(expectedTasksFile)).toBe(true);
-    expect(existsSync(defaultTasksFile(repo, "x"))).toBe(false);
   });
 });
 

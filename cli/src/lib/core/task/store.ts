@@ -22,7 +22,7 @@ import type { Dirent, Stats } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
-import { readYacoProjectPaths } from "../paths/index.ts";
+import { TASKS_DIR } from "../paths/index.ts";
 import { deriveMilestoneStates } from "./graph.ts";
 import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
@@ -115,19 +115,16 @@ export function defaultTaskFileForId(tasksPath: string, id: string): string {
 /** Resolve the tasks path for a session whose `sessionPath` may be a worktree
  *  or a subdirectory rather than the project root.
  *
- *  Walks upward from `sessionPath` to the nearest YACO project root — the first
- *  ancestor carrying a `yaco.toml` or the default `plan/tasks` directory — then
- *  resolves that root's configured tasks path (honoring `yaco.toml [paths]`).
- *  Returns null when no project root is found, so callers can skip best-effort
- *  task rewrites rather than throw. */
+ *  Walks upward from `sessionPath` to the first ancestor that contains
+ *  `.yaco/plan/tasks` and returns that tasks path. Returns null when there is
+ *  none, so callers can skip best-effort task rewrites rather than throw. */
 export function resolveTasksPathForSessionPath(sessionPath: string): string | null {
   let dir = resolve(sessionPath);
   const visited = new Set<string>();
   while (!visited.has(dir)) {
     visited.add(dir);
-    if (existsSync(join(dir, "yaco.toml")) || existsSync(join(dir, "plan", "tasks"))) {
-      return resolve(dir, readYacoProjectPaths(dir).tasks);
-    }
+    const tasksPath = join(dir, TASKS_DIR);
+    if (existsSync(tasksPath)) return tasksPath;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

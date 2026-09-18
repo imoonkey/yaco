@@ -222,7 +222,7 @@ interface ClaudeIndexEntry {
 function claudeProjectDir(projectPath: string): string {
   // Claude Code keys ~/.claude/projects/<encoded-cwd>/ with the same lossy
   // encoder used for project-move directory renames (non-alphanumerics → "-"),
-  // so a path like `/repo/.worktrees/x` resolves to `-repo--worktrees-x`.
+  // so a path like `/repo/.yaco/worktrees/x` resolves to `-repo--yaco-worktrees-x`.
   return join(userHome(), ".claude", "projects", encodeClaudeCwd(projectPath));
 }
 

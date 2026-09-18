@@ -10,6 +10,7 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { resolve as resolvePath } from "node:path";
 
+import { ensureLine } from "../ensure-line.ts";
 import { CliError, ErrCode } from "../errors.ts";
 
 export interface GitResult {
@@ -90,4 +91,18 @@ export function isWorktreeRegistered(repoRoot: string, dir: string): boolean {
   return r.stdout
     .split("\n")
     .some((line) => line === `worktree ${dir}`);
+}
+
+/** Ensure `entry` is a line in the host's shared `info/exclude`. Resolved via
+ *  `git rev-parse --git-path` because a linked worktree redirects it to the
+ *  common dir. Returns whether it appended (false ⇒ already present). */
+export function ensureExcluded(repoRoot: string, entry: string): boolean {
+  const r = runGit(["rev-parse", "--git-path", "info/exclude"], repoRoot);
+  if (r.status !== 0) {
+    throw new CliError(
+      ErrCode.IO,
+      `could not resolve info/exclude: ${r.stderr.trim() || "git rev-parse failed"}`,
+    );
+  }
+  return ensureLine(resolvePath(repoRoot, r.stdout.trim()), entry);
 }

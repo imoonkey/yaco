@@ -203,7 +203,7 @@ describe("tools/install.sh — public fresh clone with no plan/", () => {
       { encoding: "utf-8" },
     );
     expect(exported.status).toBe(0);
-    expect(existsSync(join(clone, "plan"))).toBe(false);
+    expect(existsSync(join(clone, ".yaco", "plan"))).toBe(false);
     expect(existsSync(join(clone, "tools", "install.sh"))).toBe(true);
     // The pack reads the root lockfile, so a public clone must carry one.
     expect(existsSync(join(clone, "package-lock.json"))).toBe(true);
@@ -222,7 +222,7 @@ describe("tools/install.sh — public fresh clone with no plan/", () => {
     // The closing doctor ran, saw no task graph, and reported it as a skip —
     // which is why the exit code is 0.
     expect(r.stderr).toContain("SKIP task-graph");
-    expect(r.stderr).toContain(join(clone, "plan", "tasks"));
+    expect(r.stderr).toContain(join(clone, ".yaco", "plan", "tasks"));
     expect(r.stdout).toContain("ran yaco doctor");
   }, 120_000);
 });

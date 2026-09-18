@@ -58,9 +58,9 @@ function mkRepo(prefix = "yaco-wt-int-"): string {
   expect(git(realRoot, "init", "--initial-branch=main").status).toBe(0);
   expect(git(realRoot, "config", "user.email", "test@test.invalid").status).toBe(0);
   expect(git(realRoot, "config", "user.name", "Test").status).toBe(0);
-  // Commit a .gitignore so the worktree dir isn't tracked, and seed history.
-  writeFileSync(join(realRoot, ".gitignore"), ".worktrees/\n");
-  expect(git(realRoot, "add", ".gitignore").status).toBe(0);
+  // Seed history; `worktree create` excludes .yaco/worktrees/ itself.
+  writeFileSync(join(realRoot, "README.md"), "seed\n");
+  expect(git(realRoot, "add", "README.md").status).toBe(0);
   expect(git(realRoot, "commit", "-m", "initial").status).toBe(0);
   return realRoot;
 }
@@ -108,7 +108,7 @@ describe("yaco worktree create", () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it("creates .worktrees/<slug>/ and branch task/<slug>", () => {
+  it("creates .yaco/worktrees/<slug>/ and branch task/<slug>", () => {
     const r = runYaco(repo, ["worktree", "create", "foo", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -125,7 +125,7 @@ describe("yaco worktree create", () => {
     expect(d.branch).toBe("task/foo");
     expect(d.base).toBe("main");
     expect(d.reused).toBe(false);
-    expect(d.path).toBe(join(repo, ".worktrees", "foo"));
+    expect(d.path).toBe(join(repo, ".yaco", "worktrees", "foo"));
     expect(existsSync(d.path)).toBe(true);
     expect(git(repo, "rev-parse", "--verify", "task/foo").status).toBe(0);
   });
@@ -165,13 +165,13 @@ describe("yaco worktree create", () => {
 
   it("works from a linked worktree cwd (resolves to primary root)", () => {
     expect(runYaco(repo, ["worktree", "create", "child", "--json"]).status).toBe(0);
-    const childDir = join(repo, ".worktrees", "child");
+    const childDir = join(repo, ".yaco", "worktrees", "child");
     // Invoking from the child worktree should still create siblings under
-    // the primary repo's .worktrees, not under child/.worktrees.
+    // the primary repo's .yaco/worktrees, not under child/.yaco/worktrees.
     const r = runYaco(childDir, ["worktree", "create", "sibling", "--json"]);
     expect(r.status).toBe(0);
     const d = parseJson(r.stdout).data as { path: string };
-    expect(d.path).toBe(join(repo, ".worktrees", "sibling"));
+    expect(d.path).toBe(join(repo, ".yaco", "worktrees", "sibling"));
   });
 });
 
@@ -186,7 +186,7 @@ describe("yaco worktree merge --mode local", () => {
 
   it("fast-forwards base when worktree branch is descendant", () => {
     expect(runYaco(repo, ["worktree", "create", "ff", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "ff");
+    const wt = join(repo, ".yaco", "worktrees", "ff");
     writeFileSync(join(wt, "new.txt"), "hi\n");
     expect(git(wt, "add", "new.txt").status).toBe(0);
     expect(git(wt, "commit", "-m", "ff commit").status).toBe(0);
@@ -214,7 +214,7 @@ describe("yaco worktree merge --mode local", () => {
     // replays the worktree's commit on top of the new base, then ff-merge
     // pulls the result into the primary checkout.
     expect(runYaco(repo, ["worktree", "create", "advanced", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "advanced");
+    const wt = join(repo, ".yaco", "worktrees", "advanced");
 
     writeFileSync(join(wt, "feature.txt"), "feature\n");
     expect(git(wt, "add", "feature.txt").status).toBe(0);
@@ -252,7 +252,7 @@ describe("yaco worktree merge --mode local", () => {
     expect(git(repo, "commit", "-m", "seed shared.txt").status).toBe(0);
 
     expect(runYaco(repo, ["worktree", "create", "clash", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "clash");
+    const wt = join(repo, ".yaco", "worktrees", "clash");
 
     writeFileSync(join(wt, "shared.txt"), "branch edit\n");
     expect(git(wt, "add", "shared.txt").status).toBe(0);
@@ -277,7 +277,7 @@ describe("yaco worktree merge --mode local", () => {
 
   it("refuses dirty worktree (CONFLICT exit 1)", () => {
     expect(runYaco(repo, ["worktree", "create", "dirty", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "dirty");
+    const wt = join(repo, ".yaco", "worktrees", "dirty");
     writeFileSync(join(wt, "uncommitted.txt"), "wip\n");
 
     const r = runYaco(repo, ["worktree", "merge", "dirty", "--mode", "local", "--json"]);
@@ -305,7 +305,7 @@ describe("yaco worktree merge --mode pr", () => {
 
   it("captures PR URL in envelope.data.url; gh stdout never leaks to caller", () => {
     expect(runYaco(repo, ["worktree", "create", "prx", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "prx");
+    const wt = join(repo, ".yaco", "worktrees", "prx");
     writeFileSync(join(wt, "feat.txt"), "feat\n");
     expect(git(wt, "add", "feat.txt").status).toBe(0);
     expect(git(wt, "commit", "-m", "feat").status).toBe(0);
@@ -347,7 +347,7 @@ describe("yaco worktree merge --mode pr", () => {
 
   it("surfaces gh failure as IO error envelope (exit 1)", () => {
     expect(runYaco(repo, ["worktree", "create", "prfail", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "prfail");
+    const wt = join(repo, ".yaco", "worktrees", "prfail");
     writeFileSync(join(wt, "f.txt"), "x\n");
     expect(git(wt, "add", "f.txt").status).toBe(0);
     expect(git(wt, "commit", "-m", "f").status).toBe(0);
@@ -381,7 +381,7 @@ describe("yaco worktree cleanup", () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it("removes .worktrees/<slug> and deletes task/<slug>", () => {
+  it("removes .yaco/worktrees/<slug> and deletes task/<slug>", () => {
     expect(runYaco(repo, ["worktree", "create", "rm-me", "--json"]).status).toBe(0);
     // Branch points at main (no new commits), so it's merged-into-HEAD and
     // `git branch -d` will accept it.
@@ -389,13 +389,13 @@ describe("yaco worktree cleanup", () => {
     expect(r.status).toBe(0);
     const d = parseJson(r.stdout).data as { removed: { worktree: boolean; branch: boolean } };
     expect(d.removed).toEqual({ worktree: true, branch: true });
-    expect(existsSync(join(repo, ".worktrees", "rm-me"))).toBe(false);
+    expect(existsSync(join(repo, ".yaco", "worktrees", "rm-me"))).toBe(false);
     expect(git(repo, "rev-parse", "--verify", "task/rm-me").status).not.toBe(0);
   });
 
   it("refuses unmerged branch (CONFLICT exit 1) without --force", () => {
     expect(runYaco(repo, ["worktree", "create", "unmerged", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "unmerged");
+    const wt = join(repo, ".yaco", "worktrees", "unmerged");
     writeFileSync(join(wt, "x.txt"), "x\n");
     expect(git(wt, "add", "x.txt").status).toBe(0);
     expect(git(wt, "commit", "-m", "unmerged commit").status).toBe(0);
@@ -412,14 +412,14 @@ describe("yaco worktree cleanup", () => {
 
   it("--force succeeds on unmerged branch", () => {
     expect(runYaco(repo, ["worktree", "create", "force-rm", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "force-rm");
+    const wt = join(repo, ".yaco", "worktrees", "force-rm");
     writeFileSync(join(wt, "x.txt"), "x\n");
     expect(git(wt, "add", "x.txt").status).toBe(0);
     expect(git(wt, "commit", "-m", "unmerged").status).toBe(0);
 
     const r = runYaco(repo, ["worktree", "cleanup", "force-rm", "--force", "--json"]);
     expect(r.status).toBe(0);
-    expect(existsSync(join(repo, ".worktrees", "force-rm"))).toBe(false);
+    expect(existsSync(join(repo, ".yaco", "worktrees", "force-rm"))).toBe(false);
     expect(git(repo, "rev-parse", "--verify", "task/force-rm").status).not.toBe(0);
   });
 
@@ -451,8 +451,8 @@ describe("yaco worktree — cross-repo isolation", () => {
     expect(b.status).toBe(0);
     const da = parseJson(a.stdout).data as { path: string };
     const db = parseJson(b.stdout).data as { path: string };
-    expect(da.path).toBe(join(repoA, ".worktrees", "shared"));
-    expect(db.path).toBe(join(repoB, ".worktrees", "shared"));
+    expect(da.path).toBe(join(repoA, ".yaco", "worktrees", "shared"));
+    expect(db.path).toBe(join(repoB, ".yaco", "worktrees", "shared"));
     expect(existsSync(da.path)).toBe(true);
     expect(existsSync(db.path)).toBe(true);
     // Each repo owns its own task/shared branch.
@@ -486,7 +486,7 @@ echo "provisioned $1" > "$1/.provisioned"
     const r = runYaco(repo, ["worktree", "create", "prov", "--json"]);
     expect(r.status).toBe(0);
     // Sentinel proves provision ran and received the worktree path.
-    const sentinel = join(repo, ".worktrees", "prov", ".provisioned");
+    const sentinel = join(repo, ".yaco", "worktrees", "prov", ".provisioned");
     expect(existsSync(sentinel)).toBe(true);
   });
 

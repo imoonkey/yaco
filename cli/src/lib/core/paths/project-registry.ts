@@ -14,6 +14,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
@@ -96,7 +97,7 @@ function isUrlSafeName(name: string): boolean {
 }
 
 /** Register a project. Validates a URL-safe name and an absolute existing
- *  directory, and rejects duplicate names or duplicate normalized paths
+ *  directory other than $HOME, and rejects duplicate names or duplicate normalized paths
  *  (equivalent absolute paths compare equal). Throws CliError
  *  (INVALID/CONFLICT) on any failure. Returns the added project. */
 export function addProject(input: { name: string; path: string }): Project {
@@ -119,6 +120,10 @@ export function addProject(input: { name: string; path: string }): Project {
     throw new CliError(ErrCode.INVALID, `path is not an existing directory: ${resolved}`);
   }
   const path = canonicalPath(rawPath);
+  // A project's `.yaco/` at $HOME would sit on top of the runtime home.
+  if (path === canonicalPath(homedir())) {
+    throw new CliError(ErrCode.INVALID, `path must not be the home directory: ${path}`);
+  }
 
   const projects = readProjects();
   if (projects.some((p) => p.name === name)) {

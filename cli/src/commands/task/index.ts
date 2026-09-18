@@ -10,9 +10,8 @@
  *    get <id> [--repo <p>] [--json]
  *    list [--workset active|backlog|archive|all] [--state <s>] [--repo <p>] [--json]
  *
- *  Every subcommand goes through readYacoProjectPaths(repoRoot) for the
- *  tasks file location — fixes the long-standing update-tasks.py bug
- *  that hardcoded `projects/tasks.json`.
+ *  Every subcommand resolves the tasks location through resolveTaskPaths
+ *  (`<repo>/.yaco/plan/tasks`).
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";

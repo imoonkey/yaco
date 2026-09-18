@@ -2,8 +2,7 @@
  *
  *  render-foundation re-homed the text branch from `{help}` to `{text}`; the
  *  rendered bytes are unchanged. These pin both the populated table and the
- *  empty-workset message in a sandboxed repo (no yaco.toml → default
- *  `plan/tasks`).
+ *  empty-workset message in a sandboxed repo (`.yaco/plan/tasks`).
  */
 
 import { afterAll, describe, expect, it } from "vitest";
@@ -23,7 +22,7 @@ afterAll(() => {
 function repoWith(tasks: Record<string, unknown>): string {
   const root = mkdtempSync(join(tmpdir(), "yaco-task-list-"));
   TMP_ROOTS.push(root);
-  const tasksDir = join(root, "plan", "tasks");
+  const tasksDir = join(root, ".yaco", "plan", "tasks");
   mkdirSync(tasksDir, { recursive: true });
   writeFileSync(join(tasksDir, "tasks.json"), JSON.stringify(tasks));
   return root;
@@ -49,7 +48,7 @@ describe("yaco task list", () => {
 
   it("text mode reports the empty-workset message for an empty graph", async () => {
     const repo = repoWith({});
-    const tasksPath = resolve(repo, "plan", "tasks");
+    const tasksPath = resolve(repo, ".yaco", "plan", "tasks");
     const r = await runList({ json: false, repo });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
@@ -66,7 +65,7 @@ describe("yaco task list", () => {
     if (isOk(r)) {
       const v = r.value as { tasks: Record<string, unknown>; tasksPath: string };
       expect(Object.keys(v.tasks)).toEqual(["alpha"]);
-      expect(v.tasksPath).toBe(resolve(repo, "plan", "tasks"));
+      expect(v.tasksPath).toBe(resolve(repo, ".yaco", "plan", "tasks"));
     }
   });
 });

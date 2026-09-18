@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 
 import { CliError, ErrCode, toErr } from "../errors.ts";
 import { ok, type Result } from "../result.ts";
-import { readYacoProjectPaths } from "../paths/index.ts";
+import { TASKS_DIR } from "../paths/index.ts";
 import {
   DEFAULT_WORKSET,
   STATES,
@@ -33,8 +33,7 @@ import { loadTaskStore } from "./store.ts";
 export type TaskWorksetFilter = Workset | "all";
 
 export interface TaskListInput {
-  /** Project root. Everything else is derived from it — `yaco.toml [paths]`
-   *  decides where the task tree lives. */
+  /** Project root. The task tree is `<repoRoot>/.yaco/plan/tasks`. */
   repoRoot: string;
   /** Defaults to the `active` workset, as `yaco task list` does. */
   workset?: TaskWorksetFilter;
@@ -67,7 +66,7 @@ export async function readTaskList(input: TaskListInput): Promise<Result<TaskLis
       throw new CliError(ErrCode.USAGE, `state must be one of: ${STATES.join(", ")}`);
     }
 
-    const tasksPath = resolve(input.repoRoot, readYacoProjectPaths(input.repoRoot).tasks);
+    const tasksPath = resolve(input.repoRoot, TASKS_DIR);
     const store = await loadTaskStore(tasksPath);
     return ok({
       tasks: filterTasks(store.tasks, workset, input.state),

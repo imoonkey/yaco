@@ -73,7 +73,7 @@ command to a single-line `{ok,data}` / `{ok,error}` envelope.
 |---|---|
 | `agent` | Start, send to, capture, wait on, rename, and kill tmux-backed agent sessions; read history, messages, and usage. |
 | `task` | Read and mutate the per-repo task graph: `set`, `get`, `list`, `rm`, `archive`, `validate`, `attach`/`detach` a session. |
-| `worktree` | `create`, `merge`, and `cleanup` a `.worktrees/<slug>` checkout per task slug. |
+| `worktree` | `create`, `merge`, and `cleanup` a `.yaco/worktrees/<slug>` checkout per task slug. |
 | `plan` | `plan init` promotes the repo's plan directory into a private, colocated git repo the host repo ignores. |
 | `project` | Register repos with YACO: `list`, `current`, `add`, `remove`, `move`. |
 | `align` | `init` / `wait` / `handoff` / `status` — the turn-taking protocol behind the multi-agent design workflows. |
@@ -81,7 +81,7 @@ command to a single-line `{ok,data}` / `{ok,error}` envelope.
 | `install` | Install or refresh YACO on this machine (above). |
 | `doctor` | Health checks over `~/.yaco` and the current repo — binary, hooks, wrapper, skills links, tmux, git, providers, task graph. |
 | `gate` | Run the repo's exit gate against your diff: which of verify / doc / review / qa the change owes, and whether the tree is dirty. |
-| `paths` | Resolve canonical paths — `paths runtime` for `~/.yaco`, `paths project` for a repo's `yaco.toml [paths]`. |
+| `paths` | Resolve canonical paths — `paths runtime` for `~/.yaco`, `paths project` for a repo's `.yaco/` layout and doc folder. |
 
 `yaco claude …` and `yaco codex …` are shortcuts for
 `yaco agent start <provider> …`. `start` binds exactly four flags —

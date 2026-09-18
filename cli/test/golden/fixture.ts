@@ -115,7 +115,7 @@ export function buildSandbox(): Sandbox {
     );
   }
 
-  const tasksDir = join(root, "plan", "tasks");
+  const tasksDir = join(root, ".yaco", "plan", "tasks");
   mkdirSync(tasksDir, { recursive: true });
   writeFileSync(join(tasksDir, "tasks.json"), JSON.stringify(TASKS));
 

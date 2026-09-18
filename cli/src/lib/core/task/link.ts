@@ -56,7 +56,7 @@ export function applyAgentLink(
 }
 
 /** Apply one attach/detach under the tasks-file lock and persist through the
- *  task store so split `plan/tasks/**\/tasks.json` layouts stay correct.
+ *  task store so split `.yaco/plan/tasks/**\/tasks.json` layouts stay correct.
  *
  *  Only the target task's `agents` is touched: the write patches that one
  *  task's raw record in its own source file rather than re-saving the whole

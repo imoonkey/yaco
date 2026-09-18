@@ -364,7 +364,7 @@ describe("planMove + applyPlan — prefix mode", () => {
   it("rewrites nested ~/.claude/projects/ dirs when mode=prefix", () => {
     const fix = tmpFixture();
     process.env["YACO_HOME"] = fix.yacoHome;
-    const subCwd = join(fix.oldPath, ".worktrees", "feature");
+    const subCwd = join(fix.oldPath, ".yaco", "worktrees", "feature");
     stageClaudeProject(fix, fix.oldPath, ["aaaaaaaa-0000-0000-0000-000000000001"]);
     stageClaudeProject(fix, subCwd, ["bbbbbbbb-0000-0000-0000-000000000002"]);
 
@@ -376,7 +376,7 @@ describe("planMove + applyPlan — prefix mode", () => {
     applyPlan(plan);
 
     const newRoot = encodeClaudePath(fix.newPath);
-    const newSub = encodeClaudePath(join(fix.newPath, ".worktrees", "feature"));
+    const newSub = encodeClaudePath(join(fix.newPath, ".yaco", "worktrees", "feature"));
     expect(existsSync(join(fix.claudeHome, "projects", newRoot))).toBe(true);
     expect(existsSync(join(fix.claudeHome, "projects", newSub))).toBe(true);
   });

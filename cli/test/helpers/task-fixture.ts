@@ -17,8 +17,6 @@ export const FIXTURE_KINDS = [
   "malformed",
   "array",
   "duplicate",
-  "absoluteTasksPath",
-  "brokenToml",
   "unreadableDirs",
   "duplicateBeforeMalformed",
 ] as const;
@@ -26,7 +24,7 @@ export const FIXTURE_KINDS = [
 export type FixtureKind = (typeof FIXTURE_KINDS)[number];
 
 /** Directories `unreadableDirs` walls off. The caller restores their modes. */
-export const WALLED_DIRS = ["plan/tasks/a/deep", "plan/tasks/b"];
+export const WALLED_DIRS = [".yaco/plan/tasks/a/deep", ".yaco/plan/tasks/b"];
 
 function write(root: string, rel: string, body: string): void {
   const abs = join(root, rel);
@@ -46,7 +44,7 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
     case "graph":
       // Nesting, every workset, every state, a legacy `agent` to normalize, and
       // a task with no workset at all so the load-time default is pinned too.
-      write(root, "plan/tasks/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/tasks.json", graph({
         milestone: {
           parent: null,
           depends: [],
@@ -64,7 +62,7 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
           description: "d",
         },
       }));
-      write(root, "plan/tasks/cli/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/cli/tasks.json", graph({
         shipped: {
           parent: "milestone",
           depends: ["legacy"],
@@ -77,7 +75,7 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
           scope: ["cli/src/**"],
         },
       }));
-      write(root, "plan/tasks/app/server/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/app/server/tasks.json", graph({
         queued: {
           parent: "milestone",
           depends: [],
@@ -90,35 +88,29 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
       }));
       return;
     case "empty":
-      mkdirSync(join(root, "plan/tasks"), { recursive: true });
+      mkdirSync(join(root, ".yaco/plan/tasks"), { recursive: true });
       return;
     case "malformed":
-      write(root, "plan/tasks/tasks.json", "{ not json");
+      write(root, ".yaco/plan/tasks/tasks.json", "{ not json");
       return;
     case "array":
-      write(root, "plan/tasks/tasks.json", graph([]));
+      write(root, ".yaco/plan/tasks/tasks.json", graph([]));
       return;
     case "duplicate": {
       const both = graph({ dup: { parent: null, depends: [], state: "ready" } });
-      write(root, "plan/tasks/tasks.json", both);
-      write(root, "plan/tasks/other/tasks.json", both);
+      write(root, ".yaco/plan/tasks/tasks.json", both);
+      write(root, ".yaco/plan/tasks/other/tasks.json", both);
       return;
     }
-    case "absoluteTasksPath":
-      write(root, "yaco.toml", '[paths]\ntasks = "/etc"\n');
-      return;
-    case "brokenToml":
-      write(root, "yaco.toml", "[paths\ntasks =\n");
-      return;
     case "duplicateBeforeMalformed":
       // A duplicate id in the *first* file by sort order, and a record the
       // canonicalizer cannot touch later in the second. Which of the two the
       // loader reports is decided by whether it normalizes before or after the
       // duplicate check, and the answer is part of the error contract.
-      write(root, "plan/tasks/a/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/a/tasks.json", graph({
         dup: { parent: null, depends: [], state: "ready", title: "first" },
       }));
-      write(root, "plan/tasks/b/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/b/tasks.json", graph({
         dup: { parent: null, depends: [], state: "ready", title: "second" },
         bad: null,
       }));
@@ -126,9 +118,9 @@ export function buildTaskFixture(root: string, kind: FixtureKind): void {
     case "unreadableDirs":
       // Two unreadable directories at different depths. Which one the loader
       // names is a traversal-order fact, and the baseline is what pins it.
-      write(root, "plan/tasks/a/deep/tasks.json", graph({}));
-      write(root, "plan/tasks/b/tasks.json", graph({}));
-      write(root, "plan/tasks/c/tasks.json", graph({
+      write(root, ".yaco/plan/tasks/a/deep/tasks.json", graph({}));
+      write(root, ".yaco/plan/tasks/b/tasks.json", graph({}));
+      write(root, ".yaco/plan/tasks/c/tasks.json", graph({
         readable: { parent: null, depends: [], state: "ready" },
       }));
       for (const dir of WALLED_DIRS) chmodSync(join(root, dir), 0o000);

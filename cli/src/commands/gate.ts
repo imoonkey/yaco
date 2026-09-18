@@ -11,8 +11,9 @@
  *  bypasses the dispatcher's render path and emits the result on stdout with the
  *  exit code carrying the verdict (0 = all checks green/skip, 1 = a check
  *  failed). The --json line is `{ ok, data }` in BOTH cases so callers read the
- *  checks and `ok` together. Only a hard "couldn't run" condition (not a git
- *  repo, missing scripts/gate.sh) throws CliError → the standard
+ *  checks and `ok` together. A repo without scripts/gate.sh reports every check
+ *  as skip. Only a hard "couldn't run" condition (not a git repo) throws
+ *  CliError → the standard
  *  `{ok:false,error}` stderr envelope.
  */
 

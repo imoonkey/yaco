@@ -127,7 +127,7 @@ describe("readTaskList against the pre-cutover CLI baseline", () => {
   });
 
   it("pins a failure for every failure fixture", () => {
-    for (const kind of ["malformed", "array", "duplicate", "absoluteTasksPath", "brokenToml", "unreadableDirs"]) {
+    for (const kind of ["malformed", "array", "duplicate", "unreadableDirs"]) {
       const envelope = BASELINE[kind]!["all"]!.envelope as { ok: boolean; error?: { code: string } };
       expect(envelope.ok, kind).toBe(false);
       expect(envelope.error?.code, kind).toBeTruthy();
@@ -174,24 +174,5 @@ describe("readTaskList — behaviour the baseline does not reach", () => {
       const result = await readTaskList({ repoRoot: root, ...input });
       expect(isErr(result), JSON.stringify(input)).toBe(false);
     }
-  });
-
-  it("agrees with the spawned CLI when yaco.toml relocates the task tree", async () => {
-    const root = fixture("empty");
-    // A relocated tree is a path case the frozen fixtures do not cover.
-    const { writeFileSync, mkdirSync } = await import("node:fs");
-    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "docs"\ntasks = "graph"\n');
-    mkdirSync(join(root, "docs/graph"), { recursive: true });
-    writeFileSync(
-      join(root, "docs/graph/tasks.json"),
-      JSON.stringify({ only: { parent: null, depends: [], state: "ready" } }, null, 2) + "\n",
-    );
-
-    const inProcess = normalize(
-      envelopeOf(await readTaskList({ repoRoot: root, workset: "all" })),
-      root,
-    );
-    expect(inProcess).toEqual(spawnList(root, ["--workset", "all"]).envelope);
-    expect((inProcess as { data: { tasks: object } }).data.tasks).toHaveProperty("only");
   });
 });

@@ -1,10 +1,9 @@
 /** `yaco plan <subcommand>` — manage the project's plan repo.
  *
  *  Subcommands:
- *    init  Promote the [paths] plan directory into a private, colocated git
- *          repo: in-place `git init`, a default plan .gitignore, and a
- *          `/<plan>/` entry in the host's info/exclude so the host repo never
- *          tracks it. Idempotent. `--remote <url>` adds an origin (never pushes).
+ *    init  Promote `.yaco/plan` into a private, colocated git repo: in-place
+ *          `git init`, a default plan .gitignore, and a `/.yaco/plan` entry in
+ *          the host's info/exclude so the host repo never tracks it. Idempotent. `--remote <url>` adds an origin (never pushes).
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
@@ -18,10 +17,10 @@ Usage:
   yaco plan --help
 
 Subcommands:
-  init   Promote the [paths] plan directory into a private, colocated git repo:
-         in-place git init, a default plan .gitignore (kept if one exists), and a
-         /<plan>/ entry in .git/info/exclude so the host repo never tracks it.
-         Idempotent. Refuses if the root .gitignore matches the plan root.
+  init   Promote .yaco/plan into a private, colocated git repo: in-place git
+         init, a default plan .gitignore (kept if one exists), and a /.yaco/plan
+         entry in .git/info/exclude so the host repo never tracks it.
+         Idempotent. Refuses if the root .gitignore matches the plan.
 
 Flags for 'init':
   --remote <url>   Add 'origin' pointing at <url> (never pushes). A different

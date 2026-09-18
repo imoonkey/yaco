@@ -202,9 +202,12 @@ describe("runGate (stubbed gate.sh)", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("throws when scripts/gate.sh is absent (hard error, not a red gate)", () => {
+  it("skips every check when scripts/gate.sh is absent (the gate is opt-in)", () => {
     // No stub written.
-    expect(() => runGate(repo, { base: "HEAD" })).toThrow();
+    const r = runGate(repo, {});
+    expect(r.ok).toBe(true);
+    expect(r.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
+    expect(r.data.base).toBe(r.data.sha);
   });
 });
 
@@ -306,14 +309,13 @@ describe("yaco gate (CLI envelope)", () => {
     }
   });
 
-  it("hard error: git repo with no scripts/gate.sh → {ok:false,error}, exit 3", () => {
+  it("git repo with no scripts/gate.sh → every check skips, exit 0", () => {
     // repo (from beforeEach) has no gate.sh.
-    const r = runYaco(repo, ["gate", "--base", "HEAD", "--json"]);
-    expect(r.status).toBe(3); // ENV
-    expect(r.stdout).toBe("");
-    const env = JSON.parse(r.stderr.trim());
-    expect(env.ok).toBe(false);
-    expect(env.error.code).toBe("ENV");
+    const r = runYaco(repo, ["gate", "--json"]);
+    expect(r.status).toBe(0);
+    const env = JSON.parse(r.stdout.trim());
+    expect(env.ok).toBe(true);
+    expect(env.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
   });
 });
 
@@ -370,7 +372,7 @@ describe("runGate (linked worktree — gates its OWN tree)", () => {
  *  Fixtures mirror a gate-adopting repo: a committed stub gate.sh, a committed
  *  `.gitignore` ignoring the task lock (`*.lock.d/` — else the lock dir held
  *  during the mutation would itself read as a dirty tree), and a seeded
- *  `plan/tasks/tasks.json` (the default task store layout). */
+ *  `.yaco/plan/tasks/tasks.json` (the default task store layout). */
 describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
   let repos: string[] = [];
   afterEach(() => {
@@ -396,9 +398,9 @@ describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
     repos.push(repo);
     if (opts.gate) writeStubGate(repo, opts.gate); // commits scripts/gate.sh
     writeFileSync(join(repo, ".gitignore"), "*.lock.d/\n");
-    mkdirSync(join(repo, "plan", "tasks"), { recursive: true });
+    mkdirSync(join(repo, ".yaco", "plan", "tasks"), { recursive: true });
     writeFileSync(
-      join(repo, "plan", "tasks", "tasks.json"),
+      join(repo, ".yaco", "plan", "tasks", "tasks.json"),
       JSON.stringify(opts.tasks, null, 2) + "\n",
     );
     expect(git(repo, "add", "-A").status).toBe(0);
@@ -413,7 +415,7 @@ describe("set-done guard (yaco task set: leaf → done runs the gate)", () => {
   }
 
   function readTasks(repo: string): Record<string, { state: string }> {
-    return JSON.parse(readFileSync(join(repo, "plan", "tasks", "tasks.json"), "utf-8"));
+    return JSON.parse(readFileSync(join(repo, ".yaco", "plan", "tasks", "tasks.json"), "utf-8"));
   }
 
   /** Parse the `--json` failure envelope the way app/server's runYacoTask does:

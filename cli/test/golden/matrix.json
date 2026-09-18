@@ -8,7 +8,7 @@
       ],
       "cwd": "root",
       "exitCode": 0,
-      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project (yaco.toml, plan/, .worktrees/)\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
+      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
       "stderr": "",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
@@ -26,7 +26,7 @@
       ],
       "cwd": "root",
       "exitCode": 0,
-      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project (yaco.toml, plan/, .worktrees/)\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
+      "stdout": "yaco — YACO unified CLI\n\nUsage:\n  yaco <area> <command> [args...]\n  yaco <area> --help\n  yaco --help\n\nAreas:\n  agent      Start / send / capture / kill / status / rename tmux-backed agent sessions\n  task       Read and mutate the project task graph\n  worktree   Create, merge, and clean up git worktrees per task slug\n  align      Drive multi-agent alignment workflows (double-design, align)\n  init       Initialize a YACO project\n  install    Install the yaco binary, hooks, wrappers, and global symlinks\n  doctor     Run YACO health checks against ~/.yaco and the current repo\n  paths      Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)\n  project    Operate on registered YACO projects (move metadata, ...)\n  plan       Promote the plan directory into a private, colocated git repo\n  gate       Run the repo's exit gate (verify/doc/review/qa floor) against the session's diff\n\nProvider shortcuts:\n  yaco <provider> [args...]   Equivalent to `yaco agent start <provider> [args...]`\n                              Providers: claude, codex\n                              (everything after a standalone `--` is forwarded\n                              verbatim to the provider CLI)\n\nGlobal flags:\n  --json     Emit machine-readable JSON instead of text\n  --help     Show this help (or area-specific help when after an area)\n",
       "stderr": "",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
@@ -337,7 +337,7 @@
       ],
       "cwd": "root",
       "exitCode": 1,
-      "stdout": "{\"data\":{\"checks\":[{\"detail\":\"`yaco` not on $PATH — run tools/install.sh\",\"name\":\"binary\",\"status\":\"fail\"},{\"detail\":\"0.1.0\",\"name\":\"version\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco\",\"name\":\"yaco-home\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco/projects.json (2 project(s))\",\"name\":\"registry\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/home/.claude/skills: missing — run `yaco install`\",\"name\":\"skills-link\",\"status\":\"fail\"},{\"detail\":\"no yaco-agent-hook entries in provider configs\",\"name\":\"agent-hook-config\",\"status\":\"fail\"},{\"detail\":\"{SANDBOX}/yaco/agent-wrapper.sh missing — run `yaco install`\",\"name\":\"agent-wrapper\",\"status\":\"fail\"},{\"detail\":\"tmux not on $PATH — agent sessions will not start\",\"name\":\"tmux\",\"status\":\"fail\"},{\"detail\":\"git not on $PATH\",\"name\":\"git\",\"status\":\"fail\"},{\"detail\":\"no usable provider (claude not installed; codex not installed) — install one before starting agents\",\"name\":\"providers\",\"status\":\"skip\"},{\"detail\":\"4 integrity problem(s) in {SANDBOX}/plan/tasks\",\"name\":\"task-graph\",\"status\":\"fail\"}],\"summary\":{\"fail\":7,\"pass\":3}},\"ok\":true}\n",
+      "stdout": "{\"data\":{\"checks\":[{\"detail\":\"`yaco` not on $PATH — run tools/install.sh\",\"name\":\"binary\",\"status\":\"fail\"},{\"detail\":\"0.1.0\",\"name\":\"version\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco\",\"name\":\"yaco-home\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/yaco/projects.json (2 project(s))\",\"name\":\"registry\",\"status\":\"pass\"},{\"detail\":\"{SANDBOX}/home/.claude/skills: missing — run `yaco install`\",\"name\":\"skills-link\",\"status\":\"fail\"},{\"detail\":\"no yaco-agent-hook entries in provider configs\",\"name\":\"agent-hook-config\",\"status\":\"fail\"},{\"detail\":\"{SANDBOX}/yaco/agent-wrapper.sh missing — run `yaco install`\",\"name\":\"agent-wrapper\",\"status\":\"fail\"},{\"detail\":\"tmux not on $PATH — agent sessions will not start\",\"name\":\"tmux\",\"status\":\"fail\"},{\"detail\":\"git not on $PATH\",\"name\":\"git\",\"status\":\"fail\"},{\"detail\":\"no usable provider (claude not installed; codex not installed) — install one before starting agents\",\"name\":\"providers\",\"status\":\"skip\"},{\"detail\":\"4 integrity problem(s) in {SANDBOX}/.yaco/plan/tasks\",\"name\":\"task-graph\",\"status\":\"fail\"}],\"summary\":{\"fail\":7,\"pass\":3}},\"ok\":true}\n",
       "stderr": "",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
@@ -377,7 +377,7 @@
       ],
       "cwd": "root",
       "exitCode": 0,
-      "stdout": "{\"data\":{\"tasks\":{\"t-mike\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"t-zulu\":{\"depends\":[],\"parent\":null,\"state\":\"ready\",\"title\":\"Zulu\",\"workset\":\"active\"}},\"tasksFile\":\"{SANDBOX}/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/plan/tasks\"},\"ok\":true}\n",
+      "stdout": "{\"data\":{\"tasks\":{\"t-mike\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"t-zulu\":{\"depends\":[],\"parent\":null,\"state\":\"ready\",\"title\":\"Zulu\",\"workset\":\"active\"}},\"tasksFile\":\"{SANDBOX}/.yaco/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/.yaco/plan/tasks\"},\"ok\":true}\n",
       "stderr": "",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
@@ -417,7 +417,7 @@
       ],
       "cwd": "root",
       "exitCode": 0,
-      "stdout": "{\"data\":{\"id\":\"t-mike\",\"task\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"tasksFile\":\"{SANDBOX}/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/plan/tasks\"},\"ok\":true}\n",
+      "stdout": "{\"data\":{\"id\":\"t-mike\",\"task\":{\"depends\":[\"t-zulu\"],\"parent\":null,\"state\":\"active\",\"title\":\"Mike\",\"workset\":\"active\"},\"tasksFile\":\"{SANDBOX}/.yaco/plan/tasks/tasks.json\",\"tasksPath\":\"{SANDBOX}/.yaco/plan/tasks\"},\"ok\":true}\n",
       "stderr": "",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
@@ -582,7 +582,7 @@
       "cwd": "root",
       "exitCode": 1,
       "stdout": "",
-      "stderr": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"no task 't-absent' in {SANDBOX}/plan/tasks\"},\"ok\":false}\n",
+      "stderr": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"no task 't-absent' in {SANDBOX}/.yaco/plan/tasks\"},\"ok\":false}\n",
       "durable": {
         "projects.json": "984aafeb8dbc9370",
         "sessions/alpha-1.json": "86d2e30746ac3795",

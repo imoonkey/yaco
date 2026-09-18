@@ -130,8 +130,8 @@ beforeEach(() => {
   writeFileSync(join(repoRoot, "cli", "package.json"), JSON.stringify({ name: "yaco-cli" }));
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   // Minimal valid tasks graph for the task-graph check.
-  mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
-  writeFileSync(join(repoRoot, "plan", "tasks", "tasks.json"), "{}\n");
+  mkdirSync(join(repoRoot, ".yaco", "plan", "tasks"), { recursive: true });
+  writeFileSync(join(repoRoot, ".yaco", "plan", "tasks", "tasks.json"), "{}\n");
   process.env["YACO_REPO_ROOT"] = repoRoot;
   const shimBin = join(sandbox, "shim-bin");
   mkdirSync(shimBin, { recursive: true });
@@ -457,11 +457,11 @@ describe("runAllChecks — a provider that is present but cannot execute", () =>
 });
 
 describe("runAllChecks — task-graph zero state (fresh clone)", () => {
-  const tasksDir = () => join(repoRoot, "plan", "tasks");
+  const tasksDir = () => join(repoRoot, ".yaco", "plan", "tasks");
 
   it("skips task-graph when the repo has no tasks tree, and the skip is not a failure", async () => {
     await installPrereqs();
-    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    rmSync(join(repoRoot, ".yaco", "plan"), { recursive: true, force: true });
     const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("skip");
@@ -532,12 +532,12 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
 
   // The skip is for a path that is genuinely NOT THERE. A path that is there
   // but cannot be read is breakage and must not be laundered into a skip —
-  // `plan/tasks` symlinked at an extracted task store is exactly how this repo
+  // `.yaco/plan/tasks` symlinked at an extracted task store is exactly how this repo
   // family keeps its plan out of the public tree.
   it("fails task-graph when the tasks path is a dangling symlink", async () => {
     await installPrereqs();
-    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
-    mkdirSync(join(repoRoot, "plan"), { recursive: true });
+    rmSync(join(repoRoot, ".yaco", "plan"), { recursive: true, force: true });
+    mkdirSync(join(repoRoot, ".yaco", "plan"), { recursive: true });
     symlinkSync(join(sandbox, "extracted-store-that-moved"), tasksDir());
     const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
@@ -547,25 +547,25 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
   });
 
   it("fails task-graph when a dangling symlink sits ABOVE the tasks path", async () => {
-    // `plan -> /moved/private-plan` breaks `plan/tasks` exactly as a link at
+    // `plan -> /moved/private-plan` breaks `.yaco/plan/tasks` exactly as a link at
     // the final component does — and it is the likelier shape, since the plan
     // ROOT is what gets extracted out of a public tree.
     await installPrereqs();
-    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
-    symlinkSync(join(sandbox, "moved-private-plan"), join(repoRoot, "plan"));
+    rmSync(join(repoRoot, ".yaco", "plan"), { recursive: true, force: true });
+    symlinkSync(join(sandbox, "moved-private-plan"), join(repoRoot, ".yaco", "plan"));
     const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("fail");
-    expect(tg?.detail).toContain(`dangling symlink at ${join(repoRoot, "plan")}`);
+    expect(tg?.detail).toContain(`dangling symlink at ${join(repoRoot, ".yaco", "plan")}`);
     expect(r.summary.fail).toBe(1);
   });
 
   it("skips when a LIVE symlinked plan root simply has no tasks tree yet", async () => {
     await installPrereqs();
-    rmSync(join(repoRoot, "plan"), { recursive: true, force: true });
+    rmSync(join(repoRoot, ".yaco", "plan"), { recursive: true, force: true });
     const external = join(sandbox, "external-plan");
     mkdirSync(external, { recursive: true });
-    symlinkSync(external, join(repoRoot, "plan"));
+    symlinkSync(external, join(repoRoot, ".yaco", "plan"));
     const r = await runAllChecks();
     const tg = r.checks.find((c) => c.name === "task-graph");
     expect(tg?.status).toBe("skip");
@@ -575,14 +575,14 @@ describe("runAllChecks — task-graph zero state (fresh clone)", () => {
   it("fails task-graph when the tasks path cannot be read", async () => {
     if (process.getuid?.() === 0) return; // root defeats the permission wall
     await installPrereqs();
-    chmodSync(join(repoRoot, "plan"), 0o000);
+    chmodSync(join(repoRoot, ".yaco", "plan"), 0o000);
     try {
       const r = await runAllChecks();
       const tg = r.checks.find((c) => c.name === "task-graph");
       expect(tg?.status).toBe("fail");
       expect(tg?.detail).toContain("EACCES");
     } finally {
-      chmodSync(join(repoRoot, "plan"), 0o755); // let afterEach clean up
+      chmodSync(join(repoRoot, ".yaco", "plan"), 0o755); // let afterEach clean up
     }
   });
 });
@@ -745,8 +745,8 @@ describe("doctor --repo (HIGH 2 wire-through)", () => {
     // Point doctor at a repo whose graph is invalid — the failure detail
     // naming that repo proves the flag reached the task-graph check.
     const otherRepo = join(sandbox, "other-repo");
-    mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
-    writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
+    mkdirSync(join(otherRepo, ".yaco", "plan", "tasks"), { recursive: true });
+    writeFileSync(join(otherRepo, ".yaco", "plan", "tasks", "tasks.json"), "not json\n");
     const r = runCli(
       ["doctor", "--repo", otherRepo, "--json"],
       { env: { ...process.env } },

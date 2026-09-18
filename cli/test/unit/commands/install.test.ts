@@ -91,8 +91,8 @@ beforeEach(() => {
   stageCheckout(repoRoot);
   // Minimal valid tasks graph so the doctor's task-graph check passes when
   // tests opt into running doctor (skipDoctor: false).
-  mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
-  writeFileSync(join(repoRoot, "plan", "tasks", "tasks.json"), "{}\n");
+  mkdirSync(join(repoRoot, ".yaco", "plan", "tasks"), { recursive: true });
+  writeFileSync(join(repoRoot, ".yaco", "plan", "tasks", "tasks.json"), "{}\n");
   process.env["YACO_REPO_ROOT"] = repoRoot;
   // Make doctor's PATH-based checks (tmux, git, claude, codex, yaco) hermetic
   // by prepending a shim bin onto PATH.
@@ -447,7 +447,7 @@ describe("runInstall — global-link safety", () => {
 
   it("migrates a whole-dir link left by an install from a worktree, with no --force", async () => {
     // The worktree footgun, seen from the other side: an earlier `yaco install`
-    // from `.worktrees/<slug>/` pointed the whole directory at that checkout's
+    // from `.yaco/worktrees/<slug>/` pointed the whole directory at that checkout's
     // agent-config. It is our own output and the checkout may be long gone, so
     // repairing it does not need the operator's permission — what the refusal
     // above protects is the user's own directory, not ours.
@@ -583,7 +583,7 @@ describe("runInstall — registry safety (HIGH 5)", () => {
 
   it("refuses to rebind \"yaco\" to a different path — throws CONFLICT", async () => {
     // Pre-seed the registry with yaco at a different path (simulating the
-    // worktree footgun: `yaco install` ran from .worktrees/<slug> and
+    // worktree footgun: `yaco install` ran from .yaco/worktrees/<slug> and
     // re-registered the project at the worktree root).
     mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
     const regPath = join(process.env["YACO_HOME"]!, "projects.json");
@@ -737,8 +737,8 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     const otherRepo = stageOtherRepo();
     // A present-but-broken graph in otherRepo: the failure detail naming that
     // repo proves doctor ran against --repo, not cwd.
-    mkdirSync(join(otherRepo, "plan", "tasks"), { recursive: true });
-    writeFileSync(join(otherRepo, "plan", "tasks", "tasks.json"), "not json\n");
+    mkdirSync(join(otherRepo, ".yaco", "plan", "tasks"), { recursive: true });
+    writeFileSync(join(otherRepo, ".yaco", "plan", "tasks", "tasks.json"), "not json\n");
     let code: string | undefined;
     let report: any;
     try {
@@ -987,7 +987,7 @@ describe("yaco install — fresh clone exits 0 (release blocker)", () => {
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
     const freshClone = stageCheckout(join(sandbox, "fresh-clone"));
-    expect(existsSync(join(freshClone, "plan"))).toBe(false);
+    expect(existsSync(join(freshClone, ".yaco", "plan"))).toBe(false);
     const r = runCli(
       ["install", "--cli-only", "--repo", freshClone, "--json"],
       { env: { ...process.env } },

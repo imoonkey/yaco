@@ -126,8 +126,8 @@ function parseChecks(stdout: string): GateChecks {
  *  `scripts/gate.sh` (the project hasn't adopted the gate). The set-done guard
  *  (T3) uses `null` to stay DORMANT: gating is opt-in by the script's presence,
  *  so marking a leaf done never hard-requires a git repo + gate script in
- *  projects that haven't adopted it. `runGate`, by contrast, treats a missing
- *  script as a hard ENV error — invoking it is an EXPLICIT request to gate. */
+ *  projects that haven't adopted it. `runGate` reports every check as `skip`
+ *  in that case. */
 export function findGateScript(cwd: string): string | null {
   const r = runGit(["rev-parse", "--show-toplevel"], cwd);
   if (r.status !== 0) return null;
@@ -135,22 +135,25 @@ export function findGateScript(cwd: string): string | null {
   return existsSync(script) ? script : null;
 }
 
+const headSha = (root: string): string => runGit(["rev-parse", "HEAD"], root).stdout.trim();
+
 /** Run the repo's gate against the session's working tree.
  *
- *  Throws CliError for hard "couldn't run" conditions (not a git repo, no
- *  scripts/gate.sh, unparseable output). A RED gate is NOT an error — it
- *  returns `{ ok:false, data }` so callers see which checks failed. */
+ *  Throws CliError for hard "couldn't run" conditions (not a git repo,
+ *  unparseable output). A repo without `scripts/gate.sh` has not opted into
+ *  the gate: every check is `skip`, measured against HEAD itself. A RED gate
+ *  is NOT an error — it returns `{ ok:false, data }` so callers see which
+ *  checks failed. */
 export function runGate(cwd: string, opts: RunGateOptions = {}): GateResult {
   const root = worktreeRoot(cwd);
-  const base = opts.base ?? getMergeBase(root, "HEAD", DEFAULT_BRANCH);
 
   const script = join(root, "scripts", "gate.sh");
   if (!existsSync(script)) {
-    throw new CliError(
-      ErrCode.ENV,
-      `gate script not found: ${script} (the repo must provide scripts/gate.sh)`,
-    );
+    const sha = headSha(root);
+    const checks: GateChecks = { verify: "skip", doc: "skip", review: "skip", qa: "skip" };
+    return { ok: true, data: { base: opts.base ?? sha, sha, checks, dirty: isDirty(root) } };
   }
+  const base = opts.base ?? getMergeBase(root, "HEAD", DEFAULT_BRANCH);
 
   // gate.sh routes ALL progress (the full verify.sh / test / build output) to
   // stderr and emits ONLY the one-line checks JSON on stdout. We capture stdout
@@ -169,7 +172,7 @@ export function runGate(cwd: string, opts: RunGateOptions = {}): GateResult {
   }
 
   const checks = parseChecks(r.stdout ?? "");
-  const sha = runGit(["rev-parse", "HEAD"], root).stdout.trim();
+  const sha = headSha(root);
   const dirty = isDirty(root);
   const ok = Object.values(checks).every((s) => s !== "fail");
 

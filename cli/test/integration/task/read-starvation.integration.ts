@@ -53,7 +53,7 @@ function seedRepo(fileCount: number): string {
   roots.push(root);
   for (let f = 0; f < fileCount; f++) {
     // Two directory levels, so the walk has real breadth and depth to cover.
-    const dir = join(root, "plan/tasks", `group${f % 12}`, `bundle${f}`);
+    const dir = join(root, ".yaco/plan/tasks", `group${f % 12}`, `bundle${f}`);
     mkdirSync(dir, { recursive: true });
     const graph: Record<string, unknown> = {};
     for (let t = 0; t < TASKS_PER_FILE; t++) {
@@ -137,7 +137,7 @@ function syncList(repoRoot: string): void {
       else if (entry.isFile() && entry.name === "tasks.json") files.push(path);
     }
   };
-  walk(join(repoRoot, "plan/tasks"));
+  walk(join(repoRoot, ".yaco/plan/tasks"));
   const tasks: Record<string, unknown> = {};
   for (const file of files.sort()) {
     for (const [id, task] of Object.entries(JSON.parse(readFileSync(file, "utf-8")))) {
@@ -212,11 +212,11 @@ describe("task read starvation — chunked async vs the synchronous walk it repl
     const b = seedRepo(6);
     // Distinguish the two trees by a task only one of them has.
     writeFileSync(
-      join(a, "plan/tasks", "group0", "bundle0", "tasks.json"),
+      join(a, ".yaco/plan/tasks", "group0", "bundle0", "tasks.json"),
       JSON.stringify({ ONLY_IN_A: { parent: null, depends: [], state: "ready" } }, null, 2) + "\n",
     );
     writeFileSync(
-      join(b, "plan/tasks", "group0", "bundle0", "tasks.json"),
+      join(b, ".yaco/plan/tasks", "group0", "bundle0", "tasks.json"),
       JSON.stringify({ ONLY_IN_B: { parent: null, depends: [], state: "ready" } }, null, 2) + "\n",
     );
 
@@ -232,7 +232,7 @@ describe("task read starvation — chunked async vs the synchronous walk it repl
       const ids = Object.keys(result.value.tasks);
       expect(ids).toContain(i % 2 === 0 ? "ONLY_IN_A" : "ONLY_IN_B");
       expect(ids).not.toContain(i % 2 === 0 ? "ONLY_IN_B" : "ONLY_IN_A");
-      expect(result.value.tasksPath).toBe(join(i % 2 === 0 ? a : b, "plan/tasks"));
+      expect(result.value.tasksPath).toBe(join(i % 2 === 0 ? a : b, ".yaco/plan/tasks"));
     }
   });
 

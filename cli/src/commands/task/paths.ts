@@ -1,14 +1,12 @@
 /** Path + repo resolution shared by every `yaco task` subcommand.
  *
- *  Reads <repo>/yaco.toml [paths] (honors the `tasks` and `archive` keys)
- *  and emits absolute filesystem paths. Fixes the long-standing
- *  update-tasks.py bug where `projects/tasks.json` was hardcoded.
+ *  Emits absolute filesystem paths under the fixed `.yaco/plan/` layout.
  */
 
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { readYacoProjectPaths } from "../../lib/core/paths/index.ts";
+import { PLAN_DIR, TASKS_DIR } from "../../lib/core/paths/index.ts";
 
 export interface TaskPaths {
   repoRoot: string;
@@ -19,15 +17,12 @@ export interface TaskPaths {
 
 export function resolveTaskPaths(repoFlag: string | boolean | undefined): TaskPaths {
   const repoRoot = resolveRepoRoot(repoFlag);
-  const rel = readYacoProjectPaths(repoRoot);
-  const tasksPath = resolve(repoRoot, rel.tasks);
+  const tasksPath = join(repoRoot, TASKS_DIR);
   return {
     repoRoot,
     tasksPath,
-    defaultTasksFile: rel.tasks.endsWith(".json")
-      ? tasksPath
-      : resolve(tasksPath, "tasks.json"),
-    archiveDir: resolve(repoRoot, rel.archive),
+    defaultTasksFile: join(tasksPath, "tasks.json"),
+    archiveDir: join(repoRoot, PLAN_DIR, "archive"),
   };
 }
 

@@ -7,7 +7,7 @@
  *
  *  All subcommands accept `--json`. Slug = lowercase alphanumeric + hyphens
  *  (no leading/trailing hyphen). Branch is always `task/<slug>`; worktree
- *  always lands at `<repoRoot>/.worktrees/<slug>` where `<repoRoot>` is
+ *  always lands at `<repoRoot>/.yaco/worktrees/<slug>` where `<repoRoot>` is
  *  resolved per-invocation from cwd via `git rev-parse --git-common-dir`.
  */
 

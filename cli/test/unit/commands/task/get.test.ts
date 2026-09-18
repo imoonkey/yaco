@@ -4,7 +4,7 @@
  *  the stored graph keys it by; text is a labeled detail block); `--state`
  *  filters the list and composes with `--workset`. Validation and miss paths
  *  surface USAGE / NOT_FOUND CliErrors. Sandboxed repos use the default
- *  `plan/tasks` layout (no yaco.toml).
+ *  `.yaco/plan/tasks` layout.
  */
 
 import { afterAll, describe, expect, it } from "vitest";
@@ -26,7 +26,7 @@ afterAll(() => {
 function repoWith(tasks: Record<string, unknown>): string {
   const root = mkdtempSync(join(tmpdir(), "yaco-task-get-"));
   TMP_ROOTS.push(root);
-  const tasksDir = join(root, "plan", "tasks");
+  const tasksDir = join(root, ".yaco", "plan", "tasks");
   mkdirSync(tasksDir, { recursive: true });
   writeFileSync(join(tasksDir, "tasks.json"), JSON.stringify(tasks));
   return root;
@@ -49,15 +49,15 @@ describe("yaco task get", () => {
       expect(v.id).toBe("alpha");
       expect(v.task.state).toBe("ready");
       expect(v.task.title).toBe("First");
-      expect(v.tasksPath).toBe(resolve(repo, "plan", "tasks"));
-      expect(v.tasksFile).toBe(resolve(repo, "plan", "tasks", "tasks.json"));
+      expect(v.tasksPath).toBe(resolve(repo, ".yaco", "plan", "tasks"));
+      expect(v.tasksFile).toBe(resolve(repo, ".yaco", "plan", "tasks", "tasks.json"));
     }
   });
 
   it("reports the task's actual source file in a directory-backed store", async () => {
     const root = mkdtempSync(join(tmpdir(), "yaco-task-get-"));
     TMP_ROOTS.push(root);
-    const tasksDir = join(root, "plan", "tasks");
+    const tasksDir = join(root, ".yaco", "plan", "tasks");
     mkdirSync(join(tasksDir, "alpha"), { recursive: true });
     // Root file holds `beta`; the per-id subdir holds `alpha`.
     writeFileSync(
@@ -172,7 +172,7 @@ describe("yaco task list --state", () => {
   });
 
   it("text mode reports an empty filtered set", async () => {
-    const tasksPath = resolve(repo, "plan", "tasks");
+    const tasksPath = resolve(repo, ".yaco", "plan", "tasks");
     const r = await runListState({ json: false, repo, state: "cancelled" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {

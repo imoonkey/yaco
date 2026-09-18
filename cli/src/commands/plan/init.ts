@@ -1,35 +1,36 @@
-/** Core logic for `yaco plan init` — promote the plan directory into a private,
+/** Core logic for `yaco plan init` — promote `.yaco/plan` into a private,
  *  colocated git repo that the host repo never tracks.
  *
  *  Reproducible per machine and idempotent:
- *    preflight  resolve the host repo root (git rev-parse --show-toplevel) and the
- *               [paths] plan root; refuse if the root working-tree .gitignore
- *               matches it (it would be dimmed in the app and dropped from
- *               colocated-repo detection).
- *    1  git init <plan> in place if it is not already its own repo; ensure
- *       <plan>/.gitignore exists with sane runtime-noise patterns (never
+ *    preflight  resolve the host repo root (git rev-parse --show-toplevel);
+ *               refuse if cwd resolved into the plan repo itself, or if the
+ *               root working-tree .gitignore matches the plan (it would be
+ *               dimmed in the app and dropped from colocated-repo detection).
+ *    1  git init .yaco/plan in place if it is not already its own repo; ensure
+ *       its .gitignore exists with sane runtime-noise patterns (never
  *       overwrite an existing one).
- *    2  ensure "/<plan>/" is in the host's exclude file — resolved via
+ *    2  ensure "/.yaco/plan" is in the host's exclude file — resolved via
  *       `git rev-parse --git-path info/exclude` so a linked worktree (where
- *       .git is a file) is handled correctly — so the host repo never tracks it.
- *    3  ensure "!<plan>/" is in the root .ignore — the exclude entry also makes
- *       ignore-stack tools (rg/fd, agent file search) blind to the plan dir; the
- *       .ignore negation re-includes it at higher precedence (no-op for tools
- *       when the plan dir is tracked).
+ *       .git is a file) is handled correctly — so the host repo never tracks
+ *       it. No trailing slash: the line also matches a worktree's plan symlink.
+ *    3  ensure "!.yaco/plan/" is in the root .ignore — the exclude entry also
+ *       makes ignore-stack tools (rg/fd, agent file search) blind to the plan;
+ *       the .ignore negation re-includes it at higher precedence. A .ignore
+ *       this step creates is itself excluded, so the host stays clean.
  *    4  --remote: add origin; a different existing origin is a CONFLICT unless
  *       --force. Never pushes — publishing the plan repo is a separate, personal
  *       step the tool does not assume.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ensureLine } from "../../lib/core/ensure-line.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
-import { readYacoProjectPaths } from "../../lib/core/paths/index.ts";
-import { runGit } from "../../lib/core/worktree/git.ts";
+import { PLAN_DIR } from "../../lib/core/paths/index.ts";
+import { ensureExcluded, runGit } from "../../lib/core/worktree/git.ts";
 
 /** Runtime-noise patterns the plan repo should ignore by default. */
 const DEFAULT_PLAN_GITIGNORE = ["poll.log", "poll.err", "_monitor.log", "*.lock"];
@@ -65,24 +66,15 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   const repoRoot = resolve(cwd, topLevel.stdout.trim());
 
   // Guard: if cwd is inside an already-initialized plan repo, --show-toplevel
-  // resolves to that plan repo, not the host. Detect the signature plan init
-  // leaves (a /<name>/ entry in the parent repo's info/exclude) and redirect.
-  if (nestedInExcludedParent(repoRoot)) {
+  // resolves to that plan repo, not the host.
+  if (repoRoot.endsWith(`/${PLAN_DIR}`)) {
     throw new CliError(
       ErrCode.USAGE,
-      `${repoRoot} is a colocated repo excluded by its parent — run 'yaco plan init' from the host repo root`,
+      `${repoRoot} is the plan repo itself — run 'yaco plan init' from the host repo root`,
     );
   }
 
-  const plan = readYacoProjectPaths(repoRoot).plan; // validated + canonicalized
-  // Colocated-repo detection is depth-1 only, so the plan root must be a single
-  // directory; a nested root would be excluded but never surfaced in the app.
-  if (plan.includes("/")) {
-    throw new CliError(
-      ErrCode.ENV,
-      `[paths] plan must be a depth-1 directory for the colocated mechanism, got "${plan}"`,
-    );
-  }
+  const plan = PLAN_DIR;
   const planDir = join(repoRoot, plan);
 
   if (rootGitignoreMatches(repoRoot, plan)) {
@@ -108,10 +100,13 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   }
 
   // ── 2. host info/exclude ─────────────────────────────────────────────────
-  const excludeUpdated = ensureExcluded(repoRoot, plan);
+  const excludeUpdated = ensureExcluded(repoRoot, `/${plan}`);
 
   // ── 3. root .ignore whitelist ────────────────────────────────────────────
-  const ignoreUpdated = ensureLine(join(repoRoot, ".ignore"), `!${plan}/`);
+  const ignorePath = join(repoRoot, ".ignore");
+  const ignoreCreated = !existsSync(ignorePath);
+  const ignoreUpdated = ensureLine(ignorePath, `!${plan}/`);
+  if (ignoreCreated) ensureExcluded(repoRoot, "/.ignore");
 
   // ── 4. remote (never pushes) ─────────────────────────────────────────────
   const remote = opts.remote
@@ -144,19 +139,6 @@ function rootGitignoreMatches(repoRoot: string, plan: string): boolean {
   return source.endsWith(".gitignore");
 }
 
-/** Ensure "/<plan>/" is a line in the host's info/exclude. Returns whether it
- *  appended (false ⇒ already present). */
-function ensureExcluded(repoRoot: string, plan: string): boolean {
-  const r = runGit(["rev-parse", "--git-path", "info/exclude"], repoRoot);
-  if (r.status !== 0) {
-    throw new CliError(
-      ErrCode.IO,
-      `could not resolve info/exclude: ${r.stderr.trim() || "git rev-parse failed"}`,
-    );
-  }
-  return ensureLine(resolve(repoRoot, r.stdout.trim()), `/${plan}/`);
-}
-
 /** Add or reconcile the plan repo's origin. Never pushes. */
 function ensureRemote(planDir: string, url: string, force: boolean): PlanInitResult["remote"] {
   const existing = runGit(["remote", "get-url", "origin"], planDir);
@@ -179,24 +161,6 @@ function ensureRemote(planDir: string, url: string, force: boolean): PlanInitRes
     throw new CliError(ErrCode.IO, `git remote set-url origin failed: ${set.stderr.trim()}`);
   }
   return "updated";
-}
-
-/** True iff repoRoot's parent is a git repo whose info/exclude already carries
- *  the "/<basename>/" entry plan init writes — i.e. repoRoot is itself a plan
- *  repo and we resolved into it by mistake. */
-function nestedInExcludedParent(repoRoot: string): boolean {
-  const parent = dirname(repoRoot);
-  const r = runGit(["rev-parse", "--git-path", "info/exclude"], parent);
-  if (r.status !== 0) return false; // parent not in a git repo
-  const excludePath = resolve(parent, r.stdout.trim());
-  let content = "";
-  try {
-    content = readFileSync(excludePath, "utf-8");
-  } catch {
-    return false;
-  }
-  const entry = `/${basename(repoRoot)}/`;
-  return content.split(/\r?\n/).some((line) => line.trim() === entry);
 }
 
 /** Parse argv for `plan init` and run it. */
@@ -231,7 +195,7 @@ function renderPlanInit(r: PlanInitResult): string {
     `plan repo: ${r.planDir}`,
     `  ${r.initialized ? "git init (new repo)" : "already a repo"}`,
     `  .gitignore ${r.gitignoreCreated ? "created" : "kept"}`,
-    `  info/exclude ${r.excludeUpdated ? "added /" + r.plan + "/" : "already excludes /" + r.plan + "/"}`,
+    `  info/exclude ${r.excludeUpdated ? "added /" + r.plan : "already excludes /" + r.plan}`,
     `  .ignore ${r.ignoreUpdated ? "added !" + r.plan + "/" : "already whitelists !" + r.plan + "/"}`,
   ];
   if (r.remote !== "none") lines.push(`  origin ${r.remote}`);

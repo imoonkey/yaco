@@ -1,11 +1,10 @@
 /** End-to-end contract for `yaco paths <subcommand>`.
  *
  *  Spawned subprocess tests because the dispatcher exits the process. We
- *  verify the documented JSON shapes and the stderr-only failure envelope
- *  with exit-3 for ENV errors (malformed yaco.toml).
+ *  verify the documented JSON shapes and the stderr-only USAGE envelope.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,7 +62,7 @@ describe("yaco paths runtime --json", () => {
 });
 
 describe("yaco paths project --json", () => {
-  it("returns defaults resolved to absolute paths under --repo", () => {
+  it("returns the fixed layout and the default doc folder, absolute under --repo", () => {
     const repo = tempDir();
     const r = runYaco(["paths", "project", "--json", "--repo", repo]);
     expect(r.status).toBe(0);
@@ -72,30 +71,20 @@ describe("yaco paths project --json", () => {
     expect(parsed).toEqual({
       ok: true,
       data: {
-        plan: `${repo}/plan`,
-        tasks: `${repo}/plan/tasks`,
-        active: `${repo}/plan/active`,
-        archive: `${repo}/plan/archive`,
-        backlog: `${repo}/plan/backlog`,
-        worktrees: `${repo}/.worktrees`,
+        plan: `${repo}/.yaco/plan`,
+        tasks: `${repo}/.yaco/plan/tasks`,
+        worktrees: `${repo}/.yaco/worktrees`,
+        doc: `${repo}/docs`,
       },
     });
   });
 
-  it("applies a [paths] plan override and re-roots sub-paths to absolute", () => {
+  it("reports an existing doc/ folder", () => {
     const repo = tempDir();
-    writeFileSync(
-      join(repo, "yaco.toml"),
-      '[paths]\nplan = "pl"\n',
-      "utf-8",
-    );
+    mkdirSync(join(repo, "doc"));
     const r = runYaco(["paths", "project", "--json", "--repo", repo]);
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout);
-    expect(parsed.data.plan).toBe(`${repo}/pl`);
-    expect(parsed.data.tasks).toBe(`${repo}/pl/tasks`);
-    expect(parsed.data.active).toBe(`${repo}/pl/active`);
-    expect(parsed.data.backlog).toBe(`${repo}/pl/backlog`);
+    expect(JSON.parse(r.stdout).data.doc).toBe(`${repo}/doc`);
   });
 });
 
@@ -117,52 +106,5 @@ describe("yaco paths project --repo (missing value)", () => {
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("error [USAGE]");
     expect(r.stderr).toMatch(/--repo/);
-  });
-});
-
-describe("yaco paths project — duplicate key in yaco.toml", () => {
-  it("exits 3 with ENV envelope identifying the duplicated key", () => {
-    const repo = tempDir();
-    writeFileSync(
-      join(repo, "yaco.toml"),
-      '[paths]\ntasks = "a.json"\ntasks = "b.json"\n',
-      "utf-8",
-    );
-    const r = runYaco(["paths", "project", "--json", "--repo", repo]);
-    expect(r.status).toBe(3);
-    expect(r.stdout).toBe("");
-    const trimmed = r.stderr.endsWith("\n") ? r.stderr.slice(0, -1) : r.stderr;
-    const parsed = JSON.parse(trimmed);
-    expect(parsed.ok).toBe(false);
-    expect(parsed.error.code).toBe("ENV");
-    expect(parsed.error.message).toMatch(/duplicate key "tasks"/);
-  });
-});
-
-describe("yaco paths project — malformed yaco.toml", () => {
-  it("exits 3 with ok:false envelope on stderr (stdout empty)", () => {
-    const repo = tempDir();
-    writeFileSync(
-      join(repo, "yaco.toml"),
-      "this is not valid toml at all\n",
-      "utf-8",
-    );
-    const r = runYaco(["paths", "project", "--json", "--repo", repo]);
-    expect(r.status).toBe(3);
-    expect(r.stdout).toBe("");
-    const trimmed = r.stderr.endsWith("\n") ? r.stderr.slice(0, -1) : r.stderr;
-    const parsed = JSON.parse(trimmed);
-    expect(parsed.ok).toBe(false);
-    expect(parsed.error.code).toBe("ENV");
-    expect(typeof parsed.error.message).toBe("string");
-  });
-
-  it("text mode also exits 3 and writes a human error line to stderr", () => {
-    const repo = tempDir();
-    writeFileSync(join(repo, "yaco.toml"), "@@@nope\n", "utf-8");
-    const r = runYaco(["paths", "project", "--repo", repo]);
-    expect(r.status).toBe(3);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("error [ENV]");
   });
 });

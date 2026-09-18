@@ -162,11 +162,11 @@ describe("claude history list", () => {
     expect(await readClaude("/no/such/project")).toEqual([]);
   });
 
-  it("resolves a project path with non-alphanumeric segments (.worktrees)", async () => {
-    const wt = "/home/dev/yaco/.worktrees/feat";
+  it("resolves a project path with non-alphanumeric segments (.yaco/worktrees)", async () => {
+    const wt = "/home/dev/yaco/.yaco/worktrees/feat";
     // Sanity: the encoder collapses '.' as well as '/', so a '/'-only encoder
     // would look in the wrong directory and find nothing.
-    expect(encodeClaudeCwd(wt)).toBe("-home-dev-yaco--worktrees-feat");
+    expect(encodeClaudeCwd(wt)).toBe("-home-dev-yaco--yaco-worktrees-feat");
     writeClaudeSession("wt-1", [userLine("worktree task", "2026-06-04T12:00:00.000Z", wt)], wt);
 
     const rows = await readClaude(wt);
@@ -181,7 +181,7 @@ describe("claude history list", () => {
  *  prefix and then confirmed by the `cwd` their logs record, because the
  *  encoding is lossy and has no inverse. */
 describe("claude history list — the project subtree", () => {
-  const WORKTREE = `${PROJECT}/.worktrees/feat`;
+  const WORKTREE = `${PROJECT}/.yaco/worktrees/feat`;
   /** A sibling project, not a descendant — and its encoded name begins with the
    *  project's own, which is exactly what a name-only match gets wrong. */
   const SIBLING = `${PROJECT}-backups`;
@@ -346,9 +346,9 @@ describe("codex history list", () => {
   it("reads threads from the project subtree but not from a sibling", async () => {
     createCodexDb([
       { id: "cx-root", first: "root", created: epochSec("2026-06-01T00:00:00Z"), updated: epochSec("2026-06-01T00:00:00Z"), cwd: PROJECT },
-      { id: "cx-wt", first: "worker", created: epochSec("2026-06-02T00:00:00Z"), updated: epochSec("2026-06-02T00:00:00Z"), cwd: `${PROJECT}/.worktrees/feat` },
+      { id: "cx-wt", first: "worker", created: epochSec("2026-06-02T00:00:00Z"), updated: epochSec("2026-06-02T00:00:00Z"), cwd: `${PROJECT}/.yaco/worktrees/feat` },
       { id: "cx-sibling", first: "sibling", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T00:00:00Z"), cwd: `${PROJECT}-backups` },
-      { id: "cx-wt-archived", first: "archived worker", created: epochSec("2026-06-04T00:00:00Z"), updated: epochSec("2026-06-04T00:00:00Z"), cwd: `${PROJECT}/.worktrees/feat`, archived: 1 },
+      { id: "cx-wt-archived", first: "archived worker", created: epochSec("2026-06-04T00:00:00Z"), updated: epochSec("2026-06-04T00:00:00Z"), cwd: `${PROJECT}/.yaco/worktrees/feat`, archived: 1 },
     ]);
 
     expect((await readCodex(PROJECT)).map((r) => r.sessionId)).toEqual(["cx-wt", "cx-root"]);
@@ -578,7 +578,7 @@ describe("the per-provider cap", () => {
    *  distinct rows and the equalities below go red. Without them every id is
    *  unique across directories, and a cap taken anywhere recovers the same
    *  window — which is the strength the first version of this fixture lacked. */
-  const CWDS = [PROJECT, `${PROJECT}/.worktrees/feat`, `${PROJECT}/.worktrees/fix`];
+  const CWDS = [PROJECT, `${PROJECT}/.yaco/worktrees/feat`, `${PROJECT}/.yaco/worktrees/fix`];
   /** How many of the newest Claude sessions are logged under every cwd. */
   const DUPLICATED = 6;
 

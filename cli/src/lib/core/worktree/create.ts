@@ -1,4 +1,4 @@
-/** `yaco worktree create <slug>` — provision `.worktrees/<slug>` on `task/<slug>`.
+/** `yaco worktree create <slug>` — provision `.yaco/worktrees/<slug>` on `task/<slug>`.
  *
  *  Idempotent: if the directory exists AND git tracks it, reuse it. If the
  *  directory exists but is stale (not in `git worktree list`), fail closed.
@@ -23,10 +23,10 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
-import { ensureLine } from "../ensure-line.ts";
-import { readYacoProjectPaths } from "../paths/index.ts";
+import { PLAN_DIR, WORKTREES_DIR } from "../paths/index.ts";
 import {
   branchExists,
+  ensureExcluded,
   isWorktreeRegistered,
   resolveRepoRoot,
   runGit,
@@ -53,8 +53,9 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
-  const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
+  const worktreeDir = worktreePath(repoRoot, slug);
   assertPhysicallyContained(repoRoot, worktreeDir, "worktree path");
+  ensureExcluded(repoRoot, `/${WORKTREES_DIR}/`);
 
   if (existsSync(worktreeDir)) {
     const resolvedDir = realpathSync(worktreeDir);
@@ -87,22 +88,19 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   return { slug, branch, path: worktreeDir, base, reused: false };
 }
 
-/** Share the primary plan store into one worktree without overwriting any
- * existing local state. The two configs are read independently: the primary
- * owns the target, while the worktree branch owns the link location. */
+/** Give one worktree the plan per the primary's privacy state:
+ *
+ *    primary `.yaco/plan` has `.git` (private)  → symlink to the primary's plan
+ *    no `.git` (tracked, or a plain dir)        → the branch's own copy; nothing to do
+ *    absent                                     → nothing
+ *
+ *  Never overwrites existing local state. */
 function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
-  const primaryPlan = readYacoProjectPaths(repoRoot).plan;
-  const worktreePlan = readYacoProjectPaths(worktreeDir).plan;
-  const target = join(repoRoot, primaryPlan);
-  const location = join(worktreeDir, worktreePlan);
-  assertPhysicallyContained(worktreeDir, dirname(location), "plan link parent");
+  const target = join(repoRoot, PLAN_DIR);
+  if (!existsSync(join(target, ".git"))) return;
 
-  if (primaryPlan !== worktreePlan) {
-    throw new CliError(
-      ErrCode.CONFLICT,
-      `worktree [paths].plan resolves to ${location}, but the primary plan is ${target}; align the branch configuration, then re-run create`,
-    );
-  }
+  const location = join(worktreeDir, PLAN_DIR);
+  assertPhysicallyContained(worktreeDir, dirname(location), "plan link parent");
 
   let existing: ReturnType<typeof lstatSync> | undefined;
   try {
@@ -125,11 +123,11 @@ function provisionPlanStore(repoRoot: string, worktreeDir: string): void {
         `stale plan link at ${location}: resolves to ${actual}, expected ${target}`,
       );
     }
-    ensurePlanLinkExcluded(worktreeDir, primaryPlan);
-    return;
   }
 
-  ensurePlanLinkExcluded(worktreeDir, primaryPlan);
+  // No trailing slash: a directory-only `/.yaco/plan/` would not match the link.
+  ensureExcluded(repoRoot, `/${PLAN_DIR}`);
+  if (existing) return;
   mkdirSync(dirname(location), { recursive: true });
   symlinkSync(relative(dirname(location), target), location, "dir");
 }
@@ -153,21 +151,6 @@ function assertPhysicallyContained(owner: string, candidate: string, label: stri
       `${label} escapes its owner through a symlink: ${candidate} resolves under ${physicalAncestor}, outside ${physicalOwner}`,
     );
   }
-}
-
-/** A directory-only `/<plan>/` ignore does not match the symlink itself. Add
- * the primary plan path without a trailing slash to the host's shared exclude
- * file, reached through git because linked worktrees redirect it. */
-function ensurePlanLinkExcluded(worktreeDir: string, primaryPlan: string): void {
-  const result = runGit(["rev-parse", "--git-path", "info/exclude"], worktreeDir);
-  if (result.status !== 0) {
-    throw new CliError(
-      ErrCode.IO,
-      `could not resolve info/exclude: ${result.stderr.trim() || "git rev-parse failed"}`,
-    );
-  }
-  const excludePath = resolve(worktreeDir, result.stdout.trim());
-  ensureLine(excludePath, `/${primaryPlan}`);
 }
 
 /** Run `<repoRoot>/scripts/worktree-provision.sh` (if present + executable)

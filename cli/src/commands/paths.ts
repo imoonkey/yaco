@@ -2,14 +2,13 @@
  *
  *  Subcommands:
  *    runtime   ${YACO_HOME} and the helpers rooted there
- *    project   repo-relative paths from yaco.toml [paths] (or defaults)
+ *    project   the fixed `.yaco/` layout and the doc folder, absolute
  *
  *  Both subcommands return a flat object keyed by the helper name, so a
  *  consumer can write `(yaco paths runtime --json).sessionsDir`.
- *  Malformed yaco.toml surfaces as ENV (exit 3) via readYacoProjectPaths.
  */
 
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { parseArgs } from "../lib/core/args.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
@@ -19,11 +18,14 @@ import {
   agentWrapperPath,
   channelsDir,
   getYacoHome,
+  PLAN_DIR,
   projectsFile,
-  readYacoProjectPaths,
+  resolveDocDir,
   sessionsDir,
   shellSessionsDir,
+  TASKS_DIR,
   uiStateDir,
+  WORKTREES_DIR,
 } from "../lib/core/paths/index.ts";
 
 const HELP = `yaco paths — resolve canonical YACO paths
@@ -34,7 +36,7 @@ Usage:
 
 Subcommands:
   runtime  YACO_HOME and the runtime directories rooted under it
-  project  Repo-relative paths from yaco.toml [paths] (or defaults)
+  project  Absolute plan, tasks, worktrees and doc paths for a repo
 
 Flags for 'project':
   --repo <path>   Override the repo root (defaults to cwd)
@@ -88,14 +90,11 @@ export async function handlePaths(
       }
       const parsed = parseArgs(rest);
       const repo = resolveRepoFlag(parsed.flags["repo"]);
-      const relative = readYacoProjectPaths(repo);
       const data = {
-        plan: resolve(repo, relative.plan),
-        tasks: resolve(repo, relative.tasks),
-        active: resolve(repo, relative.active),
-        archive: resolve(repo, relative.archive),
-        backlog: resolve(repo, relative.backlog),
-        worktrees: resolve(repo, relative.worktrees),
+        plan: join(repo, PLAN_DIR),
+        tasks: join(repo, TASKS_DIR),
+        worktrees: join(repo, WORKTREES_DIR),
+        doc: resolveDocDir(repo),
       };
       return dual(opts.json, data, () => renderPaths(data));
     }

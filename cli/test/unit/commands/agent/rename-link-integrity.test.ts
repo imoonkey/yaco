@@ -36,12 +36,12 @@ afterEach(() => {
 
 function projectRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "yaco-rename-proj-"));
-  mkdirSync(join(root, "plan", "tasks"), { recursive: true });
+  mkdirSync(join(root, ".yaco", "plan", "tasks"), { recursive: true });
   return root;
 }
 
 function writeTasks(root: string, graph: TaskGraph): string {
-  const tasksPath = join(root, "plan", "tasks");
+  const tasksPath = join(root, ".yaco", "plan", "tasks");
   saveTasks(join(tasksPath, "tasks.json"), graph);
   return tasksPath;
 }
@@ -131,7 +131,7 @@ describe("rename link integrity", () => {
     // thus rewriteTaskAgentHandle) throw — a real failure inside the lock, not a
     // skipped store. The authoritative session rename must still complete.
     const root = projectRoot();
-    const tasksPath = join(root, "plan", "tasks");
+    const tasksPath = join(root, ".yaco", "plan", "tasks");
     saveTasks(join(tasksPath, "tasks.json"), { dup: task(["old"]) });
     mkdirSync(join(tasksPath, "extra"), { recursive: true });
     saveTasks(join(tasksPath, "extra", "tasks.json"), { dup: task(["old"]) });

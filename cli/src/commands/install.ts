@@ -179,7 +179,7 @@ function pathKind(p: string): "missing" | "symlink" | "other" {
  *  `force=true`; regular file/dir → refuse with IO error.
  *
  *  The realpath comparison closes the same shape of footgun the registry
- *  rebind fix closed: running `yaco install` from a `.worktrees/<slug>/`
+ *  rebind fix closed: running `yaco install` from a `.yaco/worktrees/<slug>/`
  *  checkout (or from any non-canonical alias of the same repo) would
  *  otherwise silently retarget the user's global `~/.claude/skills` to the
  *  transient install location, breaking the live setup the moment that
@@ -298,7 +298,7 @@ function isYacoCheckout(repoRoot: string): boolean {
  *
  *  Also refuses to silently rebind the "yaco" entry when an existing entry
  *  points at a different path. This blocks the worktree footgun where running
- *  `yaco install` from inside a `.worktrees/<slug>/` checkout would otherwise
+ *  `yaco install` from inside a `.yaco/worktrees/<slug>/` checkout would otherwise
  *  silently re-register the project at the worktree path and the web app
  *  would then filter every session/task/worktree view through the wrong root.
  *  Pass `--force` to override (e.g. when you actually moved the checkout).

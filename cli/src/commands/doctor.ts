@@ -44,7 +44,7 @@ import {
   getYacoHome,
   projectsRegistryPath,
   readProjects,
-  readYacoProjectPaths,
+  TASKS_DIR,
 } from "../lib/core/paths/index.ts";
 import { loadTaskStore, validateGraph } from "../lib/core/task/index.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
@@ -461,8 +461,8 @@ function checkProviders(): CheckResult {
  *  Climbs to the nearest component that exists on disk. `lstat` does not follow
  *  symlinks, so the first component it can stat is either a real ancestor (the
  *  path below it is simply not there) or a link pointing nowhere — which is
- *  breakage at any depth: `plan -> /moved/private-plan` breaks `plan/tasks`
- *  exactly as `plan/tasks -> /moved` does. */
+ *  breakage at any depth: `.yaco/plan -> /moved/private-plan` breaks
+ *  `.yaco/plan/tasks` exactly as `.yaco/plan/tasks -> /moved` does. */
 function unreadableReason(path: string): string | null {
   for (let cur = path; ; cur = dirname(cur)) {
     let entry: ReturnType<typeof lstatSync>;
@@ -492,8 +492,7 @@ async function checkTaskGraph(repoRoot: string): Promise<CheckResult> {
     if (!existsSync(repoRoot)) {
       return fail("task-graph", `${repoRoot}: repo root does not exist`);
     }
-    const paths = readYacoProjectPaths(repoRoot);
-    const tasksPath = join(repoRoot, paths.tasks);
+    const tasksPath = join(repoRoot, TASKS_DIR);
     if (!existsSync(tasksPath)) {
       // No tasks tree is the zero state of an unplanned repo (a fresh clone
       // has none), not breakage — skip, so `yaco install` on a fresh clone

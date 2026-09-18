@@ -15,7 +15,6 @@
 import { existsSync } from "node:fs";
 
 import { CliError, ErrCode } from "../errors.ts";
-import { readYacoProjectPaths } from "../paths/index.ts";
 import { isDirty, resolveRepoRoot, runGit } from "./git.ts";
 import { createPullRequest } from "./pr.ts";
 import { validateSlug } from "./slug.ts";
@@ -54,7 +53,7 @@ export function mergeWorktree(slug: string, opts: MergeOptions = {}): MergeResul
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
   const branch = worktreeBranch(slug);
-  const worktreeDir = worktreePath(repoRoot, readYacoProjectPaths(repoRoot).worktrees, slug);
+  const worktreeDir = worktreePath(repoRoot, slug);
 
   if (!existsSync(worktreeDir)) {
     throw new CliError(ErrCode.NOT_FOUND, `worktree not found: ${worktreeDir}`);

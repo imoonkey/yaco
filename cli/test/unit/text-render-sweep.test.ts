@@ -40,7 +40,7 @@ function tempDir(prefix = "yaco-text-sweep-"): string {
 
 function repoWithTask(): string {
   const root = tempDir();
-  const dir = join(root, "plan", "tasks");
+  const dir = join(root, ".yaco", "plan", "tasks");
   mkdirSync(dir, { recursive: true });
   // A done leaf so archive (terminal-only) and rm both succeed.
   writeFileSync(

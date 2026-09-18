@@ -69,9 +69,8 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/errors.ts",
       "src/lib/core/paths/index.ts",
       "src/lib/core/paths/project-registry.ts",
-      "src/lib/core/paths/toml.ts",
+      "src/lib/core/paths/project.ts",
       "src/lib/core/paths/yaco-home.ts",
-      "src/lib/core/paths/yaco-paths.ts",
       "src/lib/core/result.ts",
     ],
     externals: ["node:fs", "node:os", "node:path"],
@@ -89,9 +88,11 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "removeProject",
         "writeProjects",
       ],
-      "src/lib/core/paths/toml.ts": [
-        "ParsedTomlSections",
-        "parseScopedToml",
+      "src/lib/core/paths/project.ts": [
+        "PLAN_DIR",
+        "TASKS_DIR",
+        "WORKTREES_DIR",
+        "resolveDocDir",
       ],
       "src/lib/core/paths/yaco-home.ts": [
         "agentWrapperPath",
@@ -104,11 +105,6 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "sessionsDir",
         "shellSessionsDir",
         "uiStateDir",
-      ],
-      "src/lib/core/paths/yaco-paths.ts": [
-        "DEFAULT_PROJECT_PATHS",
-        "YacoProjectPaths",
-        "readYacoProjectPaths",
       ],
     },
   },
@@ -146,9 +142,8 @@ const EXPECTED: Record<string, ExpectedExport> = {
       "src/lib/core/errors.ts",
       "src/lib/core/paths/index.ts",
       "src/lib/core/paths/project-registry.ts",
-      "src/lib/core/paths/toml.ts",
+      "src/lib/core/paths/project.ts",
       "src/lib/core/paths/yaco-home.ts",
-      "src/lib/core/paths/yaco-paths.ts",
       "src/lib/core/result.ts",
       "src/lib/core/task/graph.ts",
       "src/lib/core/task/index.ts",
@@ -385,12 +380,13 @@ const EXPECTED: Record<string, ExpectedExport> = {
   "./core/worktree": {
     files: [
       "src/lib/core/errors.ts",
+      "src/lib/core/paths/project.ts",
       "src/lib/core/result.ts",
       "src/lib/core/worktree/convention.ts",
       "src/lib/core/worktree/index.ts",
       "src/lib/core/worktree/slug.ts",
     ],
-    externals: ["node:path"],
+    externals: ["node:fs", "node:path"],
     names: {
       "src/lib/core/worktree/convention.ts": [
         "worktreeBranch",

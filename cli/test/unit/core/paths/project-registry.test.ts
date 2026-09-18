@@ -1,11 +1,13 @@
 /** Tests for the project-registry sync I/O helpers. */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CliError, ErrCode } from "../../../../src/lib/core/errors.ts";
 import {
+  addProject,
   projectsRegistryPath,
   readProjects,
   writeProjects,
@@ -78,5 +80,30 @@ describe("project-registry", () => {
     writeProjects(projects);
     expect(readProjects()).toEqual(projects);
     expect(existsSync(projectsRegistryPath())).toBe(true);
+  });
+
+  it("addProject rejects $HOME, whose .yaco/ would sit on the runtime home", () => {
+    const originalHome = process.env["HOME"];
+    const home = tempRoot();
+    process.env["HOME"] = home;
+    try {
+      for (const path of [home, `${home}/`]) {
+        let error: unknown;
+        try {
+          addProject({ name: "home", path });
+        } catch (e) {
+          error = e;
+        }
+        expect(error).toBeInstanceOf(CliError);
+        expect((error as CliError).code).toBe(ErrCode.INVALID);
+      }
+      expect(readProjects()).toEqual([]);
+      // A project below $HOME is the ordinary case.
+      const repo = join(home, "repo");
+      mkdirSync(repo);
+      expect(addProject({ name: "repo", path: repo }).path).toBe(repo);
+    } finally {
+      process.env["HOME"] = originalHome;
+    }
   });
 });

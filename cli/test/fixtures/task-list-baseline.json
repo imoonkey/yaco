@@ -62,8 +62,8 @@
               "workset": "archive"
             }
           },
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -93,8 +93,8 @@
               "workset": "active"
             }
           },
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -114,8 +114,8 @@
               "worktree": "queued-slug"
             }
           },
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -146,8 +146,8 @@
               "workset": "archive"
             }
           },
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -178,8 +178,8 @@
               "workset": "archive"
             }
           },
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -191,8 +191,8 @@
       "envelope": {
         "data": {
           "tasks": {},
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -202,8 +202,8 @@
       "envelope": {
         "data": {
           "tasks": {},
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -213,8 +213,8 @@
       "envelope": {
         "data": {
           "tasks": {},
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -224,8 +224,8 @@
       "envelope": {
         "data": {
           "tasks": {},
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -235,8 +235,8 @@
       "envelope": {
         "data": {
           "tasks": {},
-          "tasksFile": "<ROOT>/plan/tasks/tasks.json",
-          "tasksPath": "<ROOT>/plan/tasks"
+          "tasksFile": "<ROOT>/.yaco/plan/tasks/tasks.json",
+          "tasksPath": "<ROOT>/.yaco/plan/tasks"
         },
         "ok": true
       }
@@ -248,7 +248,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
         },
         "ok": false
       }
@@ -258,7 +258,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
         },
         "ok": false
       }
@@ -268,7 +268,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
         },
         "ok": false
       }
@@ -278,7 +278,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
         },
         "ok": false
       }
@@ -288,7 +288,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json is not valid JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
         },
         "ok": false
       }
@@ -300,7 +300,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json must contain a JSON object"
         },
         "ok": false
       }
@@ -310,7 +310,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json must contain a JSON object"
         },
         "ok": false
       }
@@ -320,7 +320,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json must contain a JSON object"
         },
         "ok": false
       }
@@ -330,7 +330,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json must contain a JSON object"
         },
         "ok": false
       }
@@ -340,7 +340,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "tasks file <ROOT>/plan/tasks/tasks.json must contain a JSON object"
+          "message": "tasks file <ROOT>/.yaco/plan/tasks/tasks.json must contain a JSON object"
         },
         "ok": false
       }
@@ -352,7 +352,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/other/tasks.json and <ROOT>/.yaco/plan/tasks/tasks.json"
         },
         "ok": false
       }
@@ -362,7 +362,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/other/tasks.json and <ROOT>/.yaco/plan/tasks/tasks.json"
         },
         "ok": false
       }
@@ -372,7 +372,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/other/tasks.json and <ROOT>/.yaco/plan/tasks/tasks.json"
         },
         "ok": false
       }
@@ -382,7 +382,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/other/tasks.json and <ROOT>/.yaco/plan/tasks/tasks.json"
         },
         "ok": false
       }
@@ -392,111 +392,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/other/tasks.json and <ROOT>/plan/tasks/tasks.json"
-        },
-        "ok": false
-      }
-    }
-  },
-  "absoluteTasksPath": {
-    "all": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
-        },
-        "ok": false
-      }
-    },
-    "default": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
-        },
-        "ok": false
-      }
-    },
-    "backlog": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
-        },
-        "ok": false
-      }
-    },
-    "archive": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
-        },
-        "ok": false
-      }
-    },
-    "state-done": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml: [paths].tasks must be repo-relative, got absolute path \"/etc\""
-        },
-        "ok": false
-      }
-    }
-  },
-  "brokenToml": {
-    "all": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
-        },
-        "ok": false
-      }
-    },
-    "default": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
-        },
-        "ok": false
-      }
-    },
-    "backlog": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
-        },
-        "ok": false
-      }
-    },
-    "archive": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
-        },
-        "ok": false
-      }
-    },
-    "state-done": {
-      "status": 3,
-      "envelope": {
-        "error": {
-          "code": "ENV",
-          "message": "yaco.toml:1: expected \"key = value\" or \"[section]\""
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/other/tasks.json and <ROOT>/.yaco/plan/tasks/tasks.json"
         },
         "ok": false
       }
@@ -508,7 +404,7 @@
       "envelope": {
         "error": {
           "code": "IO",
-          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+          "message": "failed to read tasks directory <ROOT>/.yaco/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/.yaco/plan/tasks/a/deep'"
         },
         "ok": false
       }
@@ -518,7 +414,7 @@
       "envelope": {
         "error": {
           "code": "IO",
-          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+          "message": "failed to read tasks directory <ROOT>/.yaco/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/.yaco/plan/tasks/a/deep'"
         },
         "ok": false
       }
@@ -528,7 +424,7 @@
       "envelope": {
         "error": {
           "code": "IO",
-          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+          "message": "failed to read tasks directory <ROOT>/.yaco/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/.yaco/plan/tasks/a/deep'"
         },
         "ok": false
       }
@@ -538,7 +434,7 @@
       "envelope": {
         "error": {
           "code": "IO",
-          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+          "message": "failed to read tasks directory <ROOT>/.yaco/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/.yaco/plan/tasks/a/deep'"
         },
         "ok": false
       }
@@ -548,7 +444,7 @@
       "envelope": {
         "error": {
           "code": "IO",
-          "message": "failed to read tasks directory <ROOT>/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/plan/tasks/a/deep'"
+          "message": "failed to read tasks directory <ROOT>/.yaco/plan/tasks/a/deep: EACCES: permission denied, scandir '<ROOT>/.yaco/plan/tasks/a/deep'"
         },
         "ok": false
       }
@@ -560,7 +456,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/a/tasks.json and <ROOT>/.yaco/plan/tasks/b/tasks.json"
         },
         "ok": false
       }
@@ -570,7 +466,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/a/tasks.json and <ROOT>/.yaco/plan/tasks/b/tasks.json"
         },
         "ok": false
       }
@@ -580,7 +476,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/a/tasks.json and <ROOT>/.yaco/plan/tasks/b/tasks.json"
         },
         "ok": false
       }
@@ -590,7 +486,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/a/tasks.json and <ROOT>/.yaco/plan/tasks/b/tasks.json"
         },
         "ok": false
       }
@@ -600,7 +496,7 @@
       "envelope": {
         "error": {
           "code": "INVALID",
-          "message": "duplicate task id 'dup' in <ROOT>/plan/tasks/a/tasks.json and <ROOT>/plan/tasks/b/tasks.json"
+          "message": "duplicate task id 'dup' in <ROOT>/.yaco/plan/tasks/a/tasks.json and <ROOT>/.yaco/plan/tasks/b/tasks.json"
         },
         "ok": false
       }

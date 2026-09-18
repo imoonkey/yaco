@@ -172,7 +172,7 @@ describe("claude summarize", () => {
   });
 
   it("resolves a session whose sessionPath has non-alphanumeric segments", async () => {
-    const wt = "/home/dev/yaco/.worktrees/feat";
+    const wt = "/home/dev/yaco/.yaco/worktrees/feat";
     writeClaudeSession("c-wt", [{ type: "user", message: { content: "worktree prompt" } }], wt);
     expect(await labelOf(session({ sessionId: "c-wt", sessionPath: wt }))).toBe("worktree prompt");
   });

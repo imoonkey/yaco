@@ -32,7 +32,7 @@ export interface CodexThreadWindowRow {
  *
  *  The subtree is the point: a session belongs to a project when its cwd is the
  *  project path or a descendant, which is the predicate the live session list
- *  applies, and an agent working in `<project>/.worktrees/<slug>` is otherwise
+ *  applies, and an agent working in `<project>/.yaco/worktrees/<slug>` is otherwise
  *  listed while it runs and gone once it is only history. `providers/history.ts`
  *  carries the whole rule; this is its SQL half.
  *
