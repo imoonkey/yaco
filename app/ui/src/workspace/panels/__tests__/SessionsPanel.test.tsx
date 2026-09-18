@@ -306,8 +306,8 @@ describe('SessionsPanel', () => {
       },
       history: { data: [entry], loading: false, refresh: vi.fn(async () => {}) },
     } as unknown as WorkspacePanelResources
-    // A worktree is selected → effectivePath ('/base/.worktrees/wt') ≠ base path.
-    const env = makeEnv(false, '/base', '/base/.worktrees/wt')
+    // A worktree is selected → effectivePath ('/base/.yaco/worktrees/wt') ≠ base path.
+    const env = makeEnv(false, '/base', '/base/.yaco/worktrees/wt')
 
     // Framed so the published header actions (the live/history toggle) render.
     render(
@@ -339,7 +339,7 @@ describe('SessionsPanel', () => {
 
     // Worktree selected (effectivePath differs) — the list is unchanged.
     render(
-      <Providers sessions={sessions} terminalBindings={{}} activeTerminalId={null} isMobile={false} env={makeEnv(false, '/base', '/base/.worktrees/wt')}>
+      <Providers sessions={sessions} terminalBindings={{}} activeTerminalId={null} isMobile={false} env={makeEnv(false, '/base', '/base/.yaco/worktrees/wt')}>
         <SessionsPanel />
       </Providers>,
     )

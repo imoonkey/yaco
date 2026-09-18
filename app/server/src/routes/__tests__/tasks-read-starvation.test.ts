@@ -27,21 +27,17 @@ import { buildChildProcessEnv } from '../../lib/ssh-auth'
  *  the 95th percentile. A queued request waits for the worst gap, not the
  *  typical one.
  *
- *  Four fixtures, because a task graph is input-controlled in two dimensions.
- *  Size: this repository's graph, and ten times it. Topology: the directory
- *  store the CLI writes by default — the one this repository uses — and the
- *  single `.json` file a `yaco.toml` may point at. The condition is asserted
- *  on the directory store at both sizes, where it holds by 3-7x. It is not
- *  asserted on the single file at either size, for the reason measured and
- *  written out above that block.
+ *  Two fixtures, because a task graph's size is input-controlled: this
+ *  repository's graph, and ten times it, both in the directory store the CLI
+ *  writes (`.yaco/plan/tasks`).
  *
- *  When the repository's own `plan/tasks` is present it is the source of all
- *  four; a worktree checkout and CI do not carry it — `plan/` is a separate
- *  repository — so a generated tree of the same scale stands in. **Which one
+ *  When the repository's own `.yaco/plan/tasks` is present it is the source of
+ *  both; CI does not carry it — the plan is a separate repository — so a
+ *  generated tree of the same scale stands in. **Which one
  *  ran is in every test's name**, not only in a console line, because a run on
  *  the stand-in measures something smaller than production and must not be
  *  readable as one that measured the real store. `[repository data]` claims
- *  exactly one thing — the fixtures were seeded from whatever `plan/tasks` this
+ *  exactly one thing — the fixtures were seeded from whatever `.yaco/plan/tasks` this
  *  checkout holds. It is not a claim that the graph is current or complete;
  *  `[synthetic data]` is the one that is decidable, and it is the one that was
  *  being reported silently.
@@ -49,7 +45,7 @@ import { buildChildProcessEnv } from '../../lib/ssh-auth'
 
 const CLI_BIN = fileURLToPath(new URL('../../../../../cli/bin/yaco.mjs', import.meta.url))
 const CLI_BUNDLE = fileURLToPath(new URL('../../../../../cli/dist/yaco.mjs', import.meta.url))
-const REPO_TASKS = fileURLToPath(new URL('../../../../../plan/tasks', import.meta.url))
+const REPO_TASKS = fileURLToPath(new URL('../../../../../.yaco/plan/tasks', import.meta.url))
 
 /** `npm test` in this package alone can run before the CLI is built; the repo's
  *  `scripts/verify.sh` builds it first. Skipping loudly beats a false red. */
@@ -86,16 +82,9 @@ function sourceFiles(): { bodies: string[]; source: 'repository' | 'synthetic' }
 
 const roots: string[] = []
 
-type Topology = 'directory' | 'single file'
-
 /** A project root holding `factor` copies of the source graph, ids renamed per
- *  copy so there are no duplicates — spread over a directory of bundle files,
- *  or collapsed into one `tasks.json` a `yaco.toml` points at. */
-function seedProject(
-  bodies: string[],
-  factor: number,
-  topology: Topology,
-): { root: string; tasks: number; files: number } {
+ *  copy so there are no duplicates, spread over a directory of bundle files. */
+function seedProject(bodies: string[], factor: number): { root: string; tasks: number; files: number } {
   const root = mkdtempSync(join(tmpdir(), 'yaco-starvation-'))
   roots.push(root)
   const copies: Record<string, unknown>[] = []
@@ -109,16 +98,8 @@ function seedProject(
   }
   const tasks = copies.reduce((sum, g) => sum + Object.keys(g).length, 0)
 
-  if (topology === 'single file') {
-    mkdirSync(join(root, 'plan'), { recursive: true })
-    writeFileSync(join(root, 'yaco.toml'), '[paths]\ntasks = "tasks.json"\n')
-    const merged = Object.assign({}, ...copies) as Record<string, unknown>
-    writeFileSync(join(root, 'plan/tasks.json'), JSON.stringify(merged, null, 2) + '\n')
-    return { root, tasks, files: 1 }
-  }
-
   copies.forEach((graph, i) => {
-    const dir = join(root, 'plan/tasks', `g${i % 12}`, `b${i}`)
+    const dir = join(root, '.yaco/plan/tasks', `g${i % 12}`, `b${i}`)
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'tasks.json'), JSON.stringify(graph, null, 2) + '\n')
   })
@@ -203,12 +184,11 @@ const { bodies, source } = sourceFiles()
  *  the effect being measured. Pairs alternate order too (AB, BA, AB…), so
  *  neither route is always the one running on a cache the other just warmed. */
 async function compareRoutes(
-  topology: Topology,
   factor: number,
   rounds: number,
   label: string,
 ): Promise<{ subprocess: Measured; inProcess: Measured; tasks: number }> {
-  const { root, tasks, files } = seedProject(bodies, factor, topology)
+  const { root, tasks, files } = seedProject(bodies, factor)
   const routes = {
     subprocess: () => subprocessRoute(root),
     inProcess: () => inProcessRoute(root),
@@ -248,98 +228,12 @@ describe.skipIf(!cliBuilt)('GET /:project — in process vs the complete subproc
   ] as const) {
     const label = `a ${sizeName(factor)} directory store`
     it(`starves a queued callback no longer than the subprocess route on ${label} [${source} data]`, async () => {
-      const { subprocess, inProcess, tasks } = await compareRoutes('directory', factor, rounds, label)
+      const { subprocess, inProcess, tasks } = await compareRoutes(factor, rounds, label)
 
       // The design's condition, unqualified.
       expect(inProcess.starvationP95).toBeLessThanOrEqual(subprocess.starvationP95)
       expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
       // Anti-vacuity: a route that did nothing would win both.
-      expect(tasks).toBeGreaterThan(100)
-      expect(subprocess.starvationP95).toBeGreaterThan(0)
-    })
-  }
-
-  /** The topology where the design's condition is NOT met — at either size —
-   *  recorded rather than asserted.
-   *
-   *  A single `tasks.json` is one `JSON.parse` of the whole graph, and no
-   *  chunking divides it. The subprocess route's parent parses the same graph
-   *  too, but from the CLI's *compact* envelope rather than the pretty-printed
-   *  file, so it does strictly less work. The two land within noise of each
-   *  other.
-   *
-   *  Nothing about the stall is asserted, and that is deliberate. Two measured
-   *  facts, both in `plan/all/starvation-single-file-limit/qa-single-file-limit.md`:
-   *
-   *  **1. On this topology the in-process stall is not an implementation
-   *  property.** Share of each route's own wall time spent inside its single
-   *  worst unyielding chunk, median of 8 invocations, two runs:
-   *
-   *    repository-sized directory     subprocess  9-10%    in process 18-22%
-   *    repository-sized single file   subprocess 12%       in process 58-66%
-   *    ten-times directory            subprocess  8-9%     in process  8-9%
-   *    ten-times single file          subprocess 10%       in process 46-48%
-   *
-   *  The subprocess route's worst chunk is `spawnSync('ssh-add')` plus one
-   *  compact-envelope parse — 15-17 ms at repository size on *either* topology,
-   *  because it does not depend on how the store is laid out. The in-process
-   *  route's worst chunk *is* the parse of the store, and one file is one
-   *  `JSON.parse` that nothing divides. So the comparison here reduces to
-   *  whether one parse of a pretty-printed file exceeds `ssh-add` plus one
-   *  parse of the compact envelope of the same data — a question about the
-   *  input's size against a constant in the route being retired, not about
-   *  whether this route yields. It already yields everything it can: the
-   *  remaining 34-42% is the asynchronous read.
-   *
-   *  **2. The gap is in the tail, not the typical case.** With 10 and 4 rounds
-   *  `quantile(…, 0.95)` selects the maximum sample. At repository size on one
-   *  file the in-process route's *typical* worst chunk is the smaller of the two
-   *  (11.7-12.5 ms against 15.7-16.6 ms median); its maximum is the larger
-   *  (20.5-39.9 against 17.4-24.5 ms). The extra is a GC tail on a 0.84 MB
-   *  parse, which the subprocess route pays inside its child. **That tail is
-   *  real starvation** — GC in this process blocks this event loop — so what
-   *  fails here is a tail on work item 1 says the implementation cannot divide,
-   *  not a measurement artefact. It is the same limit, seen in the statistic
-   *  that is most sensitive to it.
-   *  **The repository-sized case has joined the ten-times one.** It met the
-   *  condition by 3-7x when the graph was smaller; at 505 tasks it does not,
-   *  and the in-process side is the larger one in 7 of 7 runs. That is a limit
-   *  to state, not a threshold to loosen.
-   *
-   *  What is asserted is what the numbers do separate — the route is several
-   *  times faster in wall time, 8-10x at repository size — and the stall is
-   *  printed by `compareRoutes` so the parity is on the record rather than
-   *  implied.
-   *
-   *  **What this costs, stated rather than waved at.** Blocking added *after*
-   *  the read — anywhere in the caller — still turns the two directory fixtures
-   *  red, and `cli/test/integration/task/read-starvation.integration.ts` still
-   *  bounds the chunked reader against the synchronous walk it replaced without
-   *  going through a spawn at all. What no longer has a gate is **synchronous
-   *  per-file work inside the reader that scales with the tasks in one file** —
-   *  a deep validation pass, a hash, an accidentally quadratic duplicate scan.
-   *  A directory bundle holds ~7 tasks and the work is divided across the
-   *  chunked read; one file runs it over all 505 in a single turn. Both
-   *  directory fixtures and the CLI gate use directory trees only, so that class
-   *  regresses green. Closing it needs a gate whose bound is not a millisecond
-   *  threshold, and the ratio that would supply one is not stable across the two
-   *  sizes (a bare parse of the file is 0.7x the route's stall at repository
-   *  size and 1.8x at ten times). That is a gate to design, not a number to pick
-   *  here. -> `plan/all/starvation-single-file-limit/qa-single-file-limit.md` §7.
-   *
-   *  Resolving the unmet condition is a design decision, written up in
-   *  `plan/all/cli-node-sdk/qa-task-read-cutover.md` §2 and stated as a limit
-   *  in `doc/main/cli/read-path.md`. */
-  for (const [factor, rounds] of [
-    [1, 10],
-    [10, 4],
-  ] as const) {
-    const label = `a ${sizeName(factor)} single file store`
-    it(`is faster on ${label}, where the stall is recorded rather than bounded [${source} data]`, async () => {
-      const { subprocess, inProcess, tasks } = await compareRoutes('single file', factor, rounds, label)
-
-      expect(inProcess.medianWall).toBeLessThan(subprocess.medianWall)
-      // Anti-vacuity: a route that did nothing would win.
       expect(tasks).toBeGreaterThan(100)
       expect(subprocess.starvationP95).toBeGreaterThan(0)
     })

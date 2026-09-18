@@ -33,7 +33,7 @@ Develop against a running backend: start the API server (`npm run dev:server`
 from the repo root, or the `yaco-server` service), then `npm run dev` here — the
 vite proxy sends `/api` and `/ws` to it and you get HMR at `:5173`. Without HMR,
 `npm run build:watch` plus the server is enough; the server serves the built UI
-at `:3001`. A checkout under `.worktrees/<slug>/` gets its own hashed ports and
+at `:3001`. A checkout under `.yaco/worktrees/<slug>/` gets its own hashed ports and
 an ephemeral `YACO_HOME` (`e2ePorts.ts`), so a worktree never builds or tests
 against the main checkout's server.
 

@@ -99,7 +99,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\nHEAD abc\n\nworktree /project/.worktrees/feat\nHEAD def\n\n', '')
+        cb(null, 'worktree /project\nHEAD abc\n\nworktree /project/.yaco/worktrees/feat\nHEAD def\n\n', '')
       } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '2\t5\n', '')
     })
@@ -119,7 +119,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\n\nworktree /project/.worktrees/dirty-task\n\n', '')
+        cb(null, 'worktree /project\n\nworktree /project/.yaco/worktrees/dirty-task\n\n', '')
       } else if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
       else if (args[0] === 'rev-list') cb(null, '0\t0\n', '')
     })
@@ -134,7 +134,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\n\nworktree /project/.worktrees/fail-status\n\n', '')
+        cb(null, 'worktree /project\n\nworktree /project/.yaco/worktrees/fail-status\n\n', '')
       } else if (args[0] === 'status') cb(new Error('git failed'))
       else if (args[0] === 'rev-list') cb(null, '0\t1\n', '')
     })
@@ -154,7 +154,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\n\nworktree /project/.worktrees/no-main\n\n', '')
+        cb(null, 'worktree /project\n\nworktree /project/.yaco/worktrees/no-main\n\n', '')
       } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(new Error('no main branch'))
     })
@@ -174,7 +174,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\n\nworktree /project/.worktrees/parse-test\n\n', '')
+        cb(null, 'worktree /project\n\nworktree /project/.yaco/worktrees/parse-test\n\n', '')
       } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '10\t3\n', '')
     })
@@ -189,7 +189,7 @@ describe('getWorktreeStatus', () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
       if (args[0] === 'worktree') {
-        cb(null, 'worktree /my/project\n\nworktree /my/project/.worktrees/slug\n\n', '')
+        cb(null, 'worktree /my/project\n\nworktree /my/project/.yaco/worktrees/slug\n\n', '')
       } else {
         cb(null, '', '')
       }
@@ -201,26 +201,7 @@ describe('getWorktreeStatus', () => {
     expect(execFileMock.mock.calls[0][2].cwd).toBe('/my/project')
     // Subsequent calls (status, rev-list) use the worktree path as cwd
     for (const call of execFileMock.mock.calls.slice(1)) {
-      expect(call[2].cwd).toBe('/my/project/.worktrees/slug')
-    }
-  })
-
-  it('resolves the worktree container from yaco.toml', async () => {
-    readFileSyncMock.mockReturnValue('[paths]\nworktrees = "sandboxes"\n')
-    existsSyncMock.mockReturnValue(true)
-    execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'worktree') {
-        cb(null, 'worktree /project\n\nworktree /project/sandboxes/feat\n\n', '')
-      } else {
-        cb(null, '', '')
-      }
-    })
-
-    const result = await getWorktreeStatus('/project', 'feat')
-
-    expect(result.active).toBe(true)
-    for (const call of execFileMock.mock.calls.slice(1)) {
-      expect(call[2].cwd).toBe('/project/sandboxes/feat')
+      expect(call[2].cwd).toBe('/my/project/.yaco/worktrees/slug')
     }
   })
 
@@ -253,7 +234,7 @@ describe('listRegisteredWorktrees', () => {
         'HEAD aaaaaaa0000000000000000000000000000000',
         'branch refs/heads/main',
         '',
-        'worktree /repo/.worktrees/feat',
+        'worktree /repo/.yaco/worktrees/feat',
         'HEAD bbbbbbb1111111111111111111111111111111',
         'branch refs/heads/task/feat',
         '',
@@ -264,7 +245,7 @@ describe('listRegisteredWorktrees', () => {
 
     expect(entries).toEqual([
       { path: '/repo', head: 'aaaaaaa', branch: 'main', isPrimary: true },
-      { path: '/repo/.worktrees/feat', head: 'bbbbbbb', branch: 'task/feat', isPrimary: false },
+      { path: '/repo/.yaco/worktrees/feat', head: 'bbbbbbb', branch: 'task/feat', isPrimary: false },
     ])
     expect(execFileMock.mock.calls[0][1]).toEqual(['worktree', 'list', '--porcelain'])
     expect(execFileMock.mock.calls[0][2].cwd).toBe('/repo')
@@ -308,7 +289,7 @@ describe('worktreeStatus', () => {
       else if (args[0] === 'rev-list') cb(null, '3\t4\n', '')
     })
 
-    const result = await worktreeStatus('/repo/.worktrees/x', 'task/x')
+    const result = await worktreeStatus('/repo/.yaco/worktrees/x', 'task/x')
 
     expect(result).toEqual({ active: true, dirty: true, branch: 'task/x', ahead: 4, behind: 3 })
   })
@@ -328,10 +309,10 @@ describe('worktreeStatus', () => {
       cb(null, '', '')
     })
 
-    await worktreeStatus('/repo/.worktrees/x', 'task/x')
+    await worktreeStatus('/repo/.yaco/worktrees/x', 'task/x')
 
     for (const call of execFileMock.mock.calls) {
-      expect(call[2].cwd).toBe('/repo/.worktrees/x')
+      expect(call[2].cwd).toBe('/repo/.yaco/worktrees/x')
     }
   })
 })

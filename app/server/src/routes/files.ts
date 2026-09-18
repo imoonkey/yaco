@@ -32,9 +32,8 @@ function shouldIgnoreEntry(name: string): boolean {
 
 /** List one directory level, marking gitignored entries. Dirs get children: [] (expandable).
  *  relPrefix overrides relative-path computation (needed for symlinked dirs outside the project).
- *  colocated holds the host's detected colocated-repo names (depth-1 only): a dir node whose
- *  relPath is one of them is flagged `colocated: true`. Only the root listing passes a set —
- *  deeper `/children` listings never match (a colocated repo is always depth-1). */
+ *  colocated holds the host's detected colocated-repo paths: a dir node whose relPath is one
+ *  of them is flagged `colocated: true`, at any depth (`.yaco/plan` sits at depth 2). */
 async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof import('ignore').default> | null, relPrefix?: string, colocated?: Set<string>): Promise<FileNode[]> {
   let entries
   try {
@@ -68,8 +67,7 @@ async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof i
     const ignored = ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false
 
     if (isDir) {
-      // Colocated repos are always depth-1, so a name match on a top-level dir is sufficient.
-      const isColocated = colocated?.has(relPath) && !relPath.includes('/')
+      const isColocated = colocated?.has(relPath)
       return { name: entry.name, path: relPath, type: 'dir', children: [], ...(ignored && { gitignored: true }), ...(isColocated && { colocated: true }) } satisfies FileNode
     }
     return { name: entry.name, path: relPath, type: 'file', ...(ignored && { gitignored: true }) } satisfies FileNode
@@ -168,8 +166,7 @@ app.get('/:project', withProject, async (c) => {
   const proj = c.var.project
 
   const ig = await getProjectGitignore(proj.path)
-  // One detection per request (cached by realpath) flags colocated-repo roots; deeper
-  // /children listings skip it since only depth-1 dirs can be colocated repos.
+  // One detection per request (cached by realpath) flags colocated-repo roots.
   const colocated = new Set(await getColocatedRepos(proj.path))
   const tree = await listDir(proj.path, proj.path, ig, undefined, colocated)
   return c.json(tree)
@@ -287,7 +284,8 @@ app.get('/:project/children', withProject, async (c) => {
   if (!info.isDirectory()) return c.json({ error: 'not a directory' }, 400)
 
   const ig = await getProjectGitignore(proj.path)
-  const children = await listDir(result.path, proj.path, ig, dirPath)
+  const colocated = new Set(await getColocatedRepos(proj.path))
+  const children = await listDir(result.path, proj.path, ig, dirPath, colocated)
   return c.json(children)
 })
 

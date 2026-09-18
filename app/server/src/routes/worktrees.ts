@@ -16,7 +16,7 @@ export interface WorktreeInfo {
 }
 
 /** primary -> "<repo> (primary)"; everything else (incl. external worktrees and
- *  `.worktrees/<slug>`) -> the directory basename. */
+ *  `.yaco/worktrees/<slug>`) -> the directory basename. */
 function worktreeName(path: string, isPrimary: boolean): string {
   const base = basename(path)
   return isPrimary ? `${base} (primary)` : base

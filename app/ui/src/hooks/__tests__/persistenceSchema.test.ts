@@ -47,23 +47,23 @@ describe('loadDraftsByWorktree — legacy migration', () => {
     const record = loadDraftsByWorktree(PROJECT, PROJECT_PATH)
 
     expect(record[PROJECT_PATH]['a.ts'].draft).toBe('primary')
-    expect(record[`${PROJECT_PATH}/.worktrees/feature`]['b.ts'].draft).toBe('wt-feature')
-    expect(record[`${PROJECT_PATH}/.worktrees/hotfix`]['c.ts'].draft).toBe('wt-hotfix')
+    expect(record[`${PROJECT_PATH}/.yaco/worktrees/feature`]['b.ts'].draft).toBe('wt-feature')
+    expect(record[`${PROJECT_PATH}/.yaco/worktrees/hotfix`]['c.ts'].draft).toBe('wt-hotfix')
   })
 
   it('folds an abspath-suffixed legacy :wt: key (post-P1 worktree id) into its abspath bucket verbatim', () => {
     // Post-P1, draftsKey(project, worktree) wrote the worktree ABSPATH as the suffix,
-    // so the bucket key is that abspath as-is — NOT re-nested under .worktrees/.
-    const abspath = `${PROJECT_PATH}/.worktrees/B`
+    // so the bucket key is that abspath as-is — NOT re-nested under .yaco/worktrees/.
+    const abspath = `${PROJECT_PATH}/.yaco/worktrees/B`
     localStorage.setItem(`${draftsKey(PROJECT)}:wt:${abspath}`, JSON.stringify({ files: { 'b.ts': entry('abspath-legacy') } }))
 
     const record = loadDraftsByWorktree(PROJECT, PROJECT_PATH)
     expect(record[abspath]['b.ts'].draft).toBe('abspath-legacy')
-    expect(record[`${PROJECT_PATH}/.worktrees${abspath}`]).toBeUndefined() // not double-nested
+    expect(record[`${PROJECT_PATH}/.yaco/worktrees${abspath}`]).toBeUndefined() // not double-nested
   })
 
   it('merges a duplicate slug + abspath legacy key for the same worktree, newer per-path wins (lossless)', () => {
-    const abspath = `${PROJECT_PATH}/.worktrees/feature`
+    const abspath = `${PROJECT_PATH}/.yaco/worktrees/feature`
     // Pre-P1 slug key (older) AND post-P1 abspath key (newer) for the SAME worktree —
     // both canonicalize to the same bucket. The merge must be order-independent and
     // lose nothing.
@@ -81,7 +81,7 @@ describe('loadDraftsByWorktree — legacy migration', () => {
   })
 
   it('a newer multi-bucket bucket wins over a stale legacy :wt:<slug> for the same abspath', () => {
-    const abspath = `${PROJECT_PATH}/.worktrees/feature`
+    const abspath = `${PROJECT_PATH}/.yaco/worktrees/feature`
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({ [abspath]: { 'b.ts': entry('NEW', 5) } }))
     localStorage.setItem(`${draftsKey(PROJECT)}:wt:feature`, JSON.stringify({ files: { 'b.ts': entry('STALE', 1) } }))
 
@@ -90,7 +90,7 @@ describe('loadDraftsByWorktree — legacy migration', () => {
   })
 
   it('reads a multi-bucket record back verbatim and drops non-file (diff) paths', () => {
-    const abspath = `${PROJECT_PATH}/.worktrees/x`
+    const abspath = `${PROJECT_PATH}/.yaco/worktrees/x`
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({
       [PROJECT_PATH]: { 'a.ts': entry('p'), 'diff:z.ts?base=main': entry('nope') },
       [abspath]: { 'b.ts': entry('w') },
@@ -107,13 +107,13 @@ describe('loadDraftsByWorktree — legacy migration', () => {
     localStorage.setItem(`${draftsKey(PROJECT)}:wt:feature`, JSON.stringify({ files: { 'b.ts': entry('survives') } }))
 
     const record = loadDraftsByWorktree(PROJECT, PROJECT_PATH)
-    expect(record[`${PROJECT_PATH}/.worktrees/feature`]['b.ts'].draft).toBe('survives')
+    expect(record[`${PROJECT_PATH}/.yaco/worktrees/feature`]['b.ts'].draft).toBe('survives')
   })
 })
 
 describe('usePersistence — full multi-bucket seed', () => {
   it('returns the whole migrated record as initialDraftsByWorktree (the seed useFileState restores every bucket from)', () => {
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({
       [PROJECT_PATH]: { 'a.ts': entry('primary') },
       [wtB]: { 'b.ts': entry('bbb') },
@@ -136,7 +136,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
   }
 
   it('serializes EVERY visited worktree bucket on flush (background draft survives)', () => {
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     const { result, rerender, unmount } = mount(null)
 
     // Edit on the primary view, switch to worktree B, edit a different path there.
@@ -152,7 +152,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
   })
 
   it('overlays live buckets onto the migrated base — an unvisited legacy bucket is never clobbered (gate before first save)', () => {
-    const wtGhost = `${PROJECT_PATH}/.worktrees/ghost`
+    const wtGhost = `${PROJECT_PATH}/.yaco/worktrees/ghost`
     // A legacy per-worktree draft for a worktree the user never opens this session.
     localStorage.setItem(`${draftsKey(PROJECT)}:wt:ghost`, JSON.stringify({ files: { 'g.ts': entry('ghost-draft') } }))
 
@@ -166,8 +166,8 @@ describe('all-bucket flush via useWorkspaceState', () => {
   })
 
   it('a draft in worktree A survives a switch to B and back (round-trips through persistence)', () => {
-    const wtA = `${PROJECT_PATH}/.worktrees/A`
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtA = `${PROJECT_PATH}/.yaco/worktrees/A`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     const { result, rerender, unmount } = mount(wtA)
 
     act(() => { result.current.updateFileDraft('a.ts', 'draft-in-A') })
@@ -188,7 +188,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
   })
 
   it('a worktree switch is a prop update, not a remount: shell layout holds still while the file view re-points (#3b restore)', () => {
-    const wtA = `${PROJECT_PATH}/.worktrees/A`
+    const wtA = `${PROJECT_PATH}/.yaco/worktrees/A`
     // Distinct drafts per worktree so we can SEE the file view follow the selection.
     localStorage.setItem(draftsKey(PROJECT), JSON.stringify({
       [PROJECT_PATH]: { 'a.ts': entry('primary-draft') },
@@ -211,7 +211,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
   })
 
   it('restores a switched-to worktree draft and never prunes it (#3b — no remount to reload it)', () => {
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     // B has a persisted draft. The session mounts on primary; useFileState seeds ALL
     // buckets up front, so switching to B restores its draft LIVE (no remount/reload),
     // and the flush re-serializes it rather than pruning it.
@@ -229,7 +229,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
   })
 
   it('a file opened in a switched-to worktree never prunes that worktree\'s unopened-path base draft (#3b partial hydration)', async () => {
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     // B has a draft for an UNOPENED path. The user switches to B and opens a DIFFERENT
     // file (clean on disk), partially hydrating B's bucket with a clean entry. The
     // unopened-path draft must NOT be pruned — under the old remount model the reload
@@ -254,8 +254,8 @@ describe('all-bucket flush via useWorkspaceState', () => {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ content: '', revision: 1 }) })
     }))
 
-    const wtA = `${PROJECT_PATH}/.worktrees/A`
-    const wtB = `${PROJECT_PATH}/.worktrees/B`
+    const wtA = `${PROJECT_PATH}/.yaco/worktrees/A`
+    const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
     const { result, rerender, unmount } = mount(wtA)
 
     act(() => { result.current.updateFileDraft('a.ts', 'draft-A') })
@@ -284,8 +284,8 @@ describe('all-bucket flush via useWorkspaceState', () => {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ content: '', revision: 1 }) })
       }))
 
-      const wtA = `${PROJECT_PATH}/.worktrees/A`
-      const wtB = `${PROJECT_PATH}/.worktrees/B`
+      const wtA = `${PROJECT_PATH}/.yaco/worktrees/A`
+      const wtB = `${PROJECT_PATH}/.yaco/worktrees/B`
       const { result, rerender } = mount(wtA)
 
       act(() => { result.current.updateFileDraft('a.ts', 'draft-A') })
@@ -314,7 +314,7 @@ describe('all-bucket flush via useWorkspaceState', () => {
 describe('migration commit — legacy keys retired, no resurrection (review finding 1)', () => {
   it('retires the legacy :wt:<slug> key at mount and does not resurrect a cleared bucket', () => {
     const wtKey = `${draftsKey(PROJECT)}:wt:feature`
-    const abspath = `${PROJECT_PATH}/.worktrees/feature`
+    const abspath = `${PROJECT_PATH}/.yaco/worktrees/feature`
     localStorage.setItem(wtKey, JSON.stringify({ files: { 'b.ts': entry('legacy') } }))
 
     const { unmount } = renderHook(() => usePersistence(PROJECT, PROJECT_PATH))

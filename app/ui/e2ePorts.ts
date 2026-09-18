@@ -12,7 +12,7 @@ import { join } from 'node:path'
  * no run depends on, or clobbers, the shared registry / ui-state in `~/.yaco`.
  *
  * Isolation triggers in two cases:
- *  - Worktree: a `.../.worktrees/<slug>/...` cwd ALWAYS isolates (both dev and
+ *  - Worktree: a `.../.yaco/worktrees/<slug>/...` cwd ALWAYS isolates (both dev and
  *    e2e), so a worktree builds and tests its OWN code, never the main checkout
  *    or a sibling worktree.
  *  - Main-checkout e2e (the DEFAULT for `npx playwright test`): the `e2e` flag
@@ -44,7 +44,7 @@ export function resolveDevPorts(
   opts: { e2e?: boolean } = {},
   cwd: string = process.cwd(),
 ): DevPorts {
-  const m = cwd.match(/\.worktrees\/([^/]+)/)
+  const m = cwd.match(/\.yaco\/worktrees\/([^/]+)/)
   const slug = m ? m[1] : 'main'
 
   // Opt-in: main-checkout e2e against the real dev server + real ~/.yaco.

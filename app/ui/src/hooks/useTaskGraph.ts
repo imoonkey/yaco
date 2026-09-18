@@ -3,7 +3,8 @@ import { API } from './useApi'
 import { useSSERefresh } from './useSSE'
 import { buildTaskGraphModel, type RawTaskMap, type TaskGraphModel } from '../tasks/taskGraphModel'
 
-export const TASKS_FILE_PATH = 'plan/tasks/inbox/tasks.json'
+/** Mirrors `TASKS_DIR` in yaco-cli/core/paths (the UI does not import yaco-cli). */
+export const TASKS_FILE_PATH = '.yaco/plan/tasks/inbox/tasks.json'
 
 export type UseTaskGraphResult = {
   status: 'loading' | 'ready' | 'missing' | 'error'
@@ -86,7 +87,7 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
 
   // SSE refreshes call load() directly — they never restart the effect, so an
   // in-flight fetch finishes and commits instead of being cancelled. The 'tasks'
-  // channel fires only on plan/tasks writes, so unrelated file edits no longer
+  // channel fires only on .yaco/plan/tasks writes, so unrelated file edits no longer
   // refetch the payload and rebuild the graph.
   useSSERefresh('tasks', () => { void load() })
 

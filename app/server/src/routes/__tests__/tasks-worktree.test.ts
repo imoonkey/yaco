@@ -29,7 +29,7 @@ vi.mock('../../lib/worktree', () => ({
 const { taskRoutes } = await import('../tasks')
 
 function seedTasks(tasks: Record<string, Record<string, unknown>>): void {
-  const dir = join(testProjectPath, 'plan/tasks')
+  const dir = join(testProjectPath, '.yaco/plan/tasks')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'tasks.json'), JSON.stringify(tasks, null, 2) + '\n')
 }

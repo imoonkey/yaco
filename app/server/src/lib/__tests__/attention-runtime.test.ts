@@ -23,7 +23,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('yaco-cli/core/paths', () => ({
-  readYacoProjectPaths: () => ({ tasks: 'plan/tasks' }),
+  TASKS_DIR: '.yaco/plan/tasks',
 }))
 
 vi.mock('yaco-cli/core/task', () => ({

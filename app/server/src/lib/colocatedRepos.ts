@@ -1,22 +1,22 @@
 /** Colocated-repo detection.
  *
- *  A "colocated repo" is a depth-1 child directory that is its own git repo but
- *  is deliberately not part of the host repo — `plan/` excluded via
+ *  A "colocated repo" is a directory that is its own git repo but is
+ *  deliberately not part of the host repo — a private `.yaco/plan` excluded via
  *  `.git/info/exclude` is the motivating instance. The app mirrors its read-only
  *  git surfaces (status / diff / search-index) across the host plus every
  *  detected colocated repo, so they show up first-class without entering host git.
  *
- *  The mechanism never matches the name `plan`; it operates on a detected set.
- *  Detection signal (a depth-1 child `X`):
+ *  Candidates are every depth-1 child with a `.git`, plus `.yaco/plan` when it
+ *  has one. A candidate `X` is detected when:
  *    - `X/.git` exists (dir OR worktree-style file), AND
- *    - `X` is NOT in the host index (excludes submodule gitlinks and a
- *      normally-tracked dir), AND
+ *    - nothing at or under `X` is in the host index (excludes submodule gitlinks
+ *      and a normally-tracked dir), AND
  *    - `X` is NOT matched by the host's root working-tree `.gitignore`
  *      (excludes node_modules & friends) — the same source the tree's dimming
  *      uses, so detection and dimming can never disagree.
  *
- *  The host-index half is one `git ls-files -z` read (top-level tracked names),
- *  not a git process per child; the `.gitignore` half reuses getProjectGitignore.
+ *  The host-index half is one `git ls-files -z` read, not a git process per
+ *  candidate; the `.gitignore` half reuses getProjectGitignore.
  *  Result is cached by realpath(projectPath) for a short TTL — a /status poll
  *  storm pays detection once. No watchers.
  */
@@ -24,9 +24,9 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { existsSync } from 'fs'
-import { readdir, readFile, realpath, stat } from 'fs/promises'
+import { readdir, realpath, stat } from 'fs/promises'
 import { join } from 'path'
-import { parseScopedToml } from 'yaco-cli/core/paths'
+import { PLAN_DIR } from 'yaco-cli/core/paths'
 import { getProjectGitignore } from './gitignore'
 import { GIT_MAX_BUFFER } from './constants'
 
@@ -58,7 +58,7 @@ export async function clearColocatedReposCache(projectPath?: string): Promise<vo
   cache.delete(key)
 }
 
-/** Detected colocated-repo directory names (relative to projectPath), sorted.
+/** Detected colocated-repo paths (relative to projectPath), sorted.
  *  Cached by realpath(projectPath) for CACHE_TTL_MS. */
 export async function getColocatedRepos(projectPath: string): Promise<string[]> {
   let key: string
@@ -77,25 +77,17 @@ export async function getColocatedRepos(projectPath: string): Promise<string[]> 
 }
 
 async function detect(projectPath: string): Promise<string[]> {
-  const policy = await readPolicy(projectPath)
-  if (policy === 'off') return []
-
   const candidates = await childRepoDirs(projectPath)
+  if (existsSync(join(projectPath, PLAN_DIR, '.git'))) candidates.push(PLAN_DIR)
   if (candidates.length === 0) return []
 
-  const tracked = await trackedTopLevel(projectPath)
+  const tracked = await trackedPaths(projectPath)
   const ig = await getProjectGitignore(projectPath)
 
-  let detected = candidates.filter(
-    (name) => !tracked.has(name) && !(ig?.ignores(`${name}/`) ?? false),
-  )
-
-  if (policy !== 'auto') {
-    const allow = new Set(parseAllowList(policy))
-    detected = detected.filter((name) => allow.has(name))
-  }
-
-  return detected.sort()
+  return candidates
+    .filter((rel) => !tracked.some((p) => p === rel || p.startsWith(`${rel}/`)))
+    .filter((rel) => !(ig?.ignores(`${rel}/`) ?? false))
+    .sort()
 }
 
 /** Depth-1 child directories (following a symlinked dir) that contain a `.git`. */
@@ -138,66 +130,17 @@ async function childRepoDirs(projectPath: string): Promise<string[]> {
   return names
 }
 
-/** Top-level names present in the host index (one `git ls-files -z`).
- *  A nested repo is never descended into, and a submodule gitlink lists as its
- *  own dir — both land here correctly. Non-git host → empty set. */
-async function trackedTopLevel(projectPath: string): Promise<Set<string>> {
+/** Paths present in the host index (one `git ls-files -z`). A nested repo is
+ *  never descended into, and a submodule gitlink lists as its own dir — both
+ *  land here correctly. Non-git host → empty. */
+async function trackedPaths(projectPath: string): Promise<string[]> {
   try {
     const { stdout } = await exec('git', ['ls-files', '-z'], {
       cwd: projectPath,
       maxBuffer: GIT_MAX_BUFFER,
     })
-    const set = new Set<string>()
-    for (const path of stdout.split('\0')) {
-      if (!path) continue
-      const top = path.split('/')[0]
-      if (top) set.add(top)
-    }
-    return set
+    return stdout.split('\0').filter(Boolean)
   } catch {
-    return new Set()
+    return []
   }
-}
-
-/** Read the colocatedRepos policy from `<projectPath>/yaco.toml` `[colocated] repos`.
- *  Default "auto". A missing file or malformed toml degrades to "auto" with a
- *  warning — a status poll must never crash on a bad config. */
-async function readPolicy(projectPath: string): Promise<string> {
-  let raw: string
-  try {
-    raw = await readFile(join(projectPath, 'yaco.toml'), 'utf-8')
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[colocated] failed to read yaco.toml in ${projectPath}:`, e)
-    }
-    return 'auto'
-  }
-  try {
-    const sections = parseScopedToml(raw)
-    return sections['colocated']?.['repos']?.trim() || 'auto'
-  } catch (e) {
-    console.warn(`[colocated] failed to parse yaco.toml in ${projectPath}:`, e)
-    return 'auto'
-  }
-}
-
-/** Parse a comma-separated allow-list into depth-1 names.
- *  Trims, drops empties, de-dupes, rejects path separators / `.` / `..`, and
- *  drops the reserved whole-string modes `auto`/`off` (they are not directory
- *  names in allow-list position). */
-function parseAllowList(policy: string): string[] {
-  const names = policy
-    .split(',')
-    .map((s) => s.trim())
-    .filter(
-      (s) =>
-        s.length > 0 &&
-        s !== '.' &&
-        s !== '..' &&
-        s !== 'auto' &&
-        s !== 'off' &&
-        !s.includes('/') &&
-        !s.includes('\\'),
-    )
-  return [...new Set(names)]
 }

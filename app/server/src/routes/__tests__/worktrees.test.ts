@@ -51,9 +51,9 @@ describe('GET /:project — worktrees', () => {
     testProjectPath = await mkdtemp(join(tmpdir(), 'worktrees-route-test-'))
     externalParent = await mkdtemp(join(tmpdir(), 'worktrees-route-ext-'))
     gitInit(testProjectPath)
-    // Mirror the real repo: .worktrees/ is gitignored, so internal worktrees
-    // don't show up as untracked noise in the primary's `git status`.
-    await writeFile(join(testProjectPath, '.gitignore'), '.worktrees/\n')
+    // Mirror `yaco worktree create`: .yaco/worktrees/ is excluded, so internal
+    // worktrees don't show up as untracked noise in the primary's `git status`.
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/.yaco/worktrees/\n')
     await writeFile(join(testProjectPath, 'base.md'), 'base\n')
     git(['add', '-A'], testProjectPath)
     git(['commit', '-qm', 'init'], testProjectPath)
@@ -83,9 +83,9 @@ describe('GET /:project — worktrees', () => {
   })
 
   it('lists primary + internal + external worktrees with status', async () => {
-    // Linked worktree under .worktrees/
-    git(['worktree', 'add', '-q', '-b', 'task/feat', join(testProjectPath, '.worktrees', 'feat')], testProjectPath)
-    // Linked worktree OUTSIDE .worktrees/ (path identity must still list it)
+    // Linked worktree under .yaco/worktrees/
+    git(['worktree', 'add', '-q', '-b', 'task/feat', join(testProjectPath, '.yaco', 'worktrees', 'feat')], testProjectPath)
+    // Linked worktree OUTSIDE .yaco/worktrees/ (path identity must still list it)
     const extPath = join(externalParent, 'ext-wt')
     git(['worktree', 'add', '-q', '-b', 'ext', extPath], testProjectPath)
     // Put `ext` one commit ahead of main, then leave an untracked file (dirty).
@@ -113,8 +113,8 @@ describe('GET /:project — worktrees', () => {
     const ext = wts.find(w => w.branch === 'ext')!
     expect(ext).toBeDefined()
     expect(ext.isPrimary).toBe(false)
-    expect(ext.name).toBe('ext-wt')                  // basename, not a .worktrees slug
-    expect(ext.id.includes('/.worktrees/')).toBe(false) // genuinely outside .worktrees
+    expect(ext.name).toBe('ext-wt')                  // basename, not a .yaco/worktrees slug
+    expect(ext.id.includes('/.yaco/worktrees/')).toBe(false) // genuinely outside .yaco/worktrees
     expect(sameRealpath(ext.id, extPath)).toBe(true)    // exact path identity through the route
     expect(ext.dirty).toBe(true)
     expect(ext.ahead).toBe(1)                           // one commit ahead of main, via the route

@@ -183,7 +183,7 @@ describe('GET /:project/status — colocated repos', () => {
     // A real linked worktree, addressed by abspath (the new ?worktree= contract).
     // `plan` is a colocated repo physically in the primary's working dir, so the
     // worktree checkout doesn't contain it — that's the isolation under test.
-    const wt = join(testProjectPath, '.worktrees', 'wt')
+    const wt = join(testProjectPath, '.yaco', 'worktrees', 'wt')
     execFileSync('git', ['worktree', 'add', '-q', '-b', 'task/wt', wt], { cwd: testProjectPath })
     await writeFile(join(wt, 'wt-only.md'), 'w')
 

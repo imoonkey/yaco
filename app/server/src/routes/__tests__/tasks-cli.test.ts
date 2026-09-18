@@ -75,7 +75,7 @@ exit ${exitCode}
 
 /** Write a task graph into a project's default tasks tree. */
 function seedTasks(projectPath: string, graph: Record<string, unknown>, sub = ''): void {
-  const dir = join(projectPath, 'plan/tasks', sub)
+  const dir = join(projectPath, '.yaco/plan/tasks', sub)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'tasks.json'), JSON.stringify(graph, null, 2) + '\n')
 }
@@ -146,7 +146,7 @@ describe('GET /:project — in-process task list', () => {
   })
 
   it('maps a task-graph failure to the body the INVALID envelope produced', async () => {
-    const tasksFile = join(testProjectPath, 'plan/tasks/tasks.json')
+    const tasksFile = join(testProjectPath, '.yaco/plan/tasks/tasks.json')
     writeFileSync(tasksFile, '{ not json')
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(400)
@@ -166,17 +166,8 @@ describe('GET /:project — in-process task list', () => {
     const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
-      error: `duplicate task id 'dup' in ${join(testProjectPath, 'plan/tasks/other/tasks.json')} ` +
-        `and ${join(testProjectPath, 'plan/tasks/tasks.json')}`,
-    })
-  })
-
-  it('maps a rejected yaco.toml path to the body the ENV envelope produced', async () => {
-    writeFileSync(join(testProjectPath, 'yaco.toml'), '[paths]\ntasks = "/etc"\n')
-    const res = await taskRoutes.request('/test-project', { method: 'GET' })
-    expect(res.status).toBe(500)
-    expect(await res.json()).toEqual({
-      error: `yaco.toml: [paths].tasks must be repo-relative, got absolute path "/etc"`,
+      error: `duplicate task id 'dup' in ${join(testProjectPath, '.yaco/plan/tasks/other/tasks.json')} ` +
+        `and ${join(testProjectPath, '.yaco/plan/tasks/tasks.json')}`,
     })
   })
 
@@ -198,7 +189,7 @@ describe('GET /:project — in-process task list', () => {
   })
 
   it("does not let one project's broken graph fail another's concurrent read", async () => {
-    writeFileSync(join(testProjectPath, 'plan/tasks/tasks.json'), '{ not json')
+    writeFileSync(join(testProjectPath, '.yaco/plan/tasks/tasks.json'), '{ not json')
     seedTasks(otherProjectPath, { TWO: { title: 'two', state: 'ready', workset: 'active' } })
 
     const [broken, fine] = await Promise.all([

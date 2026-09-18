@@ -29,7 +29,7 @@ import {
 // an active `auth-v2` worktree that, relative to the main checkout, has an extra
 // untracked file `wip.txt` and an extra committed file `src/v2.js`. `README.md`
 // and `src/index.js` predate the worktree branch, so they exist in both scopes.
-// The main checkout additionally carries the `.worktrees/` dir (the linked
+// The main checkout additionally carries the `.yaco/worktrees/` dir (the linked
 // worktree checkouts) which is absent from the worktree's own tree.
 
 // auth-v2's branch label as shown in the Files-panel worktree list (§P2e).
@@ -137,22 +137,22 @@ test.describe('Worktree-scoped persistence isolation', () => {
   test('git changes are scoped to the active worktree', async ({ page }) => {
     await openFixture(page, fixture.name)
 
-    // Main checkout: its only change is the untracked `.worktrees/` dir. The
+    // Main checkout: its only change is the untracked `.yaco/worktrees/` dir. The
     // worktree-only `wip.txt` must NOT appear in main's Changes panel. (Changes
     // rows carry title=<path>; file-tree rows do not, so the title selector is
     // unambiguous.)
-    await expect(page.locator('[title=".worktrees"]')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('[title=".yaco/worktrees"]')).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('[title="wip.txt"]')).toHaveCount(0)
 
-    // Worktree scope: its untracked `wip.txt` shows; main's `.worktrees` entry is
+    // Worktree scope: its untracked `wip.txt` shows; main's `.yaco/worktrees` entry is
     // gone — git state followed the `:wt:` scope.
     await switchToWorktree(page)
     await expect(page.locator('[title="wip.txt"]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('[title=".worktrees"]')).toHaveCount(0)
+    await expect(page.locator('[title=".yaco/worktrees"]')).toHaveCount(0)
 
     // Back to main: the inverse holds again.
     await switchToMain(page)
-    await expect(page.locator('[title=".worktrees"]')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('[title=".yaco/worktrees"]')).toBeVisible({ timeout: 15_000 })
     await expect(page.locator('[title="wip.txt"]')).toHaveCount(0)
   })
 

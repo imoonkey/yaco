@@ -420,6 +420,21 @@ describe('GET /:project — colocated-repo tree badge', () => {
     expect(nested).toBeDefined()
     expect(nested?.colocated).toBeUndefined()
   })
+
+  it('flags a private .yaco/plan at depth 2 when /children lists .yaco', async () => {
+    makeColocatedRepo('.yaco/plan')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/.yaco/plan\n')
+
+    const nodes = await fetchRoot()
+    expect(nodes.find(n => n.path === '.yaco')?.colocated).toBeUndefined()
+
+    const res = await fileRoutes.request('/test-project/children?dir=.yaco')
+    expect(res.status).toBe(200)
+    const children: { path: string; colocated?: true; gitignored?: true }[] = await res.json()
+    const plan = children.find(n => n.path === '.yaco/plan')
+    expect(plan?.colocated).toBe(true)
+    expect(plan?.gitignored).toBeUndefined()
+  })
 })
 
 describe('content vs raw size limits', () => {

@@ -11,7 +11,7 @@ import {
 } from './helpers/workspace'
 
 // End-to-end integration capstone for the worktree-as-view redesign (design §7.3).
-// ONE journey over a worktree registered at an EXTERNAL path (OUTSIDE `.worktrees/`
+// ONE journey over a worktree registered at an EXTERNAL path (OUTSIDE `.yaco/worktrees/`
 // — the P1 path-identity dimension), proving both halves of the contract in a
 // single live session:
 //

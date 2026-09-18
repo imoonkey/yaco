@@ -48,7 +48,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'claude',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/home/user/my-project/.worktrees/feat-auth/src',
+        sessionPath: '/home/user/my-project/.yaco/worktrees/feat-auth/src',
         sessionId: 'sid-1',
         pid: 100,
       },
@@ -61,7 +61,7 @@ describe('GET / — worktree extraction', () => {
     expect(json[0].worktree).toBe('feat-auth')
   })
 
-  it('has no worktree field for sessions not in .worktrees/', async () => {
+  it('has no worktree field for sessions not in .yaco/worktrees/', async () => {
     mockReadAll.mockReturnValue([
       {
         name: 'agent-2',
@@ -88,7 +88,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'claude',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/home/user/my-project/.worktrees/fix-bug',
+        sessionPath: '/home/user/my-project/.yaco/worktrees/fix-bug',
         sessionId: 's1',
         pid: 1,
       },
@@ -106,7 +106,7 @@ describe('GET / — worktree extraction', () => {
         provider: 'claude',
         status: 'idle',
         project: 'my-project',
-        sessionPath: '/home/user/my-project/.worktrees/refactor-api/deep/nested',
+        sessionPath: '/home/user/my-project/.yaco/worktrees/refactor-api/deep/nested',
         sessionId: 's3',
         pid: 3,
       },

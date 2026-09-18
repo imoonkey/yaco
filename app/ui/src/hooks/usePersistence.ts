@@ -329,9 +329,9 @@ function mergeNewerWins(
  *     key overrides them.
  *  2. `yaco-drafts:${project}:wt:<suffix>` — legacy per-worktree blobs. The suffix is
  *     the raw worktree id `draftsKey` was called with: an ABSPATH (post-P1, e.g.
- *     `/repo/proj/.worktrees/B`) is the bucket key verbatim; a bare SLUG (pre-P1, e.g.
- *     `B`) resolves to `${projectPath}/.worktrees/<slug>` (the abspath that slug stood
- *     for). Folded only into buckets NOT already authoritative; duplicates that
+ *     `/repo/proj/.yaco/worktrees/B`) is the bucket key verbatim; a bare SLUG (pre-P1,
+ *     e.g. `B`) resolves to `${projectPath}/.yaco/worktrees/<slug>` (where that slug's
+ *     checkout lives). Folded only into buckets NOT already authoritative; duplicates that
  *     canonicalize to the same bucket merge newer-per-path (lossless).
  *
  * Runs synchronously at mount so the merged base exists before any save — this is
@@ -363,9 +363,9 @@ export function loadDraftsByWorktree(project: string, projectPath: string): Pers
     if (!key || !key.startsWith(legacyWtPrefix)) continue
     const suffix = key.slice(legacyWtPrefix.length)
     // Post-P1 the worktree id IS an abspath → use it verbatim; a pre-P1 slug resolves
-    // under `.worktrees/`. (A raw abspath suffixed under `.worktrees/<abspath>` would
+    // under `.yaco/worktrees/`. (A raw abspath suffixed under it would
     // never restore — the live worktree key is the abspath itself.)
-    const abspath = suffix.startsWith('/') ? suffix : `${projectPath}/.worktrees/${suffix}`
+    const abspath = suffix.startsWith('/') ? suffix : `${projectPath}/.yaco/worktrees/${suffix}`
     if (authoritative.has(abspath)) continue // the multi-bucket record already won
     try {
       const parsed = JSON.parse(localStorage.getItem(key) ?? '') as { files?: unknown }

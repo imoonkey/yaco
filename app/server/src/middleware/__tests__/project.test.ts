@@ -47,7 +47,7 @@ describe('withProject — ?worktree= abspath allowlist', () => {
     testProjectPath = await mkdtemp(join(tmpdir(), 'mw-project-test-'))
     externalParent = await mkdtemp(join(tmpdir(), 'mw-project-ext-'))
     gitInit(testProjectPath)
-    await writeFile(join(testProjectPath, '.gitignore'), '.worktrees/\n')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/.yaco/worktrees/\n')
     await writeFile(join(testProjectPath, 'base.md'), 'base\n')
     git(['add', '-A'], testProjectPath)
     git(['commit', '-qm', 'init'], testProjectPath)
@@ -72,7 +72,7 @@ describe('withProject — ?worktree= abspath allowlist', () => {
   })
 
   it('resolves a listed internal worktree abspath to that worktree (canonicalized)', async () => {
-    const wt = join(testProjectPath, '.worktrees', 'feat')
+    const wt = join(testProjectPath, '.yaco', 'worktrees', 'feat')
     git(['worktree', 'add', '-q', '-b', 'task/feat', wt], testProjectPath)
 
     const res = await resolveProject(wt)
@@ -80,7 +80,7 @@ describe('withProject — ?worktree= abspath allowlist', () => {
     expect((await res.json()).path).toBe(realpathSync(wt))
   })
 
-  it('resolves a listed external worktree abspath (outside .worktrees/)', async () => {
+  it('resolves a listed external worktree abspath (outside .yaco/worktrees/)', async () => {
     const ext = join(externalParent, 'ext-wt')
     git(['worktree', 'add', '-q', '-b', 'ext', ext], testProjectPath)
 
@@ -104,7 +104,7 @@ describe('withProject — ?worktree= abspath allowlist', () => {
   })
 
   it('rejects a stale path whose worktree dir was removed with 404', async () => {
-    const wt = join(testProjectPath, '.worktrees', 'gone')
+    const wt = join(testProjectPath, '.yaco', 'worktrees', 'gone')
     git(['worktree', 'add', '-q', '-b', 'task/gone', wt], testProjectPath)
     await rm(wt, { recursive: true, force: true }) // dir gone; git list may still mention it
 
@@ -113,24 +113,24 @@ describe('withProject — ?worktree= abspath allowlist', () => {
   })
 
   it('rejects a raw ../ traversal string that realpath-escapes the worktree set with 404', async () => {
-    // A registered worktree makes `.worktrees/` real so realpath can traverse it.
+    // A registered worktree makes `.yaco/worktrees/` real so realpath can traverse it.
     // The candidate is a RAW string with `..` (NOT path.join, which would
     // pre-normalize the segments away) that canonicalizes OUT to an existing but
     // non-worktree path — exercising the exact allowlist check, not mere existence.
-    const wt = join(testProjectPath, '.worktrees', 'feat')
+    const wt = join(testProjectPath, '.yaco', 'worktrees', 'feat')
     git(['worktree', 'add', '-q', '-b', 'task/feat', wt], testProjectPath)
     const traversal = `${wt}/../../base.md` // realpath → <primary>/base.md (exists, not a worktree)
     const res = await resolveProject(traversal)
     expect(res.status).toBe(404)
   })
 
-  it('rejects a symlink that lives under .worktrees/ but escapes the repo with 404', async () => {
-    // A naive prefix check (`startsWith(.worktrees/)`) would accept this; realpath
+  it('rejects a symlink that lives under .yaco/worktrees/ but escapes the repo with 404', async () => {
+    // A naive prefix check (`startsWith(.yaco/worktrees/)`) would accept this; realpath
     // canonicalization is what closes the symlink-escape hole.
     const secret = join(externalParent, 'secret')
     await mkdir(secret, { recursive: true })
-    const link = join(testProjectPath, '.worktrees', 'escape')
-    await mkdir(join(testProjectPath, '.worktrees'), { recursive: true })
+    const link = join(testProjectPath, '.yaco', 'worktrees', 'escape')
+    await mkdir(join(testProjectPath, '.yaco', 'worktrees'), { recursive: true })
     await symlink(secret, link)
 
     const res = await resolveProject(link)

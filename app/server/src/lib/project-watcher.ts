@@ -10,7 +10,7 @@ import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { AGENT_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './agent'
 import { notifyAttentionSessionChange, notifyAttentionTaskChange } from './attention-runtime'
-import { projectsFile as yacoProjectsFile, readYacoProjectPaths } from 'yaco-cli/core/paths'
+import { projectsFile as yacoProjectsFile, TASKS_DIR, WORKTREES_DIR } from 'yaco-cli/core/paths'
 
 const DEBOUNCE_MS = 200
 /** How often to retry arming the sessions-dir watcher when the dir is absent at
@@ -36,11 +36,16 @@ const armGeneration = new Map<string, number>()
 let armSeq = 0
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const projectIgnores = new Map<string, Ignore | null>()
-// Per-project matcher for task-graph files, derived from each project's configured
-// `yaco.toml [paths].tasks` (default `plan/tasks`) so custom task locations also
-// drive the `tasks` channel — not just the default path.
-const projectTaskFileRe = new Map<string, RegExp>()
 const sessionPathCache = new Map<string, string>()
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const WT = escapeRe(WORKTREES_DIR)
+/** A worktree slug directory: `.yaco/worktrees/<slug>`. */
+const WORKTREE_SLUG_RE = new RegExp(`^${WT}/[^/]+$`)
+/** A path at or below a slug, capturing the checkout-relative remainder. */
+const WORKTREE_PATH_RE = new RegExp(`^${WT}/[^/]+(?:/(.+))?$`)
+/** A task-graph file, in the primary or nested inside a worktree checkout. */
+const TASK_FILE_RE = new RegExp(`(^|/)${escapeRe(TASKS_DIR)}/.*\\.json$`)
 
 /** Ignore patterns — no refresh signal for these */
 const IGNORE = [
@@ -85,8 +90,8 @@ export function hardVerdict(rel: string): boolean | undefined {
     if (segs[segs.length - 1] === 'index.lock') return true
     return sub === 'objects' || sub === 'logs'
   }
-  if (rel === '.worktrees' || /^\.worktrees\/[^/]+$/.test(rel)) return false
-  if (rel.startsWith('.worktrees/')) return true
+  if (rel === WORKTREES_DIR || WORKTREE_SLUG_RE.test(rel)) return false
+  if (rel.startsWith(`${WORKTREES_DIR}/`)) return true
   return undefined
 }
 
@@ -94,8 +99,8 @@ export function hardVerdict(rel: string): boolean | undefined {
  * rules. The worktree container itself has no canonical counterpart and must
  * stay visible so its nested source paths can be watched. */
 export function canonicalIgnorePath(rel: string): string | null {
-  if (rel === '.worktrees') return null
-  const match = /^\.worktrees\/[^/]+(?:\/(.+))?$/.exec(rel)
+  if (rel === WORKTREES_DIR) return null
+  const match = WORKTREE_PATH_RE.exec(rel)
   if (!match) return rel
   return match[1] ?? null
 }
@@ -129,43 +134,11 @@ function makeIgnored(projectPath: string): (absPath: string, stats?: Stats) => b
 function routeChange(filename: string): string | null {
   if (IGNORE.some(re => re.test(filename))) return null
 
-  if (/^\.worktrees\/[^/]+$/.test(filename)) return 'worktrees'
-  if (/^\.worktrees\//.test(filename)) return 'filetree'
+  if (WORKTREE_SLUG_RE.test(filename)) return 'worktrees'
+  if (filename.startsWith(`${WORKTREES_DIR}/`)) return 'filetree'
   if (/^\.git\//.test(filename)) return 'git'
 
   return 'filetree'
-}
-
-/** Build a matcher for a project's repo-relative tasks path. A configured tasks
- *  *directory* matches nested `*.json`; a `*.json` file path matches itself. The
- *  `(^|/)` anchor also catches the same path nested inside a worktree. */
-function taskFileMatcher(tasksRel: string): RegExp {
-  const escaped = tasksRel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return tasksRel.endsWith('.json')
-    ? new RegExp(`(^|/)${escaped}$`)
-    : new RegExp(`(^|/)${escaped}/.*\\.json$`)
-}
-
-/** Fallback matcher for the default `plan/tasks` location. */
-const DEFAULT_TASK_FILE_RE = taskFileMatcher('plan/tasks')
-
-/** Resolve and cache a project's task-file matcher from its `yaco.toml`. Synchronous
- *  + guarded so a missing/malformed config never aborts watcher setup. */
-function armTaskFileMatcher(projectPath: string): void {
-  try {
-    projectTaskFileRe.set(projectPath, taskFileMatcher(readYacoProjectPaths(projectPath).tasks))
-  } catch (e) {
-    console.warn(`[project-watcher] failed to read tasks path for ${projectPath}, using default:`, e)
-    projectTaskFileRe.set(projectPath, DEFAULT_TASK_FILE_RE)
-  }
-}
-
-/** True when a changed repo-relative filename is a task-graph file for `projectPath`
- *  (its configured `[paths].tasks`, default `plan/tasks/**`). A task-state write must
- *  wake the attention engine so `task_done`/`task_blocked` edges are change-driven
- *  (not 60s-sampled), and drives the dedicated `tasks` SSE channel. */
-function isTaskFile(filename: string, projectPath: string): boolean {
-  return (projectTaskFileRe.get(projectPath) ?? DEFAULT_TASK_FILE_RE).test(filename)
 }
 
 function debouncedEmit(channel: string): void {
@@ -326,7 +299,6 @@ export async function watchProject(project: Project): Promise<void> {
   armGeneration.set(path, gen)
 
   try {
-    armTaskFileMatcher(path)
     // Load the gitignore first so the `ignored` predicate prunes from the very
     // first walk. A failed load → no gitignore filtering (heavy hard-coded dirs
     // are still pruned), never a missed watch.
@@ -377,9 +349,9 @@ export async function watchProject(project: Project): Promise<void> {
       // refreshes on task edits only — not on every unrelated file write, which
       // would refetch the full task payload and rebuild the whole graph. It also
       // wakes the change-driven attention engine (a write may be a task_done /
-      // task_blocked state edge). plan/tasks/** is not gitignored, so both fire
+      // task_blocked state edge). .yaco/plan/tasks/** is not gitignored, so both fire
       // regardless of the ignore check above.
-      if (isTaskFile(filename, path)) {
+      if (TASK_FILE_RE.test(filename)) {
         debouncedEmit('tasks')
         notifyAttentionTaskChange()
       }
@@ -403,7 +375,7 @@ const MAX_WATCHED_WORKTREES = 3
 
 /** Arm a watcher for a worktree checkout the UI is actually viewing, evicting the
  *  least-recently-used one past the cap. Parent project watchers prune
- *  `.worktrees/<slug>/**`, so this is what gives a worktree live filetree/git SSE.
+ *  `.yaco/worktrees/<slug>/**`, so this is what gives a worktree live filetree/git SSE.
  *  Fire-and-forget: callers must not await the initial scan on a request path. */
 export async function ensureWorktreeWatched(path: string): Promise<void> {
   const at = watchedWorktrees.indexOf(path)
@@ -435,7 +407,6 @@ export function unwatchProject(path: string): void {
     projectWatchers.delete(path)
   }
   projectIgnores.delete(path)
-  projectTaskFileRe.delete(path)
 }
 
 /** Start pruned recursive watchers for each project */
@@ -462,6 +433,5 @@ export function stopProjectWatchers(): void {
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   projectIgnores.clear()
-  projectTaskFileRe.clear()
   sessionPathCache.clear()
 }

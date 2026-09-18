@@ -5,13 +5,13 @@
  *   - sessions: `readAllSessionsFromStateFiles` — direct state-file HOT read
  *     (carries crashed/statusEnteredAt/exitCode/spawnedBy), NOT the CLI-spawning
  *     reconcile path.
- *   - tasks: per loaded project, `loadTaskStore(resolve(path, paths.tasks))`.
+ *   - tasks: per loaded project, `loadTaskStore(join(path, TASKS_DIR))`.
  *   - pins: `getPinnedSessions(project)`.
  *   - watermarks: `getUnreadWatermarks()` (defensively widened for T5 fields).
  */
 
-import { resolve } from 'path'
-import { readYacoProjectPaths } from 'yaco-cli/core/paths'
+import { join } from 'path'
+import { TASKS_DIR } from 'yaco-cli/core/paths'
 import { loadTaskStore } from 'yaco-cli/core/task'
 import { clampNotice } from 'yaco-cli/core/agent'
 import { loadProjects } from './projects'
@@ -33,12 +33,7 @@ async function readTasks(): Promise<LiveTask[]> {
   const projects = await loadProjects()
   const out: LiveTask[] = []
   for (const project of projects) {
-    let tasksPath: string
-    try {
-      tasksPath = resolve(project.path, readYacoProjectPaths(project.path).tasks)
-    } catch {
-      continue
-    }
+    const tasksPath = join(project.path, TASKS_DIR)
     let store: Awaited<ReturnType<typeof loadTaskStore>>
     try {
       store = await loadTaskStore(tasksPath)

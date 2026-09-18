@@ -19,11 +19,11 @@ import { FIXTURE_MARKER, ephemeralYacoHome } from './cleanup'
 
 // --- Per-run namespacing ---
 
-// Stable per-worktree prefix: the slug from a `.worktrees/<slug>/` cwd, else
+// Stable per-worktree prefix: the slug from a `.yaco/worktrees/<slug>/` cwd, else
 // `main`. Same derivation as app/ui/e2ePorts.ts, kept local so the helper has no
 // cross-tree import.
 const WORKTREE_SLUG = (() => {
-  const m = process.cwd().match(/\.worktrees\/([^/]+)/)
+  const m = process.cwd().match(/\.yaco\/worktrees\/([^/]+)/)
   return m ? m[1] : 'main'
 })()
 
@@ -366,7 +366,7 @@ function disposer(request: APIRequestContext, name: string, root: string): () =>
 export interface FixtureOptions {
   /** Extra files to write (repo-relative path → content). Parent dirs created. */
   files?: Record<string, string>
-  /** Task graph written to plan/tasks/tasks.json. */
+  /** Task graph written to .yaco/plan/tasks/tasks.json. */
   tasks?: Record<string, unknown>
 }
 
@@ -386,8 +386,8 @@ export async function createFixtureProject(
     writeFileSync(abs, content)
   }
   if (opts.tasks) {
-    mkdirSync(join(root, 'plan/tasks'), { recursive: true })
-    writeFileSync(join(root, 'plan/tasks/tasks.json'), JSON.stringify(opts.tasks, null, 2) + '\n')
+    mkdirSync(join(root, '.yaco/plan/tasks'), { recursive: true })
+    writeFileSync(join(root, '.yaco/plan/tasks/tasks.json'), JSON.stringify(opts.tasks, null, 2) + '\n')
   }
   git(root, ['add', '-A'])
   git(root, ['commit', '-q', '-m', 'init fixture'])
@@ -435,7 +435,7 @@ export async function createWorktreeFixture(request: APIRequestContext): Promise
   const root = initRepo('yaco-e2e-wt-')
 
   mkdirSync(join(root, 'src'), { recursive: true })
-  mkdirSync(join(root, 'plan/tasks'), { recursive: true })
+  mkdirSync(join(root, '.yaco/plan/tasks'), { recursive: true })
   writeFileSync(join(root, 'src/index.js'), 'export const main = 1\n')
   writeFileSync(join(root, 'README.md'), '# worktree fixture\n')
   const tasks = {
@@ -443,20 +443,20 @@ export async function createWorktreeFixture(request: APIRequestContext): Promise
     'perf-cache': { parent: null, depends: [], state: 'ready', workset: 'active', title: 'Perf cache', description: 'perf work', acceptCriteria: ['ships'], worktree: 'perf-cache' },
     'ui-cleanup': { parent: null, depends: [], state: 'ready', workset: 'active', title: 'UI cleanup', description: 'ui work', acceptCriteria: ['ships'], worktree: null },
   }
-  writeFileSync(join(root, 'plan/tasks/tasks.json'), JSON.stringify(tasks, null, 2) + '\n')
+  writeFileSync(join(root, '.yaco/plan/tasks/tasks.json'), JSON.stringify(tasks, null, 2) + '\n')
   git(root, ['add', '-A'])
   git(root, ['commit', '-q', '-m', 'init worktree fixture'])
 
   // auth-v2: one commit ahead of main + a dirty (untracked) file.
-  git(root, ['worktree', 'add', '-q', '-b', 'task/auth-v2', '.worktrees/auth-v2'])
-  const authDir = join(root, '.worktrees/auth-v2')
+  git(root, ['worktree', 'add', '-q', '-b', 'task/auth-v2', '.yaco/worktrees/auth-v2'])
+  const authDir = join(root, '.yaco/worktrees/auth-v2')
   writeFileSync(join(authDir, 'src/v2.js'), 'export const v2 = true\n')
   git(authDir, ['add', '-A'])
   git(authDir, ['commit', '-q', '-m', 'auth-v2 feature'])
   writeFileSync(join(authDir, 'wip.txt'), 'work in progress\n')
 
   // perf-cache: clean, even with main.
-  git(root, ['worktree', 'add', '-q', '-b', 'task/perf-cache', '.worktrees/perf-cache'])
+  git(root, ['worktree', 'add', '-q', '-b', 'task/perf-cache', '.yaco/worktrees/perf-cache'])
 
   await registerProject(request, name, root)
   return { name, path: root, dispose: disposer(request, name, root) }
@@ -499,7 +499,7 @@ export async function createBinaryFixture(request: APIRequestContext): Promise<B
 }
 
 export interface ExternalWorktreeFixture extends FixtureProject {
-  /** Absolute path of the external worktree checkout (OUTSIDE `.worktrees/`). */
+  /** Absolute path of the external worktree checkout (OUTSIDE `.yaco/worktrees/`). */
   worktreePath: string
   /** The external worktree's branch, as shown in the Files-header picker. */
   branch: string
@@ -509,8 +509,8 @@ export interface ExternalWorktreeFixture extends FixtureProject {
 
 /**
  * Provision an isolated git project with a worktree registered at an **external**
- * path (a sibling temp dir, NOT under `.worktrees/`). This exercises the P1 path
- * identity that replaced the `.worktrees/<slug>` prefix assumption: git is the
+ * path (a sibling temp dir, NOT under `.yaco/worktrees/`). This exercises the P1 path
+ * identity that replaced the `.yaco/worktrees/<slug>` prefix assumption: git is the
  * allowlist, so an arbitrary-location worktree is a first-class view.
  *
  * The shape the end-to-end spec pins, relative to the main checkout:

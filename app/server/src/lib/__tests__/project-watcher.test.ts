@@ -120,25 +120,10 @@ describe('project-watcher agent session refreshes', () => {
     }, { timeout: 3000 })
   })
 
-  it('emits a dedicated tasks refresh when a plan/tasks file changes', async () => {
+  it('emits a dedicated tasks refresh when a .yaco/plan/tasks file changes', async () => {
     // Pre-create the task dir so the recursive watch already covers it (avoids a
     // new-subdir watch race), then start the watcher and write the task file.
-    const tasksDir = join(projectDir, 'plan', 'tasks', 'inbox')
-    mkdirSync(tasksDir, { recursive: true })
-    await startProjectWatchers(mock.projects)
-
-    writeFileSync(join(tasksDir, 'tasks.json'), '{}')
-
-    await vi.waitFor(() => {
-      expect(mock.emitCalls).toContain('tasks')
-    }, { timeout: 2000 })
-  })
-
-  it('honors a custom yaco.toml [paths].tasks location for the tasks channel', async () => {
-    // Config relocates the task graph to plan/items; a write there must still
-    // drive the dedicated 'tasks' channel (not just the hardcoded plan/tasks).
-    writeFileSync(join(projectDir, 'yaco.toml'), '[paths]\ntasks = "items"\n')
-    const tasksDir = join(projectDir, 'plan', 'items')
+    const tasksDir = join(projectDir, '.yaco', 'plan', 'tasks', 'inbox')
     mkdirSync(tasksDir, { recursive: true })
     await startProjectWatchers(mock.projects)
 
@@ -155,7 +140,7 @@ describe('hardVerdict (watch-prune rules)', () => {
   it('prunes node_modules at any depth', () => {
     expect(hardVerdict('node_modules')).toBe(true)
     expect(hardVerdict('a/b/node_modules/pkg')).toBe(true)
-    expect(hardVerdict('.worktrees/wt/node_modules/pkg')).toBe(true)
+    expect(hardVerdict('.yaco/worktrees/wt/node_modules/pkg')).toBe(true)
   })
 
   it('prunes high-volume runtime log subtrees at any depth', () => {
@@ -177,29 +162,30 @@ describe('hardVerdict (watch-prune rules)', () => {
   })
 
   it('keeps worktree roots but prunes their contents, which are watched on demand', () => {
-    expect(hardVerdict('.worktrees')).toBe(false)
-    expect(hardVerdict('.worktrees/wt')).toBe(false)
-    expect(hardVerdict('.worktrees/wt/src/app.ts')).toBe(true)
-    expect(hardVerdict('.worktrees/wt/logs/traffic/request.json')).toBe(true)
+    expect(hardVerdict('.yaco/worktrees')).toBe(false)
+    expect(hardVerdict('.yaco/worktrees/wt')).toBe(false)
+    expect(hardVerdict('.yaco/worktrees/wt/src/app.ts')).toBe(true)
+    expect(hardVerdict('.yaco/worktrees/wt/logs/traffic/request.json')).toBe(true)
   })
 
   it('defers everything else to the gitignore check', () => {
     expect(hardVerdict('src/index.ts')).toBeUndefined()
     expect(hardVerdict('dist')).toBeUndefined()
-    expect(hardVerdict('plan/tasks/x.json')).toBeUndefined()
+    expect(hardVerdict('.yaco/plan/tasks/x.json')).toBeUndefined()
+    expect(hardVerdict('.yaco')).toBeUndefined()
   })
 })
 
 describe('canonicalIgnorePath', () => {
   it('applies root gitignore rules inside each worktree', () => {
     expect(canonicalIgnorePath('src/index.ts')).toBe('src/index.ts')
-    expect(canonicalIgnorePath('.worktrees/task-a/src/index.ts')).toBe('src/index.ts')
-    expect(canonicalIgnorePath('.worktrees/task-a/data/cache.db')).toBe('data/cache.db')
+    expect(canonicalIgnorePath('.yaco/worktrees/task-a/src/index.ts')).toBe('src/index.ts')
+    expect(canonicalIgnorePath('.yaco/worktrees/task-a/data/cache.db')).toBe('data/cache.db')
   })
 
   it('keeps worktree container paths outside root gitignore matching', () => {
-    expect(canonicalIgnorePath('.worktrees')).toBeNull()
-    expect(canonicalIgnorePath('.worktrees/task-a')).toBeNull()
+    expect(canonicalIgnorePath('.yaco/worktrees')).toBeNull()
+    expect(canonicalIgnorePath('.yaco/worktrees/task-a')).toBeNull()
   })
 })
 

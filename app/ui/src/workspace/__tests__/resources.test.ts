@@ -171,7 +171,7 @@ describe('useWorkspaceData single-poller composition', () => {
 // POST body), so a regression that re-couples session cwd to the worktree fails
 // here, not just in the SessionsPanel render.
 describe('useWorkspaceData — sessions decoupled from the worktree', () => {
-  const WT = '/tmp/res-proj/.worktrees/wt'
+  const WT = '/tmp/res-proj/.yaco/worktrees/wt'
 
   beforeEach(() => {
     vi.stubGlobal('EventSource', FakeEventSource)

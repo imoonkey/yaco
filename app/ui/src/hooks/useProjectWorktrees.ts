@@ -3,7 +3,7 @@ import { useSSERefresh } from './useSSE'
 
 /** One git-registered worktree of a project (mirrors the server's WorktreeInfo).
  *  `id` is the worktree's absolute path — the stable identity that replaces the
- *  old `.worktrees/<slug>` slug. */
+ *  old `<slug>` identity. */
 export interface WorktreeInfo {
   id: string         // absolute path — stable identifier
   name: string       // display label ("<repo> (primary)" | basename)

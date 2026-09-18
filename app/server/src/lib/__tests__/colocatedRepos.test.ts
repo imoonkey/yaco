@@ -93,52 +93,31 @@ describe('getColocatedRepos', () => {
     expect(await getColocatedRepos(host)).toEqual([])
   })
 
-  describe('colocatedRepos policy', () => {
-    it('"off" detects nothing', async () => {
-      await makeChildRepo(host, 'plan')
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "off"\n')
+  describe('.yaco/plan', () => {
+    it('detects a private plan (its own repo) at depth 2, sorted with depth-1 repos', async () => {
+      await makeChildRepo(host, '.yaco/plan')
+      await makeChildRepo(host, 'vendor-repo')
+      expect(await getColocatedRepos(host)).toEqual(['.yaco/plan', 'vendor-repo'])
+    })
+
+    it('does NOT detect a plan without .git (tracked or plain dir)', async () => {
+      await mkdir(join(host, '.yaco', 'plan', 'tasks'), { recursive: true })
+      await writeFile(join(host, '.yaco', 'plan', 'tasks', 'tasks.json'), '{}\n')
       expect(await getColocatedRepos(host)).toEqual([])
     })
 
-    it('allow-list narrows to named children, re-validated by the signal', async () => {
-      await makeChildRepo(host, 'plan')
-      await makeChildRepo(host, 'notes')
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "plan"\n')
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
+    it('does NOT detect a plan whose files the host index still tracks', async () => {
+      await mkdir(join(host, '.yaco', 'plan'), { recursive: true })
+      await writeFile(join(host, '.yaco', 'plan', 'x.md'), 'x')
+      execFileSync('git', ['add', '-A'], { cwd: host })
+      gitInit(join(host, '.yaco', 'plan'))
+      expect(await getColocatedRepos(host)).toEqual([])
     })
 
-    it('allow-list entry that fails the signal is skipped (no double-listing)', async () => {
-      await makeChildRepo(host, 'plan')
-      // "ghost" does not exist; "docs" exists but is not a repo.
-      await mkdir(join(host, 'docs'), { recursive: true })
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "plan, ghost, docs"\n')
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
-    })
-
-    it('drops allow-list entries with a path separator', async () => {
-      await makeChildRepo(host, 'plan')
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "plan/sub, plan"\n')
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
-    })
-
-    it('drops allow-list entries equal to ".." or "."', async () => {
-      await makeChildRepo(host, 'plan')
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = ".., ., plan"\n')
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
-    })
-
-    it('drops reserved tokens (auto/off) used in allow-list position', async () => {
-      await makeChildRepo(host, 'plan')
-      await makeChildRepo(host, 'auto') // a real dir literally named "auto"
-      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "auto, plan"\n')
-      // "auto" is a reserved whole-string mode, so it is not honored as a name.
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
-    })
-
-    it('malformed yaco.toml degrades to "auto"', async () => {
-      await makeChildRepo(host, 'plan')
-      await writeFile(join(host, 'yaco.toml'), 'this is not = valid = toml [[[\n')
-      expect(await getColocatedRepos(host)).toEqual(['plan'])
+    it('does NOT detect a plan matched by the root .gitignore', async () => {
+      await writeFile(join(host, '.gitignore'), '.yaco/\n')
+      await makeChildRepo(host, '.yaco/plan')
+      expect(await getColocatedRepos(host)).toEqual([])
     })
   })
 
