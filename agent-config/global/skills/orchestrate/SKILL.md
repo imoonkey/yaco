@@ -74,6 +74,7 @@ worktree off it, record the pre-work baseline, set the task `running`, start the
 handle:
 
 ```bash
+primary="$(git rev-parse --show-toplevel)"   # orchestrate runs in the primary checkout
 # 1. Target = nearest integration-milestone ancestor branch, else main. When it's a milestone,
 #    create/reuse its worktree first so the branch exists:
 yaco worktree create <milestone-slug> --base <parent-target> --json   # only when target is a milestone
@@ -82,14 +83,15 @@ target="task/<milestone-slug>"                                        # else: ta
 slug="<worktree field | task-id>"
 cwd="$(yaco worktree create "$slug" --base "$target" --json | jq -r .data.path)"
 base="$(git -C "$cwd" rev-parse HEAD)"   # capture BEFORE the worker commits — scopes the task diff
-yaco task set <task-id> --data '{"state":"running"}' --json
+yaco task set <task-id> --data '{"state":"running"}' --repo "$primary" --json
 cd "$cwd" && yaco agent start claude "/implement <task-ref> — <task-context>" --name "w-<task-id>" --json
-yaco task attach <task-id> w-<task-id> --json
+yaco task attach <task-id> w-<task-id> --repo "$primary" --json
 ```
 
 - **Implementation leaf** → the worker runs `/implement <task>`. The prompt carries task title, acceptCriteria, design-doc path, scope, and the **worker contract**: complete the recipe, then **stop and report — do not mark the task `done`** (orchestrate gatekeeps and merges that).
 - **Non-implementation leaf** (docs/design/planning — no code recipe) → dispatch the task prompt directly, no `/implement`.
 - `$base` is the gate's diff scope: the task's work is `git diff $base..HEAD` in the cwd.
+- **The live task graph is the primary's** — every orchestrate `yaco task` call passes `--repo "$primary"`, so changing cwd never switches the graph being mutated. With a private plan (`.yaco/plan/.git`) the worktree's `.yaco/plan` is a link to it anyway. With a plan **tracked in the host**, each worktree holds its branch's own stale copy: workers never mutate task state, and orchestrate commits the primary's graph changes (`git -C "$primary" commit -m "chore(plan): <task-id> state" -- .yaco/plan`) before each merge, because `yaco worktree merge` refuses a dirty primary (`/yaco-paths` → Plan privacy).
 - `yaco task attach` is an idempotent delta on the task's `agents` list — never write session links through `yaco task set` (the legacy `agent` field is rejected). Detach with `yaco task detach`.
 
 Then **wait** for the worker: `yaco agent wait w-<task-id> --from-start --json`.

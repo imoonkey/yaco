@@ -39,7 +39,11 @@ Idempotent. Requires CLAUDE.md (fails if missing); refuses to clobber a real fil
 ### 3. Bootstrap Doc Structure
 
 Resolve the doc folder: `yaco paths project --json` → `doc` (the first existing of `docs/`,
-`doc/`, else `docs/`). Seed only what is missing:
+`doc/`, else `docs/`).
+
+- **The repo already has a doc folder** → leave it exactly as it is. Don't add a README or a
+  PROGRESS file to someone else's convention; `/update-doc` follows what is there.
+- **No doc folder yet** (a project we own, being bootstrapped) → seed:
 
 ```
 <doc>/
@@ -48,7 +52,6 @@ Resolve the doc folder: `yaco paths project --json` → `doc` (the first existin
 ```
 
 Write brief stubs based on Step 1 analysis. These grow over time via `/update-doc`.
-Leave any existing file and any existing doc tree as it is.
 
 ### 4. Verify Global Config
 
