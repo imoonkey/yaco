@@ -17,7 +17,7 @@ A project has **one** docs folder: `yaco paths project --json` → `docs` in a Y
 docs/
   README.md                # Navigation hub: doc map, reading order, key concepts
   ...                      # the project's own tree (architecture, workflow, per-domain docs)
-  PROGRESS.md              # History trace — ONLY if the project keeps one
+  PROGRESS.md              # History trace, if the project keeps one here (else <plan>/PROGRESS.md)
 
 .claude/
   skills/
@@ -31,7 +31,7 @@ docs/
 ```
 
 - `docs/`, `CLAUDE.md` (symlinked as `AGENTS.md`, `GEMINI.md`), and project-local skills in `./.claude/skills/*` (symlinked as `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Update the canonical file, not the symlinks.
-- `docs/PROGRESS.md`, when the project keeps one, is **history trace** — what happened and when. When it does not, the history trace is git plus the plan bundle's `implementation_summary.md`; don't create a PROGRESS file.
+- `PROGRESS.md` is **history trace** — what happened and when, so a fresh context window can catch up without replaying git log. It lives at `docs/PROGRESS.md` when the project keeps one there; otherwise at `<plan>/PROGRESS.md` (`yaco paths project --json` → `plan`), which stays out of the host repo when the plan is private. Never start a `docs/PROGRESS.md` in a repo that has none.
 
 ### Guidelines
 
@@ -113,7 +113,7 @@ Map code changes to affected docs in `CLAUDE.md`, `docs/`, and any project-local
 
 ### 4. Update Progress Doc
 
-Skip this step when the project keeps no `docs/PROGRESS.md`. Otherwise prepend to it. This is the **canonical format** — all entries follow it. PROGRESS is **append-only**: never edit a past entry, even when a restructure renames the files it references — an entry records what was true on its date.
+Prepend to `docs/PROGRESS.md` if the project keeps one, else to `<plan>/PROGRESS.md` (create it there). This is the **canonical format** — all entries follow it. PROGRESS is **append-only**: never edit a past entry, even when a restructure renames the files it references — an entry records what was true on its date.
 
 ```markdown
 ## YYYY-MM-DD: [Short title]

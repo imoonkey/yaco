@@ -1,3 +1,12 @@
+## 2026-09-19: PROGRESS trace always has a home
+
+**What changed:**
+- `/update-doc` no longer skips the history trace in a repo without `docs/PROGRESS.md`: it writes `<plan>/PROGRESS.md` instead (`yaco paths project --json` → `plan`), so a private plan keeps yaco's record out of the host repo. `/yaco-paths` and `/implement` state the same rule.
+
+**Why:** git log carries what changed, not why or how it was verified; an agent in a fresh context window needs the trace in every project, not only the ones that already keep one in `docs/`.
+
+**Verification:** prose-only change to `agent-config/`; redeployed with `tools/install.sh`.
+
 # Progress
 
 ## 2026-09-17: One `.yaco/` footprint per project, one doc folder

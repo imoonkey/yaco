@@ -30,6 +30,8 @@ The layout is fixed — every YACO artifact lives under one hidden directory, an
 
 `docs` is the project's docs folder: `docs/` if it exists; else `doc/` if that exists; else `docs/` (create it when you first write into it). How the folder is organized is the project's choice — follow what is there.
 
+The history trace is `<docs>/PROGRESS.md` when the project keeps one there, else `<plan>/PROGRESS.md` — yaco's own record, outside the host repo's conventions.
+
 ## Plan privacy
 
 A plan is either private or part of the host repo; its state is the only signal:
