@@ -71,4 +71,4 @@ Write the project's docs into the bundle home — one per stage, plus the implem
 
 ## Project detection
 
-A YACO project = cwd registered in `~/.yaco/projects.json`. If the cwd is not a registered YACO project, ignore this file and follow the project's own convention.
+A YACO project = cwd registered in `~/.yaco/projects.json` (`yaco project add <name> <abs-path>`, which also promotes `.yaco/plan` into its private repo unless the host commits it). If the cwd is not a registered YACO project, ignore this file and follow the project's own convention.

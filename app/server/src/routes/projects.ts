@@ -1,15 +1,32 @@
 import { Hono } from 'hono'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { fail } from '../lib/response'
 import {
   loadProjects,
   saveProjects,
-  addProject,
   removeProject,
   type Project,
 } from '../lib/projects'
 import { watchProject, unwatchProject } from '../lib/project-watcher'
+import { YACO_PATH } from '../lib/constants'
 
 const app = new Hono()
+const exec = promisify(execFile)
+
+/** `yaco project add` may `git init` a plan repo, so it gets more than a status call. */
+const PROJECT_ADD_TIMEOUT_MS = 15_000
+
+/** The `{ok:false,error:{code,message}}` line a failing `--json` command writes to stderr. */
+function cliError(stderr: string): { code?: string; message?: string } | null {
+  const line = stderr.trim().split('\n').pop() ?? ''
+  try {
+    const parsed = JSON.parse(line) as { ok?: boolean; error?: { code?: string; message?: string } }
+    return parsed.ok === false && parsed.error ? parsed.error : null
+  } catch {
+    return null
+  }
+}
 
 /** Map a thrown CliError from the shared registry core to an HTTP response. */
 function failFromError(c: Parameters<typeof fail>[0], e: unknown): ReturnType<typeof fail> {
@@ -37,15 +54,21 @@ app.post('/', async (c) => {
   if (!body.name || !body.path) {
     return fail(c, 400, 'name and path required')
   }
+  // Registration goes through the CLI so `yaco project add` is the one place
+  // that decides what a new project gets (its private plan repo, today).
+  let stdout: string
   try {
-    const project = addProject({ name: body.name, path: body.path })
-    // Start watching immediately so a project registered at runtime gets live
-    // file-tree / git SSE without a server restart.
-    await watchProject(project)
-    return c.json(project, 201)
+    ;({ stdout } = await exec(YACO_PATH, ['project', 'add', body.name, body.path, '--json'], {
+      timeout: PROJECT_ADD_TIMEOUT_MS,
+    }))
   } catch (e) {
-    return failFromError(c, e)
+    return failFromError(c, cliError((e as { stderr?: string }).stderr ?? '') ?? e)
   }
+  const { project } = (JSON.parse(stdout) as { data: { project: Project } }).data
+  // Start watching immediately so a project registered at runtime gets live
+  // file-tree / git SSE without a server restart.
+  await watchProject(project)
+  return c.json(project, 201)
 })
 
 app.post('/reorder', async (c) => {

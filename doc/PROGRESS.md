@@ -1,3 +1,15 @@
+## 2026-09-19: `yaco project add` promotes the plan into its private repo
+
+**What changed:**
+- Registering a project (`yaco project add`) now runs `plan init` when the path is a git root whose `.yaco/plan` is absent or an untracked plain dir; a plan that is already its own repo or one the host commits is left alone, and a registered subdirectory gets nothing (`commands/project/add.ts#planNeedsInit`).
+- The app's `POST /api/projects` goes through `yaco project add --json` instead of the in-process registry wrapper, so both surfaces agree; the server's `lib/projects.ts#addProject` wrapper is gone.
+- `plan init` creates the repo on branch `main`.
+- `yaco gate` on a repo with no commit and no `scripts/gate.sh` reports all-skip with `sha: ""` instead of ENV; with a gate script it still throws.
+
+**Why:** a repo shared with others should carry no yaco footprint from the first `yaco task set` on, without a separate step to remember; the old default (commit `.yaco/plan` with the code) is still one `git add` away.
+
+**Verification:** cli unit `project`/`plan`/`export-audit`/`paths` suites (136) + `gate.test.ts` (23) green; a mutation of `planNeedsInit` turns the new registration test red; app/server suite 913 passed; `tools/install.sh` redeployed and a scratch repo registered end to end (CLI with a temp `YACO_HOME`, and the server route).
+
 ## 2026-09-19: PROGRESS trace always has a home
 
 **What changed:**

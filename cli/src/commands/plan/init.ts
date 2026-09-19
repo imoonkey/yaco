@@ -93,7 +93,7 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   // ── 1. in-place git init + plan .gitignore ────────────────────────────────
   const initialized = !existsSync(join(planDir, ".git"));
   if (initialized) {
-    const r = runGit(["init", "--", plan], repoRoot);
+    const r = runGit(["init", "--initial-branch=main", "--", plan], repoRoot);
     if (r.status !== 0) {
       throw new CliError(ErrCode.IO, `git init ${plan} failed: ${r.stderr.trim()}`);
     }

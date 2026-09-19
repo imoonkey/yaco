@@ -11,7 +11,14 @@ mechanism; the app surfaces it generally for any colocated repo, and
 
 The pure helper lives in `cli/src/commands/plan/init.ts#runPlanInit`; the area
 dispatcher (`handlePlan`) wraps it with argv parsing and the standard `Result`
-envelope rendered through `dual()`.
+envelope rendered through `dual()`. `yaco project add` runs it too
+(`commands/project/add.ts#planNeedsInit`): registering a git root whose
+`.yaco/plan` is absent or an untracked plain dir promotes it on the spot, while
+a plan that is already its own repo or one the host commits is left alone, and
+a registered subdirectory gets nothing. The app's "add project" goes through
+`yaco project add --json`, so both surfaces agree. The explicit command remains
+for `--remote` and for a clone on a new machine. The repo is created on branch
+`main`.
 
 ## CLI surface
 

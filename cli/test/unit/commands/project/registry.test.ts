@@ -9,7 +9,8 @@
  */
 
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +61,10 @@ function expectThrowCode(fn: () => unknown, code: string): void {
   } catch (e) {
     expect((e as { code?: string }).code).toBe(code);
   }
+}
+
+function git(cwd: string, ...args: string[]): void {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
 }
 
 function registryRaw(fix: Fix): Array<{ id: string; path: string }> {
@@ -125,8 +130,34 @@ describe("yaco project add", () => {
       expect(r.value).toEqual({
         project: { name: "alpha", path },
         projectsFile: join(fix.yacoHome, "projects.json"),
+        plan: null, // not a git repo: nothing to init
       });
     }
+  });
+
+  it("initializes a private plan repo when the path is a git root", () => {
+    const fix = fixture();
+    const path = fix.dir("repo");
+    git(path, "init", "--initial-branch=main");
+    const r = handleProject(["add", "repo", path], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect((r.value as { plan: { initialized: boolean } }).plan.initialized).toBe(true);
+    expect(existsSync(join(path, ".yaco", "plan", ".git"))).toBe(true);
+    expect(readFileSync(join(path, ".git", "info", "exclude"), "utf-8")).toContain("/.yaco/plan\n");
+  });
+
+  it("leaves a plan the host repo commits alone", () => {
+    const fix = fixture();
+    const path = fix.dir("tracked");
+    git(path, "init", "--initial-branch=main");
+    mkdirSync(join(path, ".yaco", "plan"), { recursive: true });
+    writeFileSync(join(path, ".yaco", "plan", "progress.json"), "{}\n");
+    git(path, "add", ".yaco/plan");
+    git(path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "plan");
+    const r = handleProject(["add", "tracked", path], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect((r.value as { plan: unknown }).plan).toBeNull();
+    expect(existsSync(join(path, ".yaco", "plan", ".git"))).toBe(false);
   });
 
   it("rejects a non URL-safe name with INVALID", () => {

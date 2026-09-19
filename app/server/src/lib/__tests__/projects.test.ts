@@ -14,7 +14,9 @@ vi.mock('os', async (orig) => {
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-projects-test-'))
 await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
-const { loadProjects, saveProjects, addProject, removeProject } = await import('../projects')
+const { loadProjects, saveProjects, removeProject } = await import('../projects')
+// The server registers through `yaco project add`; the shared rules live in the core.
+const { addProject } = await import('yaco-cli/core/paths')
 const projectsFile = join(homeDir.value, '.yaco', 'projects.json')
 
 describe('projects: on-disk format + trailing-slash normalization', () => {

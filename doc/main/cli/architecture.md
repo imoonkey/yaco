@@ -34,7 +34,7 @@ src/
     project/
       index.ts                         # yaco project area handler (list/add/remove/move dispatch; move-only flag scoping)
       list.ts                          # yaco project list — {projects, projectsFile} envelope
-      add.ts                           # yaco project add <name> <abs-path> — validated registry insert
+      add.ts                           # yaco project add <name> <abs-path> — validated registry insert + plan init
       remove.ts                        # yaco project remove <name> — by-name delete, NOT_FOUND when missing
       move.ts                          # yaco project move — cwd-metadata rekey after an on-disk path move
   lib/core/agent/

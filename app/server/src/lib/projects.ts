@@ -1,7 +1,6 @@
 import {
   readProjects,
   writeProjects,
-  addProject as coreAddProject,
   removeProject as coreRemoveProject,
   ensureYacoHome as coreEnsureYacoHome,
   type Project,
@@ -24,12 +23,6 @@ export async function loadProjects(): Promise<Project[]> {
 
 export async function saveProjects(projects: Project[]): Promise<void> {
   writeProjects(projects)
-}
-
-/** Register a project through the shared core. Throws CliError
- *  (INVALID/CONFLICT) on validation failure. */
-export function addProject(input: { name: string; path: string }): Project {
-  return coreAddProject(input)
 }
 
 /** Remove a project by name through the shared core. Throws

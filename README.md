@@ -169,15 +169,16 @@ real <code>depends</code> edges, and a Gantt view when you want dates.</td>
 </table>
 
 The workflow's paper trail — the task graph, design docs, reviews, QA and
-implementation summaries — lives in `<repo>/.yaco/plan/`, next to the code and
-committed with it by default (YACO's only other footprint is
-`.yaco/worktrees/`, excluded locally; the host repo needs no yaco config file); a visible design history is a feature. The
-design docs and task graph are the parts you co-author; the rest the agents
-write and you mostly read — implementation summaries routinely, the others
-when you need them. If you'd rather
-not commit it with the code, `yaco plan init` promotes `.yaco/plan/` into a
-separate, colocated git repo the host repo ignores; every file stays exactly
-where it was ([doc/main/cli/plan.md](doc/main/cli/plan.md)).
+implementation summaries — lives in `<repo>/.yaco/plan/`, next to the code.
+`yaco project add` makes it a separate, colocated git repo the host repo
+ignores, so a repo you share with others carries no yaco footprint at all
+(`.yaco/worktrees/` is excluded the same way; the host needs no yaco config
+file). The design docs and task graph are the parts you co-author; the rest
+the agents write and you mostly read — implementation summaries routinely, the
+others when you need them. If you'd rather commit the plan with the code — a
+visible design history is a feature in a repo that is yours — `git add
+.yaco/plan` before registering, and it stays a plain tracked directory
+([doc/main/cli/plan.md](doc/main/cli/plan.md)).
 
 This layer is the least settled, on purpose: nobody — us included — knows the
 right way to work with coding agents yet. Treat these skills as a fork-and-edit
