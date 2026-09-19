@@ -164,7 +164,11 @@ describe("runtime metadata repair", () => {
       if (live.sessionId && live.sessionId !== PENDING_SESSION_ID) {
         expect(repaired.sessionId).toBe(live.sessionId);
       } else {
-        expect(repaired.sessionId).toBe(PENDING_SESSION_ID);
+        // Codex may have written its thread id between the snapshot and the
+        // repair; a resolved UUID is as valid a repair as the pending marker.
+        expect(repaired.sessionId).toMatch(
+          new RegExp(`^(${PENDING_SESSION_ID}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`),
+        );
       }
       expect(repaired.pid).toBeGreaterThan(0);
       expectCleanStateSchema(Object.keys(readState(handle)!));
@@ -293,6 +297,9 @@ describe("session resume", () => {
       expect(sessionId).not.toBe(PENDING_SESSION_ID);
       if (!sessionId || sessionId === PENDING_SESSION_ID) throw new Error("Codex session id did not resolve");
 
+      // Codex only makes a thread resumable once the turn has been committed to
+      // its rollout; killing mid-turn leaves "no rollout found for thread id".
+      await waitFor(() => readState(first)?.status === "idle", 90000);
       kill(first);
 
       const resumed = start("codex", ["--resume", sessionId, "--name", second]);
