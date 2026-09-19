@@ -11,7 +11,7 @@ description: Sync docs with code changes and maintain changelog. Use after archi
 
 ## `docs/`
 
-A project has **one** docs folder: `yaco paths project --json` → `docs` in a YACO project; elsewhere `docs/`, created on first write (a repo that already keeps `doc/` resolves to that). How it is organized is the project's choice — follow the tree that is there; never impose a new one.
+A project has **one** docs folder: `yaco paths project --json` → `docs` in a YACO project; elsewhere `docs/` if it exists, else `doc/` if that exists, else `docs/` (created on first write). How it is organized is the project's choice — follow the tree that is there; never impose a new one.
 
 ```
 docs/

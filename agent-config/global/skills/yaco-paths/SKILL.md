@@ -28,7 +28,7 @@ The layout is fixed — every YACO artifact lives under one hidden directory, an
 
 `tasks` is `<plan>/tasks`. The views `active`, `backlog`, `archive` and the bundle home `all` are always `<plan>/<name>`.
 
-`docs` is the project's `docs/` folder (create it when you first write into it); a repo that already keeps `doc/` instead resolves to that. How the folder is organized is the project's choice — follow what is there.
+`docs` is the project's docs folder: `docs/` if it exists; else `doc/` if that exists; else `docs/` (create it when you first write into it). How the folder is organized is the project's choice — follow what is there.
 
 ## Plan privacy
 
