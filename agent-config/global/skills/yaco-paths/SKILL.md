@@ -7,14 +7,14 @@ metadata:
 
 # yaco-paths — Project Path Layout & Handoffs
 
-Where a project's plan, task graph, worktrees and docs live, and how stages hand off to yaco machinery. Companion to the `yaco paths` CLI.
+Where a project's plan, task graph, worktrees and `docs/` live, and how stages hand off to yaco machinery. Companion to the `yaco paths` CLI.
 
 ## Resolve, don't hardcode
 
 Ask the CLI — it returns every path **absolute**; use the values directly:
 
 ```bash
-yaco paths project --json   # { plan, tasks, worktrees, doc }
+yaco paths project --json   # { plan, tasks, worktrees, docs }
 yaco paths runtime --json   # { yacoHome, sessionsDir, ... } for agent/session state
 ```
 
@@ -28,7 +28,7 @@ The layout is fixed — every YACO artifact lives under one hidden directory, an
 
 `tasks` is `<plan>/tasks`. The views `active`, `backlog`, `archive` and the bundle home `all` are always `<plan>/<name>`.
 
-`doc` is the project's doc folder: the first existing of `docs/`, `doc/`, else `docs/` (create it when you first write into it). How the folder is organized is the project's choice — follow what is there.
+`docs` is the project's `docs/` folder (create it when you first write into it); a repo that already keeps `doc/` instead resolves to that. How the folder is organized is the project's choice — follow what is there.
 
 ## Plan privacy
 

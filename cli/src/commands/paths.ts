@@ -2,7 +2,7 @@
  *
  *  Subcommands:
  *    runtime   ${YACO_HOME} and the helpers rooted there
- *    project   the fixed `.yaco/` layout and the doc folder, absolute
+ *    project   the fixed `.yaco/` layout and `docs/`, absolute
  *
  *  Both subcommands return a flat object keyed by the helper name, so a
  *  consumer can write `(yaco paths runtime --json).sessionsDir`.
@@ -20,7 +20,7 @@ import {
   getYacoHome,
   PLAN_DIR,
   projectsFile,
-  resolveDocDir,
+  resolveDocsDir,
   sessionsDir,
   shellSessionsDir,
   TASKS_DIR,
@@ -94,7 +94,7 @@ export async function handlePaths(
         plan: join(repo, PLAN_DIR),
         tasks: join(repo, TASKS_DIR),
         worktrees: join(repo, WORKTREES_DIR),
-        doc: resolveDocDir(repo),
+        docs: resolveDocsDir(repo),
       };
       return dual(opts.json, data, () => renderPaths(data));
     }

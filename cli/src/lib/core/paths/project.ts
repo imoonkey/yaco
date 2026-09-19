@@ -20,14 +20,13 @@ export const PLAN_DIR = ".yaco/plan";
 export const TASKS_DIR = ".yaco/plan/tasks";
 export const WORKTREES_DIR = ".yaco/worktrees";
 
-/** Candidate doc folders, in preference order. */
-const DOC_DIRS = ["docs", "doc"] as const;
+/** The project's `docs/` folder, absolute. A repo that already keeps `doc/`
+ *  instead resolves to that; nothing else is probed. A directory symlink
+ *  counts; a regular file does not. */
+const DOCS_DIRS = ["docs", "doc"] as const;
 
-/** The project's doc folder, absolute: the first existing directory of
- *  `docs/`, `doc/`, else `docs/` (created by whichever skill first writes
- *  into it). A directory symlink counts; a regular file does not. */
-export function resolveDocDir(repoRoot: string): string {
+export function resolveDocsDir(repoRoot: string): string {
   const isDir = (d: string): boolean =>
     statSync(join(repoRoot, d), { throwIfNoEntry: false })?.isDirectory() ?? false;
-  return join(repoRoot, DOC_DIRS.find(isDir) ?? DOC_DIRS[0]);
+  return join(repoRoot, DOCS_DIRS.find(isDir) ?? DOCS_DIRS[0]);
 }

@@ -74,7 +74,7 @@ describe("yaco paths project --json", () => {
         plan: `${repo}/.yaco/plan`,
         tasks: `${repo}/.yaco/plan/tasks`,
         worktrees: `${repo}/.yaco/worktrees`,
-        doc: `${repo}/docs`,
+        docs: `${repo}/docs`,
       },
     });
   });
@@ -84,7 +84,7 @@ describe("yaco paths project --json", () => {
     mkdirSync(join(repo, "doc"));
     const r = runYaco(["paths", "project", "--json", "--repo", repo]);
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout).data.doc).toBe(`${repo}/doc`);
+    expect(JSON.parse(r.stdout).data.docs).toBe(`${repo}/doc`);
   });
 });
 

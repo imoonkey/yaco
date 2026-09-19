@@ -9,12 +9,12 @@ description: Sync docs with code changes and maintain changelog. Use after archi
 
 `/update-doc [scope or commit range]`
 
-## Doc Folder
+## `docs/`
 
-A project has **one** doc folder, `<doc>`: `yaco paths project --json` → `doc` in a YACO project; otherwise the first existing of `docs/`, `doc/`, else `docs/` (created on first write). How `<doc>` is organized is the project's choice — follow the tree that is there; never impose a new one.
+A project has **one** docs folder: `yaco paths project --json` → `docs` in a YACO project; elsewhere `docs/`, created on first write (a repo that already keeps `doc/` resolves to that). How it is organized is the project's choice — follow the tree that is there; never impose a new one.
 
 ```
-<doc>/
+docs/
   README.md                # Navigation hub: doc map, reading order, key concepts
   ...                      # the project's own tree (architecture, workflow, per-domain docs)
   PROGRESS.md              # History trace — ONLY if the project keeps one
@@ -30,16 +30,16 @@ A project has **one** doc folder, `<doc>`: `yaco paths project --json` → `doc`
   skills/ -> .claude/skills/   # Optional symlink alias
 ```
 
-- `<doc>/`, `CLAUDE.md` (symlinked as `AGENTS.md`, `GEMINI.md`), and project-local skills in `./.claude/skills/*` (symlinked as `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Update the canonical file, not the symlinks.
-- `<doc>/PROGRESS.md`, when the project keeps one, is **history trace** — what happened and when. When it does not, the history trace is git plus the plan bundle's `implementation_summary.md`; don't create a PROGRESS file.
+- `docs/`, `CLAUDE.md` (symlinked as `AGENTS.md`, `GEMINI.md`), and project-local skills in `./.claude/skills/*` (symlinked as `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Update the canonical file, not the symlinks.
+- `docs/PROGRESS.md`, when the project keeps one, is **history trace** — what happened and when. When it does not, the history trace is git plus the plan bundle's `implementation_summary.md`; don't create a PROGRESS file.
 
 ### Guidelines
 
-- **README.md as nav hub.** `<doc>/README.md` carries a documentation map, reading order, and key concepts table — the entry point for any agent or human exploring the project.
+- **README.md as nav hub.** `docs/README.md` carries a documentation map, reading order, and key concepts table — the entry point for any agent or human exploring the project.
 - **Mirror code architecture.** Organize architecture docs into subdirectories that reflect the code's domain structure (e.g., `agent/`, `infra/`, `ui/`, `backend/`, `frontend/`). Flat is fine for ≤5 files, but group by domain once it grows beyond that.
 - **Split by concerns, not just size.** Give a module its own subdirectory — a short spine `README.md` plus focused leaf docs — once it covers **≥~4 cohesive sub-topics or exceeds ~300 lines**, whichever comes first. A 200-line doc spanning five concerns still splits; a 280-line doc on one concern need not. A monolith is harder to keep current than focused leaves.
 - **Keep workflow docs lean.** Practical how-to (setup, build, test, lint, run commands) stays separate from architecture, in whatever file the project uses for it.
-- **No plans or design docs.** Implementation plans go in the plan bundle, not `<doc>/`.
+- **No plans or design docs.** Implementation plans go in the plan bundle, not `docs/`.
 
 ## Doc Quality Bar
 
@@ -96,7 +96,7 @@ If no baseline given, use the last docs/local-skill update commit or recent comm
 
 ### 2. Update SOTA Docs
 
-Map code changes to affected docs in `CLAUDE.md`, `<doc>/`, and any project-local skill exposed via the project's local skill directory. Apply the **Doc Quality Bar** above to anything you write.
+Map code changes to affected docs in `CLAUDE.md`, `docs/`, and any project-local skill exposed via the project's local skill directory. Apply the **Doc Quality Bar** above to anything you write.
 
 **Operational reminders:**
 - Local skills live in `./.claude/skills/` (`./.agents/skills/` is a symlink) — edit the real location, not the symlink.
@@ -106,14 +106,14 @@ Map code changes to affected docs in `CLAUDE.md`, `<doc>/`, and any project-loca
 ### 3. Verify SOTA Docs
 
 - **Cross-check claims against code, not the old prose.** A doc update is the moment to re-validate: for each load-bearing claim — orderings, thresholds, function/flag names, counts — confirm it against source and fix the drift. Docs drift silently; this is where you catch it. A delegated writer must *report* drift found, never just reshuffle stale prose.
-- **Run the mechanical checks.** `scripts/check-docs.py <doc>` resolves every relative link, balances/validates mermaid fences, and (with `--stale <old-path>…`) greps for paths left behind by a rename. Fix every hit before committing.
+- **Run the mechanical checks.** `scripts/check-docs.py <docs>` resolves every relative link, balances/validates mermaid fences, and (with `--stale <old-path>…`) greps for paths left behind by a rename. Fix every hit before committing.
 - **Catch what the script can't:** grep for renamed symbols/classes mentioned in prose (not just links), and confirm any referenced file / class / script still exists.
 - For touched local skills, verify the documented process still resolves to real commands and paths
 - If you changed a local skill's `scripts/`, run the narrowest meaningful smoke check so the script still works after the doc/process update
 
 ### 4. Update Progress Doc
 
-Skip this step when the project keeps no `<doc>/PROGRESS.md`. Otherwise prepend to it. This is the **canonical format** — all entries follow it. PROGRESS is **append-only**: never edit a past entry, even when a restructure renames the files it references — an entry records what was true on its date.
+Skip this step when the project keeps no `docs/PROGRESS.md`. Otherwise prepend to it. This is the **canonical format** — all entries follow it. PROGRESS is **append-only**: never edit a past entry, even when a restructure renames the files it references — an entry records what was true on its date.
 
 ```markdown
 ## YYYY-MM-DD: [Short title]
@@ -133,7 +133,7 @@ Skip this step when the project keeps no `<doc>/PROGRESS.md`. Otherwise prepend 
 
 Keep entries concise. One entry per logical change, not per commit.
 
-A PROGRESS entry is the short history trace; a milestone's handoff narrative is a separate artifact — write it with `/impl-summary` into the plan bundle, never into `<doc>/`.
+A PROGRESS entry is the short history trace; a milestone's handoff narrative is a separate artifact — write it with `/impl-summary` into the plan bundle, never into `docs/`.
 
 ### 5. Commit Docs
 
@@ -146,12 +146,12 @@ git commit -m "docs: <short description of what changed>"
 
 ## Large Rewrites (multi-agent)
 
-A full `<doc>/` rewrite or restructure outgrows the single-threaded Process — fan it out:
+A full `docs/` rewrite or restructure outgrows the single-threaded Process — fan it out:
 
 1. **Confirm the target tree first.** Decide the doc tree (files, subdirs, what splits or merges) and any scope forks *before* generating content — a wrong shape wastes every downstream write. Get sign-off when the user has opinions about structure.
 2. **Write the anchor docs yourself.** The top `README.md` + architecture doc set the voice, the skeleton, and the cross-cutting compression decisions. They become the worked example every other writer matches.
 3. **Fan out one subagent per subtree.** Give each the same **doc skeleton + Doc Quality Bar + the fact-ownership map** verbatim, plus its files to write and the code to read. Disjoint file sets run in parallel.
 4. **Every subagent cross-checks live code** and reports drift found (step 3) — no writer merely reshuffles old prose.
-5. **You own the seams.** Before committing, verify cross-references resolve, mermaid renders, renamed/old files are deleted, and the fact-ownership map held (no duplication). Run `scripts/check-docs.py <doc>`.
+5. **You own the seams.** Before committing, verify cross-references resolve, mermaid renders, renamed/old files are deleted, and the fact-ownership map held (no duplication). Run `scripts/check-docs.py <docs>`.
 
 Scope this to genuine rewrites; a 1–2 file sync uses the plain Process.

@@ -92,7 +92,7 @@ const EXPECTED: Record<string, ExpectedExport> = {
         "PLAN_DIR",
         "TASKS_DIR",
         "WORKTREES_DIR",
-        "resolveDocDir",
+        "resolveDocsDir",
       ],
       "src/lib/core/paths/yaco-home.ts": [
         "agentWrapperPath",

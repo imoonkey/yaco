@@ -6,18 +6,18 @@
 - The project layout is fixed: `.yaco/plan` (tasks, bundles, views) and
   `.yaco/worktrees/<slug>`. `yaco.toml`, its `[paths]` override, the TOML
   parser and the `[colocated]` policy are deleted; `yaco-cli/core/paths`
-  exports `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR` and `resolveDocDir`.
+  exports `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR` and `resolveDocsDir`.
 - `yaco worktree create` provisions the plan by privacy state (private plan →
   symlink, tracked → branch copy, absent → nothing; a tracked plan no longer
   throws) and excludes `/.yaco/worktrees/`. `yaco plan init` targets
   `.yaco/plan` and whitelists `!.yaco/` + `!.yaco/plan/` in `.ignore`.
-- `yaco paths project` returns `{plan, tasks, worktrees, doc}`; `yaco gate`
+- `yaco paths project` returns `{plan, tasks, worktrees, docs}`; `yaco gate`
   skips every check in a repo without `scripts/gate.sh`; registering `$HOME`
   as a project is refused.
 - The app detects `.yaco/plan` as a colocated repo at depth 2; the watcher and
   UI read the constants.
-- Skills stop assuming `doc/main` + `doc/dev`: one doc folder (`docs/` or
-  `doc/`), PROGRESS only if the project keeps one.
+- Skills stop assuming `doc/main` + `doc/dev`: one `docs/` folder (an existing
+  `doc/` counts), PROGRESS only if the project keeps one.
 
 **Why:**
 - YACO has to fit repos it does not own; two top-level dirs plus a committed

@@ -31,7 +31,7 @@ one-line change no less than a new skill.
 | `/investigate` | Before fixing bugs | Systematic debugging — investigate before fixing |
 | `/qa` | After implementation | E2E/integration QA: verify affected user flows (Playwright, HTTP, CLI) |
 | `/tdd` | For core logic | Test-first development |
-| `/update-doc` | After changes | Sync docs (the one doc folder, `yaco paths project --json` → `doc`), local skills, and the changelog when the project keeps one |
+| `/update-doc` | After changes | Sync `docs/` (`yaco paths project --json` → `docs`), local skills, and the changelog when the project keeps one |
 | `/yaco-task` | Task management | Create/edit/remove tasks in the project task store (`.yaco/plan/tasks`; `yaco paths project --json` → `tasks`) |
 | `/yaco-worktree` | Worktree lifecycle | Resolve cwd, create/merge/cleanup slug-keyed git worktrees |
 | `/orchestrate` | Task execution | Dispatch ready leaves as `/implement <task>` workers; select, parallelize, gatekeep by evidence, mark done, merge |

@@ -103,7 +103,7 @@ Re-read the whole diff against the original goal/task and hunt for **missing sco
 
 ## Step 5: Update Docs
 
-Run `/update-doc` (**MUST USE**) to sync the project's doc folder (`yaco paths project --json` → `doc`), project-local skills in `./.claude/skills/*`, and `<doc>/PROGRESS.md` if the project keeps one.
+Run `/update-doc` (**MUST USE**) to sync `docs/` (`yaco paths project --json` → `docs`), project-local skills in `./.claude/skills/*`, and `docs/PROGRESS.md` if the project keeps one.
 
 For milestone-scale work (a plan bundle, multiple phases), also write the handoff narrative with `/impl-summary` into the bundle home.
 

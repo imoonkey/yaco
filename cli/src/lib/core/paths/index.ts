@@ -22,7 +22,7 @@ export {
   PLAN_DIR,
   TASKS_DIR,
   WORKTREES_DIR,
-  resolveDocDir,
+  resolveDocsDir,
 } from "./project.ts";
 
 export {

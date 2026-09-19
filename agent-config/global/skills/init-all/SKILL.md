@@ -1,6 +1,6 @@
 ---
 name: init-all
-description: Set up a project for all AI agents (Claude, Codex, Cursor, Gemini) — CLAUDE.md, multi-tool symlinks, and a doc-folder memory base. Use when onboarding a repo or the user says "init all" or "set up for codex".
+description: Set up a project for all AI agents (Claude, Codex, Cursor, Gemini) — CLAUDE.md, multi-tool symlinks, and a `docs/` memory base. Use when onboarding a repo or the user says "init all" or "set up for codex".
 metadata:
   yaco-dependent: "true"
 ---
@@ -16,8 +16,8 @@ Initialize a project for multi-agent development. CLAUDE.md is the single source
 Invoke Claude's built-in `/init`, then trim the generated CLAUDE.md to the pointer convention:
 
 - Don't repeat rules the agent already loads globally
-- Don't embed architecture or workflow details — point to the doc folder as SOTA instead
-- Keep it under 50 lines; if longer, content belongs in the doc folder
+- Don't embed architecture or workflow details — point to `docs/` as SOTA instead
+- Keep it under 50 lines; if longer, content belongs in `docs/`
 
 ### 2. Multi-Tool Symlinks
 
@@ -38,15 +38,14 @@ Idempotent. Requires CLAUDE.md (fails if missing); refuses to clobber a real fil
 
 ### 3. Bootstrap Doc Structure
 
-Resolve the doc folder: `yaco paths project --json` → `doc` (the first existing of `docs/`,
-`doc/`, else `docs/`).
+Resolve `docs/`: `yaco paths project --json` → `docs` (see `/yaco-paths`).
 
-- **The repo already has a doc folder** → leave it exactly as it is. Don't add a README or a
+- **The repo already has it** → leave it exactly as it is. Don't add a README or a
   PROGRESS file to someone else's convention; `/update-doc` follows what is there.
-- **No doc folder yet** (a project we own, being bootstrapped) → seed:
+- **Not there yet** (a project we own, being bootstrapped) → seed:
 
 ```
-<doc>/
+docs/
   README.md             # Doc map: system overview, components, build/test commands
   PROGRESS.md           # History trace (append-only)
 ```

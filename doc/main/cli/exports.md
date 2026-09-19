@@ -86,7 +86,7 @@ to work.
   those modules directly. `convention.ts` imports `WORKTREES_DIR` from
   `paths/project.ts`, so the pinned closure is `errors`, `paths/project`,
   `result`, `worktree/{convention,index,slug}` with externals `node:fs` +
-  `node:path` (`node:fs` is `resolveDocDir`'s single `statSync` — a bounded
+  `node:path` (`node:fs` is `resolveDocsDir`'s single `statSync` — a bounded
   read under rule 5). -> See: [worktree.md](worktree.md#convention-export)
 - **`core/task`** publishes the model, the pure graph analysis and the read half
   of the store. The writers, the tasks-file lock, `archive.ts` and `link.ts` are
@@ -100,7 +100,7 @@ to work.
   `AcquireOptions.timeoutMs`. -> See: [task.md](task.md#locking)
 - **`core/paths`** publishes the runtime-home helpers (`yaco-home.ts`), the
   registry (`project-registry.ts`), and the fixed project layout
-  (`project.ts`: `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR`, `resolveDocDir`) —
+  (`project.ts`: `PLAN_DIR`, `TASKS_DIR`, `WORKTREES_DIR`, `resolveDocsDir`) —
   no parser and no config reader. -> See: [paths.md](paths.md#files)
 
 - **`core/agent/messages`** publishes one verb, `readMessageRows` — a per-subpath

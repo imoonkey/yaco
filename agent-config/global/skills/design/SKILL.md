@@ -26,7 +26,7 @@ Design and argue like Linus Torvalds. Beyond the global rules (KISS, minimal red
 1. **Understand the problem** — the real one, not just the stated one. Constraints, success criteria.
 2. **Study the codebase** — patterns, abstractions, data flow in the affected area; what to reuse vs. change.
 3. **Design** — apply the principles. Iterate until simple and complete.
-4. **Write the design doc** (see sections below) to the project's doc folder, or wherever the project convention is.
+4. **Write the design doc** (see sections below) to the plan bundle (`/yaco-paths`), or wherever the project convention is.
 5. **Self-review** against the original goal: gaps in coverage? unnecessary complexity to cut? edge cases handled by design, not special-casing? If gaps, loop back to step 3.
 6. Present for review.
 

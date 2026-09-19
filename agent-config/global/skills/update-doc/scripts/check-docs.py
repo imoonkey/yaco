@@ -5,7 +5,7 @@ Resolves relative markdown links, validates mermaid blocks, and (optionally)
 greps for stale paths left behind by a rename. Stdlib only.
 
 Usage:
-  scripts/check-docs.py <root>                        # the project's doc folder
+  scripts/check-docs.py <root>                        # the project's docs/ folder
   scripts/check-docs.py docs --stale old/path.md foo  # also fail if a pattern appears
 
 Exit status is non-zero if any check fails.
