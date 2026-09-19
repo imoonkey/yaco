@@ -135,13 +135,10 @@ export function findGateScript(cwd: string): string | null {
   return existsSync(script) ? script : null;
 }
 
-/** HEAD's sha; an unborn branch has none, so there is nothing to gate. */
+/** HEAD's sha, or "" on an unborn branch (a repo with no commit yet). */
 function headSha(root: string): string {
   const r = runGit(["rev-parse", "--verify", "--quiet", "HEAD"], root);
-  if (r.status !== 0) {
-    throw new CliError(ErrCode.ENV, `no commit to gate yet in ${root} (HEAD is unborn)`);
-  }
-  return r.stdout.trim();
+  return r.status === 0 ? r.stdout.trim() : "";
 }
 
 /** Run the repo's gate against the session's working tree.
@@ -156,9 +153,13 @@ export function runGate(cwd: string, opts: RunGateOptions = {}): GateResult {
 
   const script = join(root, "scripts", "gate.sh");
   if (!existsSync(script)) {
+    // Nothing is measured, so an unborn HEAD (sha "") is not an error here.
     const sha = headSha(root);
     const checks: GateChecks = { verify: "skip", doc: "skip", review: "skip", qa: "skip" };
     return { ok: true, data: { base: opts.base ?? sha, sha, checks, dirty: isDirty(root) } };
+  }
+  if (headSha(root) === "") {
+    throw new CliError(ErrCode.ENV, `no commit to gate yet in ${root} (HEAD is unborn)`);
   }
   const base = opts.base ?? getMergeBase(root, "HEAD", DEFAULT_BRANCH);
 

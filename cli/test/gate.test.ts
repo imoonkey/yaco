@@ -210,11 +210,19 @@ describe("runGate (stubbed gate.sh)", () => {
     expect(r.data.base).toBe(r.data.sha);
   });
 
-  it("throws ENV on an unborn branch rather than reporting a fake sha", () => {
+  it("unborn branch: skips with an empty sha without gate.sh, throws ENV with it", () => {
     const unborn = mkdtempSync(TMP_PREFIX + "unborn-");
     if (!unborn.startsWith(TMP_PREFIX)) throw new Error(`fixture escaped temp root: ${unborn}`);
     expect(git(unborn, "init", "--initial-branch=main").status).toBe(0);
     try {
+      const r = runGate(unborn, {});
+      expect(r.ok).toBe(true);
+      expect(r.data.sha).toBe("");
+      expect(r.data.checks).toEqual({ verify: "skip", doc: "skip", review: "skip", qa: "skip" });
+      // With a gate script there is nothing to diff, so that stays an error.
+      mkdirSync(join(unborn, "scripts"), { recursive: true });
+      copyFileSync(REAL_GATE_SH, join(unborn, "scripts", "gate.sh"));
+      chmodSync(join(unborn, "scripts", "gate.sh"), 0o755);
       expect(() => runGate(unborn, {})).toThrow(/unborn/);
     } finally {
       rmSync(unborn, { recursive: true, force: true });
