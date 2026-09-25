@@ -449,12 +449,14 @@ export function useAttention(
       .finally(() => loadFeed())
   }, [loadFeed])
 
-  // Live: the `attention` SSE push (hidden-safe). Registered once.
+  // Live: the `attention` SSE push (hidden-safe). Registered once. The push is a
+  // first-page feed, so it resets Recent + its cursor exactly like a refresh.
   useEffect(() => {
     return addSSEListener('attention', (e) => {
       try {
-        const snap = JSON.parse(e.data) as AttentionSnapshot
+        const { nextBefore: nb, ...snap } = JSON.parse(e.data) as AttentionFeed
         ingestRef.current(snap)
+        setNextBefore(nb ?? null)
       } catch { /* ignore malformed push */ }
     })
   }, [])

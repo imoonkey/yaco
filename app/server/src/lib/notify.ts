@@ -1,3 +1,6 @@
+import { feedPage } from './attention-feed'
+import type { AttentionSnapshot } from './attention-projection'
+
 export type ChangeChannel = 'ui-state:changed'
 
 export type SSEWriter = (event: string, data: string) => void
@@ -18,9 +21,10 @@ export function broadcastChange(channel: ChangeChannel): void {
 /** Push the projected attention snapshot to all SSE clients (hidden-safe — the
  *  client handles `attention` directly, not via the document-hidden polling
  *  path). Parallels `dispatch`'s `notification` push; the `/stream` endpoint
- *  passes any (event, data) through, so no endpoint change is needed. */
-export function broadcastAttention(payload: unknown): void {
-  send('attention', JSON.stringify(payload))
+ *  passes any (event, data) through, so no endpoint change is needed. Sends the
+ *  first feed page, never the whole Recent history. */
+export function broadcastAttention(snapshot: AttentionSnapshot): void {
+  send('attention', JSON.stringify(feedPage(snapshot)))
 }
 
 /** Push a lightweight refresh signal to all SSE clients (no osascript) */

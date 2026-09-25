@@ -21,54 +21,16 @@ import { currentAttentionSnapshot, notifyAttentionWatermarkChange } from '../lib
 import { addDismissedActGeneration, mergeUnreadWatermarks } from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
 import { fail } from '../lib/response'
+import { DEFAULT_FEED_LIMIT, MAX_FEED_LIMIT, feedPage, parseCursor } from '../lib/attention-feed'
 import type { AttentionItem, AttentionSnapshot } from '../lib/attention-projection'
 
 const app = new Hono()
-
-/** Recent feed page size: a sane default and a hard cap (spec OQ3). */
-const DEFAULT_FEED_LIMIT = 50
-const MAX_FEED_LIMIT = 200
 
 /** Parse a non-negative integer query param; returns null when absent/invalid. */
 function parseIntParam(raw: string | undefined): number | null {
   if (raw === undefined || raw === '') return null
   const n = Number(raw)
   return Number.isFinite(n) ? n : null
-}
-
-/** Recent pages by a stable COMPOSITE cursor `(tsMs desc, generation desc)`, not
- *  timestamp alone — so rows that share a `tsMs` (rollup-stamped task transitions,
- *  burst events) past a page boundary are never silently skipped. The cursor is
- *  encoded as `"<tsMs>:<generation>"`; `generation` is a stable per-row id and may
- *  itself contain ':', so we split on the FIRST ':' only. */
-interface FeedCursor { tsMs: number; generation: string }
-
-function encodeCursor(item: AttentionItem): string {
-  return `${item.tsMs}:${item.generation}`
-}
-
-function parseCursor(raw: string | undefined): FeedCursor | null {
-  if (!raw) return null
-  const sep = raw.indexOf(':')
-  if (sep < 0) return null
-  const tsMs = Number(raw.slice(0, sep))
-  const generation = raw.slice(sep + 1)
-  if (!Number.isFinite(tsMs) || !generation) return null
-  return { tsMs, generation }
-}
-
-/** Deterministic newest-first order: tsMs desc, then generation desc as a stable
- *  tiebreak so equal-tsMs rows have a total order the cursor can page through. */
-function compareRows(a: AttentionItem, b: AttentionItem): number {
-  if (a.tsMs !== b.tsMs) return b.tsMs - a.tsMs
-  return a.generation < b.generation ? 1 : a.generation > b.generation ? -1 : 0
-}
-
-/** A row is strictly older than the cursor under the (tsMs desc, generation desc)
- *  total order — i.e. it sorts AFTER the cursor row. */
-function isAfterCursor(r: AttentionItem, cur: FeedCursor): boolean {
-  if (r.tsMs !== cur.tsMs) return r.tsMs < cur.tsMs
-  return r.generation < cur.generation
 }
 
 app.get('/feed', async (c) => {
@@ -84,25 +46,7 @@ app.get('/feed', async (c) => {
     return fail(c, 500, 'failed to project attention snapshot')
   }
 
-  // Sort deterministically (the projector orders by tsMs only), then apply the
-  // composite cursor — keeping every same-tsMs row that sorts after it — and the
-  // page limit.
-  const recent = [...snapshot.recent].sort(compareRows)
-  const filtered = cursor ? recent.filter((r) => isAfterCursor(r, cursor)) : recent
-  const page = filtered.slice(0, limit)
-  // Cursor for the next page: the composite key of this page's last (oldest) row,
-  // or null when the page exhausted the (cursor-filtered) history.
-  const nextBefore = filtered.length > page.length && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
-
-  return c.json({
-    needsYou: snapshot.needsYou,
-    ready: snapshot.ready,
-    recent: page,
-    badgesByProject: snapshot.badgesByProject,
-    badgesBySession: snapshot.badgesBySession,
-    global: snapshot.global,
-    nextBefore,
-  })
+  return c.json(feedPage(snapshot, limit, cursor))
 })
 
 type AckScope = 'project' | 'session' | 'task'

@@ -515,3 +515,23 @@ describe('attention routes', () => {
     expect(notifyWatermark).not.toHaveBeenCalled()
   })
 })
+
+describe('attention SSE push', () => {
+  it('pushes the first feed page, never the whole Recent history', () => {
+    const rows = Array.from({ length: 120 }, (_, i) => recentRow(1000 * (i + 1)))
+    const pushes: string[] = []
+    const writer = (event: string, data: string) => { if (event === 'attention') pushes.push(data) }
+    notify.addSSEClient(writer)
+    try {
+      notify.broadcastAttention({ ...emptySnapshot(), recent: rows })
+    } finally {
+      notify.removeSSEClient(writer)
+    }
+
+    expect(pushes).toHaveLength(1)
+    const body = JSON.parse(pushes[0]!)
+    expect(body.recent).toHaveLength(50) // DEFAULT_FEED_LIMIT
+    expect(body.recent[0].tsMs).toBe(120_000) // newest first
+    expect(body.nextBefore).toBe(`71000:${rows[70]!.generation}`) // same cursor GET /feed would give
+  })
+})
