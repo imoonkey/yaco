@@ -29,7 +29,7 @@ event: notification
 data: {"id":"...","title":"...","message":"..."}
 ```
 
-Triggers: browser Notification API (if granted + tab hidden), progress refresh.
+Triggers: browser Notification API (if granted + tab hidden).
 
 ### `refresh` event
 
@@ -40,7 +40,7 @@ event: refresh
 data: <channel>
 ```
 
-Channels: `projects`, `worktrees`, `progress`, `sessions`, `filetree`, `git`, `tasks`
+Channels: `projects`, `worktrees`, `sessions`, `filetree`, `git`, `tasks`
 
 ### `heartbeat` event
 
@@ -66,7 +66,7 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | Session status change | `sessions` | project-watcher.ts (`${YACO_HOME:-~/.yaco}/sessions/*.json`, filtered by `sessionPath`), terminal.ts (Workflow shell lifecycle in `${YACO_HOME:-~/.yaco}/shell-sessions` + tmux), session-reconciler.ts (drift), sessions.ts (`invalidateSessionsCache`, on every mutation) |
 | `projects.json` change | `projects` | project-watcher.ts |
 
-Project-watcher filesystem events (`filetree`, `git`, `projects`) are debounced at 200ms. A `.yaco/plan/tasks/**` write emits both `filetree` (explorer) and the dedicated `tasks` channel; the Task Graph / Gantt / detail views subscribe to `tasks` only, so unrelated file writes don't refetch the (large) task payload. Progress data now comes from the YACO event stream and is refreshed through normal polling/SSE refresh paths; repo-local `progress.json` is not watched.
+Project-watcher filesystem events (`filetree`, `git`, `projects`) are debounced at 200ms. A `.yaco/plan/tasks/**` write emits both `filetree` (explorer) and the dedicated `tasks` channel; the Task Graph / Gantt / detail views subscribe to `tasks` only, so unrelated file writes don't refetch the (large) task payload.
 
 ## Polling Fallbacks
 
@@ -76,7 +76,6 @@ Each frontend hook has a safety-net polling interval in case SSE disconnects:
 |------|-------------------|-------------|
 | `useProjects()` | 60s | `projects` |
 | `useUsage()` | 60s | — |
-| `useProgress()` | 30s | `progress` |
 | `useSessions()` | 30s | `sessions` |
 | `useFileTree()` | 60s | `filetree` |
 | `useGitStatus()` | 30s | `git` |

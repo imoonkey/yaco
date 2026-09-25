@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider, HistorySession, ProviderUsage } from '../types'
+import type { Project, AgentSession, FileNode, GitChange, SessionProvider, HistorySession, ProviderUsage } from '../types'
 import { useSSERefresh } from './useSSE'
 import { ApiError } from '../lib/apiError'
 
@@ -172,11 +172,6 @@ export function useUsage(): UsageState {
   }, [loadUsage])
 
   return { data, error, loading, refreshing, refresh: refreshUsage }
-}
-
-export function useProgress() {
-  const fetcher = useCallback(() => fetchJson<ProgressEntry[]>('/progress'), [])
-  return usePolling(fetcher, 30_000, 'progress')
 }
 
 export function useSessions(projectName?: string | null) {

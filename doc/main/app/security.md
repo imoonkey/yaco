@@ -15,7 +15,7 @@ Cross-cutting security controls for the workflow system.
 
 ## Related Code
 
-`server/src/index.ts`, `server/src/routes/files.ts`, `server/src/lib/scanner.ts`, `server/src/lib/session-names.ts`, `server/src/routes/git.ts`
+`server/src/index.ts`, `server/src/routes/files.ts`, `server/src/lib/session-names.ts`, `server/src/routes/git.ts`
 
 ## Session Name Validation
 
@@ -31,7 +31,7 @@ All file operations validate that the requested path (before symlink resolution)
 
 ## File Write Safety
 
-Task writes are serialized by the `yaco task` store lock (`saveTaskStore`). Runtime event writes use append-only NDJSON (`eventsLog.appendEvent`) with per-file in-process serialization; there is no read-modify-write cycle against repo-local progress files.
+Task writes are serialized by the `yaco task` store lock (`saveTaskStore`). Runtime event writes use append-only NDJSON (`eventsLog.appendEvent`) with per-file in-process serialization, and the FIFO trim rewrites a log only under that same lock, by rename; there is no read-modify-write cycle against repo-local progress files.
 
 The file content endpoint (`PUT /api/files/:project/content`) validates the target path but does not restrict by file extension.
 

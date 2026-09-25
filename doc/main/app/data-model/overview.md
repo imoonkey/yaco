@@ -15,7 +15,7 @@ Source-of-truth boundaries for the workflow system's data.
 
 ## Related Code
 
-`ui/src/types.ts`, `ui/src/hooks/useWorkspaceState.ts`, `server/src/lib/scanner.ts`, `server/src/lib/projects.ts`
+`ui/src/types.ts`, `ui/src/hooks/useWorkspaceState.ts`, `server/src/lib/projects.ts`
 
 ## Source-of-Truth Boundaries
 
@@ -24,7 +24,6 @@ Source-of-truth boundaries for the workflow system's data.
 | Project list | Server | `${YACO_HOME:-~/.yaco}/projects.json` | Frontend (via API) |
 | Task graph | Source artifact | `.yaco/plan/tasks/**/tasks.json` | Tasks API → Frontend |
 | Task artifact bundles | Source artifact | `.yaco/plan/all/**` with `.yaco/plan/{active,backlog,archive}` symlink views | Editor, design skills (opaque doc folders — not parsed by the server) |
-| Progress entries | YACO runtime | `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` | Server scanner → Frontend |
 | Attention feed | Server projection | `events.jsonl` + ack/clear watermarks + live snapshot | Attention engine → `attention` SSE / `GET /attention/feed` → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
 | Session status | yaco agent / Workflow shell state + tmux | State files + live tmux checks (incl. `crashed`) | Server poller → Frontend |
@@ -38,7 +37,7 @@ Source-of-truth boundaries for the workflow system's data.
 ```
 Filesystem (`projects.json`, `tasks.json`, `events.jsonl`)
   → fs.watch / recursive watchers
-  → Server scanner reads on demand
+  → Server reads on demand
   → SSE refresh signal → Frontend re-fetches
   → React state update → UI render
 ```
@@ -53,9 +52,9 @@ yaco agent state files / Workflow shell state files + tmux
 
 ## Ownership Rules
 
-- **Server writes**: project registry, progress entries (via Stop hook / poller)
+- **Server writes**: project registry, attention events (`events.jsonl`, via the attention engine)
 - **Frontend writes**: localStorage workspace state, file content (via API), file operations (via API), task mutations (via Tasks API, which spawns `yaco task set|rm|archive --json` and unwraps the envelope)
-- **Agent writes**: progress entries (via Claude Stop hook script), tasks (via the same `yaco task` CLI surface)
+- **Agent writes**: tasks (via the same `yaco task` CLI surface)
 - **Neither rewrites the other's owned state directly** — all cross-boundary mutations go through the API
 
 > Historical note: an earlier model used `<plan>/active/<bundle>/workstream.json` as a live status file with its own API; that model was removed in favor of `tasks.json` (see [yaco-core design](../../../../.yaco/plan/all/yaco-core/final/design.md) §First-Class Entities and §Migration).

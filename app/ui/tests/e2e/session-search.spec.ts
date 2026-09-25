@@ -71,7 +71,6 @@ async function mockApi(page: Page): Promise<void> {
     }
 
     if (path === '/api/projects') return fulfillJson(route, [project])
-    if (path === '/api/progress') return fulfillJson(route, [])
     if (path === '/api/notifications') return fulfillJson(route, [])
     // Attention is server-projected now (replaces the inbox): the bell + badges
     // read this cold feed on mount. Return a valid empty snapshot.

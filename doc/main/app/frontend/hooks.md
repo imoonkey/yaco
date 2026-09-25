@@ -107,7 +107,6 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 |------|---------|-------------|----------|
 | `useProjects()` | `Project[]` | `projects` | 60s |
 | `useUsage()` | `ProviderUsage[]` | — | 60s |
-| `useProgress()` | `ProgressEntry[]` | `progress` | 30s |
 | `useSessions(project?)` | `AgentSession[]` | `sessions` | 30s |
 | `useFileTree(project, worktree?)` | `FileNode[]` | `filetree` | 60s |
 | `useFileContent(project, path)` | `string` | — | — |

@@ -14,7 +14,7 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`yaco-cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/attention-engine.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`yaco-cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/attention-engine.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
@@ -109,6 +109,8 @@ Future emit sites (owned by `orchestrate`, which runs outside the server process
 - `dispatched`, `verified`, `verification_failed`, `human_review_requested` — to be appended by the `orchestrate` flow when it transitions task state, per design.md §Dispatch And Completion. Schema is in place; the writer module (`server/src/lib/eventsLog.ts#appendEvent`) is available for the orchestrate runner to call directly. Tracked separately from `yc-events-jsonl`.
 
 Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `projectEventsFile(projectId)` from `yaco-cli/core/paths`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
+
+**FIFO retention.** Every attention pass reads each project's whole log, so `appendEvent` bounds it: once a file passes `EVENTS_MAX_BYTES` (1 MiB) it keeps the newest `EVENTS_KEEP_BYTES` (512 KiB) of whole lines, trimmed under the write lock and swapped in by rename. Only Recent history loses rows — live ACT/REVIEW are projected from live state, and boot reconciliation re-appends a still-open generation. The trim relies on the server being the only writer; an out-of-process writer (the future `orchestrate` emit sites above) would have to take the same lock or its appends could be lost to a concurrent rename.
 
 **A malformed line is skipped, never fatal.** `readEvents` parses line by line and drops
 one that fails `JSON.parse`, so a single bad write cannot poison the stream — the events

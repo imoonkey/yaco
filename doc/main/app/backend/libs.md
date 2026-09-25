@@ -26,7 +26,7 @@ Shared constants extracted from across the server codebase. Single source of tru
 - `YACO_PATH` — resolved once at startup: `process.env.YACO_PATH` wins (test/escape hatch); otherwise an executable `${YACO_BIN_DIR:-$HOME/.local/bin}/yaco`; otherwise `which yaco`; otherwise the bare name `yaco` so PATH resolution still runs. The installed-binary preference is intentional: npm prepends workspace `node_modules/.bin` in dev scripts, whose source shim needs `bun`, while launchd/systemd service PATHs do not guarantee `bun`. Imported by `agent.ts` and `routes/tasks.ts`.
 - `YACO_TASK_COMMAND_TIMEOUT_MS` — `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `yaco-cli/core/task`). Must strictly EXCEED the CLI's task-lock timeout so lock contention surfaces as the structured `{ok:false,error:{code:'LOCK',...}}` envelope on stderr before the server's execFile kills the child — otherwise LOCK would be swallowed into a generic 500.
 
-Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `agent.ts`, `session-reconciler.ts`, `session-summary.ts`, `scanner.ts`, `terminal.ts`, `voice.ts`, `routes/tasks.ts`, `index.ts`
+Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `agent.ts`, `session-reconciler.ts`, `session-summary.ts`, `terminal.ts`, `voice.ts`, `routes/tasks.ts`, `index.ts`
 
 ### response.ts (7 lines)
 
@@ -68,7 +68,7 @@ Hono middleware for project-scoped routes. Resolves `:project` param via `loadPr
 
 **Exports**: `withProject`, `ProjectEnv`
 
-- Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts, progress.ts
+- Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
 - `?worktree=` is an **absolute path**, not a slug. When present (gated on presence, so a bare/empty `?worktree` also validates), it must `realpath`-match a worktree that `git worktree list --porcelain` reports for the **configured project root** — git is the allowlist. Both the registered paths and the candidate are realpath-canonicalized; the candidate must exist and **exactly equal** an allowlisted realpath; git is never run inside the submitted path. Otherwise **404**. A passed-primary abspath collapses back to the base `project.path`, keeping the git-status/colocated caches on one identity per worktree. This closes the old prefix-check's traversal/symlink-escape hole and unlocks worktrees at arbitrary locations (outside `.yaco/worktrees/`).
 
@@ -98,16 +98,6 @@ The runtime-root helpers and the fixed project layout live in the workspace pack
 
 - `constants.AGENT_SESSIONS_DIR` is computed via `sessionsDir()` at module load. The `YACO_AGENT_SESSIONS_DIR` env var override (formerly `MULTMUX_STATE_DIR`) is intentionally **not** honored on the workflow side — that override exists on the `yaco agent` CLI side as a test/escape hatch only; workflow tracks the default root the agent runtime publishes to under normal operation.
 - The yaco agent runtime and workflow share the same `${YACO_HOME:-~/.yaco}/sessions/` directory by construction — agent runtime owns writes (via `cli/src/lib/core/agent/session-state.ts`), workflow watches.
-
-### scanner.ts (~80 lines)
-
-Projects YACO events into the progress-entry shape consumed by the current UI.
-
-**Exports**: `scanProgress()`
-
-- Reads `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` via `eventsLog.readEvents()`
-- Maps `session_idle`, `human_review_requested`, `verification_failed`, `dispatched`, and `verified` into the existing `ProgressEntry` UI shape
-- Does not read repo-local `progress.json` or `workstream.json`
 
 ### agent.ts (~430 lines)
 

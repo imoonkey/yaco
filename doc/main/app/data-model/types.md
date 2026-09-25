@@ -15,7 +15,6 @@ Entity and payload shapes used across server and frontend.
 
 - `ui/src/types.ts` — frontend type definitions
 - `ui/src/hooks/workspaceTypes.ts` — workspace state types + panel-layout tree model
-- `server/src/lib/scanner.ts` — server-side equivalents
 
 ## Domain Types
 
@@ -27,26 +26,6 @@ interface Project {
   path: string   // absolute filesystem path to repo root
 }
 ```
-
-### Progress Entry
-
-```typescript
-type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
-type ProgressStatus = 'active' | 'dismissed'
-
-interface ProgressEntry {
-  id: string
-  agent: 'claude' | 'codex'
-  type: ProgressType
-  message: string
-  timestamp: string       // ISO 8601
-  status: ProgressStatus
-  project: string
-  workstream: string      // bundle directory name under .yaco/plan/all/; empty for project-level entries
-}
-```
-
-> Note: the `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now the projected task/bundle id from `events.jsonl`. Planning state lives in `.yaco/plan/tasks/**/tasks.json`; progress/activity state lives in `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`.
 
 ### Session
 

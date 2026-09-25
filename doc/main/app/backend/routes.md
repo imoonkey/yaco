@@ -27,12 +27,6 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/projects/reorder` | Persist ordered project list (`{ order: string[] }`) |
 | DELETE | `/api/projects/:name` | Unregister a project (and stop its file-watcher) |
 
-### Progress
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/progress` | All progress entries across projects, sorted newest-first |
-
 ### Sessions
 
 | Method | Path | Description |

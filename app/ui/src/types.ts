@@ -1,7 +1,5 @@
 // Types matching the design doc — shared between UI and API responses
 
-export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
-export type ProgressStatus = 'active' | 'dismissed'
 export type SessionStatus = 'starting' | 'processing' | 'idle' | 'blocked' | 'crashed'
 export type BlockReason = 'permission' | 'question' | 'trust'
 // Provider ids are open strings: live and history sessions may carry providers
@@ -53,18 +51,6 @@ export interface ProviderUsage {
   checkedAt: string
   windows: UsageWindow[]
   error?: UsageError
-}
-
-export interface ProgressEntry {
-  id: string
-  agent: 'claude' | 'codex'
-  type: ProgressType
-  message: string
-  timestamp: string
-  status: ProgressStatus
-  project: string
-  workstream: string
-  sessionName?: string
 }
 
 export interface FileNode {

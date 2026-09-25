@@ -7,7 +7,6 @@ import type { IncomingMessage } from 'http'
 import { extname, join, resolve, sep } from 'node:path'
 import { readFile, stat } from 'node:fs/promises'
 import { projectRoutes } from './routes/projects.js'
-import { progressRoutes } from './routes/progress.js'
 import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
@@ -188,7 +187,6 @@ app.use('*', cors({
 }))
 
 app.route('/api/projects', projectRoutes)
-app.route('/api/progress', progressRoutes)
 app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
