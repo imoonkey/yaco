@@ -34,6 +34,7 @@ import { startSessionReconciler, stopSessionReconciler } from './lib/session-rec
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runtime.js'
 import { emitRefresh } from './lib/notify.js'
+import { fail } from './lib/response.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
 import { readChannelEnabled } from './lib/channels/enabled.js'
@@ -204,6 +205,7 @@ app.route('/api/wechat', wechatRoutes)
 app.route('/api/whatsapp', whatsappRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
+app.all('/api/*', (c) => fail(c, 404, `no API route ${c.req.method} ${c.req.path}`))
 app.get('*', async (c) => serveUiApp(c.req.path, c.req.header('accept-encoding')))
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)

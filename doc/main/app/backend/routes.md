@@ -1,6 +1,6 @@
 # API Routes
 
-HTTP API endpoint reference. All routes are prefixed with `/api`.
+HTTP API endpoint reference. All routes are prefixed with `/api`. Any `/api/*` path no route matches answers a JSON `404 { error }`; only non-API paths fall through to the UI's `index.html`.
 
 ## Owns
 

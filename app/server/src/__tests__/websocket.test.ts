@@ -106,3 +106,20 @@ describe('server WebSocket upgrade routing', () => {
     ws.close()
   })
 })
+
+describe('server HTTP fallback routing', () => {
+  it('answers an unknown API path with a JSON 404, not the UI page', async () => {
+    for (const method of ['GET', 'POST']) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/not-a-route`, { method })
+      expect(response.status).toBe(404)
+      expect(await response.json()).toEqual({ error: `no API route ${method} /api/not-a-route` })
+    }
+  })
+
+  it('still serves real API routes and the UI fallback for client paths', async () => {
+    expect((await fetch(`http://127.0.0.1:${port}/api/health`)).status).toBe(200)
+    expect((await fetch(`http://127.0.0.1:${port}/api/attention/feed`)).status).toBe(200)
+    const page = await fetch(`http://127.0.0.1:${port}/some/client/route`)
+    expect(page.status).not.toBe(404) // index.html, or 503 when the UI is unbuilt
+  })
+})
