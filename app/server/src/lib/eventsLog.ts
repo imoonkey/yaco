@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from 'fs/promises'
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { dirname } from 'path'
 import { randomUUID } from 'crypto'
@@ -32,6 +32,26 @@ function validate(event: YacoEvent): void {
   if (event.taskId !== undefined && !TASK_ID_RE.test(event.taskId)) {
     throw new Error(`eventsLog: taskId "${event.taskId}" violates schema pattern ${TASK_ID_RE}`)
   }
+}
+
+/** FIFO retention per project log: once the file passes EVENTS_MAX_BYTES, drop the
+ *  oldest lines down to the newest EVENTS_KEEP_BYTES. Every attention pass reads
+ *  every log in full, so this bounds that read. Only Recent history loses rows:
+ *  live ACT/REVIEW are projected from live state, and boot reconciliation
+ *  re-appends any still-open generation it cannot find. */
+export const EVENTS_MAX_BYTES = 1024 * 1024
+export const EVENTS_KEEP_BYTES = 512 * 1024
+
+/** Drop the oldest whole lines of an over-cap log. Runs under the write lock (the
+ *  server is the only writer), and swaps the file in by rename so a concurrent
+ *  reader sees either the old or the trimmed log, never a partial one. */
+async function trimOldest(file: string): Promise<void> {
+  if ((await stat(file)).size <= EVENTS_MAX_BYTES) return
+  const buf = await readFile(file)
+  const cut = buf.indexOf(0x0a, buf.length - EVENTS_KEEP_BYTES - 1)
+  const tmp = `${file}.trim`
+  await writeFile(tmp, buf.subarray(cut + 1))
+  await rename(tmp, file)
 }
 
 /** Serialize one writer at a time per file so concurrent appends don't interleave bytes. */
@@ -100,6 +120,7 @@ export async function appendEvent(projectId: string, input: EventInput): Promise
       if (existing) return existing
     }
     await appendFile(file, JSON.stringify(event) + '\n', 'utf-8')
+    await trimOldest(file)
     return event
   })
 }

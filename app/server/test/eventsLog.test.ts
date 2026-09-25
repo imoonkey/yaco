@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, readFile, stat } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { appendEvent, readEvents, type YacoEvent } from '../src/lib/eventsLog'
+import { appendEvent, readEvents, EVENTS_KEEP_BYTES, EVENTS_MAX_BYTES, type YacoEvent } from '../src/lib/eventsLog'
 import { projectEventsFile } from 'yaco-cli/core/paths'
 
 const ORIGINAL_YACO_HOME = process.env.YACO_HOME
@@ -270,6 +270,42 @@ describe('eventsLog.appendEvent — idempotent by id', () => {
     const all = await readEvents('workflow')
     expect(all).toHaveLength(2)
     expect(all[0]!.id).not.toBe(all[1]!.id)
+  })
+})
+
+describe('eventsLog.appendEvent — FIFO retention', () => {
+  /** Seed a log of `count` ~1 KiB events, oldest first, without going through the trim. */
+  async function seedLog(project: string, count: number): Promise<string> {
+    const file = projectEventsFile(project)
+    await mkdir(join(fixtureRoot, 'projects', project), { recursive: true })
+    const lines = Array.from({ length: count }, (_, i) =>
+      JSON.stringify({ id: `old-${i}`, ts: new Date(i * 1000).toISOString(), kind: 'session_idle', projectId: project, payload: { notice: 'x'.repeat(1000) } }))
+    await writeFile(file, lines.join('\n') + '\n')
+    return file
+  }
+
+  it('leaves a log under the cap untouched', async () => {
+    const file = await seedLog('workflow', 10)
+    await appendEvent('workflow', { kind: 'session_idle', sessionId: 'w-foo' })
+    expect(await readEvents('workflow')).toHaveLength(11)
+    expect((await stat(file)).size).toBeLessThan(EVENTS_MAX_BYTES)
+  })
+
+  it('drops the oldest whole lines once the log passes the cap, keeping the newest', async () => {
+    const count = Math.ceil(EVENTS_MAX_BYTES / 1000) + 50
+    const file = await seedLog('workflow', count)
+    const newest = await appendEvent('workflow', { kind: 'session_idle', sessionId: 'w-foo' })
+
+    expect((await stat(file)).size).toBeLessThanOrEqual(EVENTS_KEEP_BYTES)
+    const raw = await readFile(file, 'utf-8')
+    expect(raw.endsWith('\n')).toBe(true)
+    const kept = await readEvents('workflow')
+    expect(kept.length).toBe(raw.split('\n').filter(Boolean).length) // every kept line parses
+    expect(kept.at(-1)).toEqual(newest)
+    const ids = kept.slice(0, -1).map((e) => Number(e.id.slice('old-'.length)))
+    expect(ids[0]).toBeGreaterThan(0) // the oldest went
+    expect(ids).toEqual(Array.from({ length: ids.length }, (_, i) => ids[0]! + i)) // a contiguous newest tail
+    expect(ids.at(-1)).toBe(count - 1)
   })
 })
 
