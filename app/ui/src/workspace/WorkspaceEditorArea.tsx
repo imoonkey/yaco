@@ -141,8 +141,6 @@ export function MarkdownPreview({
     let cancelled = false
     let counter = 0
     const renderAll = async () => {
-      const mermaid = await loadMermaid()
-      if (cancelled) return
       // mermaid.render() appends its error diagram (id `d<id>`) as a direct child
       // of document.body on a parse failure and never removes it, so a transient
       // broken edit leaves a "Syntax error" bomb floating over the preview that
@@ -154,7 +152,11 @@ export function MarkdownPreview({
         const source = div.textContent?.trim()
         if (!source) continue
         const id = `mermaid-${Date.now()}-${counter++}`
+        // Loading mermaid shares the per-diagram failure path: a failed chunk load
+        // must still publish the rest of the document, not freeze the preview.
         try {
+          const mermaid = await loadMermaid()
+          if (cancelled) return
           const { svg } = await mermaid.render(id, source)
           div.innerHTML = svg
         } catch (err: unknown) {

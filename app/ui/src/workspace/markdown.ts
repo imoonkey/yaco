@@ -9,14 +9,21 @@ import { marked, type Tokens } from 'marked'
 
 // Lazy-load mermaid: top-level import would pull ~500KB into the main bundle.
 // First call dynamic-imports the module and runs initialize(); subsequent calls
-// reuse the cached promise.
+// reuse the cached promise. A failed import (e.g. the chunk vanished in a redeploy
+// under an open tab) is not cached, so the next call retries.
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null
 export function loadMermaid(): Promise<typeof import('mermaid').default> {
   if (!mermaidReady) {
-    mermaidReady = import('mermaid').then(m => {
-      m.default.initialize({ startOnLoad: false, theme: 'neutral' })
-      return m.default
-    })
+    mermaidReady = import('mermaid').then(
+      m => {
+        m.default.initialize({ startOnLoad: false, theme: 'neutral' })
+        return m.default
+      },
+      (err: unknown) => {
+        mermaidReady = null
+        throw err
+      },
+    )
   }
   return mermaidReady
 }

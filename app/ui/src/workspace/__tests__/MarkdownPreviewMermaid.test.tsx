@@ -22,9 +22,13 @@ const fakeMermaid = {
   }),
 }
 
+// A stale tab after a redeploy: the lazy mermaid chunk is gone and import() rejects.
+let loadFails = false
 vi.mock('../markdown', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../markdown')>()),
-  loadMermaid: () => Promise.resolve(fakeMermaid),
+  loadMermaid: () => loadFails
+    ? Promise.reject(new Error('Failed to fetch dynamically imported module'))
+    : Promise.resolve(fakeMermaid),
 }))
 
 const mermaidDoc = (body: string) => '```mermaid\n' + body + '\n```\n'
@@ -53,6 +57,7 @@ afterEach(() => {
   cleanup()
   document.querySelectorAll('[id^="dmermaid-"]').forEach((n) => n.remove())
   fakeMermaid.render.mockClear()
+  loadFails = false
 })
 
 describe('MarkdownPreview mermaid orphan cleanup', () => {
@@ -79,5 +84,15 @@ describe('MarkdownPreview mermaid orphan cleanup', () => {
     await waitFor(() => expect(fakeMermaid.render).toHaveBeenCalled())
     await waitFor(() => expect(orphans()).toBe(0))
     expect(document.body.textContent).not.toContain('Syntax error in text')
+  })
+
+  it('keeps the preview live when the mermaid chunk fails to load', async () => {
+    loadFails = true
+    const view = render(<MarkdownPreview content={'first\n\n' + mermaidDoc('flowchart TD\n  A --> B')} viewportLine={1} />)
+    await waitFor(() => expect(view.container.querySelector('.mermaid pre')?.textContent).toContain('Failed to fetch'))
+
+    view.rerender(<MarkdownPreview content={'second\n\n' + mermaidDoc('flowchart TD\n  A --> B')} viewportLine={1} />)
+    await waitFor(() => expect(view.container.textContent).toContain('second'))
+    expect(view.container.textContent).not.toContain('first')
   })
 })
