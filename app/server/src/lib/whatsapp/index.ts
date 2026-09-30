@@ -126,6 +126,25 @@ function consumeOurReply(chat: string, body: string): boolean {
   return true
 }
 
+/** whatsapp-web.js 1.34.7 spreads the prepared media model into the outgoing
+ *  message, where the model's private `__x_id` shadows the message's own id and
+ *  every media send throws "Data passed to getter must include an id property".
+ *  Making the field non-enumerable keeps it out of that spread. Evaluated before
+ *  each media send because the library re-injects `window.WWebJS` on navigation.
+ *  Upstream fix: wwebjs/whatsapp-web.js#201923 — delete this once a release
+ *  carries it. */
+const HIDE_MEDIA_MODEL_ID = `(() => {
+  const prepare = window.WWebJS.processMediaData
+  if (prepare.hidesModelId) return
+  const patched = async (...args) => {
+    const mediaData = await prepare(...args)
+    if ('__x_id' in mediaData) Object.defineProperty(mediaData, '__x_id', { enumerable: false })
+    return mediaData
+  }
+  patched.hidesModelId = true
+  window.WWebJS.processMediaData = patched
+})()`
+
 function serialize<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
   const prev = queues.get(conversationId) ?? Promise.resolve()
   const next = prev.then(fn, fn)
@@ -221,6 +240,7 @@ async function handleMessage(msg: Message): Promise<void> {
       const { MessageMedia } = await loadWweb()
       const media = MessageMedia.fromFilePath(reply.path)
       media.filename = reply.filename
+      await client?.pupPage?.evaluate(HIDE_MEDIA_MODEL_ID)
       // Caption (if any) becomes a separate message.body — also dedup it.
       if (reply.caption) markOurReply(conversationId, reply.caption)
       await msg.reply(media, undefined, reply.caption ? { caption: reply.caption } : undefined)
