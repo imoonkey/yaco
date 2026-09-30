@@ -9,16 +9,19 @@
  *  tmux server plus the wrapper and provider processes of ten separate agent
  *  sessions, 34 processes in total.
  *
- *  So the escape names a fixed unit and is applied only to the invocation that
- *  starts the server. A machine with no `systemd-run` takes neither path and its
+ *  So the escape names one unit per server and is applied only to the invocation
+ *  that starts it. A machine with no `systemd-run` takes neither path and its
  *  command line must not move a byte — that is what `newSessionCommand` pins.
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { newSessionCommand } from "../../../src/lib/core/agent/tmux.ts";
 import {
-  CGROUP_ESCAPE_PREFIX,
+  ESCAPE_UNIT_PREFIX,
+  cgroupEscapePrefix,
   needsCgroupEscape,
 } from "../../../src/lib/core/agent/tmux-escape.ts";
+
+const CGROUP_ESCAPE_PREFIX = cgroupEscapePrefix();
 
 describe("needsCgroupEscape — the environment probe's decision", () => {
   it("wraps only for a managed .service leaf that is not the user manager", () => {
@@ -41,12 +44,14 @@ describe("needsCgroupEscape — the environment probe's decision", () => {
   });
 });
 
-describe("CGROUP_ESCAPE_PREFIX — the scope belongs to the server, not to a session", () => {
-  it("names one fixed unit instead of systemd-run's per-invocation scope", () => {
-    expect(CGROUP_ESCAPE_PREFIX).toBe(
-      "systemd-run --user --scope --unit=yaco-tmux-server " +
-        "--property=ManagedOOMPreference=avoid --collect --quiet " +
-        `--description="yaco tmux server (hosts every agent session)" `,
+describe("cgroupEscapePrefix — the scope belongs to the server, not to a session", () => {
+  it("names a yaco unit instead of systemd-run's per-invocation scope", () => {
+    expect(CGROUP_ESCAPE_PREFIX).toMatch(
+      new RegExp(
+        `^systemd-run --user --scope --unit=${ESCAPE_UNIT_PREFIX}[0-9a-f]{8} ` +
+          "--property=ManagedOOMPreference=avoid --collect --quiet " +
+          '--description="yaco tmux server \\(hosts every agent session\\)" $',
+      ),
     );
   });
 
@@ -55,12 +60,6 @@ describe("CGROUP_ESCAPE_PREFIX — the scope belongs to the server, not to a ses
     // given — which is the first session's, and it is the string that shows up in
     // `Started …` and in the `Consumed … CPU time` line printed when it stops.
     expect(CGROUP_ESCAPE_PREFIX).toContain("--description=");
-  });
-
-  it("is a singleton, so a second session cannot create a second scope", () => {
-    // Without --unit, systemd-run mints `run-p<pid>-i<id>.scope` per invocation:
-    // a fresh unit name every time, each one claiming to be that session's.
-    expect(CGROUP_ESCAPE_PREFIX).toContain("--unit=");
   });
 
   it("asks systemd-oomd to spare the scope — it is the biggest cgroup in the slice", () => {

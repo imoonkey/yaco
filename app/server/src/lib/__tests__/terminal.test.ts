@@ -2,7 +2,7 @@ import { EventEmitter } from 'events'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { CGROUP_ESCAPE_ARGV } from 'yaco-cli/core/agent/tmux-escape'
+import { ESCAPE_UNIT_PREFIX } from 'yaco-cli/core/agent/tmux-escape'
 
 const {
   spawnMock,
@@ -384,13 +384,15 @@ describe('attachSession', () => {
 
     expect(escapedSpawns).toHaveLength(1)
     const [escaped] = escapedSpawns
-    expect(escaped.slice(0, escaped.indexOf('tmux'))).toEqual(CGROUP_ESCAPE_ARGV.slice(1))
+    const flags = escaped.slice(0, escaped.indexOf('tmux'))
+    expect(flags).toContain('--scope')
+    expect(flags.some(f => f.startsWith(`--unit=${ESCAPE_UNIT_PREFIX}`))).toBe(true)
     expect(escaped.slice(escaped.indexOf('tmux'))).toContain('new-session')
   })
 
   it('leaves a running server alone — the escape is the founder\'s job', async () => {
-    // A second escape would collide on the singleton unit name, and the session
-    // is forked by the running server into its cgroup regardless of ours.
+    // The session is forked by the running server into its cgroup regardless of
+    // ours, so a second scope would only hold an exiting client.
     escapeNeeded = true
     aliveTmuxSessions.add('shell-0')
 

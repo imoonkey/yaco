@@ -10,7 +10,7 @@ import { buildChildProcessEnv } from './ssh-auth'
 import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
 import { shellSessionsDir } from 'yaco-cli/core/paths'
-import { CGROUP_ESCAPE_ARGV, cgroupLeaf, needsCgroupEscape } from 'yaco-cli/core/agent/tmux-escape'
+import { cgroupEscapeArgv, cgroupLeaf, needsCgroupEscape } from 'yaco-cli/core/agent/tmux-escape'
 
 export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
 
@@ -247,13 +247,12 @@ async function cgroupEscapeNeeded(): Promise<boolean> {
  *  `yaco-server.service` and dies with the unit — a `systemctl restart`, or a
  *  systemd-oomd kill, SIGKILLs the whole cgroup and every agent session in it.
  *  The escape belongs only to the starting call: later sessions are forked by
- *  the running server into its cgroup, and a second escape would collide on the
- *  singleton unit name. */
+ *  the running server into its cgroup whatever scope their client ran in. */
 async function newTmuxSession(args: string[], env: NodeJS.ProcessEnv): Promise<void> {
   const serverRunning = (await tmux(['list-sessions'], env)).status === 0
   if (serverRunning || !(await cgroupEscapeNeeded())) return runTmux(args, env)
 
-  const [escapeCmd, ...escapeArgs] = CGROUP_ESCAPE_ARGV
+  const [escapeCmd, ...escapeArgs] = cgroupEscapeArgv()
   const result = await run(escapeCmd, [...escapeArgs, 'tmux', ...args], env)
   if (result.error) throw result.error
   if (result.status !== 0) {

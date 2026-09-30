@@ -1,6 +1,6 @@
 import { execFileSync, execSync, spawn } from "child_process";
 import { readFileSync } from "fs";
-import { CGROUP_ESCAPE_PREFIX, cgroupLeaf, needsCgroupEscape } from "./tmux-escape.ts";
+import { cgroupEscapePrefix, cgroupLeaf, needsCgroupEscape } from "./tmux-escape.ts";
 import { listProviders } from "./providers/index.ts";
 import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
@@ -105,10 +105,11 @@ function cgroupEscapeNeeded(): boolean {
 
 /** The escape belongs to the invocation that STARTS the tmux server. Every
  *  later session is forked by that server and lands in its cgroup whatever
- *  scope its own client was launched into, so wrapping those too buys nothing
- *  and would collide on the singleton unit name. */
+ *  scope its own client was launched into, so wrapping those too buys nothing.
+ *  Concurrent founders each get their own scope; tmux elects one server, and
+ *  the losers' scopes empty out when their clients exit. */
 function serverEscapePrefix(): string {
-  return cgroupEscapeNeeded() && !isTmuxServerRunning() ? CGROUP_ESCAPE_PREFIX : "";
+  return cgroupEscapeNeeded() && !isTmuxServerRunning() ? cgroupEscapePrefix() : "";
 }
 
 export function hasSession(handle: string): boolean {
@@ -164,17 +165,12 @@ export function ensureTrueColorSupport(): void {
   }
 }
 
-/** tmux's `-N` forbids starting a server, so a command carrying it can only join
- *  one that is already up. */
-export const JOIN_EXISTING_SERVER = "-N ";
-
 /** The `tmux new-session` command line for a managed session, without the cgroup
  *  escape. Pure apart from the two env vars it forwards, so tests can pin it. */
 export function newSessionCommand(
   handle: string,
   command: string,
   projectPath: string,
-  serverFlag = "",
 ): string {
   const cwdArg = `-c "${projectPath}"`;
   // Propagate an explicit YACO_HOME into the session so the agent's hooks and
@@ -193,33 +189,17 @@ export function newSessionCommand(
   // -x/-y is the initial detached size; window-size=latest sizes the window
   // to whatever client most recently became active — so the device you're
   // currently using always sees content fit to its own screen.
-  return `tmux ${serverFlag}new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`;
+  return `tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`;
 }
 
 export function createSession(handle: string, command: string, cwd?: string): void {
   const projectPath = cwd ?? process.cwd();
-  const newSession = newSessionCommand(handle, command, projectPath);
   const escape = serverEscapePrefix();
-  const execOpts = { stdio: "pipe", cwd: projectPath, timeout: EXEC_TIMEOUT_MS } as const;
-  try {
-    execSync(`${escape}${newSession}`, execOpts);
-  } catch (e: unknown) {
-    // Dropping the escape is only ever right when someone else has already
-    // applied it: a concurrent start won the singleton unit, and the server now
-    // running is the escaped one this session merely has to join. Absent that,
-    // the failure is the escape's own (no user bus, systemd-run refusing an
-    // option) and retrying unescaped would silently found the server inside the
-    // restartable service — forfeiting, without a word, the property the whole
-    // mechanism exists for. A session that did get created before the call
-    // failed (the 5s timeout elapsing after tmux forked) owes the caller that
-    // error too, not a second attempt that dies on the duplicate name — and a
-    // probe that merely could not answer is not a session confirmed absent.
-    if (!escape || checkSessionAlive(handle) !== false || !isTmuxServerRunning()) throw e;
-    // `-N` rather than a bare retry: should the rival's last session end between
-    // that check and this call, this must fail rather than quietly found a
-    // second, unescaped server inside the service.
-    execSync(newSessionCommand(handle, command, projectPath, JOIN_EXISTING_SERVER), execOpts);
-  }
+  execSync(`${escape}${newSessionCommand(handle, command, projectPath)}`, {
+    stdio: "pipe",
+    cwd: projectPath,
+    timeout: EXEC_TIMEOUT_MS,
+  });
   ensureTrueColorSupport();
   execSync(`tmux set-option -t ${paneTarget(handle)} status off`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });
   execSync(`tmux set-option -t ${paneTarget(handle)} focus-events on`, { stdio: "pipe", timeout: EXEC_TIMEOUT_MS });

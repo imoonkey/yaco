@@ -323,17 +323,19 @@ const EXPECTED: Record<string, ExpectedExport> = {
       ],
     },
   },
-  // Where the tmux server must live, and how to put it there. Policy only: two
-  // constants and two pure predicates, no I/O at all — each consumer probes its
+  // Where the tmux server must live, and how to put it there. Policy only: the
+  // escape command line and two pure predicates, no I/O at all — each consumer probes its
   // own cgroup on the terms its runtime allows, so nothing here can block a
-  // request. That is why the closure is one file and reaches no external.
+  // request. That is why the closure is one file and reaches only the unit-name
+  // randomness.
   "./core/agent/tmux-escape": {
     files: ["src/lib/core/agent/tmux-escape.ts"],
-    externals: [],
+    externals: ["node:crypto"],
     names: {
       "src/lib/core/agent/tmux-escape.ts": [
-        "CGROUP_ESCAPE_ARGV",
-        "CGROUP_ESCAPE_PREFIX",
+        "ESCAPE_UNIT_PREFIX",
+        "cgroupEscapeArgv",
+        "cgroupEscapePrefix",
         "cgroupLeaf",
         "needsCgroupEscape",
       ],

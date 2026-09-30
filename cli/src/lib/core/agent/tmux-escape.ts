@@ -2,36 +2,45 @@
  *  I/O: each caller probes its own environment on the terms its runtime allows
  *  (the CLI synchronously, a server off its event loop) and applies this. */
 
-/** The transient scope the tmux server is escaped into. A fixed unit name, not
- *  systemd-run's per-invocation `run-p<pid>-i<id>.scope`: the cgroup belongs to
- *  the server, and every session is forked by that server into it. An anonymous
- *  scope per `new-session` names the shared cgroup after whichever session
- *  happened to start the server, and reports its whole CPU/memory footprint
- *  against that one session's command line. */
+import { randomUUID } from "node:crypto";
+
+/** The transient scope the tmux server is escaped into. One scope per server,
+ *  not systemd-run's per-invocation `run-p<pid>-i<id>.scope`: the cgroup belongs
+ *  to the server, and every session is forked by that server into it. An
+ *  anonymous scope per `new-session` names the shared cgroup after whichever
+ *  session happened to start the server, and reports its whole CPU/memory
+ *  footprint against that one session's command line.
+ *
+ *  The unit name is fresh per founding. A daemon a session forks (keychain's
+ *  `ssh-agent`) stays in the cgroup after the server exits and keeps the scope
+ *  loaded, so a fixed name would refuse every later founding. */
 const ESCAPE_DESCRIPTION = "yaco tmux server (hosts every agent session)";
+export const ESCAPE_UNIT_PREFIX = "yaco-tmux-server-";
+
 /** `ManagedOOMPreference=avoid`: when the user slice is under memory pressure,
  *  systemd-oomd kills the LARGEST cgroup in it — not the one thrashing — and
  *  the scope hosting every agent session is always the largest. `avoid` makes
  *  it the last candidate rather than the first. */
-const ESCAPE_FLAGS = [
-  "--user",
-  "--scope",
-  "--unit=yaco-tmux-server",
-  "--property=ManagedOOMPreference=avoid",
-  "--collect",
-  "--quiet",
-];
+function escapeFlags(): string[] {
+  return [
+    "--user",
+    "--scope",
+    `--unit=${ESCAPE_UNIT_PREFIX}${randomUUID().slice(0, 8)}`,
+    "--property=ManagedOOMPreference=avoid",
+    "--collect",
+    "--quiet",
+  ];
+}
 
 /** argv form, for callers that spawn without a shell. */
-export const CGROUP_ESCAPE_ARGV = [
-  "systemd-run",
-  ...ESCAPE_FLAGS,
-  `--description=${ESCAPE_DESCRIPTION}`,
-];
+export function cgroupEscapeArgv(): string[] {
+  return ["systemd-run", ...escapeFlags(), `--description=${ESCAPE_DESCRIPTION}`];
+}
 
 /** Shell-string form, for callers that build a `tmux …` command line. */
-export const CGROUP_ESCAPE_PREFIX =
-  `systemd-run ${ESCAPE_FLAGS.join(" ")} --description="${ESCAPE_DESCRIPTION}" `;
+export function cgroupEscapePrefix(): string {
+  return `systemd-run ${escapeFlags().join(" ")} --description="${ESCAPE_DESCRIPTION}" `;
+}
 
 /** The leaf of a cgroup v2 `/proc/<pid>/cgroup`, whose one line reads
  *  "0::/user.slice/user-1000.slice/user@1000.service/app.slice/<leaf>". */
