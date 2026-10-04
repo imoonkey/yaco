@@ -415,6 +415,11 @@ export async function renameSession(name: string, newName: string): Promise<void
   await postJson(`/sessions/${encodeURIComponent(name)}/rename`, { name: newName })
 }
 
+export async function fetchSessionText(name: string, signal?: AbortSignal): Promise<string> {
+  const r = await fetchJson<{ text: string }>(`/sessions/${encodeURIComponent(name)}/text`, signal)
+  return r.text
+}
+
 export async function saveFileContent(projectName: string, filePath: string, content: string, baseRevision?: number, worktree?: string | null): Promise<{ revision: number }> {
   const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, worktree)}`, {
     method: 'PUT',

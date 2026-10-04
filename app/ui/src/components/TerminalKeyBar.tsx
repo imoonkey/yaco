@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Ellipsis, SquarePen } from 'lucide-react'
+import { Copy, Ellipsis, SquarePen } from 'lucide-react'
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
 import { nativeContextMenuDisabledProps } from './nativeContextMenu'
 
@@ -70,12 +70,14 @@ export function TerminalKeyBar({
   modifiers,
   onModifierChange,
   onOpenCompose,
+  onOpenCopy,
 }: {
   sendInput: (data: string) => void
   resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string
   modifiers: Modifiers
   onModifierChange: (m: Modifiers) => void
   onOpenCompose?: () => void
+  onOpenCopy: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -237,6 +239,17 @@ export function TerminalKeyBar({
         >
           <span className="inline-flex items-center justify-center">
             <SquarePen size={14} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={BTN}
+          aria-label="Copy terminal text"
+          onClick={onOpenCopy}
+          onContextMenu={preventContext}
+        >
+          <span className="inline-flex items-center justify-center">
+            <Copy size={14} />
           </span>
         </button>
         <button

@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { isCloseShortcut, isCopyShortcut } from '../lib/shortcuts'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -9,6 +10,7 @@ import { readCodexInputPromptFrames, sameInputPromptFrames, type InputPromptFram
 import { getProviderUi } from '../lib/providerUi'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
+import { TerminalTextDialog } from './TerminalTextDialog'
 import type { TerminalKeyBarKey, Modifiers } from './TerminalKeyBar'
 
 function getCssVar(name: string): string {
@@ -225,6 +227,7 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
   // terminal that was live when it was produced; a remount must not re-paste it.
   const sendTextKeyRef = useRef<number | undefined>(sendTextKey)
   const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false, meta: false })
+  const [copyOpen, setCopyOpen] = useState(false)
   const modifiersRef = useRef(modifiers)
   useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
 
@@ -805,7 +808,8 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
           />
         ))}
       </div>
-      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} onOpenCompose={onOpenCompose} />}
+      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} onOpenCompose={onOpenCompose} onOpenCopy={() => setCopyOpen(true)} />}
+      {copyOpen && createPortal(<TerminalTextDialog sessionName={sessionName} onClose={() => setCopyOpen(false)} />, document.body)}
     </div>
   )
 }

@@ -6,11 +6,13 @@ import type { Modifiers } from '../TerminalKeyBar'
 
 let sendInput: (data: string) => void
 let onModifierChange: (m: Modifiers) => void
+let onOpenCopy: () => void
 const defaultMods: Modifiers = { ctrl: false, shift: false, meta: false }
 
 beforeEach(() => {
   sendInput = vi.fn<(data: string) => void>()
   onModifierChange = vi.fn<(m: Modifiers) => void>()
+  onOpenCopy = vi.fn<() => void>()
   vi.useFakeTimers()
 })
 
@@ -25,6 +27,7 @@ function renderBar(modifiers = defaultMods) {
       sendInput={sendInput}
       modifiers={modifiers}
       onModifierChange={onModifierChange}
+      onOpenCopy={onOpenCopy}
     />,
   )
 }
@@ -46,6 +49,13 @@ function expandSecondaryRow() {
 }
 
 describe('TerminalKeyBar', () => {
+  it('opens the copy dialog from its own button without sending input', () => {
+    renderBar()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy terminal text' }))
+    expect(onOpenCopy).toHaveBeenCalledOnce()
+    expect(sendInput).not.toHaveBeenCalled()
+  })
+
   describe('PRIMARY_KEYS produce correct escape sequences', () => {
     it.each([
       ['Esc', '\x1b'],

@@ -166,6 +166,7 @@ function writeShellState(state: ShellSession): void {
 
 interface TmuxResult {
   status: number | null
+  stdout: string
   stderr: string
   error?: Error
 }
@@ -180,11 +181,14 @@ function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: stri
 function run(cmd: string, args: string[], env: NodeJS.ProcessEnv, input?: string): Promise<TmuxResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { env })
+    let stdout = ''
     let stderr = ''
+    child.stdout.setEncoding('utf-8')
+    child.stdout.on('data', (chunk: string) => { stdout += chunk })
     child.stderr.setEncoding('utf-8')
     child.stderr.on('data', (chunk: string) => { stderr += chunk })
-    child.on('error', (error: Error) => resolve({ status: null, stderr, error }))
-    child.on('close', (status) => resolve({ status, stderr }))
+    child.on('error', (error: Error) => resolve({ status: null, stdout, stderr, error }))
+    child.on('close', (status) => resolve({ status, stdout, stderr }))
     child.stdin.on('error', () => { /* closed before we could write */ })
     child.stdin.end(input ?? '')
   })
@@ -296,6 +300,19 @@ export async function pasteTextToSession(sessionName: string, text: string): Pro
     const message = e instanceof Error ? e.message : String(e)
     throw new TerminalTextPasteError('tmux-failed', message)
   }
+}
+
+/** Plain text of a session's pane: the last `lines` lines of scrollback plus the
+ *  visible screen, soft-wrapped lines joined back together (`-J`) so copied text
+ *  reads as the program wrote it, trailing blank lines dropped. */
+export async function captureSessionText(sessionName: string, lines: number): Promise<string> {
+  validateSessionName(sessionName)
+  const result = await tmux(['capture-pane', '-p', '-J', '-S', `-${lines}`, '-t', tmuxPaneTarget(sessionName)])
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`tmux capture-pane failed: ${result.stderr.trim() || `exit ${result.status}`}`)
+  }
+  return result.stdout.trimEnd()
 }
 
 /** Apply the shell-session options in ONE tmux invocation. A tmux call costs ~30ms

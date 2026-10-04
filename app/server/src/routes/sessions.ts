@@ -4,7 +4,8 @@ import { getHistory } from '../lib/history'
 import { closeAgentSession, queryAgentStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameAgentSession, sendToSession, startAgentSession } from '../lib/agent'
 import { loadProjects } from '../lib/projects'
 import { invalidateSummaryCache, resolveSessionSummaries } from '../lib/session-summary'
-import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
+import { captureSessionText, closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
+import { SESSION_NAME_RE } from '../lib/session-names'
 import { extractWorktreeSlug } from '../lib/worktree'
 import { isPathDescendantOrEqual } from '../lib/agent'
 import { emitRefresh } from '../lib/notify'
@@ -129,6 +130,24 @@ app.get('/history', async (c) => {
 
   const liveSessions = await readSessionsFromStateFiles(project)
   return c.json(await getHistory(project.path, liveSessions))
+})
+
+const TEXT_LINES_DEFAULT = 1000
+const TEXT_LINES_MAX = 10_000
+
+/** Pane text for copying out of the terminal where xterm selection is unusable
+ *  (touch devices). Works for agent and shell sessions alike — both are tmux. */
+app.get('/:handle/text', async (c) => {
+  const handle = c.req.param('handle')
+  if (!SESSION_NAME_RE.test(handle)) return c.json({ error: 'invalid session name' }, 400)
+  const requested = Number(c.req.query('lines') ?? TEXT_LINES_DEFAULT)
+  if (!Number.isInteger(requested) || requested < 1) return c.json({ error: 'lines must be a positive integer' }, 400)
+  try {
+    const text = await captureSessionText(handle, Math.min(requested, TEXT_LINES_MAX))
+    return c.json({ text })
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+  }
 })
 
 app.post('/:handle/pause', async (c) => {

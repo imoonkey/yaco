@@ -120,5 +120,6 @@ to the task list it is working through.
 
 The same workspace, laid out for a small screen: Browse / Editor / Tasks /
 Terminal instead of docks, a key bar for the terminal keys a phone keyboard
-lacks, and voice input for writing prompts. Reach it over Tailscale or whatever
+lacks (plus a Copy button that opens the pane's text, scrollback included, in a
+selectable box), and voice input for writing prompts. Reach it over Tailscale or whatever
 you already use.

@@ -17,18 +17,20 @@ const {
 /** Everything written to a tmux child's stdin, in call order. */
 const tmuxStdin: string[] = []
 
-/** Adapt a `{ status, stderr, error? }` verdict from tmuxSpawnMock into the
+/** Adapt a `{ status, stdout?, stderr, error? }` verdict from tmuxSpawnMock into the
  *  slice of the ChildProcess surface that terminal.ts consumes. `hang: true`
  *  models a tmux round trip that never comes back, so a test can prove a caller
  *  does not wait for one. */
-function fakeTmuxChild(result: { status: number | null; stderr?: string; error?: Error; hang?: boolean }) {
+function fakeTmuxChild(result: { status: number | null; stdout?: string; stderr?: string; error?: Error; hang?: boolean }) {
+  const stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
   const stderr = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
   const stdin = Object.assign(new EventEmitter(), {
     end: vi.fn((input?: string) => { tmuxStdin.push(String(input ?? '')) }),
   })
-  const child = Object.assign(new EventEmitter(), { stderr, stdin })
+  const child = Object.assign(new EventEmitter(), { stdout, stderr, stdin })
   if (result.hang) return child
   queueMicrotask(() => {
+    if (result.stdout) stdout.emit('data', result.stdout)
     if (result.stderr) stderr.emit('data', result.stderr)
     if (result.error) child.emit('error', result.error)
     else child.emit('close', result.status)
@@ -89,6 +91,7 @@ const {
   listShellSessions,
   MAX_TERMINAL_TEXT_PASTE_BYTES,
   pasteTextToSession,
+  captureSessionText,
   reconcileShellSessionExit,
   releaseSession,
   setShellSessionChangeCallback,
@@ -169,6 +172,9 @@ describe('attachSession', () => {
         const target = args[args.indexOf('-t') + 1]
         const name = target.replace(/^=/, '').replace(/:$/, '')
         return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: aliveTmuxSessions.has(name) ? '' : 'no such session' }
+      }
+      if (action === 'capture-pane') {
+        return { status: 0, stdout: 'line one\nline two\n\n\n', stderr: '' }
       }
       if (action === 'load-buffer' || action === 'paste-buffer' || action === 'delete-buffer') {
         return { status: 0, stdout: '', stderr: '' }
@@ -497,5 +503,17 @@ describe('attachSession', () => {
   it('rejects oversized terminal text paste payloads before invoking tmux', async () => {
     await expect(pasteTextToSession('worker', 'x'.repeat(MAX_TERMINAL_TEXT_PASTE_BYTES + 1))).rejects.toThrow(/exceeds/)
     expect(tmuxSpawnMock).not.toHaveBeenCalled()
+  })
+
+  it('captures joined pane text with scrollback and drops trailing blank lines', async () => {
+    await expect(captureSessionText('worker', 500)).resolves.toBe('line one\nline two')
+    expect(tmuxSpawnMock).toHaveBeenCalledWith('tmux', [
+      'capture-pane', '-p', '-J', '-S', '-500', '-t', '=worker:',
+    ], expect.anything())
+  })
+
+  it('surfaces a failed capture instead of returning empty text', async () => {
+    tmuxSpawnMock.mockImplementationOnce(() => ({ status: 1, stdout: '', stderr: "can't find session" }))
+    await expect(captureSessionText('gone', 10)).rejects.toThrow(/can't find session/)
   })
 })
