@@ -6,7 +6,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { readCodexInputPromptFrames, sameInputPromptFrames, type InputPromptFrame } from '../lib/codexInputPromptFrame'
 import { getProviderUi } from '../lib/providerUi'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
@@ -90,7 +89,6 @@ const WS_PRESSURE_MAX_MS = 60000
 const WS_PRESSURE_CLOSE_CODE = 4002
 const TERMINAL_SCROLLBACK_ROWS = 0
 const TERMINAL_RIGHT_CLIP_CUSHION_CELLS = 1
-const INPUT_PROMPT_FRAME_COLOR = 'color-mix(in srgb, var(--sol-cyan) 62%, var(--sol-editor-bg))'
 
 type TerminalWithCore = XTerm & {
   _core?: {
@@ -222,7 +220,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
   const providerRef = useRef(resolvedProvider)
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
-  const [inputPromptFrames, setInputPromptFrames] = useState<InputPromptFrame[]>([])
   // Seeded with the key present at mount — the send is a one-shot event for the
   // terminal that was live when it was produced; a remount must not re-paste it.
   const sendTextKeyRef = useRef<number | undefined>(sendTextKey)
@@ -358,24 +355,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
       fitTerminal(term)
       term.refresh(0, term.rows - 1)
     })
-
-    let inputPromptFrameRaf: number | null = null
-    const applyInputPromptFrame = () => {
-      inputPromptFrameRaf = null
-      const next = readCodexInputPromptFrames(term, getProviderUi(providerRef.current).terminal.inputPromptFrame)
-      setInputPromptFrames(prev => sameInputPromptFrames(prev, next) ? prev : next)
-    }
-    const scheduleInputPromptFrame = () => {
-      if (inputPromptFrameRaf != null) return
-      inputPromptFrameRaf = requestAnimationFrame(applyInputPromptFrame)
-    }
-    scheduleInputPromptFrame()
-    const inputPromptFrameDisposables = [
-      term.onCursorMove(scheduleInputPromptFrame),
-      term.onWriteParsed(scheduleInputPromptFrame),
-      term.onScroll(scheduleInputPromptFrame),
-      term.onResize(scheduleInputPromptFrame),
-    ]
 
     // Touch scroll bridge
     let touchY: number | null = null
@@ -583,7 +562,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
     return () => {
       themeObserver.disconnect()
       if (resizeRaf != null) cancelAnimationFrame(resizeRaf)
-      if (inputPromptFrameRaf != null) cancelAnimationFrame(inputPromptFrameRaf)
       cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
@@ -592,7 +570,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
       for (const disposable of oscColorDisposables) disposable.dispose()
-      for (const disposable of inputPromptFrameDisposables) disposable.dispose()
       container.removeEventListener('keydown', handleKeyDown, { capture: true })
       container.removeEventListener('input', handleUnprocessedInput, { capture: true })
       container.removeEventListener('paste', handlePaste, { capture: true })
@@ -770,8 +747,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
     if (!term) return
     const terminalPolicy = getProviderUi(resolvedProvider).terminal
     term.options.minimumContrastRatio = terminalPolicy.minimumContrastRatio
-    const next = readCodexInputPromptFrames(term, terminalPolicy.inputPromptFrame)
-    setInputPromptFrames(prev => sameInputPromptFrames(prev, next) ? prev : next)
     term.refresh(0, term.rows - 1)
   }, [resolvedProvider, containerReady])
 
@@ -791,22 +766,6 @@ export function Terminal({ sessionName, projectName, provider, visible = true, o
           className="absolute inset-0 select-text"
           style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         />
-        {inputPromptFrames.map((frame, index) => (
-          <div
-            key={`${frame.top}:${frame.height}:${index}`}
-            aria-hidden="true"
-            data-terminal-input-frame="true"
-            className="pointer-events-none absolute z-[4]"
-            style={{
-              left: 0,
-              width: frame.width,
-              top: frame.top,
-              height: frame.height,
-              borderTop: `${getProviderUi(resolvedProvider).terminal.inputPromptFrame?.lineWidth ?? 1}px solid ${INPUT_PROMPT_FRAME_COLOR}`,
-              borderBottom: `${getProviderUi(resolvedProvider).terminal.inputPromptFrame?.lineWidth ?? 1}px solid ${INPUT_PROMPT_FRAME_COLOR}`,
-            }}
-          />
-        ))}
       </div>
       {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} onOpenCompose={onOpenCompose} onOpenCopy={() => setCopyOpen(true)} />}
       {copyOpen && createPortal(<TerminalTextDialog sessionName={sessionName} onClose={() => setCopyOpen(false)} />, document.body)}

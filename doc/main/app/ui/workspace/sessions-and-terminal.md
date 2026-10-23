@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceProvider.tsx` (session commands + reconcile), `ui/src/workspace/panels/SessionsPanel.tsx`, `ui/src/workspace/panels/TerminalPanel.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`, `ui/src/lib/codexInputPromptFrame.ts`
+`ui/src/workspace/WorkspaceProvider.tsx` (session commands + reconcile), `ui/src/workspace/panels/SessionsPanel.tsx`, `ui/src/workspace/panels/TerminalPanel.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Terminal Tabs
 
@@ -235,10 +235,6 @@ Fallback: `document.execCommand('copy')` when async Clipboard API is unavailable
 
 - Terminal pane has explicit `user-select: text` (overrides workspace `select-none`)
 - Selection background: Solarized blue tint (`#268BD2` at 30%) instead of terminal background color
-
-### Codex Input Prompt Frame
-
-Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). Frame detection intentionally ignores xterm background attributes: Codex may paint prompt/user-message padding rows when OSC 11 background reports are available, but the overlay boundary is based only on prompt text and structural Codex rows. The horizontal rules are clipped to `.xterm-screen` width, not the outer terminal container, so they do not extend across the right-side clip cushion / cell-rounding remainder. The frame extends until a line-start `•` reply row, a line-start `■` interruption row, a line-start `$` output/shell marker, a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text), or an active command suggestion table; when no boundary is visible, trailing blank viewport rows are trimmed back to the last nonblank prompt row. Suggestion tables stay below the frame: `/` completion only counts when the first prompt row starts with `/`, while `$` plugin/skill completion counts when `$` appears in the current prompt's last nonblank row at the start of text or after whitespace and the following rows have the `Name  [Plugin|Skill] ...` table shape. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
 
 ## Terminal Fit
 

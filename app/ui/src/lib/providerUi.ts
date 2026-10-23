@@ -17,18 +17,8 @@ export interface ProviderUiConfig {
     // Keep Codex pass-through as a fallback; Claude/shell queries are swallowed
     // browser-side to avoid visible echoed color reports.
     suppressOscColorReportQuery: boolean
-    inputPromptFrame?: TerminalInputPromptFrame
   }
   canStart: boolean
-}
-
-export interface TerminalInputPromptFrame {
-  promptPattern: RegExp
-  continuationPattern?: RegExp
-  maxRows: number
-  lineWidth: number
-  topPadding: number
-  bottomPadding: number
 }
 
 // Single source of truth for provider presentation. Adding a provider here is the
@@ -48,7 +38,6 @@ const PROVIDER_UI = {
     terminal: {
       minimumContrastRatio: 5,
       suppressOscColorReportQuery: false,
-      inputPromptFrame: { promptPattern: /^›/, continuationPattern: /^\s{2,}/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
     },
     canStart: true,
   },
