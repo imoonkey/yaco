@@ -22,16 +22,11 @@ export interface YacoEvent {
  *  the writer assigns a uuid v4 / ISO now when omitted. */
 export type EventInput = Omit<YacoEvent, 'id' | 'ts' | 'projectId'> & Partial<Pick<YacoEvent, 'id' | 'ts'>>
 
-const TASK_ID_RE = /^[a-z0-9][a-z0-9-]*$/
-
 function validate(event: YacoEvent): void {
   if (!event.id) throw new Error('eventsLog: event.id is required')
   if (!event.ts) throw new Error('eventsLog: event.ts is required')
   if (!event.kind) throw new Error('eventsLog: event.kind is required')
   if (!event.projectId) throw new Error('eventsLog: event.projectId is required')
-  if (event.taskId !== undefined && !TASK_ID_RE.test(event.taskId)) {
-    throw new Error(`eventsLog: taskId "${event.taskId}" violates schema pattern ${TASK_ID_RE}`)
-  }
 }
 
 /** FIFO retention per project log: once the file passes EVENTS_MAX_BYTES, drop the

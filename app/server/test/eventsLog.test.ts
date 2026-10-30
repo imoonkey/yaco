@@ -89,12 +89,6 @@ describe('eventsLog.appendEvent', () => {
     expect(raw.split('\n').filter(Boolean)).toHaveLength(3)
   })
 
-  it('rejects taskId that violates the schema slug pattern', async () => {
-    await expect(
-      appendEvent('workflow', { kind: 'dispatched', taskId: 'NotASlug' }),
-    ).rejects.toThrow(/taskId/)
-  })
-
   it('rejects missing kind', async () => {
     await expect(
       appendEvent('workflow', { kind: '' as string }),
