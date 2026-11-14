@@ -15,9 +15,10 @@ import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 const PREVIEW_DEBOUNCE_MS = 180
 import type { PreviewMode, SplitDirection } from '../hooks/useWorkspaceState'
 import { DiffTab } from './diff/DiffTab'
-import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
+import { isImageFile, isPdfFile, isVideoFile, rawFileUrl } from '../lib/binaryFiles'
 import { ImagePreview } from './ImagePreview'
 import { PdfPreview } from './PdfPreview'
+import { VideoPreview } from './VideoPreview'
 import { HtmlPreview } from './HtmlPreview'
 import { DelimitedPreview } from './DelimitedPreview'
 
@@ -655,6 +656,10 @@ export function WorkspaceEditorArea({
         ) : activeFilePath && isPdfFile(activeFilePath) ? (
           <PreviewErrorBoundary key={activeFilePath} fileName={activeFilePath.split('/').pop() ?? ''}>
             <PdfPreview src={rawFileUrl(projectName, activeFilePath, worktree)} />
+          </PreviewErrorBoundary>
+        ) : activeFilePath && isVideoFile(activeFilePath) ? (
+          <PreviewErrorBoundary key={activeFilePath} fileName={activeFilePath.split('/').pop() ?? ''}>
+            <VideoPreview src={rawFileUrl(projectName, activeFilePath, worktree)} />
           </PreviewErrorBoundary>
         ) : activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeFileContent !== null || (isHtml && tooLarge) ? (

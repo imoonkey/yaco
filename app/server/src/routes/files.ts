@@ -1,4 +1,5 @@
-import { existsSync } from 'fs'
+import { createReadStream, existsSync } from 'fs'
+import { Readable } from 'stream'
 import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -318,6 +319,22 @@ const RAW_MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.bmp': 'image/bmp',
   '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+}
+
+type ByteRange = { start: number; end: number }
+
+// A single `bytes=` range as inclusive offsets; null when it cannot be satisfied.
+function parseRange(header: string, size: number): ByteRange | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match || (!match[1] && !match[2])) return null
+  const [, first, last] = match
+  const start = first ? Number(first) : Math.max(size - Number(last), 0)
+  const end = first && last ? Math.min(Number(last), size - 1) : size - 1
+  return start <= end ? { start, end } : null
 }
 
 app.get('/:project/raw', withProject, async (c) => {
@@ -330,16 +347,35 @@ app.get('/:project/raw', withProject, async (c) => {
 
   const info = await stat(result.path)
   if (info.isDirectory()) return fail(c, 400, 'is a directory')
-  if (info.size > RAW_FILE_SIZE_LIMIT) return fail(c, 413, 'file too large')
 
   const ext = extname(result.path).toLowerCase()
   const mime = RAW_MIME[ext] ?? 'application/octet-stream'
-  const buffer = await readFile(result.path)
-  return new Response(buffer, {
+  // Video is streamed and seeked by range, so only whole-file consumers are capped.
+  if (!mime.startsWith('video/') && info.size > RAW_FILE_SIZE_LIMIT) return fail(c, 413, 'file too large')
+
+  const headers = {
+    'Content-Type': mime,
+    'Content-Disposition': 'inline',
+    'Cache-Control': 'no-cache',
+    'Accept-Ranges': 'bytes',
+  }
+  const rangeHeader = c.req.header('range')
+  if (!rangeHeader) {
+    const body = Readable.toWeb(createReadStream(result.path)) as ReadableStream
+    return new Response(body, { headers: { ...headers, 'Content-Length': String(info.size) } })
+  }
+
+  const range = parseRange(rangeHeader, info.size)
+  if (!range) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${info.size}` } })
+  }
+  const body = Readable.toWeb(createReadStream(result.path, range)) as ReadableStream
+  return new Response(body, {
+    status: 206,
     headers: {
-      'Content-Type': mime,
-      'Content-Disposition': 'inline',
-      'Cache-Control': 'no-cache',
+      ...headers,
+      'Content-Range': `bytes ${range.start}-${range.end}/${info.size}`,
+      'Content-Length': String(range.end - range.start + 1),
     },
   })
 })

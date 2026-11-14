@@ -14,7 +14,7 @@ vi.mock('../../lib/projects', () => ({
 // Import the file routes (after mocks are set up)
 const { fileRoutes } = await import('../files')
 const { clearColocatedReposCache } = await import('../../lib/colocatedRepos')
-const { FILE_SIZE_LIMIT } = await import('../../lib/constants')
+const { FILE_SIZE_LIMIT, RAW_FILE_SIZE_LIMIT } = await import('../../lib/constants')
 
 describe('POST /:project/create-file', () => {
   beforeEach(async () => {
@@ -479,5 +479,59 @@ describe('content vs raw size limits', () => {
     // Security guard: HTML must NOT be served as text/html, or GET /raw?path=…html
     // would render attacker-authored HTML on the app origin in a normal tab.
     expect(raw.headers.get('content-type')).toBe('application/octet-stream')
+  })
+})
+
+describe('GET /:project/raw video', () => {
+  beforeEach(async () => {
+    testProjectPath = await mkdtemp(join(tmpdir(), 'workflow-test-'))
+    await writeFile(join(testProjectPath, 'clip.mp4'), '0123456789')
+  })
+  afterEach(async () => {
+    await rm(testProjectPath, { recursive: true, force: true })
+  })
+
+  const get = (range?: string) =>
+    fileRoutes.request('/test-project/raw?path=clip.mp4', range ? { headers: { Range: range } } : undefined)
+
+  it('serves the whole file as video/mp4 and advertises range support', async () => {
+    const res = await get()
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('video/mp4')
+    expect(res.headers.get('accept-ranges')).toBe('bytes')
+    expect(res.headers.get('content-length')).toBe('10')
+    expect(await res.text()).toBe('0123456789')
+  })
+
+  it.each([
+    ['bytes=2-5', '2345', 'bytes 2-5/10'],
+    ['bytes=7-', '789', 'bytes 7-9/10'],
+    ['bytes=-3', '789', 'bytes 7-9/10'],
+    ['bytes=8-99', '89', 'bytes 8-9/10'],
+  ])('serves %s as partial content', async (range, body, contentRange) => {
+    const res = await get(range)
+    expect(res.status).toBe(206)
+    expect(res.headers.get('content-range')).toBe(contentRange)
+    expect(res.headers.get('content-length')).toBe(String(body.length))
+    expect(await res.text()).toBe(body)
+  })
+
+  it.each(['bytes=10-', 'bytes=5-2', 'bytes=-', 'items=0-1'])('rejects %s with 416', async (range) => {
+    const res = await get(range)
+    expect(res.status).toBe(416)
+    expect(res.headers.get('content-range')).toBe('bytes */10')
+  })
+
+  it('serves video past the raw size cap that still bounds other files', async () => {
+    const big = Buffer.alloc(RAW_FILE_SIZE_LIMIT + 1)
+    await writeFile(join(testProjectPath, 'big.mp4'), big)
+    await writeFile(join(testProjectPath, 'big.png'), big)
+
+    const video = await fileRoutes.request('/test-project/raw?path=big.mp4', { headers: { Range: 'bytes=0-0' } })
+    expect(video.status).toBe(206)
+    expect(video.headers.get('content-range')).toBe(`bytes 0-0/${RAW_FILE_SIZE_LIMIT + 1}`)
+
+    const image = await fileRoutes.request('/test-project/raw?path=big.png')
+    expect(image.status).toBe(413)
   })
 })

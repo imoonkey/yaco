@@ -40,6 +40,7 @@ App (384 lines)
         │   ├── PreviewErrorBoundary — isolates binary preview crashes from app
         │   ├── ImagePreview — toolbar with zoom (+/−), fit-width (W), fit-height (H); auto-focused, scrollable canvas
         │   ├── PdfPreview — `<iframe>` to raw URL; browser-native viewer (scroll, keyboard nav, zoom, search)
+        │   ├── VideoPreview — `<video controls>` on the raw URL (`.mp4/.m4v/.mov/.webm`); seeking uses range requests
         │   ├── DiffTab (diff/ module — unified/split views, navigation)
         │   ├── MarkdownPreview
         │   ├── DelimitedPreview — CSV/TSV table; papaparse + @tanstack/react-virtual windowing + @tanstack/react-table sorting

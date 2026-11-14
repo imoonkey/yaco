@@ -2,6 +2,7 @@ import { API, appendWorktree } from '../hooks/useApi'
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'])
 const PDF_EXTS = new Set(['.pdf'])
+const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.mov', '.webm'])
 const HTML_EXTS = new Set(['.html', '.htm'])
 const MARKDOWN_EXTS = new Set(['.md', '.markdown', '.mdx'])
 const DELIMITED_EXTS = new Set(['.csv', '.tsv'])
@@ -19,6 +20,10 @@ export function isPdfFile(path: string): boolean {
   return PDF_EXTS.has(getExt(path))
 }
 
+export function isVideoFile(path: string): boolean {
+  return VIDEO_EXTS.has(getExt(path))
+}
+
 export function isHtmlFile(path: string): boolean {
   return HTML_EXTS.has(getExt(path))
 }
@@ -33,7 +38,7 @@ export function isDelimitedFile(path: string): boolean {
 }
 
 export function isBinaryPreviewFile(path: string): boolean {
-  return isImageFile(path) || isPdfFile(path)
+  return isImageFile(path) || isPdfFile(path) || isVideoFile(path)
 }
 
 export function isPreviewableFile(path: string): boolean {
