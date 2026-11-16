@@ -5,73 +5,22 @@ description: E2E and integration QA — derive the user flows a change affects a
 
 # QA
 
-Verify a change works from the user's perspective — E2E, integration, browser. Not unit tests.
+Verify a change works from the user's perspective — E2E, integration, browser. Unit level is `/tdd` and `/verify`.
 
-| Skill | Level | What |
-|-------|-------|------|
-| `/tdd` | Unit | Write unit tests, RED→GREEN→REFACTOR |
-| `/verify` | Gate | Build + lint + unit tests + security |
-| **`/qa`** | **E2E / Integration** | **Verify user flows affected by a change** |
-
-Triggers: after implementation, before a PR, or after deploy (smoke-test critical flows).
-
-## Stack Detection
+1. **Derive the affected flows** from the diff (`git diff --stat main...HEAD`) — concrete user actions, one assertion each:
+   - "User signs in → sees dashboard → data loads"
+   - "User runs `tool deploy --env staging` → exits 0, prints the deploy URL"
+   - "API receives POST /items → validates → returns 201"
+2. **Run each flow through its real surface** — Web UI → Playwright; API → real HTTP calls; CLI → run it, check stdout/stderr/exit code. Read-and-trace only when automation isn't practical.
+3. **Fix what fails** — a real bug gets one atomic `fix:` commit and a re-run; flaky is noted, not fixed here; an environment issue is reported and ends the run. Three failed fixes in a row → stop and report the flows still unverified.
+4. **After any fix, re-run every flow.**
 
 | Marker file | Stack | Reference |
 |-------------|-------|-----------|
 | `package.json` + web UI present | Web/Playwright | `references/web-playwright.md` |
 | `package.json` + API/server | TypeScript/Node | `references/typescript-node.md` |
 
-Read the matching reference for stack-specific commands.
-
-## Process
-
-### 1. Derive affected user flows
-
-```bash
-git diff --stat main...HEAD
-```
-
-From the diff, list the user flows (concrete actions a user takes) that touch the changed code, one assertion each:
-- "User signs in → sees dashboard → data loads"
-- "User runs `tool deploy --env staging` → exits 0, prints the deploy URL"
-- "API receives POST /items → validates → returns 201"
-
-### 2. Verify each flow
-
-Pick the tool by surface:
-- **Web UI** → Playwright: navigate, interact, assert
-- **API** → HTTP: hit real endpoints, check responses
-- **CLI** → run commands, check stdout/stderr/exit codes
-- **Manual** → when automation isn't practical, read code + trace logic
-
-Mark each flow **PASS** or **FAIL** (describe what broke).
-
-### 3. Fix-verify loop
-
-For each failure:
-1. Categorize: **real bug** / **flaky** / **environment issue**
-2. Fix real bugs only — one atomic commit per fix (`fix: ...`)
-3. Re-verify the affected flow
-4. Loop. Exit when all flows pass OR 3 consecutive fix failures.
-
-- Flaky → note it, don't fix here.
-- Environment issue → report and stop.
-- On the 3-failure stop, report the flows still unverified.
-
-### 4. Regression check
-
-Re-verify **all** flows (not just fixed ones) to confirm no new breakage.
-
-## Artifact
-
-Write the result to a **sha-stamped artifact** in the project's `/yaco-paths`-resolved
-bundle home (the same folder as the code-review artifacts), not just stdout. Stamp the
-header with `reviewed_sha = <sha>`, the commit sha of the tree you exercised, so a gate
-can confirm the QA covers the current HEAD by reading. Name it so it's recognizably a qa
-artifact. The body is the Output Format below.
-
-## Output Format
+## Report
 
 ```
 QA: [PASS/FAIL]
@@ -79,7 +28,6 @@ reviewed_sha: [sha of the tree exercised]
 
 Flows verified:
 - [flow description]: PASS/FAIL
-- ...
 
 Fixes:    [N commits]
 Flaky:    [list or none]

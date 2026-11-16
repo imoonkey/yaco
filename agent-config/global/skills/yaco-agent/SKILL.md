@@ -144,6 +144,20 @@ session is currently showing, never to read a turn's result (use `--wait` /
 `messages` for that). Text mode returns clean text (ANSI stripped by default);
 `--json` wraps it as `{ok:true, data:{text:"..."}}`.
 
+## Context
+
+A session works worse as its context fills, well before the provider's own autocompact.
+`capture --lines 4` shows `NN% left`; below ~60%, compact at the next natural break —
+your workers' sessions and your own (`whoami`):
+
+```bash
+yaco agent send <handle> "/compact <task · decisions made · next step>" --json
+```
+
+`/compact` queues until the turn ends, while an ordinary message lands *inside* the running
+turn: prompt a worker again only once it is idle after compacting, and compact yourself as
+the last action of a turn — nothing queued behind it resumes you.
+
 ## Navigating message history
 
 `messages` reads a session's **full** message history from the provider's
@@ -209,30 +223,11 @@ See the `/yaco-task` skill for the task graph itself.
 
 ## Teardown
 
-```bash
-yaco agent kill <handle> --json
-yaco agent kill --all --json   # all sessions under cwd — human-only
-```
-
-`kill --all` is a **nuclear option**: multiple workstreams may share a project's
-agent sessions, so only a human should invoke it. Skills kill sessions one
-handle at a time.
-
-## Example — capture and thread a handle
-
-```bash
-# Start non-blocking, capture the handle, then drive the session by it
-HANDLE=$(yaco agent start claude "Fix the failing unit tests" \
-  --name fixer --json | jq -r .data.handle)
-RESULT=$(yaco agent wait "$HANDLE" --from-start)
-yaco agent send "$HANDLE" "Now add tests for the edge cases" --wait
-yaco agent kill "$HANDLE" --json
-```
+`yaco agent kill --all` (every session under cwd) is **human-only** — workstreams share a
+project's sessions, so skills kill one handle at a time.
 
 ## Notes
 
-- For tests, prefer `npm run test` for pure unit coverage and
-  `npm run test:integration` when tmux-backed checks are needed.
 - Provider shortcuts (the one-word `yaco <provider> ...` form) are for
   interactive human typing only and MUST NOT appear in skill automation. Skills
   always use the canonical `yaco agent start <provider> ...` form.

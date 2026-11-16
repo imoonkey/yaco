@@ -48,6 +48,19 @@ The global install is **purely additive**: it plants skill directories and never
 
 Skills that need stack-specific content (coding-standards, verify, qa) use `references/<stack>.md` and auto-detect the stack from marker files.
 
+### What a step may spend
+
+One rule — **a step earns its cost** — and each consequence lives in exactly one skill:
+
+| consequence | owner |
+|-------------|-------|
+| depth follows stakes: shipped code gets every step in full, a demo the shortest pass that shows it correct and simple | `implement` → Principles; `code-review` defines severity as what the issue costs *this* code |
+| checks follow the change: what the diff can break while iterating, everything once at the end | `verify`; `implement` schedules no full run of its own — Finish's `yaco gate` is it |
+| evidence is filed only for a reader: review/qa reports become artifacts only where `scripts/gate.sh` exists | `implement` → Evidence; `code-review` and `qa` only define the report |
+| context is kept lean: compact below ~60% left at a natural break, workers and self | `yaco-agent` → Context |
+
+A "too heavy / too slow" case is handled by restating one of these, not by adding a mode. Each skill carries one representation of its flow: a numbered list where the flow is linear (`implement`, `qa`), a diagram plus per-node sections where it branches (`orchestrate`).
+
 ### implement ↔ orchestrate contract
 
 Leaf execution — the implement / verify / review / fix / qa / doc recipe — is

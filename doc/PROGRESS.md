@@ -1,3 +1,17 @@
+## 2026-11-15: Workflow skills restated around one cost rule
+
+**What changed:**
+- One rule, **a step earns its cost**, with each consequence owned by one skill (`doc/main/agent-config/architecture.md` → What a step may spend): depth follows stakes (`/implement`, `/code-review` severity), checks follow the change (`/verify`), evidence is filed only where a gate reads it (`/implement` → Evidence), context is compacted below ~60% left (`/yaco-agent` → Context).
+- `/implement`: the diagram, the peer-gates paragraph and the step sections are one numbered recipe; the repeated `MUST USE` markers are one sentence. The whole-suite run is Finish's `yaco gate` (or `/verify` over everything where the repo has no gate).
+- `/verify`: no `quick`/`full` arguments, phase list or output template — one scope rule plus the stack table.
+- `/code-review`: severity is defined as what the issue costs this code; the process list and report template are one sentence each.
+- `/qa`: four numbered steps; the artifact rule moved to `/implement`.
+- `/orchestrate`: slim diagram plus one section per node; the gate is three conditions and three outcomes; the non-implementation-leaf and blocked cases fall out of the general rules and lost their own text. The review-independence check applies only when the gate counted a review and requires a reviewer other than the worker.
+
+**Why:** the recipe charged throwaway code the price of shipped code, re-ran the whole suite every phase, and let long contexts degrade. Stating the cases as one rule, with one owner per consequence and one representation per flow, cut the five workflow skills from 3636 to 2110 words.
+
+**Verification:** prose-only change to `agent-config/`; no task has been run through the rewritten skills yet. Compaction mechanics probed on a throwaway Claude session: a self-sent `/compact` queues until the turn ends, while an ordinary message sent after it lands inside the running turn. `scripts/gate.sh` is unchanged.
+
 ## 2026-09-19: `yaco project add` promotes the plan into its private repo
 
 **What changed:**

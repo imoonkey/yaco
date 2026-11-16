@@ -5,20 +5,11 @@ description: Systematic code review with severity-based findings. Use before mer
 
 # Code Review
 
-High standards, like kernel code. Hunt for logic holes, design-principle violations, hidden risks, and redundancy — not just local readability.
+Hunt for logic holes, design-principle violations, hidden risks, and redundancy — not local readability.
 
 Load `/simplify-code-arch` (**MUST USE**) — its gates and smell table define the design bar: speculative structure, shallow layers, wrong-altitude params are findings, not style nits.
 
-## Process
-
-1. **Context** — `git diff --stat` and `git log -3 --oneline`.
-2. **Review** — classify every issue into the severity table below.
-3. **Fix small issues inline**, flag big ones for follow-up.
-4. **Report** in the output format.
-
-Treat project docs as context; code is source-of-truth.
-
-## Severity
+**Severity is what leaving the issue would cost *this* code.** The table is calibrated for code that ships; in a demo or prototype only a wrong result or needless structure rises above Low. Defensive code for cases that cannot occur is a finding, never a fix to ask for.
 
 | Level | Includes |
 |-------|----------|
@@ -27,23 +18,6 @@ Treat project docs as context; code is source-of-truth.
 | **Medium** (consider) | Hard-to-read logic, moderate duplication; missing tests (even if preflight passes); oversized files/functions; poor naming |
 | **Low** (nice-to-have) | Style consistency; doc gaps; minor optimizations |
 
-## Output Format
+Fix small issues inline; flag big ones. Project docs are context; code is source-of-truth.
 
-```markdown
-# Review: [scope]
-
-## Summary
-[What changed]
-
-## Critical
-1. [Issue]: [why + where + fix]
-
-## High
-1. [Issue]: [why + where + fix]
-
-## Medium
-...
-
-## Recommendation
-[APPROVE / CHANGES_REQUESTED]
-```
+Report what changed, the findings by severity (each: why · where · fix), and a verdict — `APPROVE` or `CHANGES_REQUESTED`.
